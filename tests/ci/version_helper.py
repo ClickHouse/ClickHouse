@@ -58,6 +58,7 @@ class ClickHouseVersion:
         elif self._git is not None:
             self._tweak = self._git.tweak
         self._describe = ""
+        self._description = ""
 
     def update(self, part: Literal["major", "minor", "patch"]) -> "ClickHouseVersion":
         """If part is valid, returns a new version"""
@@ -86,6 +87,13 @@ class ClickHouseVersion:
             self._git.update()
         return ClickHouseVersion(
             self.major, self.minor, self.patch + 1, self.revision, self._git
+        )
+
+    def reset_tweak(self) -> "ClickHouseVersion":
+        if self._git is not None:
+            self._git.update()
+        return ClickHouseVersion(
+            self.major, self.minor, self.patch, self.revision, self._git, "1"
         )
 
     @property
@@ -119,6 +127,10 @@ class ClickHouseVersion:
         return self._describe
 
     @property
+    def description(self) -> str:
+        return self._description
+
+    @property
     def string(self):
         return ".".join(
             (str(self.major), str(self.minor), str(self.patch), str(self.tweak))
@@ -142,6 +154,7 @@ class ClickHouseVersion:
     def with_description(self, version_type):
         if version_type not in VersionType.VALID:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
+        self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
 
     def __eq__(self, other: Any) -> bool:
@@ -322,6 +335,7 @@ def main():
         "--version-type",
         "-t",
         choices=VersionType.VALID,
+        default=VersionType.TESTING,
         help="optional parameter to generate DESCRIBE",
     )
     parser.add_argument(
@@ -331,10 +345,16 @@ def main():
         help="if the ENV variables should be exported",
     )
     parser.add_argument(
-        "--update",
-        "-u",
+        "--update-part",
         choices=("major", "minor", "patch"),
-        help="the version part to update, tweak is always calculated from commits",
+        help="the version part to update, tweak is always calculated from commits, "
+        "implies `--update-cmake`",
+    )
+    parser.add_argument(
+        "--update-cmake",
+        "-u",
+        action="store_true",
+        help=f"is update for {FILE_WITH_VERSION_PATH} is needed or not",
     )
     parser.add_argument(
         "--update-contributors",
@@ -351,13 +371,12 @@ def main():
 
     version = get_version_from_repo(args.version_path, Git(True))
 
-    if args.update:
-        version = version.update(args.update)
+    if args.update_part:
+        version = version.update(args.update_part)
 
-    if args.version_type:
-        version.with_description(args.version_type)
+    version.with_description(args.version_type)
 
-    if args.update:
+    if args.update_part or args.update_cmake:
         update_cmake_version(version)
 
     for k, v in version.as_dict().items():

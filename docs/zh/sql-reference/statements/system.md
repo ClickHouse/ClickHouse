@@ -71,9 +71,17 @@ SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 
 将日志信息缓冲数据刷入系统表（例如system.query_log）。调试时允许等待不超过7.5秒。当信息队列为空时，会创建系统表。
 
+```sql
+SYSTEM FLUSH LOGS [ON CLUSTER cluster_name]
+```
+
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
 重新加载ClickHouse的配置。用于当配置信息存放在ZooKeeper时。
+
+```sql
+SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
+```
 
 ## SHUTDOWN {#query_language-system-shutdown}
 
@@ -93,7 +101,7 @@ ClickHouse可以管理 [distribute](../../engines/table-engines/special/distribu
 当向分布式表插入数据时，禁用后台的分布式数据分发。
 
 ``` sql
-SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
+SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
 ### FLUSH DISTRIBUTED {#query_language-system-flush-distributed}
@@ -101,7 +109,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 强制让ClickHouse同步向集群节点同步发送数据。如果有节点失效，ClickHouse抛出异常并停止插入操作。当所有节点都恢复上线时，你可以重试之前的操作直到成功执行。
 
 ``` sql
-SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
 ### START DISTRIBUTED SENDS {#query_language-system-start-distributed-sends}
@@ -109,7 +117,7 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 当向分布式表插入数据时，允许后台的分布式数据分发。
 
 ``` sql
-SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
+SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
 
 ## Managing MergeTree Tables {#query-language-system-mergetree}
@@ -121,20 +129,19 @@ ClickHouse可以管理 [MergeTree](../../engines/table-engines/mergetree-family/
 为MergeTree系列引擎表停止后台合并操作。
 
 ``` sql
-SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
+SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-
-!!! note "Note"
-    `DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
-
+:::note
+`DETACH / ATTACH` 表操作会在后台进行表的merge操作，甚至当所有MergeTree表的合并操作已经停止的情况下。
+:::
 
 ### START MERGES {#query_language-system-start-merges}
 
 为MergeTree系列引擎表启动后台合并操作。
 
 ``` sql
-SYSTEM START MERGES [[db.]merge_tree_family_table_name]
+SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}
@@ -143,7 +150,7 @@ SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 不管表存在与否，都返回 `OK.`。当数据库不存在时返回错误。
 
 ``` sql
-SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
+SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
 ### START TTL MERGES {#query_language-start-ttl-merges}
@@ -152,7 +159,7 @@ SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 
 
 ``` sql
-SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
+SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
 ### STOP MOVES {#query_language-stop-moves}
@@ -161,7 +168,7 @@ SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 
 
 ``` sql
-SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
+SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
 ### START MOVES {#query_language-start-moves}
@@ -170,7 +177,7 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 
 ``` sql
-SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
+SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 ```
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
@@ -191,7 +198,7 @@ SYSTEM UNFREEZE WITH NAME <backup_name>
 不管表引擎类型如何或表/数据库是否存，都返回 `OK.`。
 
 ``` sql
-SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
@@ -200,7 +207,7 @@ SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 不管表引擎类型如何或表/数据库是否存，都返回 `OK.`。
 
 ``` sql
-SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
@@ -208,7 +215,7 @@ SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 停止通过后台分发 `ReplicatedMergeTree`系列引擎表中新插入的数据块到集群的其它副本节点。
 
 ``` sql
-SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
@@ -216,7 +223,7 @@ SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 启动通过后台分发 `ReplicatedMergeTree`系列引擎表中新插入的数据块到集群的其它副本节点。
 
 ``` sql
-SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATION QUEUES {#query_language-system-stop-replication-queues}
@@ -225,7 +232,7 @@ SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 停止从Zookeeper中获取 `ReplicatedMergeTree`系列表的复制队列的后台任务。可能的后台任务类型包含：merges, fetches, mutation，带有 `ON CLUSTER`的ddl语句
 
 ``` sql
-SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATION QUEUES {#query_language-system-start-replication-queues}
@@ -233,7 +240,7 @@ SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 启动从Zookeeper中获取 `ReplicatedMergeTree`系列表的复制队列的后台任务。可能的后台任务类型包含：merges, fetches, mutation，带有 `ON CLUSTER`的ddl语句
 
 ``` sql
-SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
@@ -241,7 +248,7 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT | PULL]
 ```
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
@@ -251,7 +258,7 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 
 
 ``` sql
-SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}

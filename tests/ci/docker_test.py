@@ -10,16 +10,15 @@ from pr_info import PRInfo
 from report import TestResult
 import docker_images_check as di
 
-with patch("git_helper.Git"):
-    from version_helper import get_version_from_string
-    import docker_server as ds
+from version_helper import get_version_from_string
+import docker_server as ds
 
 # di.logging.basicConfig(level=di.logging.INFO)
 
 
 class TestDockerImageCheck(unittest.TestCase):
     docker_images_path = os.path.join(
-        os.path.dirname(__file__), "tests/docker_images.json"
+        os.path.dirname(__file__), "tests/docker_images_for_tests.json"
     )
 
     def test_get_changed_docker_images(self):
@@ -41,6 +40,12 @@ class TestDockerImageCheck(unittest.TestCase):
             [
                 di.DockerImage("docker/test/base", "clickhouse/test-base", False),
                 di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
+                di.DockerImage(
+                    "docker/test/sqltest",
+                    "clickhouse/sqltest",
+                    False,
+                    "clickhouse/test-base",  # type: ignore
+                ),
                 di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
@@ -312,7 +317,3 @@ class TestDockerServer(unittest.TestCase):
         for case in cases_equal:
             release = ds.auto_release_type(case[0], "auto")
             self.assertEqual(case[1], release)
-
-
-if __name__ == "__main__":
-    unittest.main()

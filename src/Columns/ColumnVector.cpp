@@ -49,11 +49,28 @@ namespace ErrorCodes
 }
 
 template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
 {
-    auto * pos = arena.allocContinue(sizeof(T), begin);
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = sizeof(T);
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
     unalignedStore<T>(pos, data[n]);
-    return StringRef(pos, sizeof(T));
+    return res;
 }
 
 template <typename T>
@@ -747,7 +764,7 @@ namespace
       */
     template<typename IntType>
     requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE42Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
+    void replicateSSE2Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
     {
         const IntType * data_copy_begin_ptr = nullptr;
         size_t offsets_size = offsets.size();
@@ -842,7 +859,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 #ifdef __SSE2__
     if constexpr (std::is_same_v<T, UInt32>)
     {
-        replicateSSE42Int32(getData().data(), res->getData().data(), offsets);
+        replicateSSE2Int32(getData().data(), res->getData().data(), offsets);
         return res;
     }
 #endif
@@ -910,9 +927,6 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
-
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {
@@ -930,11 +944,11 @@ ColumnPtr ColumnVector<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [compressed = std::move(compressed), column_size = data_size]
+        [my_compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

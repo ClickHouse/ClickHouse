@@ -106,7 +106,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     auto table = DatabaseOrdinary::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleanupDetachedTables(); //-V1001
+    not_in_use = cleanupDetachedTables();
     return table;
 }
 
@@ -273,7 +273,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     else
         renameNoReplace(old_metadata_path, new_metadata_path);
 
-    /// After metadata was successfully moved, the following methods should not throw (if them do, it's a logical error)
+    /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
     table_data_path = detach(*this, table_name, table->storesDataOnDisk());
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
@@ -441,11 +441,10 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     }
 }
 
-void DatabaseAtomic::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
+void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
 {
     beforeLoadingMetadata(local_context, mode);
-    DatabaseOrdinary::loadStoredObjects(local_context, mode, skip_startup_tables);
+    DatabaseOrdinary::loadStoredObjects(local_context, mode);
 }
 
 void DatabaseAtomic::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
@@ -472,8 +471,16 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
         fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
-        if (!if_data_path_exist || fs::exists(data))
-            fs::create_directory_symlink(data, link);
+
+        /// If it already points where needed.
+        std::error_code ec;
+        if (fs::equivalent(data, link, ec))
+            return;
+
+        if (if_data_path_exist && !fs::exists(data))
+            return;
+
+        fs::create_directory_symlink(data, link);
     }
     catch (...)
     {
@@ -509,6 +516,9 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     {
         try
         {
+            /// fs::exists could return false for broken symlink
+            if (FS::isSymlinkNoThrow(metadata_symlink))
+                fs::remove(metadata_symlink);
             fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)

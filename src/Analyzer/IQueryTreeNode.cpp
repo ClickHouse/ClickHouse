@@ -229,10 +229,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
     }
 
-    Hash result;
-    hash_state.get128(result);
-
-    return result;
+    return getSipHash128AsPair(hash_state);
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
@@ -262,6 +259,13 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
     {
         const auto [node_to_clone, place_for_cloned_node] = nodes_to_clone.back();
         nodes_to_clone.pop_back();
+
+        auto already_cloned_node_it = old_pointer_to_new_pointer.find(node_to_clone);
+        if (already_cloned_node_it != old_pointer_to_new_pointer.end())
+        {
+            *place_for_cloned_node = already_cloned_node_it->second;
+            continue;
+        }
 
         auto it = replacement_map.find(node_to_clone);
         auto node_clone = it != replacement_map.end() ? it->second : node_to_clone->cloneImpl();
@@ -324,9 +328,9 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const QueryTreeNodePtr & node_t
     return cloneAndReplace(replacement_map);
 }
 
-ASTPtr IQueryTreeNode::toAST() const
+ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
-    auto converted_node = toASTImpl();
+    auto converted_node = toASTImpl(options);
 
     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);

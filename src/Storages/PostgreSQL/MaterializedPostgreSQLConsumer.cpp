@@ -2,7 +2,7 @@
 
 #include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
@@ -31,7 +32,6 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool schema_as_a_part_of_table_name_,
-    bool allow_automatic_update_,
     StorageInfos storages_info_,
     const String & name_for_logger)
     : log(&Poco::Logger::get("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
@@ -43,7 +43,6 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , lsn_value(getLSNValue(start_lsn))
     , max_block_size(max_block_size_)
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
-    , allow_automatic_update(allow_automatic_update_)
 {
     final_lsn = start_lsn;
     auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -557,8 +556,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
-    for (const auto & table_name : tables_to_sync)
+    while (!tables_to_sync.empty())
     {
+        auto table_name = *tables_to_sync.begin();
         auto & storage_data = storages.find(table_name)->second;
         Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
         storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
@@ -590,8 +590,12 @@ void MaterializedPostgreSQLConsumer::syncTables()
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            /// Retry this buffer later.
+            storage_data.buffer.columns = result_rows.mutateColumns();
+            throw;
         }
+
+        tables_to_sync.erase(tables_to_sync.begin());
     }
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
@@ -657,7 +661,9 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
 
     /// Table is not present in a skip list - allow synchronization.
     if (skipped_table_with_lsn == skip_list.end())
+    {
         return true;
+    }
 
     const auto & table_start_lsn = skipped_table_with_lsn->second;
 
@@ -686,11 +692,11 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 {
     skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
     storages.erase(relation_name);
-
-    if (allow_automatic_update)
-        LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
-    else
-        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
+    LOG_WARNING(
+        log,
+        "Table {} is skipped from replication stream because its structure has changes. "
+        "Please detach this table and reattach to resume the replication (relation id: {})",
+        relation_name, relation_id);
 }
 
 
@@ -733,16 +739,20 @@ void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 {
     if (setting.name == "materialized_postgresql_max_block_size")
         max_block_size = setting.value.safeGet<UInt64>();
-    else if (setting.name == "materialized_postgresql_allow_automatic_update")
-        allow_automatic_update = setting.value.safeGet<bool>();
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported setting: {}", setting.name);
 }
 
 
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
-bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
+bool MaterializedPostgreSQLConsumer::consume()
 {
-    bool slot_empty = true;
+    if (!tables_to_sync.empty())
+    {
+        syncTables();
+    }
 
+    bool slot_empty = true;
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -844,33 +854,5 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
 
     return true;
 }
-
-
-bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
-{
-    /// Read up to max_block_size changed (approximately - in same cases might be more).
-    /// false: no data was read, reschedule.
-    /// true: some data was read, schedule as soon as possible.
-    auto read_next = readFromReplicationSlot();
-
-    /// Check if there are tables, which are skipped from being updated by changes from replication stream,
-    /// because schema changes were detected. Update them, if it is allowed.
-    if (allow_automatic_update && !skip_list.empty())
-    {
-        for (const auto & [relation_id, lsn] : skip_list)
-        {
-            /// Non-empty lsn in this place means that table was already updated, but no changes for that table were
-            /// received in a previous stream. A table is removed from skip list only when there came
-            /// changes for table with lsn higher than lsn of snapshot, from which table was reloaded. Since table
-            /// reaload and reading from replication stream are done in the same thread, no lsn will be skipped
-            /// between these two events.
-            if (lsn.empty())
-                skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
-        }
-    }
-
-    return read_next;
-}
-
 
 }

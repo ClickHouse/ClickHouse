@@ -19,7 +19,7 @@ The key advantage of this approach is that it does not need any external system 
 TTL can also be used to move data not only to [/dev/null](https://en.wikipedia.org/wiki/Null_device), but also between different storage systems, like from SSD to HDD.
 :::
 
-More details on [configuring TTL](../../engines/table-engines/mergetree-family/mergetree/#table_engine-mergetree-ttl).
+More details on [configuring TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 ## ALTER DELETE {#alter-delete}
 
@@ -41,4 +41,4 @@ More details on [manipulating partitions](../../sql-reference/statements/alter/p
 
 It’s rather radical to drop all data from a table, but in some cases it might be exactly what you need.
 
-More details on [table truncation](../../sql-reference/statements/truncate/).
+More details on [table truncation](../../sql-reference/statements/truncate.md).

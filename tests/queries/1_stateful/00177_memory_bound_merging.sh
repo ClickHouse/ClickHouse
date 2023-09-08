@@ -2,8 +2,6 @@
 
 # shellcheck disable=SC2154
 
-unset CLICKHOUSE_LOG_COMMENT
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -12,6 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 check_replicas_read_in_order() {
     # to check this we actually look for at least one log message from MergeTreeInOrderSelectProcessor.
     # hopefully logger's names are a bit more stable than log messages itself
+    #
+    # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
     $CLICKHOUSE_CLIENT -nq "
         SYSTEM FLUSH LOGS;
 
@@ -34,7 +34,7 @@ test1() {
         GROUP BY CounterID, URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, use_hedged_requests = 0"
     check_replicas_read_in_order $query_id
 }
 
@@ -51,7 +51,7 @@ test2() {
         GROUP BY URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0, query_plan_aggregation_in_order = 1"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, use_hedged_requests = 0, query_plan_aggregation_in_order = 1"
     check_replicas_read_in_order $query_id
 }
 
@@ -67,7 +67,7 @@ test3() {
             FROM test.hits
             WHERE CounterID = 1704509 AND UserID = 4322253409885123546
             GROUP BY URL, EventDate
-            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0
+            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, use_hedged_requests = 0
         )
         WHERE explain LIKE '%Aggr%Transform%' OR explain LIKE '%InOrder%'"
 }

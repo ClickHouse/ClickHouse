@@ -38,8 +38,8 @@ HDFSFileInfo::~HDFSFileInfo()
 }
 
 
-void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
-    const String & prefix, bool isUser)
+void HDFSBuilderWrapper::loadFromConfig(
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, [[maybe_unused]] bool isUser)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
 

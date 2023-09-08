@@ -2,6 +2,7 @@
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 
 namespace DB
 {
@@ -19,17 +20,9 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & /*column_source_node*/)
 {
     std::string column_identifier;
-
-    if (column_source_node->hasAlias())
-        column_identifier += column_source_node->getAlias();
-    else if (const auto * table_source_node = column_source_node->as<TableNode>())
-        column_identifier += table_source_node->getStorageID().getFullNameNotQuoted();
-
-    if (!column_identifier.empty())
-        column_identifier += '.';
 
     column_identifier += column.name;
     column_identifier += '_' + std::to_string(column_identifiers.size());
@@ -45,7 +38,7 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
     return column_identifiers.contains(column_identifier);
 }
 
-PlannerContext::PlannerContext(ContextPtr query_context_, GlobalPlannerContextPtr global_planner_context_)
+PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
 {}
@@ -120,55 +113,24 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
     return table_expression_data->getColumnIdentifierOrNull(column_name);
 }
 
-PlannerContext::SetKey PlannerContext::createSetKey(const QueryTreeNodePtr & set_source_node)
+PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
-    auto set_source_hash = set_source_node->getTreeHash();
-    return "__set_" + toString(set_source_hash.first) + '_' + toString(set_source_hash.second);
-}
-
-void PlannerContext::registerSet(const SetKey & key, PlannerSet planner_set)
-{
-    if (!planner_set.getSet())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Set must be initialized");
-
-    const auto & subquery_node = planner_set.getSubqueryNode();
-    if (subquery_node)
+    const auto set_source_hash = set_source_node->getTreeHash();
+    if (set_source_node->as<ConstantNode>())
     {
-        auto node_type = subquery_node->getNodeType();
-
-        if (node_type != QueryTreeNodeType::QUERY &&
-            node_type != QueryTreeNodeType::UNION)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Invalid node for set table expression. Expected query or union. Actual {}",
-                subquery_node->formatASTForErrorMessage());
+        /* We need to hash the type of the left operand because we can build different sets for different types.
+         * (It's done for performance reasons. It's cheaper to convert a small set of values from literal to the type of the left operand.)
+         *
+         * For example in expression `(a :: Decimal(9, 1) IN (1.0, 2.5)) AND (b :: Decimal(9, 0) IN (1, 2.5))`
+         * we need to build two different sets:
+         *   - `{1, 2.5} :: Set(Decimal(9, 1))` for a
+         *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because bercause it's not representable as Decimal(9, 0)).
+         */
+        return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }
 
-    set_key_to_set.emplace(key, std::move(planner_set));
-}
-
-bool PlannerContext::hasSet(const SetKey & key) const
-{
-    return set_key_to_set.contains(key);
-}
-
-const PlannerSet & PlannerContext::getSetOrThrow(const SetKey & key) const
-{
-    auto it = set_key_to_set.find(key);
-    if (it == set_key_to_set.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "No set is registered for key {}",
-            key);
-
-    return it->second;
-}
-
-const PlannerSet * PlannerContext::getSetOrNull(const SetKey & key) const
-{
-    auto it = set_key_to_set.find(key);
-    if (it == set_key_to_set.end())
-        return nullptr;
-
-    return &it->second;
+    /// For other cases we will cast left operand to the type of the set source, so no difference in types.
+    return "__set_" + toString(set_source_hash);
 }
 
 }

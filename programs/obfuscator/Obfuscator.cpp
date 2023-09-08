@@ -30,7 +30,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <base/StringRef.h>
 #include <Common/DateLUT.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -366,17 +365,14 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
         hash.update(seed);
         hash.update(i);
 
+        const auto checksum = getSipHash128AsArray(hash);
         if (size >= 16)
         {
-            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(hash_dst);
+            auto * hash_dst = std::min(pos, end - 16);
+            memcpy(hash_dst, checksum.data(), checksum.size());
         }
         else
-        {
-            char value[16];
-            hash.get128(value);
-            memcpy(dst, value, end - dst);
-        }
+            memcpy(dst, checksum.data(), end - dst);
 
         pos += 16;
         ++i;
@@ -402,7 +398,7 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
-    hash.get128(reinterpret_cast<char *>(&dst));
+    dst = hash.get128();
 
     dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
     dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
@@ -492,7 +488,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}

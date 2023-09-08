@@ -73,7 +73,7 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
-        settings.low_cardinality_max_dictionary_size = 0; //-V1048
+        settings.low_cardinality_max_dictionary_size = 0;
 
         auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
@@ -146,7 +146,7 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -256,10 +256,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    ASTPtr ast_filter_node = buildFilterNode(query_info.query);
-    if (!ast_filter_node)
-        return;
-
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
         if (!query_info.filter_actions_dag)
@@ -280,6 +276,10 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     }
     else
     {
+        ASTPtr ast_filter_node = buildFilterNode(query_info.query);
+        if (!ast_filter_node)
+            return;
+
         if (checkASTUseless(ast_filter_node))
             return;
 
@@ -457,8 +457,10 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         if (arguments_size != 1)
             return nullptr;
 
+        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node);
+
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {arguments[0]}, {});
+        return &result_dag->addFunction(bit_swap_last_two_function, {argument}, {});
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
@@ -554,7 +556,10 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     if (atomFromAST(node))
     {
         if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            node = makeASTFunction("__bitWrapperFunc", node);
+            /// __bitWrapperFunc* uses default implementation for Nullable types
+            /// Here we additionally convert Null to 0,
+            /// otherwise condition 'something OR NULL' will always return Null and filter everything.
+            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("ifNull", node, std::make_shared<ASTLiteral>(Field(0))));
     }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
@@ -609,6 +614,9 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
     }
     else if (func->name == "and" || func->name == "indexHint")
     {
+        if (args.size() < 2)
+            return false;
+
         auto last_arg = args.back();
         args.pop_back();
 
@@ -628,6 +636,9 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
     }
     else if (func->name == "or")
     {
+        if (args.size() < 2)
+            return false;
+
         auto last_arg = args.back();
         args.pop_back();
 

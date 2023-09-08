@@ -3,7 +3,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/getMemoryAmount.h>
 #include <Common/logger_useful.h>
@@ -13,12 +12,11 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
-#include <Common/hex.h>
 
 #include "config.h"
 #include "config_version.h"
 
-#if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
+#if USE_SENTRY && !defined(CLICKHOUSE_PROGRAM_STANDALONE_BUILD)
 
 #    include <sentry.h>
 #    include <cstdio>
@@ -74,7 +72,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
+        if (debug || (strlen(VERSION_OFFICIAL) > 0))
             enabled = true;
     }
 
@@ -150,7 +148,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
 
         #if defined(__ELF__) && !defined(OS_FREEBSD)
-            const String & build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
+            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif
 

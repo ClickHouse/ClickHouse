@@ -24,6 +24,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+
 namespace
 {
 
@@ -52,7 +57,11 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , WithContext(global_context_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
-{}
+{
+    /// sanity check
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
+}
 
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
 {
@@ -90,6 +99,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             "The number of files opened with `mmap` (mapped in memory)."
             " This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`."
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
+    }
+
+    if (auto query_cache = getContext()->getQueryCache())
+    {
+        new_values["QueryCacheBytes"] = { query_cache->weight(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
     }
 
     {
@@ -191,14 +206,21 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
-            new_values[fmt::format("DiskTotal_{}", name)] = { total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUsed_{}", name)] = { total - available,
-                "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
-            new_values[fmt::format("DiskAvailable_{}", name)] = { available,
-                "Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUnreserved_{}", name)] = { unreserved,
-                "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+            if (available)
+            {
+                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+            }
+
+            if (unreserved)
+                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
         }
     }
 
@@ -362,11 +384,14 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
     const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
 
+    Stopwatch watch;
     if (update_heavy_metric)
     {
         heavy_metric_previous_update_time = update_time;
-
-        Stopwatch watch;
+        if (first_run)
+            heavy_update_interval = heavy_metric_update_period.count();
+        else
+            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateDetachedPartsStats();
@@ -390,7 +415,9 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  watch.elapsedSeconds());
 
     }
+    new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };
 
+    new_values["AsynchronousHeavyMetricsUpdateInterval"] = { heavy_update_interval, "Heavy (tables related) metrics update interval" };
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };

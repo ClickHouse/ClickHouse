@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <mutex>
 
@@ -34,6 +36,8 @@ public:
         RangesInDataParts && parts_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
         ContextPtr context_,
@@ -90,11 +94,12 @@ public:
         const RangesInDataParts & parts,
         const StorageSnapshotPtr & storage_snapshot,
         std::vector<bool> & is_part_on_remote_disk,
-        bool & do_not_steal_tasks,
         bool & predict_block_size_bytes,
         const Names & column_names,
         const Names & virtual_column_names,
         const PrewhereInfoPtr & prewhere_info,
+        const ExpressionActionsSettings & actions_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
         std::vector<MergeTreeReadPool::PerPartParams> & per_part_params);
 
 private:
@@ -108,9 +113,12 @@ private:
     const Names virtual_column_names;
     size_t min_marks_for_concurrent_read{0};
     PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
+    MergeTreeReaderSettings reader_settings;
     RangesInDataParts parts_ranges;
     bool predict_block_size_bytes;
     bool do_not_steal_tasks;
+    bool merge_tree_use_const_size_tasks_for_remote_reading = false;
 
     std::vector<PerPartParams> per_part_params;
     std::vector<bool> is_part_on_remote_disk;
@@ -158,19 +166,22 @@ private:
 class MergeTreeReadPoolParallelReplicas : public IMergeTreeReadPool
 {
 public:
-
     MergeTreeReadPoolParallelReplicas(
         StorageSnapshotPtr storage_snapshot_,
         size_t threads_,
         ParallelReadingExtension extension_,
         const RangesInDataParts & parts_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
+        const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
         size_t min_marks_for_concurrent_read_)
         : extension(extension_)
         , threads(threads_)
         , prewhere_info(prewhere_info_)
+        , actions_settings(actions_settings_)
+        , reader_settings(reader_settings_)
         , storage_snapshot(storage_snapshot_)
         , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
         , column_names(column_names_)
@@ -178,13 +189,15 @@ public:
         , parts_ranges(std::move(parts_))
     {
         MergeTreeReadPool::fillPerPartInfo(
-            parts_ranges, storage_snapshot, is_part_on_remote_disk, do_not_steal_tasks,
-            predict_block_size_bytes, column_names, virtual_column_names, prewhere_info, per_part_params);
+            parts_ranges, storage_snapshot, is_part_on_remote_disk,
+            predict_block_size_bytes, column_names, virtual_column_names, prewhere_info,
+            actions_settings, reader_settings, per_part_params);
 
-        extension.all_callback({
-            .description = parts_ranges.getDescriptions(),
-            .replica_num = extension.number_of_current_replica
-        });
+        extension.all_callback(InitialAllRangesAnnouncement(
+            CoordinationMode::Default,
+            parts_ranges.getDescriptions(),
+            extension.number_of_current_replica
+        ));
     }
 
     ~MergeTreeReadPoolParallelReplicas() override;
@@ -206,13 +219,14 @@ private:
     std::mutex mutex;
 
     PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
+    MergeTreeReaderSettings reader_settings;
     StorageSnapshotPtr storage_snapshot;
     size_t min_marks_for_concurrent_read;
     const Names column_names;
     const Names virtual_column_names;
     RangesInDataParts parts_ranges;
 
-    bool do_not_steal_tasks = false;
     bool predict_block_size_bytes = false;
     std::vector<bool> is_part_on_remote_disk;
     std::vector<MergeTreeReadPool::PerPartParams> per_part_params;
@@ -240,10 +254,11 @@ public:
         for (const auto & part : parts_ranges)
             buffered_tasks.push_back({part.data_part->info, MarkRanges{}});
 
-        extension.all_callback({
-            .description = parts_ranges.getDescriptions(),
-            .replica_num = extension.number_of_current_replica
-        });
+        extension.all_callback(InitialAllRangesAnnouncement(
+            mode,
+            parts_ranges.getDescriptions(),
+            extension.number_of_current_replica
+        ));
     }
 
     MarkRanges getNewTask(RangesInDataPartDescription description);

@@ -10,6 +10,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -20,20 +21,25 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info, Poco::Logger * log)
+ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
+    ContextPtr context,
+    const Settings & settings,
+    const StorageID & main_table,
+    const SelectQueryInfo * query_info,
+    Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -41,7 +47,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
     /// If "secret" (in remote_servers) is not in use,
     /// user on the shard is not the same as the user on the initiator,
     /// hence per-user limits should not be applied.
-    if (cluster.getSecret().empty())
+    if (!interserver_mode)
     {
         /// Does not matter on remote servers, because queries are sent under different user.
         new_settings.max_concurrent_queries_for_user = 0;
@@ -157,7 +163,8 @@ void executeQuery(
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster)
+    const ClusterPtr & not_optimized_cluster,
+    AdditionalShardFilterGenerator shard_filter_generator)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -167,17 +174,15 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, main_table, &query_info, log);
-    new_context->getClientInfo().distributed_depth += 1;
+    auto new_context = updateSettingsForCluster(!query_info.getCluster()->getSecret().empty(), context, settings, main_table, &query_info, log);
+    new_context->increaseDistributedDepth();
 
     size_t shards = query_info.getCluster()->getShardCount();
     for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
     {
-        ASTPtr query_ast_for_shard;
-        if (query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+        ASTPtr query_ast_for_shard = query_ast->clone();
+        if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
         {
-            query_ast_for_shard = query_ast->clone();
-
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
                 sharding_key_expr->getSampleBlock().getByPosition(0).type,
@@ -188,8 +193,21 @@ void executeQuery(
             OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
             visitor.visit(query_ast_for_shard);
         }
-        else
-            query_ast_for_shard = query_ast;
+
+        if (shard_filter_generator)
+        {
+            auto shard_filter = shard_filter_generator(shard_info.shard_num);
+            if (shard_filter)
+            {
+                auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
+
+                auto where_expression = select_query.where();
+                if (where_expression)
+                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
+
+                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
+            }
+        }
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
@@ -257,10 +275,11 @@ void executeQueryWithParallelReplicas(
     auto shard_info = not_optimized_cluster->getShardsInfo().front();
 
     const auto & settings = context->getSettingsRef();
-    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), shard_info.all_addresses.size());
+    ClusterPtr new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
+
+    auto all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
     auto remote_plan = std::make_unique<QueryPlan>();
-    auto plans = std::vector<QueryPlanPtr>();
 
     /// This is a little bit weird, but we construct an "empty" coordinator without
     /// any specified reading/coordination method (like Default, InOrder, InReverseOrder)
@@ -269,35 +288,13 @@ void executeQueryWithParallelReplicas(
     /// to then tell it about the reading method we chose.
     query_info.coordinator = coordinator;
 
-    UUID parallel_group_id = UUIDHelpers::generateV4();
-
-    plans.emplace_back(createLocalPlan(
-        query_ast,
-        stream_factory.header,
-        context,
-        stream_factory.processed_stage,
-        shard_info.shard_num,
-        /*shard_count*/1,
-        0,
-        all_replicas_count,
-        coordinator,
-        parallel_group_id));
-
-    if (!shard_info.hasRemoteConnections())
-    {
-        if (!plans.front())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "An empty plan was generated to read from local shard and there is no remote connections. This is a bug");
-        query_plan = std::move(*plans.front());
-        return;
-    }
-
     auto new_context = Context::createCopy(context);
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     auto external_tables = new_context->getExternalTables();
 
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
-        std::move(shard_info),
+        new_cluster,
         coordinator,
         stream_factory.header,
         stream_factory.processed_stage,
@@ -308,23 +305,9 @@ void executeQueryWithParallelReplicas(
         std::move(scalars),
         std::move(external_tables),
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-        query_info.storage_limits,
-        parallel_group_id);
+        query_info.storage_limits);
 
-    remote_plan->addStep(std::move(read_from_remote));
-    remote_plan->addInterpreterContext(context);
-    plans.emplace_back(std::move(remote_plan));
-
-    if (std::all_of(plans.begin(), plans.end(), [](const QueryPlanPtr & plan) { return !plan; }))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");
-
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
-    for (const auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
-
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
+    query_plan.addStep(std::move(read_from_remote));
 }
 
 }

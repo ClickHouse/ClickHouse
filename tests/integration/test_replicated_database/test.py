@@ -34,6 +34,7 @@ competing_node = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
+    stay_alive=True,
     macros={"shard": 1, "replica": 3},
 )
 snapshotting_node = cluster.add_instance(
@@ -80,15 +81,15 @@ def started_cluster():
 
 def test_create_replicated_table(started_cluster):
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica' || '1');"
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica' || '1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica2');"
     )
     assert (
         "Explicit zookeeper_path and replica_name are specified"
         in main_node.query_and_get_error(
-            "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+            "CREATE TABLE create_replicated_table.replicated_table (d Date, k UInt64, i32 Int32) "
             "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);"
         )
     )
@@ -96,7 +97,7 @@ def test_create_replicated_table(started_cluster):
     assert (
         "Explicit zookeeper_path and replica_name are specified"
         in main_node.query_and_get_error(
-            "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+            "CREATE TABLE create_replicated_table.replicated_table (d Date, k UInt64, i32 Int32) "
             "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);"
         )
     )
@@ -104,39 +105,42 @@ def test_create_replicated_table(started_cluster):
     assert (
         "This syntax for *MergeTree engine is deprecated"
         in main_node.query_and_get_error(
-            "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+            "CREATE TABLE create_replicated_table.replicated_table (d Date, k UInt64, i32 Int32) "
             "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);"
         )
     )
 
     main_node.query(
-        "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
+        "CREATE TABLE create_replicated_table.replicated_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
     )
 
     expected = (
-        "CREATE TABLE testdb.replicated_table\\n(\\n    `d` Date,\\n    `k` UInt64,\\n    `i32` Int32\\n)\\n"
+        "CREATE TABLE create_replicated_table.replicated_table\\n(\\n    `d` Date,\\n    `k` UInt64,\\n    `i32` Int32\\n)\\n"
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\n"
         "PARTITION BY toYYYYMM(d)\\nORDER BY k\\nSETTINGS index_granularity = 8192"
     )
-    assert_create_query([main_node, dummy_node], "testdb.replicated_table", expected)
-    # assert without replacing uuid
-    assert main_node.query("show create testdb.replicated_table") == dummy_node.query(
-        "show create testdb.replicated_table"
+    assert_create_query(
+        [main_node, dummy_node], "create_replicated_table.replicated_table", expected
     )
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+    # assert without replacing uuid
+    assert main_node.query(
+        "show create create_replicated_table.replicated_table"
+    ) == dummy_node.query("show create create_replicated_table.replicated_table")
+    main_node.query("DROP DATABASE create_replicated_table SYNC")
+    dummy_node.query("DROP DATABASE create_replicated_table SYNC")
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_simple_alter_table(started_cluster, engine):
+    database = f"test_simple_alter_table_{engine}"
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2');"
     )
     # test_simple_alter_table
-    name = "testdb.alter_test_{}".format(engine)
+    name = f"{database}.alter_test"
     main_node.query(
         "CREATE TABLE {} "
         "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
@@ -184,10 +188,9 @@ def test_simple_alter_table(started_cluster, engine):
 
     # test_create_replica_after_delay
     competing_node.query(
-        "CREATE DATABASE IF NOT EXISTS testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');"
+        f"CREATE DATABASE IF NOT EXISTS {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
     )
 
-    name = "testdb.alter_test_{}".format(engine)
     main_node.query("ALTER TABLE {} ADD COLUMN Added3 UInt32;".format(name))
     main_node.query("ALTER TABLE {} DROP COLUMN AddedNested1;".format(name))
     main_node.query("ALTER TABLE {} RENAME COLUMN Added1 TO AddedNested1;".format(name))
@@ -207,21 +210,23 @@ def test_simple_alter_table(started_cluster, engine):
     )
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
-    competing_node.query("DROP DATABASE testdb SYNC")
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
+    competing_node.query(f"DROP DATABASE {database} SYNC")
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_delete_from_table(started_cluster, engine):
+    database = f"delete_from_table_{engine}"
+
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard2', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard2', 'replica1');"
     )
 
-    name = "testdb.delete_test_{}".format(engine)
+    name = f"{database}.delete_test"
     main_node.query(
         "CREATE TABLE {} "
         "(id UInt64, value String) "
@@ -232,17 +237,13 @@ def test_delete_from_table(started_cluster, engine):
     dummy_node.query("INSERT INTO TABLE {} VALUES(1, 'bbbb');".format(name))
     dummy_node.query("INSERT INTO TABLE {} VALUES(2, 'bbbb');".format(name))
 
-    main_node.query(
-        "SET allow_experimental_lightweight_delete=1; DELETE FROM {} WHERE id=2;".format(
-            name
-        )
-    )
+    main_node.query("DELETE FROM {} WHERE id=2;".format(name))
 
     expected = "1\taaaa\n1\tbbbb"
 
     table_for_select = name
     if not "Replicated" in engine:
-        table_for_select = "cluster('testdb', {})".format(name)
+        table_for_select = f"cluster('{database}', {name})"
     for node in [main_node, dummy_node]:
         assert_eq_with_retry(
             node,
@@ -250,8 +251,8 @@ def test_delete_from_table(started_cluster, engine):
             expected,
         )
 
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
 def get_table_uuid(database, name):
@@ -279,18 +280,18 @@ def fixture_attachable_part(started_cluster):
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_alter_attach(started_cluster, attachable_part, engine):
+    database = f"alter_attach_{engine}"
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2');"
     )
 
-    name = "alter_attach_test_{}".format(engine)
     main_node.query(
-        f"CREATE TABLE testdb.{name} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+        f"CREATE TABLE {database}.alter_attach_test (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
-    table_uuid = get_table_uuid("testdb", name)
+    table_uuid = get_table_uuid(database, "alter_attach_test")
     # Provide and attach a part to the main node
     shutil.copytree(
         attachable_part,
@@ -299,187 +300,207 @@ def test_alter_attach(started_cluster, attachable_part, engine):
             f"database/store/{table_uuid[:3]}/{table_uuid}/detached/all_1_1_0",
         ),
     )
-    main_node.query(f"ALTER TABLE testdb.{name} ATTACH PART 'all_1_1_0'")
+    main_node.query(f"ALTER TABLE {database}.alter_attach_test ATTACH PART 'all_1_1_0'")
     # On the main node, data is attached
-    assert main_node.query(f"SELECT CounterID FROM testdb.{name}") == "123\n"
+    assert (
+        main_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
+        == "123\n"
+    )
     # On the other node, data is replicated only if using a Replicated table engine
     if engine == "ReplicatedMergeTree":
-        assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == "123\n"
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
+            == "123\n"
+        )
     else:
-        assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == ""
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_attach_test")
+            == ""
+        )
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_alter_drop_part(started_cluster, engine):
+    database = f"alter_drop_part_{engine}"
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2');"
     )
 
-    table = f"alter_drop_{engine}"
     part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
     main_node.query(
-        f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+        f"CREATE TABLE {database}.alter_drop_part (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    main_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (123)")
     if engine == "MergeTree":
-        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
-    main_node.query(f"ALTER TABLE testdb.{table} DROP PART '{part_name}'")
-    assert main_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+        dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
+    main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
+    assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
-        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
+        )
     else:
-        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == "456\n"
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
+            == "456\n"
+        )
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_alter_detach_part(started_cluster, engine):
+    database = f"alter_detach_part_{engine}"
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2');"
     )
 
-    table = f"alter_detach_{engine}"
     part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
     main_node.query(
-        f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+        f"CREATE TABLE {database}.alter_detach (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    main_node.query(f"INSERT INTO {database}.alter_detach VALUES (123)")
     if engine == "MergeTree":
-        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
-    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
-    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+        dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
+    main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
     if engine == "ReplicatedMergeTree":
         # The detach operation is still replicated at the table engine level
         assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
     else:
         assert dummy_node.query(detached_parts_query) == ""
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_alter_drop_detached_part(started_cluster, engine):
+    database = f"alter_drop_detached_part_{engine}"
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2');"
     )
 
-    table = f"alter_drop_detached_{engine}"
     part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
     main_node.query(
-        f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+        f"CREATE TABLE {database}.alter_drop_detached (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
-    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    main_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (123)")
+    main_node.query(
+        f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
+    )
     if engine == "MergeTree":
-        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
-        dummy_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
-    main_node.query(f"ALTER TABLE testdb.{table} DROP DETACHED PART '{part_name}'")
-    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+        dummy_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (456)")
+        dummy_node.query(
+            f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
+        )
+    main_node.query(
+        f"ALTER TABLE {database}.alter_drop_detached DROP DETACHED PART '{part_name}'"
+    )
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_drop_detached'"
     assert main_node.query(detached_parts_query) == ""
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
 
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+    main_node.query(f"DROP DATABASE {database} SYNC")
+    dummy_node.query(f"DROP DATABASE {database} SYNC")
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
 def test_alter_drop_partition(started_cluster, engine):
+    database = f"alter_drop_partition_{engine}"
     main_node.query(
-        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard1', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard1', 'replica2');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica2');"
     )
     snapshotting_node.query(
-        "CREATE DATABASE alter_drop_partition ENGINE = Replicated('/clickhouse/databases/test_alter_drop_partition', 'shard2', 'replica1');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard2', 'replica1');"
     )
 
-    table = f"alter_drop_partition.alter_drop_{engine}"
     main_node.query(
-        f"CREATE TABLE {table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
+        f"CREATE TABLE {database}.alter_drop (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO {table} VALUES (123)")
+    main_node.query(f"INSERT INTO {database}.alter_drop VALUES (123)")
     if engine == "MergeTree":
-        dummy_node.query(f"INSERT INTO {table} VALUES (456)")
-    snapshotting_node.query(f"INSERT INTO {table} VALUES (789)")
+        dummy_node.query(f"INSERT INTO {database}.alter_drop VALUES (456)")
+    snapshotting_node.query(f"INSERT INTO {database}.alter_drop VALUES (789)")
     main_node.query(
-        f"ALTER TABLE {table} ON CLUSTER alter_drop_partition DROP PARTITION ID 'all'",
+        f"ALTER TABLE {database}.alter_drop ON CLUSTER {database} DROP PARTITION ID 'all'",
         settings={"replication_alter_partitions_sync": 2},
     )
     assert (
         main_node.query(
-            f"SELECT CounterID FROM clusterAllReplicas('alter_drop_partition', {table})"
+            f"SELECT CounterID FROM clusterAllReplicas('{database}', {database}.alter_drop)"
         )
         == ""
     )
-    assert dummy_node.query(f"SELECT CounterID FROM {table}") == ""
-    main_node.query("DROP DATABASE alter_drop_partition")
-    dummy_node.query("DROP DATABASE alter_drop_partition")
-    snapshotting_node.query("DROP DATABASE alter_drop_partition")
+    assert dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop") == ""
+    main_node.query(f"DROP DATABASE {database}")
+    dummy_node.query(f"DROP DATABASE {database}")
+    snapshotting_node.query(f"DROP DATABASE {database}")
 
 
 def test_alter_fetch(started_cluster):
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        "CREATE DATABASE alter_fetch ENGINE = Replicated('/test/alter_fetch', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        "CREATE DATABASE alter_fetch ENGINE = Replicated('/test/alter_fetch', 'shard1', 'replica2');"
     )
 
     main_node.query(
-        "CREATE TABLE testdb.fetch_source (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)"
+        "CREATE TABLE alter_fetch.fetch_source (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)"
     )
     main_node.query(
-        "CREATE TABLE testdb.fetch_target (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)"
+        "CREATE TABLE alter_fetch.fetch_target (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)"
     )
-    main_node.query("INSERT INTO testdb.fetch_source VALUES (123)")
-    table_uuid = get_table_uuid("testdb", "fetch_source")
+    main_node.query("INSERT INTO alter_fetch.fetch_source VALUES (123)")
+    table_uuid = get_table_uuid("alter_fetch", "fetch_source")
     main_node.query(
-        f"ALTER TABLE testdb.fetch_target FETCH PART 'all_0_0_0' FROM '/clickhouse/tables/{table_uuid}/{{shard}}' "
+        f"ALTER TABLE alter_fetch.fetch_target FETCH PART 'all_0_0_0' FROM '/clickhouse/tables/{table_uuid}/{{shard}}' "
     )
-    detached_parts_query = "SELECT name FROM system.detached_parts WHERE database='testdb' AND table='fetch_target'"
+    detached_parts_query = "SELECT name FROM system.detached_parts WHERE database='alter_fetch' AND table='fetch_target'"
     assert main_node.query(detached_parts_query) == "all_0_0_0\n"
     assert dummy_node.query(detached_parts_query) == ""
 
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
+    main_node.query("DROP DATABASE alter_fetch SYNC")
+    dummy_node.query("DROP DATABASE alter_fetch SYNC")
 
 
 def test_alters_from_different_replicas(started_cluster):
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard1', 'replica2');"
     )
 
     # test_alters_from_different_replicas
     competing_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');"
+        "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard1', 'replica3');"
     )
 
     main_node.query(
-        "CREATE TABLE testdb.concurrent_test "
+        "CREATE TABLE alters_from_different_replicas.concurrent_test "
         "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
         "ENGINE = MergeTree PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);"
     )
 
     main_node.query(
-        "CREATE TABLE testdb.dist AS testdb.concurrent_test ENGINE = Distributed(testdb, testdb, concurrent_test, CounterID)"
+        "CREATE TABLE alters_from_different_replicas.dist AS alters_from_different_replicas.concurrent_test ENGINE = Distributed(alters_from_different_replicas, alters_from_different_replicas, concurrent_test, CounterID)"
     )
 
     dummy_node.stop_clickhouse(kill=True)
@@ -488,7 +509,7 @@ def test_alters_from_different_replicas(started_cluster):
     assert (
         "There are 1 unfinished hosts (0 of them are currently active)"
         in competing_node.query_and_get_error(
-            "ALTER TABLE testdb.concurrent_test ADD COLUMN Added0 UInt32;",
+            "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
             settings=settings,
         )
     )
@@ -497,7 +518,7 @@ def test_alters_from_different_replicas(started_cluster):
         "distributed_ddl_output_mode": "null_status_on_timeout",
     }
     assert "shard1\treplica2\tQUEUED\t" in main_node.query(
-        "ALTER TABLE testdb.concurrent_test ADD COLUMN Added2 UInt32;",
+        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added2 UInt32;",
         settings=settings,
     )
     settings = {
@@ -505,22 +526,22 @@ def test_alters_from_different_replicas(started_cluster):
         "distributed_ddl_output_mode": "never_throw",
     }
     assert "shard1\treplica2\tQUEUED\t" in competing_node.query(
-        "ALTER TABLE testdb.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;",
+        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added1 UInt32 AFTER Added0;",
         settings=settings,
     )
     dummy_node.start_clickhouse()
     main_node.query(
-        "ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;"
+        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN AddedNested1 Nested(A UInt32, B UInt64) AFTER Added2;"
     )
     competing_node.query(
-        "ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested1.C Array(String) AFTER AddedNested1.B;"
+        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN AddedNested1.C Array(String) AFTER AddedNested1.B;"
     )
     main_node.query(
-        "ALTER TABLE testdb.concurrent_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;"
+        "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;"
     )
 
     expected = (
-        "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
+        "CREATE TABLE alters_from_different_replicas.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32,\\n"
         "    `Added0` UInt32,\\n    `Added1` UInt32,\\n    `Added2` UInt32,\\n    `AddedNested1.A` Array(UInt32),\\n"
         "    `AddedNested1.B` Array(UInt64),\\n    `AddedNested1.C` Array(String),\\n    `AddedNested2.A` Array(UInt32),\\n"
@@ -528,51 +549,63 @@ def test_alters_from_different_replicas(started_cluster):
         "ENGINE = MergeTree\\nPARTITION BY toYYYYMM(StartDate)\\nORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)\\nSETTINGS index_granularity = 8192"
     )
 
-    assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
+    assert_create_query(
+        [main_node, competing_node],
+        "alters_from_different_replicas.concurrent_test",
+        expected,
+    )
 
     # test_create_replica_after_delay
-    main_node.query("DROP TABLE testdb.concurrent_test SYNC")
+    main_node.query("DROP TABLE alters_from_different_replicas.concurrent_test SYNC")
     main_node.query(
-        "CREATE TABLE testdb.concurrent_test "
+        "CREATE TABLE alters_from_different_replicas.concurrent_test "
         "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
         "ENGINE = ReplicatedMergeTree ORDER BY CounterID;"
     )
 
     expected = (
-        "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
+        "CREATE TABLE alters_from_different_replicas.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n"
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
-    assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
+    assert_create_query(
+        [main_node, competing_node],
+        "alters_from_different_replicas.concurrent_test",
+        expected,
+    )
 
     main_node.query(
-        "INSERT INTO testdb.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)"
+        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)"
     )
 
     # test_replica_restart
     main_node.restart_clickhouse()
 
     expected = (
-        "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
+        "CREATE TABLE alters_from_different_replicas.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n"
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
     # test_snapshot_and_snapshot_recover
     snapshotting_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard2', 'replica1');"
+        "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard2', 'replica1');"
     )
     snapshot_recovering_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard2', 'replica2');"
+        "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard2', 'replica2');"
     )
-    assert_create_query(all_nodes, "testdb.concurrent_test", expected)
+    assert_create_query(
+        all_nodes, "alters_from_different_replicas.concurrent_test", expected
+    )
 
-    main_node.query("SYSTEM FLUSH DISTRIBUTED testdb.dist")
+    main_node.query("SYSTEM FLUSH DISTRIBUTED alters_from_different_replicas.dist")
     main_node.query(
-        "ALTER TABLE testdb.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1"
+        "ALTER TABLE alters_from_different_replicas.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1"
     )
-    res = main_node.query("ALTER TABLE testdb.concurrent_test DELETE WHERE UserID % 2")
+    res = main_node.query(
+        "ALTER TABLE alters_from_different_replicas.concurrent_test DELETE WHERE UserID % 2"
+    )
     assert (
         "shard1\treplica1\tOK" in res
         and "shard1\treplica2\tOK" in res
@@ -589,28 +622,34 @@ def test_alters_from_different_replicas(started_cluster):
     )
     assert (
         main_node.query(
-            "SELECT shard_num, replica_num, host_name FROM system.clusters WHERE cluster='testdb'"
+            "SELECT shard_num, replica_num, host_name FROM system.clusters WHERE cluster='alters_from_different_replicas'"
         )
         == expected
     )
 
     # test_drop_and_create_replica
-    main_node.query("DROP DATABASE testdb SYNC")
+    main_node.query("DROP DATABASE alters_from_different_replicas SYNC")
     main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard1', 'replica1');"
     )
 
     expected = (
-        "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
+        "CREATE TABLE alters_from_different_replicas.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n"
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
-    assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
-    assert_create_query(all_nodes, "testdb.concurrent_test", expected)
+    assert_create_query(
+        [main_node, competing_node],
+        "alters_from_different_replicas.concurrent_test",
+        expected,
+    )
+    assert_create_query(
+        all_nodes, "alters_from_different_replicas.concurrent_test", expected
+    )
 
     for node in all_nodes:
-        node.query("SYSTEM SYNC REPLICA testdb.concurrent_test")
+        node.query("SYSTEM SYNC REPLICA alters_from_different_replicas.concurrent_test")
 
     expected = (
         "0\t2021-02-02\t4249604106\n"
@@ -622,18 +661,22 @@ def test_alters_from_different_replicas(started_cluster):
 
     assert_eq_with_retry(
         dummy_node,
-        "SELECT CounterID, StartDate, UserID FROM testdb.dist ORDER BY CounterID",
+        "SELECT CounterID, StartDate, UserID FROM alters_from_different_replicas.dist ORDER BY CounterID",
         expected,
     )
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
-    competing_node.query("DROP DATABASE testdb SYNC")
-    snapshotting_node.query("DROP DATABASE testdb SYNC")
-    snapshot_recovering_node.query("DROP DATABASE testdb SYNC")
+    main_node.query("DROP DATABASE alters_from_different_replicas SYNC")
+    dummy_node.query("DROP DATABASE alters_from_different_replicas SYNC")
+    competing_node.query("DROP DATABASE alters_from_different_replicas SYNC")
+    snapshotting_node.query("DROP DATABASE alters_from_different_replicas SYNC")
+    snapshot_recovering_node.query("DROP DATABASE alters_from_different_replicas SYNC")
 
 
 def create_some_tables(db):
-    settings = {"distributed_ddl_task_timeout": 0}
+    settings = {
+        "distributed_ddl_task_timeout": 0,
+        "allow_experimental_object_type": 1,
+        "allow_suspicious_codecs": 1,
+    }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
     dummy_node.query(
         f"CREATE TABLE {db}.t2 (s String) ENGINE=Memory", settings=settings
@@ -651,11 +694,11 @@ def create_some_tables(db):
         settings=settings,
     )
     dummy_node.query(
-        f"CREATE TABLE {db}.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt2 (n int CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12))) ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     main_node.query(
-        f"CREATE TABLE {db}.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt3 (n int, json Object('json') materialized '') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
@@ -829,7 +872,10 @@ def test_recover_staled_replica(started_cluster):
     ]:
         assert main_node.query(f"SELECT (*,).1 FROM recover.{table}") == "42\n"
     for table in ["t2", "rmt1", "rmt2", "rmt4", "d1", "d2", "mt2", "mv1", "mv3"]:
-        assert dummy_node.query(f"SELECT (*,).1 FROM recover.{table}") == "42\n"
+        assert (
+            dummy_node.query(f"SELECT '{table}', (*,).1 FROM recover.{table}")
+            == f"{table}\t42\n"
+        )
     for table in ["m1", "mt1"]:
         assert dummy_node.query(f"SELECT count() FROM recover.{table}") == "0\n"
     global test_recover_staled_replica_run
@@ -1067,10 +1113,10 @@ def test_server_uuid(started_cluster):
 
 def test_sync_replica(started_cluster):
     main_node.query(
-        "CREATE DATABASE test_sync_database ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
+        "CREATE DATABASE test_sync_database ENGINE = Replicated('/test/sync_replica', 'shard1', 'replica1');"
     )
     dummy_node.query(
-        "CREATE DATABASE test_sync_database ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');"
+        "CREATE DATABASE test_sync_database ENGINE = Replicated('/test/sync_replica', 'shard1', 'replica2');"
     )
 
     number_of_tables = 1000
@@ -1117,16 +1163,19 @@ def test_sync_replica(started_cluster):
     )
 
     lp1 = main_node.query(
-        "select value from system.zookeeper where path='/clickhouse/databases/test1/replicas/shard1|replica1' and name='log_ptr'"
+        "select value from system.zookeeper where path='/test/sync_replica/replicas/shard1|replica1' and name='log_ptr'"
     )
     lp2 = main_node.query(
-        "select value from system.zookeeper where path='/clickhouse/databases/test1/replicas/shard1|replica2' and name='log_ptr'"
+        "select value from system.zookeeper where path='/test/sync_replica/replicas/shard1|replica2' and name='log_ptr'"
     )
     max_lp = main_node.query(
-        "select value from system.zookeeper where path='/clickhouse/databases/test1/' and name='max_log_ptr'"
+        "select value from system.zookeeper where path='/test/sync_replica/' and name='max_log_ptr'"
     )
     assert lp1 == max_lp
     assert lp2 == max_lp
+
+    main_node.query("DROP DATABASE test_sync_database SYNC")
+    dummy_node.query("DROP DATABASE test_sync_database SYNC")
 
 
 def test_force_synchronous_settings(started_cluster):
@@ -1177,7 +1226,7 @@ def test_force_synchronous_settings(started_cluster):
 
     def select_func():
         dummy_node.query(
-            "SELECT sleepEachRow(1) FROM test_force_synchronous_settings.t"
+            "SELECT sleepEachRow(1) FROM test_force_synchronous_settings.t SETTINGS function_sleep_max_microseconds_per_block = 0"
         )
 
     select_thread = threading.Thread(target=select_func)
@@ -1213,7 +1262,7 @@ def test_recover_digest_mismatch(started_cluster):
         "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
         "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
         "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
-        # f"rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/", # Directory already exists
+        "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
         "rm -rf /var/lib/clickhouse/store",
     ]
 
@@ -1244,3 +1293,61 @@ def test_recover_digest_mismatch(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
 
     print("Everything Okay")
+
+
+def test_replicated_table_structure_alter(started_cluster):
+    main_node.query("DROP DATABASE IF EXISTS table_structure")
+    dummy_node.query("DROP DATABASE IF EXISTS table_structure")
+
+    main_node.query(
+        "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica2');"
+    )
+    competing_node.query(
+        "CREATE DATABASE table_structure ENGINE = Replicated('/clickhouse/databases/table_structure', 'shard1', 'replica3');"
+    )
+
+    competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
+    dummy_node.query("DETACH DATABASE table_structure")
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "CREATE TABLE table_structure.rmt (n int, v UInt64) ENGINE=ReplicatedReplacingMergeTree(v) ORDER BY n",
+        settings=settings,
+    )
+
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    competing_node.query("DETACH DATABASE table_structure")
+
+    main_node.query(
+        "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
+    )
+    main_node.query(
+        "ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings
+    )
+    main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
+
+    command = "rm -f /var/lib/clickhouse/metadata/table_structure/mem.sql"
+    competing_node.exec_in_container(["bash", "-c", command])
+    competing_node.restart_clickhouse(kill=True)
+
+    dummy_node.query("ATTACH DATABASE table_structure")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    assert "1\t2\t3\n" == dummy_node.query("SELECT * FROM table_structure.rmt")
+
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    competing_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    # time.sleep(600)
+    assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
+    assert "1\t2\t3\n" == competing_node.query("SELECT * FROM table_structure.rmt")
+
+    main_node.query("ALTER TABLE table_structure.rmt ADD COLUMN k int")
+    main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3, 4)")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query(
+        "SELECT * FROM table_structure.rmt ORDER BY k"
+    )

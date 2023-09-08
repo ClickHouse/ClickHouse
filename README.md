@@ -1,6 +1,11 @@
-[![ClickHouse — open source distributed column-oriented DBMS](https://github.com/ClickHouse/clickhouse-presentations/raw/master/images/logo-400x240.png)](https://clickhouse.com)
+[<img alt="ClickHouse — open source distributed column-oriented DBMS" width="400px" src="https://clickhouse.com/images/ch_gh_logo_rounded.png" />](https://clickhouse.com?utm_source=github)
 
 ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.
+
+## How To Install (Linux, macOS, FreeBSD)
+```
+curl https://clickhouse.com/ | sh
+```
 
 ## Useful Links
 
@@ -9,19 +14,31 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Tutorial](https://clickhouse.com/docs/en/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/en/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
-* [Slack](https://clickhousedb.slack.com/) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
+* [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
-* [Code Browser (Woboq)](https://clickhouse.com/codebrowser/ClickHouse/index.html) with syntax highlight and navigation.
-* [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlight, powered by github.dev.
+* [Code Browser (Woboq)](https://clickhouse.com/codebrowser/ClickHouse/index.html) with syntax highlighting and navigation.
+* [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlighting, powered by github.dev.
+* [Static Analysis (SonarCloud)](https://sonarcloud.io/project/issues?resolved=false&id=ClickHouse_ClickHouse) proposes C++ quality improvements.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Upcoming Events
-* [**ClickHouse Workshop**](https://clickhouse.com/company/events/2023-02-15-clickhouse-workshop?utm_source=github&utm_medium=social&utm_campaign=workshop) - Feb 15 & 16 - In this 2-day (3 hrs per day) free training, topics range from introductory content to a deep dive on interacting with and understanding your data. There will be both live training and hands-on labs.
-* [**v23.2 Release Webinar**](https://clickhouse.com/company/events/v23-2-release-webinar?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-02) - Feb 23 - 23.2 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
-* [**ClickHouse Meetup in Amsterdam**](https://www.meetup.com/clickhouse-netherlands-user-group/events/291485868/) - Mar 9 - The first ClickHouse Amsterdam Meetup of 2023 is here! 🎉 Join us for short lightning talks and long discussions. Food, drinks & good times on us.
-* [**ClickHouse Meetup in SF Bay Area**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/291490121/) - Mar 14 - A night to meet with ClickHouse team in the San Francisco area! Food and drink are a given...but networking is the primary focus.
-* [**ClickHouse Meetup in Austin**](https://www.meetup.com/clickhouse-austin-user-group/events/291486654/) - Mar 16 - The first ClickHouse Meetup in Austin is happening soon! Interested in speaking, let us know!
+
+* [**v23.8 Community Call**](https://clickhouse.com/company/events/v23-8-community-release-call?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-08) - Aug 31 - 23.8 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
+* [**ClickHouse & AI - A Meetup in San Francisco**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/294472987) - Aug 8
+* [**ClickHouse Meetup in Paris**](https://www.meetup.com/clickhouse-france-user-group/events/294283460) - Sep 12
+
+Also, keep an eye out for upcoming meetups around the world. Somewhere else you want us to be? Please feel free to reach out to tyler <at> clickhouse <dot> com.
 
 ## Recent Recordings
-* **FOSDEM 2023**: In the "Fast and Streaming Data" room Alexey gave a talk entitled "Building Analytical Apps With ClickHouse" that looks at the landscape of data tools, an interesting data set, and how you can interact with data quickly. Check out the recording on **[YouTube](https://www.youtube.com/watch?v=JlcI2Vfz_uk)**.
-* **Recording available**: [**v23.1 Release Webinar**](https://www.youtube.com/watch?v=zYSZXBnTMSE) 23.1 is the ClickHouse New Year release. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release. Inverted indices, query cache, and so -- very -- much more.
+* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
+* **Recording available**: [**v23.6 Release Webinar**](https://www.youtube.com/watch?v=cuf_hYn7dqU) All the features of 23.6, one convenient video! Watch it now!
+* **All release webinar recordings**: [YouTube playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU)
+
+  
+ ## Interested in joining ClickHouse and making it your full-time job? 
+  
+We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics. Here, you will have an opportunity to solve some of the most cutting-edge technical challenges and have direct ownership of your work and vision. If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
+  
+Check out our **current openings** here: https://clickhouse.com/company/careers 
+  
+Cant find what you are looking for, but want to let us know you are interested in joining ClickHouse? Email careers@clickhouse.com! 

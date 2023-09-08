@@ -56,6 +56,8 @@ public:
         LITTLE_ENDIAN_BYTE_ORDER = 3 /// little-endian byte-order
     };
 
+    static const std::streamsize	DEFAULT_MAX_CSTR_LENGTH { 1024 };
+
     BinaryWriter(std::ostream & ostr, StreamByteOrder byteOrder = NATIVE_BYTE_ORDER);
     /// Creates the BinaryWriter.
 
@@ -81,7 +83,7 @@ public:
     BinaryWriter & operator<<(float value);
     BinaryWriter & operator<<(double value);
 
-#if defined(POCO_HAVE_INT64) && !defined(POCO_LONG_IS_64_BIT)
+#if !defined(POCO_LONG_IS_64_BIT)
     BinaryWriter & operator<<(Int64 value);
     BinaryWriter & operator<<(UInt64 value);
 #endif
@@ -114,7 +116,6 @@ public:
     /// written out. value is then shifted by seven bits and the next byte is written.
     /// This process is repeated until the entire integer has been written.
 
-#if defined(POCO_HAVE_INT64)
     void write7BitEncoded(UInt64 value);
     /// Writes a 64-bit unsigned integer in a compressed format.
     /// The value written out seven bits at a time, starting
@@ -125,13 +126,15 @@ public:
     /// If value will not fit in seven bits, the high bit is set on the first byte and
     /// written out. value is then shifted by seven bits and the next byte is written.
     /// This process is repeated until the entire integer has been written.
-#endif
 
     void writeRaw(const std::string & rawData);
     /// Writes the string as-is to the stream.
 
     void writeRaw(const char * buffer, std::streamsize length);
     /// Writes length raw bytes from the given buffer to the stream.
+
+    void writeCString(const char* cString, std::streamsize maxLength = DEFAULT_MAX_CSTR_LENGTH);
+		/// Writes zero-terminated C-string.
 
     void writeBOM();
     /// Writes a byte-order mark to the stream. A byte order mark is

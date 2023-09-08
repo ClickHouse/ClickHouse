@@ -19,8 +19,8 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -150,11 +150,11 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
 
     if (restore_coordination)
     {
-        restore_coordination->setStage(restore_settings.host_id, new_stage, message);
+        restore_coordination->setStage(new_stage, message);
         if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
         else
-            restore_coordination->waitForStage(all_hosts, new_stage);
+            restore_coordination->waitForStage(new_stage);
     }
 }
 
@@ -316,12 +316,13 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
             = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
     }
 
-    auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
+    auto read_buffer = backup->readFile(*metadata_path);
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
@@ -410,7 +411,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 
     if (metadata_path)
     {
-        auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
+        auto read_buffer = backup->readFile(*metadata_path);
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -622,6 +623,24 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     {
         e.addMessage("While checking database {}", backQuoteIfNeed(database_name));
         throw;
+    }
+}
+
+void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
+{
+    constexpr auto setting_name = "storage_policy";
+    if (query_ptr && restore_settings.storage_policy.has_value())
+    {
+        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        if (storage && storage->settings)
+        {
+            if (restore_settings.storage_policy.value().empty())
+                /// it has been set to "" deliberately, so the source storage policy is erased
+                storage->settings->changes.removeSetting(setting_name);
+            else
+                /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
+                storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
+        }
     }
 }
 

@@ -18,6 +18,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
@@ -61,6 +62,8 @@ void JoinClause::dump(WriteBuffer & buffer) const
             for (const auto & dag_node : dag_nodes)
             {
                 dag_nodes_dump += dag_node->result_name;
+                dag_nodes_dump += " ";
+                dag_nodes_dump += dag_node->result_type->getName();
                 dag_nodes_dump += ", ";
             }
 
@@ -539,7 +542,8 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
     if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return;
 
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dictionary)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
+        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
     else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
         table_join->setStorageJoin(storage_key_value);
@@ -604,8 +608,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name)
+        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name_)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
@@ -631,6 +635,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
+        Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
             const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
@@ -640,8 +645,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
             table_join->setRename(*source_column_name, result_column.name);
+            required_column_names.push_back(*source_column_name);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+        return storage->getJoinLocked(table_join, planner_context->getQueryContext(), required_column_names);
     }
 
     /** JOIN with constant.
@@ -655,7 +661,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
-    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -708,7 +714,11 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-        return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Can't execute any of specified algorithms for specified strictness/kind and right storage type");

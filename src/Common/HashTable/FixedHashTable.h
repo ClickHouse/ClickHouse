@@ -19,7 +19,7 @@ struct FixedHashTableCell
     using mapped_type = VoidMapped;
     bool full;
 
-    FixedHashTableCell() {} //-V730 /// NOLINT
+    FixedHashTableCell() {} /// NOLINT
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT
@@ -358,7 +358,7 @@ public:
         std::pair<LookupResult, bool> res;
         emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
-            insertSetMapped(res.first->getMapped(), x);
+            res.first->setMapped(x);
 
         return res;
     }

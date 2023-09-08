@@ -15,8 +15,7 @@
 #include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
-#include <base/strong_typedef.h>
-#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -108,7 +107,8 @@ struct CustomType
     {
         virtual ~CustomTypeImpl() = default;
         virtual const char * getTypeName() const = 0;
-        virtual String toString() const = 0;
+        virtual String toString(bool show_secrets) const = 0;
+        virtual bool isSecret() const = 0;
 
         virtual bool operator < (const CustomTypeImpl &) const = 0;
         virtual bool operator <= (const CustomTypeImpl &) const = 0;
@@ -120,8 +120,9 @@ struct CustomType
     CustomType() = default;
     explicit CustomType(std::shared_ptr<const CustomTypeImpl> impl_) : impl(impl_) {}
 
+    bool isSecret() const { return impl->isSecret(); }
     const char * getTypeName() const { return impl->getTypeName(); }
-    String toString() const { return impl->toString(); }
+    String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
     const CustomTypeImpl & getImpl() { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
@@ -447,7 +448,7 @@ public:
 
     Types::Which getType() const { return which; }
 
-    constexpr std::string_view getTypeName() const { return magic_enum::enum_name(which); }
+    std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
     template <typename T>
@@ -895,7 +896,7 @@ auto & Field::safeGet()
 
 
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
+Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
@@ -1003,7 +1004,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 
 String toString(const Field & x);
 
-String fieldTypeToString(Field::Types::Which type);
+std::string_view fieldTypeToString(Field::Types::Which type);
 
 }
 
@@ -1017,7 +1018,7 @@ struct fmt::formatter<DB::Field>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("Invalid format");
+            throw fmt::format_error("Invalid format");
 
         return it;
     }
@@ -1025,6 +1026,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", toString(x));
+        return fmt::format_to(ctx.out(), "{}", toString(x));
     }
 };

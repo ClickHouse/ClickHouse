@@ -6,7 +6,10 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
+#include "Storages/IStorage.h"
+#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -26,6 +29,32 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+class TableNameHints : public IHints<1, TableNameHints>
+{
+public:
+    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
+        : context(context_),
+        database(database_)
+    {
+    }
+    Names getAllRegisteredNames() const override
+    {
+        Names result;
+        if (database)
+        {
+            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            {
+                const auto & storage_id = table_it->table()->getStorageID();
+                result.emplace_back(storage_id.getTableName());
+            }
+        }
+        return result;
+    }
+private:
+    ContextPtr context;
+    ConstDatabasePtr database;
+};
 
 class IDatabase;
 class Exception;
@@ -79,6 +108,8 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -111,6 +142,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
+    FutureSetPtr future_set;
 };
 
 ///TODO maybe remove shared_ptr from here?
@@ -215,7 +247,9 @@ public:
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
+    String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+    void dequeueDroppedTableCleanup(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid);
 
@@ -235,6 +269,21 @@ public:
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
+
+    struct TableMarkedAsDropped
+    {
+        StorageID table_id = StorageID::createEmpty();
+        StoragePtr table;
+        String metadata_path;
+        time_t drop_time{};
+    };
+    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
+
+    TablesMarkedAsDropped getTablesMarkedDropped()
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return tables_marked_dropped;
+    }
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -242,7 +291,6 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
-    void assertDatabaseExistsUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
@@ -263,15 +311,6 @@ private:
         return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
 
-    struct TableMarkedAsDropped
-    {
-        StorageID table_id = StorageID::createEmpty();
-        StoragePtr table;
-        String metadata_path;
-        time_t drop_time{};
-    };
-    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
-
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
@@ -279,7 +318,6 @@ private:
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
-    static constexpr time_t drop_error_cooldown_sec = 5;
 
     mutable std::mutex databases_mutex;
 
@@ -298,6 +336,8 @@ private:
 
     Poco::Logger * log;
 
+    std::atomic_bool is_shutting_down = false;
+
     /// Do not allow simultaneous execution of DDL requests on the same table.
     /// database name -> database guard -> (table name mutex, counter),
     /// counter: how many threads are running a query on the table at the same time
@@ -311,6 +351,7 @@ private:
     mutable std::mutex ddl_guards_mutex;
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
     std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
@@ -326,6 +367,9 @@ private:
     time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
     static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
     time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
+
+    static constexpr time_t default_drop_error_cooldown_sec = 5;
+    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
 };
 
 /// This class is useful when creating a table or database.

@@ -14,7 +14,7 @@ ClickHouse:
 - Периодически обновляет их и динамически подгружает отсутствующие значения.
 - Позволяет создавать внешние словари с помощью xml-файлов или [DDL-запросов](../../statements/create/dictionary.md#create-dictionary-query).
 
-Конфигурация внешних словарей может находится в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config).
+Конфигурация внешних словарей может находиться в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [dictionaries_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config).
 
 Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries_lazy_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load).
 

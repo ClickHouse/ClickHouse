@@ -41,8 +41,9 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/grpc_config.xml"],
     # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
-    # second_deadlock_stack -- just ordinary option we use everywhere, don't want to overwrite it
-    env_variables={"TSAN_OPTIONS": "report_atomic_races=0 second_deadlock_stack=1"},
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
+    },
 )
 main_channel = None
 
@@ -351,9 +352,13 @@ def test_authentication():
 
 
 def test_logs():
-    logs = query_and_get_logs("SELECT 1", settings={"send_logs_level": "debug"})
-    assert "SELECT 1" in logs
-    assert "Read 1 rows" in logs
+    query = "SELECT has(groupArray(number), 42) FROM numbers(1000000) SETTINGS max_block_size=100000"
+    logs = query_and_get_logs(
+        query,
+        settings={"send_logs_level": "debug"},
+    )
+    assert query in logs
+    assert "Read 1000000 rows" in logs
     assert "Peak memory usage" in logs
 
 
@@ -594,8 +599,6 @@ def test_cancel_while_processing_input():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQueryWithStreamInput(send_query_info())
     assert result.cancelled == True
-    assert result.progress.written_rows == 6
-    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
 
 
 def test_cancel_while_generating_output():

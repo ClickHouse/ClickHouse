@@ -1,13 +1,7 @@
 # docker build -t clickhouse/performance-comparison .
-FROM ubuntu:20.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-
-ENV LANG=C.UTF-8
-ENV TZ=Europe/Moscow
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
@@ -51,10 +45,9 @@ COPY * /
 # node #0 should be less stable because of system interruptions. We bind
 # randomly to node 1 or 0 to gather some statistics on that. We have to bind
 # both servers and the tmpfs on which the database is stored. How to do it
-# through Yandex Sandbox API is unclear, but by default tmpfs uses
+# is unclear, but by default tmpfs uses
 # 'process allocation policy', not sure which process but hopefully the one that
-# writes to it, so just bind the downloader script as well. We could also try to
-# remount it with proper options in Sandbox task.
+# writes to it, so just bind the downloader script as well.
 # https://www.kernel.org/doc/Documentation/filesystems/tmpfs.txt
 # Double-escaped backslashes are a tribute to the engineering wonder of docker --
 # it gives '/bin/sh: 1: [bash,: not found' otherwise.

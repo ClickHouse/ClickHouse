@@ -168,3 +168,15 @@ SELECT format('{} {}', 'Hello', 'World')
 ## trimBoth(s) {#trimboths}
 
 返回一个字符串，用于删除任一侧的空白字符。
+
+## soundex(s)
+
+返回一个字符串的soundex值。输出类型是FixedString，示例如下：
+
+``` sql
+select soundex('aksql');
+
+┌─soundex('aksel')─┐
+│ A240             │
+└──────────────────┘
+```

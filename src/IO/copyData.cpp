@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace
@@ -89,6 +90,13 @@ void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, const std::atom
 void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::function<void()> cancellation_hook)
 {
     copyDataImpl(from, to, true, bytes, cancellation_hook, nullptr);
+}
+
+void copyDataMaxBytes(ReadBuffer & from, WriteBuffer & to, size_t max_bytes)
+{
+    copyDataImpl(from, to, false, max_bytes, nullptr, nullptr);
+    if (!from.eof())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data, max readable size reached.");
 }
 
 void copyDataWithThrottler(ReadBuffer & from, WriteBuffer & to, const std::atomic<int> & is_cancelled, ThrottlerPtr throttler)

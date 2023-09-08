@@ -8,6 +8,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -31,6 +32,9 @@ namespace ErrorCodes
 
 namespace NamedCollectionUtils
 {
+
+static std::atomic<bool> is_loaded_from_config = false;
+static std::atomic<bool> is_loaded_from_sql = false;
 
 class LoadFromConfig
 {
@@ -222,24 +226,15 @@ public:
 
     void remove(const std::string & collection_name)
     {
-        if (!removeIfExists(collection_name))
+        auto collection_path = getMetadataPath(collection_name);
+        if (!fs::exists(collection_path))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
                 "Cannot remove collection `{}`, because it doesn't exist",
                 collection_name);
         }
-    }
-
-    bool removeIfExists(const std::string & collection_name)
-    {
-        auto collection_path = getMetadataPath(collection_name);
-        if (fs::exists(collection_path))
-        {
-            fs::remove(collection_path);
-            return true;
-        }
-        return false;
+        fs::remove(collection_path);
     }
 
 private:
@@ -329,10 +324,21 @@ std::unique_lock<std::mutex> lockNamedCollectionsTransaction()
     return std::unique_lock(transaction_lock);
 }
 
+void loadFromConfigUnlocked(const Poco::Util::AbstractConfiguration & config, std::unique_lock<std::mutex> &)
+{
+    auto named_collections = LoadFromConfig(config).getAll();
+    LOG_TRACE(
+        &Poco::Logger::get("NamedCollectionsUtils"),
+        "Loaded {} collections from config", named_collections.size());
+
+    NamedCollectionFactory::instance().add(std::move(named_collections));
+    is_loaded_from_config = true;
+}
+
 void loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = lockNamedCollectionsTransaction();
-    NamedCollectionFactory::instance().add(LoadFromConfig(config).getAll());
+    loadFromConfigUnlocked(config, lock);
 }
 
 void reloadFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -342,40 +348,101 @@ void reloadFromConfig(const Poco::Util::AbstractConfiguration & config)
     auto & instance = NamedCollectionFactory::instance();
     instance.removeById(SourceId::CONFIG);
     instance.add(collections);
+    is_loaded_from_config = true;
+}
+
+void loadFromSQLUnlocked(ContextPtr context, std::unique_lock<std::mutex> &)
+{
+    auto named_collections = LoadFromSQL(context).getAll();
+    LOG_TRACE(
+        &Poco::Logger::get("NamedCollectionsUtils"),
+        "Loaded {} collections from SQL", named_collections.size());
+
+    NamedCollectionFactory::instance().add(std::move(named_collections));
+    is_loaded_from_sql = true;
 }
 
 void loadFromSQL(ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
-    NamedCollectionFactory::instance().add(LoadFromSQL(context).getAll());
+    loadFromSQLUnlocked(context, lock);
 }
 
-void removeFromSQL(const std::string & collection_name, ContextPtr context)
+void loadIfNotUnlocked(std::unique_lock<std::mutex> & lock)
 {
-    auto lock = lockNamedCollectionsTransaction();
-    LoadFromSQL(context).remove(collection_name);
-    NamedCollectionFactory::instance().remove(collection_name);
+    auto global_context = Context::getGlobalContextInstance();
+    if (!is_loaded_from_config)
+        loadFromConfigUnlocked(global_context->getConfigRef(), lock);
+    if (!is_loaded_from_sql)
+        loadFromSQLUnlocked(global_context, lock);
 }
 
-void removeIfExistsFromSQL(const std::string & collection_name, ContextPtr context)
+void loadIfNot()
+{
+    if (is_loaded_from_sql && is_loaded_from_config)
+        return;
+    auto lock = lockNamedCollectionsTransaction();
+    return loadIfNotUnlocked(lock);
+}
+
+void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
-    LoadFromSQL(context).removeIfExists(collection_name);
-    NamedCollectionFactory::instance().removeIfExists(collection_name);
+    loadIfNotUnlocked(lock);
+    auto & instance = NamedCollectionFactory::instance();
+    if (!instance.exists(query.collection_name))
+    {
+        if (!query.if_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+                "Cannot remove collection `{}`, because it doesn't exist",
+                query.collection_name);
+        }
+        return;
+    }
+    LoadFromSQL(context).remove(query.collection_name);
+    instance.remove(query.collection_name);
 }
 
 void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
-    NamedCollectionFactory::instance().add(query.collection_name, LoadFromSQL(context).create(query));
+    loadIfNotUnlocked(lock);
+    auto & instance = NamedCollectionFactory::instance();
+    if (instance.exists(query.collection_name))
+    {
+        if (!query.if_not_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
+                "A named collection `{}` already exists",
+                query.collection_name);
+        }
+        return;
+    }
+    instance.add(query.collection_name, LoadFromSQL(context).create(query));
 }
 
 void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr context)
 {
     auto lock = lockNamedCollectionsTransaction();
+    loadIfNotUnlocked(lock);
+    auto & instance = NamedCollectionFactory::instance();
+    if (!instance.exists(query.collection_name))
+    {
+        if (!query.if_exists)
+        {
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST,
+                "Cannot remove collection `{}`, because it doesn't exist",
+                query.collection_name);
+        }
+        return;
+    }
     LoadFromSQL(context).update(query);
 
-    auto collection = NamedCollectionFactory::instance().getMutable(query.collection_name);
+    auto collection = instance.getMutable(query.collection_name);
     auto collection_lock = collection->lock();
 
     for (const auto & [name, value] : query.changes)

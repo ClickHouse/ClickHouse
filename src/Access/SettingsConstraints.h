@@ -2,6 +2,7 @@
 
 #include <Access/SettingsProfileElement.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SettingSource.h>
 #include <unordered_map>
 
 namespace Poco::Util
@@ -73,17 +74,18 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const;
-    void check(const Settings & current_settings, const SettingChange & change) const;
-    void check(const Settings & current_settings, const SettingsChanges & changes) const;
-    void check(const Settings & current_settings, SettingsChanges & changes) const;
+    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
+    void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
+    void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
-    void clamp(const Settings & current_settings, SettingsChanges & changes) const;
+    void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
     friend bool operator !=(const SettingsConstraints & left, const SettingsConstraints & right) { return !(left == right); }
@@ -133,7 +135,10 @@ private:
         {}
 
         // Perform checking
-        bool check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const;
+        bool check(SettingChange & change,
+                   const Field & new_value,
+                   ReactionOnViolation reaction,
+                   SettingSource source) const;
     };
 
     struct StringHash
@@ -145,7 +150,11 @@ private:
         }
     };
 
-    bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
+    bool checkImpl(const Settings & current_settings,
+                  SettingChange & change,
+                  ReactionOnViolation reaction,
+                  SettingSource source) const;
+
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;

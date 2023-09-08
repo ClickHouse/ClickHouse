@@ -246,7 +246,7 @@ def test_inserts_local(started_cluster):
 
 def test_inserts_single_replica_local_internal_replication(started_cluster):
     with pytest.raises(
-        QueryRuntimeException, match="Table default.single_replicated doesn't exist"
+        QueryRuntimeException, match="Table default.single_replicated does not exist"
     ):
         node1.query(
             "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
@@ -279,7 +279,8 @@ def test_inserts_single_replica_internal_replication(started_cluster):
 def test_inserts_single_replica_no_internal_replication(started_cluster):
     try:
         with pytest.raises(
-            QueryRuntimeException, match="Table default.single_replicated doesn't exist"
+            QueryRuntimeException,
+            match="Table default.single_replicated does not exist",
         ):
             node1.query(
                 "INSERT INTO distributed_one_replica_no_internal_replication VALUES ('2000-01-01', 1)",
@@ -288,7 +289,7 @@ def test_inserts_single_replica_no_internal_replication(started_cluster):
                     "prefer_localhost_replica": "0",
                 },
             )
-        assert node2.query("SELECT count(*) FROM single_replicated").strip() == "1"
+        assert node2.query("SELECT count(*) FROM single_replicated").strip() == "0"
     finally:
         node2.query("TRUNCATE TABLE single_replicated")
 

@@ -60,11 +60,11 @@ void ReplicatedMergeTreeAttachThread::run()
 
         if (needs_retry)
         {
-            LOG_ERROR(log, "Initialization failed. Error: {}", e.message());
+            LOG_ERROR(log, "Initialization failed. Error: {}", getCurrentExceptionMessage(/* with_stacktrace */ true));
         }
         else
         {
-            LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
+            LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", getCurrentExceptionMessage(/* with_stacktrace */ true));
             storage.initialization_done = true;
         }
     }
@@ -149,7 +149,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
     if (replica_metadata_version_exists)
     {
-        storage.metadata_version = parse<int>(replica_metadata_version);
+        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(parse<int>(replica_metadata_version)));
     }
     else
     {
@@ -179,8 +179,6 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
     storage.clearOldWriteAheadLogs();
-    if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-        storage.clearOldBrokenPartsFromDetachedDirectory();
 
     storage.createNewZooKeeperNodes();
     storage.syncPinnedPartUUIDs();

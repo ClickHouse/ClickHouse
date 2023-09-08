@@ -168,6 +168,8 @@ void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & 
 bool MergeTreeTransaction::isReadOnly() const
 {
     std::lock_guard lock{mutex};
+    if (finalized)
+        return is_read_only;
     chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
 }
@@ -182,7 +184,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
     /// We should wait for mutations to finish before committing transaction, because some mutation may fail and cause rollback.
     for (const auto & table_and_mutation : mutations_to_wait)
-        table_and_mutation.first->waitForMutation(table_and_mutation.second);
+        table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
 
     assert([&]()
     {
@@ -315,6 +317,22 @@ bool MergeTreeTransaction::rollback() noexcept
     return true;
 }
 
+void MergeTreeTransaction::afterFinalize()
+{
+    std::lock_guard lock{mutex};
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
+
+    /// Remember if it was read-only transaction before we clear storages
+    is_read_only = storages.empty();
+
+    /// Release shared pointers just in case
+    creating_parts.clear();
+    removing_parts.clear();
+    storages.clear();
+    mutations.clear();
+    finalized = true;
+}
+
 void MergeTreeTransaction::onException()
 {
     TransactionLog::instance().rollbackTransaction(shared_from_this());
@@ -331,6 +349,11 @@ String MergeTreeTransaction::dumpDescription() const
     }
 
     std::lock_guard lock{mutex};
+    if (finalized)
+    {
+        res += ", cannot dump detailed description, transaction is finalized";
+        return res;
+    }
 
     res += fmt::format(", affects {} tables:", storages.size());
 

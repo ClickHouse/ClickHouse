@@ -17,7 +17,6 @@
 namespace DB
 {
 
-
 namespace
 {
 
@@ -27,7 +26,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_rewrite_aggregate_function_with_if)
             return;
@@ -90,9 +89,14 @@ private:
     static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
     {
         auto result_type = function_node.getResultType();
+
+        std::string suffix = "If";
+        if (result_type->isNullable())
+            suffix = "OrNullIf";
+
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.getFunctionName() + (result_type->isNullable() ? "IfOrNull" : "If"),
+            function_node.getFunctionName() + suffix,
             argument_types,
             function_node.getAggregateFunction()->getParameters(),
             properties);

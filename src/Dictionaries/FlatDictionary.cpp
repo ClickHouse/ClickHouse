@@ -505,7 +505,7 @@ void FlatDictionary::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.size();
+    bytes_allocated += string_arena.allocatedBytes();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
@@ -683,7 +683,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false);
+    factory.registerLayout("flat", create_layout, false, false);
 }
 
 

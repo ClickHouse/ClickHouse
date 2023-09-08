@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Common/logger_useful.h>
 #endif
 
 
@@ -117,7 +118,7 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response) //-V1051
+        if (response == invalidate_query_response)
             return false;
         invalidate_query_response = response;
     }

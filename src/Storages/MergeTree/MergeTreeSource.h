@@ -36,7 +36,7 @@ private:
     std::unique_ptr<AsyncReadingState> async_reading_state;
 #endif
 
-    std::optional<Chunk> reportProgress(ChunkAndProgress chunk);
+    Chunk processReadResult(ChunkAndProgress chunk);
 };
 
 }

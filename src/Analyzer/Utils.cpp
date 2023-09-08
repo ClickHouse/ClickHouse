@@ -5,13 +5,19 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -27,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -72,6 +79,119 @@ bool isNameOfInFunction(const std::string & function_name)
         function_name == "globalNotNullInIgnoreSet";
 
     return is_special_function_in;
+}
+
+bool isNameOfLocalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "in" ||
+        function_name == "notIn" ||
+        function_name == "nullIn" ||
+        function_name == "notNullIn" ||
+        function_name == "inIgnoreSet" ||
+        function_name == "notInIgnoreSet" ||
+        function_name == "nullInIgnoreSet" ||
+        function_name == "notNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+bool isNameOfGlobalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "globalIn" ||
+        function_name == "globalNotIn" ||
+        function_name == "globalNullIn" ||
+        function_name == "globalNotNullIn" ||
+        function_name == "globalInIgnoreSet" ||
+        function_name == "globalNotInIgnoreSet" ||
+        function_name == "globalNullInIgnoreSet" ||
+        function_name == "globalNotNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name)
+{
+    if (function_name == "in")
+        return "globalIn";
+    else if (function_name == "notIn")
+        return "globalNotIn";
+    else if (function_name == "nullIn")
+        return "globalNullIn";
+    else if (function_name == "notNullIn")
+        return "globalNotNullIn";
+    else if (function_name == "inIgnoreSet")
+        return "globalInIgnoreSet";
+    else if (function_name == "notInIgnoreSet")
+        return "globalNotInIgnoreSet";
+    else if (function_name == "nullInIgnoreSet")
+        return "globalNullInIgnoreSet";
+    else if (function_name == "notNullInIgnoreSet")
+        return "globalNotNullInIgnoreSet";
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
+}
+
+void makeUniqueColumnNamesInBlock(Block & block)
+{
+    NameSet block_column_names;
+    size_t unique_column_name_counter = 1;
+
+    for (auto & column_with_type : block)
+    {
+        if (!block_column_names.contains(column_with_type.name))
+        {
+            block_column_names.insert(column_with_type.name);
+            continue;
+        }
+
+        column_with_type.name += '_';
+        column_with_type.name += std::to_string(unique_column_name_counter);
+        ++unique_column_name_counter;
+    }
+}
+
+QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
+    const DataTypePtr & type,
+    const ContextPtr & context,
+    bool resolve)
+{
+    std::string cast_type = type->getName();
+    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
+
+    std::string cast_function_name = "_CAST";
+    auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
+    cast_function_node->getArguments().getNodes().push_back(expression);
+    cast_function_node->getArguments().getNodes().push_back(std::move(cast_type_constant_node));
+
+    if (resolve)
+    {
+        auto cast_function = FunctionFactory::instance().get(cast_function_name, context);
+        cast_function_node->resolveAsFunction(cast_function->build(cast_function_node->getArgumentColumns()));
+    }
+
+    return cast_function_node;
+}
+
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
+{
+    const auto * constant_node = condition_node->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
@@ -148,7 +268,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -177,7 +297,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
-            auto table_expression_tables_in_select_query_ast = table_expression->toAST();
+            auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
             tables_in_select_query_ast->children.reserve(table_expression_tables_in_select_query_ast->children.size());
             for (auto && table_element_ast : table_expression_tables_in_select_query_ast->children)
                 tables_in_select_query_ast->children.push_back(std::move(table_element_ast));
@@ -350,30 +470,6 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
     buildTableExpressionsStackImpl(join_tree_node, result);
 
     return result;
-}
-
-bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier)
-{
-    const IDataType * current_type = compound_type.get();
-
-    for (const auto & identifier_part : nested_identifier)
-    {
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
-            current_type = array->getNestedType().get();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(current_type);
-
-        if (!tuple)
-            return false;
-
-        auto position = tuple->tryGetPositionByName(identifier_part);
-        if (!position)
-            return false;
-
-        current_type = tuple->getElements()[*position].get();
-    }
-
-    return true;
 }
 
 namespace

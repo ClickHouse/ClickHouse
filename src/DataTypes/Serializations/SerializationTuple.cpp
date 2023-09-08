@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
@@ -184,6 +185,41 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
     }
 }
 
+void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    if (settings.json.write_named_tuples_as_objects
+        && have_explicit_names)
+    {
+        writeCString("{\n", ostr);
+        for (size_t i = 0; i < elems.size(); ++i)
+        {
+            if (i != 0)
+                writeCString(",\n", ostr);
+            writeChar(' ', (indent + 1) * 4, ostr);
+            writeJSONString(elems[i]->getElementName(), ostr, settings);
+            writeCString(": ", ostr);
+            elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
+        }
+        writeChar('\n', ostr);
+        writeChar(' ', indent * 4, ostr);
+        writeChar('}', ostr);
+    }
+    else
+    {
+        writeCString("[\n", ostr);
+        for (size_t i = 0; i < elems.size(); ++i)
+        {
+            if (i != 0)
+                writeCString(",\n", ostr);
+            writeChar(' ', (indent + 1) * 4, ostr);
+            elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
+        }
+        writeChar('\n', ostr);
+        writeChar(' ', indent * 4, ostr);
+        writeChar(']', ostr);
+    }
+}
+
 void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.json.read_named_tuples_as_objects
@@ -231,7 +267,19 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 
                 seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);
-                elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+
+                try
+                {
+                    if (settings.null_as_default)
+                        SerializationNullable::deserializeTextJSONImpl(element_column, istr, settings, elems[element_pos]);
+                    else
+                        elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("(while reading the value of nested key " + name + ")");
+                    throw;
+                }
 
                 skipWhitespaceIfAny(istr);
                 ++processed;

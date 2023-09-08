@@ -35,7 +35,7 @@ namespace MongoDB
     /// Represents JavaScript type in BSON.
     {
     public:
-        typedef SharedPtr<JavaScriptCode> Ptr;
+        using Ptr = SharedPtr<JavaScriptCode>;
 
         JavaScriptCode();
         /// Creates an empty JavaScriptCode object.

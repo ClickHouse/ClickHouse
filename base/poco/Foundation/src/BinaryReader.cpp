@@ -170,7 +170,7 @@ BinaryReader& BinaryReader::operator >> (double& value)
 }
 
 
-#if defined(POCO_HAVE_INT64) && !defined(POCO_LONG_IS_64_BIT)
+#if !defined(POCO_LONG_IS_64_BIT)
 
 
 BinaryReader& BinaryReader::operator >> (Int64& value)
@@ -233,7 +233,6 @@ void BinaryReader::read7BitEncoded(UInt32& value)
 }
 
 
-#if defined(POCO_HAVE_INT64)
 
 
 void BinaryReader::read7BitEncoded(UInt64& value)
@@ -254,7 +253,6 @@ void BinaryReader::read7BitEncoded(UInt64& value)
 }
 
 
-#endif
 
 
 void BinaryReader::readRaw(std::streamsize length, std::string& value)
@@ -273,6 +271,31 @@ void BinaryReader::readRaw(std::streamsize length, std::string& value)
 void BinaryReader::readRaw(char* buffer, std::streamsize length)
 {
 	_istr.read(buffer, length);
+}
+
+
+void BinaryReader::readCString(std::string& value)
+{
+	value.clear();
+	if (!_istr.good())
+	{
+		return;
+	}
+	value.reserve(256);
+	while (true)
+	{
+		char c;
+		_istr.get(c);
+		if (!_istr.good())
+		{
+			break;
+		}
+		if (c == '\0')
+		{
+			break;
+		}
+		value += c;
+	}
 }
 
 

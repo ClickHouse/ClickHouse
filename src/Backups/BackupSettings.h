@@ -25,6 +25,9 @@ struct BackupSettings
     /// Password used to encrypt the backup.
     String password;
 
+    /// S3 storage class.
+    String s3_storage_class = "";
+
     /// If this is set to true then only create queries will be written to backup,
     /// without the data of tables.
     bool structure_only = false;
@@ -32,8 +35,18 @@ struct BackupSettings
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;
 
+    /// Whether the BACKUP command should decrypt files stored on encrypted disks.
+    bool decrypt_files_from_encrypted_disks = false;
+
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
+
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_s3_native_copy = true;
+
+    /// Allow to use the filesystem cache in passive mode - benefit from the existing cache entries,
+    /// but don't put more entries into the cache.
+    bool read_from_filesystem_cache = true;
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.
@@ -54,10 +67,6 @@ struct BackupSettings
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
     std::vector<Strings> cluster_host_ids;
-
-    /// Internal, should not be specified by user.
-    /// Path in Zookeeper used to coordinate a distributed backup created by BACKUP ON CLUSTER.
-    String coordination_zk_path;
 
     /// Internal, should not be specified by user.
     /// UUID of the backup. If it's not set it will be generated randomly.

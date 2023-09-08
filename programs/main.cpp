@@ -62,6 +62,9 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+int mainEntryClickHouseKeeperClient(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
@@ -132,6 +135,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
@@ -459,6 +465,11 @@ int main(int argc_, char ** argv_)
 #if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
+
+    /// This is used for testing. For example,
+    /// clickhouse-local should be able to run a simple query without throw/catch.
+    if (getenv("CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION")) // NOLINT(concurrency-mt-unsafe)
+        DB::terminate_on_any_exception = true;
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

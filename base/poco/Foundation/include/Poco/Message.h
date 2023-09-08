@@ -67,6 +67,8 @@ public:
 
     Message(
         const std::string & source, const std::string & text, Priority prio, const char * file, int line, std::string_view fmt_str = {});
+    Message(
+        std::string && source, std::string && text, Priority prio, const char * file, int line, std::string_view fmt_str);
     /// Creates a Message with the given source, text, priority,
     /// source file path and line.
     ///
@@ -104,6 +106,8 @@ public:
 
     const std::string & getText() const;
     /// Returns the text of the message.
+
+    void appendText(const std::string & text);
 
     void setPriority(Priority prio);
     /// Sets the priority of the message.

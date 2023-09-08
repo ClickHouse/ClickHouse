@@ -48,7 +48,11 @@ inline auto scaleMultiplier(UInt32 scale)
 
 /** Components of DecimalX value:
  * whole - represents whole part of decimal, can be negative or positive.
- * fractional - for fractional part of decimal, always positive.
+ * fractional - for fractional part of decimal.
+ *
+ *  0.123 represents  0 /  0.123
+ * -0.123 represents  0 / -0.123
+ * -1.123 represents -1 /  0.123
  */
 template <typename DecimalType>
 struct DecimalComponents

@@ -1,4 +1,6 @@
+Test inverted(2)
 af	inverted
+1
 101	Alick a01
 1
 101	Alick a01
@@ -9,6 +11,7 @@ af	inverted
 113	Click b03
 118	Click b08
 1
+Test inverted()
 af	inverted
 101	Alick a01
 106	Alick a06
@@ -20,9 +23,11 @@ af	inverted
 101	Alick a01
 111	Alick b01
 1
+Test on array columns
 af	inverted
 3	['Click a03','Click b03']
 1
+Test on map columns
 af	inverted
 103	{'Click':'Click a03'}
 108	{'Click':'Click a08'}
@@ -31,22 +36,13 @@ af	inverted
 1
 103	{'Click':'Click a03'}
 1
+Test inverted(2) on a column with two parts
 af	inverted
 101	Alick a01
 111	Alick b01
 201	rick c01
 1
+Test inverted(2) on UTF-8 data
 af	inverted
 102	clickhouse你好
-1
-af	inverted
-BC614E,05397FB1,6969696969898240,CF3304
-1
-af	inverted
-1
-1
-af	inverted
-1
-1
-1
 1

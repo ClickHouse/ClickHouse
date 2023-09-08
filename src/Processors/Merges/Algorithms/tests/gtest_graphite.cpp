@@ -18,17 +18,6 @@
 
 using namespace DB;
 
-static int regAggregateFunctions = 0;
-
-void tryRegisterAggregateFunctions()
-{
-    if (!regAggregateFunctions)
-    {
-        registerAggregateFunctions();
-        regAggregateFunctions = 1;
-    }
-}
-
 static ConfigProcessor::LoadedConfig loadConfiguration(const std::string & config_path)
 {
     ConfigProcessor config_processor(config_path, true, true);

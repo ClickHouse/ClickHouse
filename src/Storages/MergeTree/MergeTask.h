@@ -124,7 +124,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
+    struct GlobalRuntimeContext : public IStageRuntimeContext
     {
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
@@ -186,7 +186,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         /// Dependencies
         String suffix;
@@ -259,7 +259,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
         std::unique_ptr<PocoTemporaryFile> rows_sources_file;
@@ -331,7 +331,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext //-V730
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
     {
         /// Only one dependency
         bool need_sync{false};

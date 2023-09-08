@@ -57,7 +57,7 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const UInt8 *) const override
     {
         /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
         char * res = arena.allocContinue(1, begin);
@@ -166,6 +166,11 @@ public:
     double getRatioOfDefaultRows(double) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override

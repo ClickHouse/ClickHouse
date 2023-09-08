@@ -1,6 +1,5 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <iostream>
 
 namespace DB
 {
@@ -8,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 StreamingFormatExecutor::StreamingFormatExecutor(
@@ -92,6 +92,18 @@ size_t StreamingFormatExecutor::execute()
     {
         format->resetParser();
         return on_error(result_columns, e);
+    }
+    catch (std::exception & e)
+    {
+        format->resetParser();
+        auto exception = Exception(Exception::CreateFromSTDTag{}, e);
+        return on_error(result_columns, exception);
+    }
+    catch (...)
+    {
+        format->resetParser();
+        auto exception = Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknowk exception while executing StreamingFormatExecutor with format {}", format->getName());
+        return on_error(result_columns, exception);
     }
 }
 

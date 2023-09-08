@@ -109,6 +109,9 @@ public:
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
+
+    void describeActions(WriteBuffer & out, std::string_view prefix) const;
+
     JSONBuilder::ItemPtr toTree() const;
 
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
@@ -254,7 +257,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
+    ActionsDAGPtr getLastActions(bool allow_empty = false)
     {
         if (steps.empty())
         {

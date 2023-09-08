@@ -12,6 +12,7 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
+    const AlterConversionsPtr & alter_conversions_,
     UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
@@ -19,7 +20,7 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
+    const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
     const Names & virt_column_names_,
@@ -27,11 +28,12 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     bool has_limit_below_one_block_)
     : IMergeTreeSelectAlgorithm{
         storage_snapshot_->getSampleBlockForColumns(required_columns_),
-        storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        storage_, storage_snapshot_, prewhere_info_, actions_settings_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
+    alter_conversions(alter_conversions_),
     sample_block(storage_snapshot_->metadata->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
@@ -44,9 +46,13 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
 
 void MergeTreeSelectAlgorithm::initializeReaders()
 {
+    LoadedMergeTreeDataPartInfoForReader part_info(data_part, alter_conversions);
+
     task_columns = getReadTaskColumns(
-        LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
-        required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
+        part_info, storage_snapshot,
+        required_columns, virt_column_names,
+        prewhere_info,
+        actions_settings, reader_settings, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -58,7 +64,8 @@ void MergeTreeSelectAlgorithm::initializeReaders()
     owned_mark_cache = storage.getContext()->getMarkCache();
 
     initializeMergeTreeReadersForPart(
-        data_part, task_columns, storage_snapshot->getMetadataForQuery(), all_mark_ranges, {}, {});
+        data_part, alter_conversions, task_columns,
+        all_mark_ranges, /*value_size_map=*/ {}, /*profile_callback=*/ {});
 }
 
 

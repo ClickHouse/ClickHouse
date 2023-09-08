@@ -107,8 +107,8 @@ struct FloatCompareHelper
     }
 };
 
-template <class U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
-template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
+template <typename U> struct CompareHelper<Float32, U> : public FloatCompareHelper<Float32> {};
+template <typename U> struct CompareHelper<Float64, U> : public FloatCompareHelper<Float64> {};
 
 
 /** A template for columns that use a simple array to store.
@@ -174,7 +174,7 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -356,6 +356,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return this->template getNumberOfDefaultRowsImpl<Self>();
     }
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override

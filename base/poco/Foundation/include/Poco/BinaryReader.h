@@ -76,7 +76,7 @@ public:
     BinaryReader & operator>>(float & value);
     BinaryReader & operator>>(double & value);
 
-#if defined(POCO_HAVE_INT64) && !defined(POCO_LONG_IS_64_BIT)
+#if !defined(POCO_LONG_IS_64_BIT)
     BinaryReader & operator>>(Int64 & value);
     BinaryReader & operator>>(UInt64 & value);
 #endif
@@ -106,18 +106,19 @@ public:
     /// See BinaryWriter::write7BitEncoded() for a description
     /// of the compression algorithm.
 
-#if defined(POCO_HAVE_INT64)
     void read7BitEncoded(UInt64 & value);
     /// Reads a 64-bit unsigned integer in compressed format.
     /// See BinaryWriter::write7BitEncoded() for a description
     /// of the compression algorithm.
-#endif
 
     void readRaw(std::streamsize length, std::string & value);
     /// Reads length bytes of raw data into value.
 
     void readRaw(char * buffer, std::streamsize length);
     /// Reads length bytes of raw data into buffer.
+
+    void readCString(std::string& value);
+		/// Reads zero-terminated C-string into value.
 
     void readBOM();
     /// Reads a byte-order mark from the stream and configures

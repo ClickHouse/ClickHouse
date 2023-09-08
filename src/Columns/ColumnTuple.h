@@ -61,7 +61,7 @@ public:
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertDefault() override;
     void popBack(size_t n) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -96,12 +96,13 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
     ColumnPtr compress() const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
+    UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
     void finalize() override;
     bool isFinalized() const override;

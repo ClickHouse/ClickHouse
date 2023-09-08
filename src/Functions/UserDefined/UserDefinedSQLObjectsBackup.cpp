@@ -23,21 +23,56 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+
 void backupUserDefinedSQLObjects(
     BackupEntriesCollector & backup_entries_collector,
     const String & data_path_in_backup,
-    UserDefinedSQLObjectType /* object_type */,
+    UserDefinedSQLObjectType object_type,
     const std::vector<std::pair<String, ASTPtr>> & objects)
 {
     std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
     backup_entries.reserve(objects.size());
-    for (const auto & [function_name, create_function_query] : objects)
+    for (const auto & [object_name, create_object_query] : objects)
         backup_entries.emplace_back(
-            escapeForFileName(function_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_function_query)));
+            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
 
-    fs::path data_path_in_backup_fs{data_path_in_backup};
-    for (const auto & entry : backup_entries)
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / entry.first, entry.second);
+    auto context = backup_entries_collector.getContext();
+    const auto & loader = context->getUserDefinedSQLObjectsLoader();
+
+    if (!loader.isReplicated())
+    {
+        fs::path data_path_in_backup_fs{data_path_in_backup};
+        for (const auto & [file_name, entry] : backup_entries)
+            backup_entries_collector.addBackupEntry(data_path_in_backup_fs / file_name, entry);
+        return;
+    }
+
+    String replication_id = loader.getReplicationID();
+
+    auto backup_coordination = backup_entries_collector.getBackupCoordination();
+    backup_coordination->addReplicatedSQLObjectsDir(replication_id, object_type, data_path_in_backup);
+
+    // On the stage of running post tasks, all directories will already be added to the backup coordination object.
+    // They will only be returned for one of the hosts below, for the rest an empty list.
+    // See also BackupCoordinationReplicatedSQLObjects class.
+    backup_entries_collector.addPostTask(
+        [my_backup_entries = std::move(backup_entries),
+         my_replication_id = std::move(replication_id),
+         object_type,
+         &backup_entries_collector,
+         backup_coordination]
+        {
+            auto dirs = backup_coordination->getReplicatedSQLObjectsDirs(my_replication_id, object_type);
+
+            for (const auto & dir : dirs)
+            {
+                fs::path dir_fs{dir};
+                for (const auto & [file_name, entry] : my_backup_entries)
+                {
+                    backup_entries_collector.addBackupEntry(dir_fs / file_name, entry);
+                }
+            }
+        });
 }
 
 
@@ -45,6 +80,11 @@ std::vector<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
     auto context = restorer.getContext();
+    const auto & loader = context->getUserDefinedSQLObjectsLoader();
+
+    if (loader.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(loader.getReplicationID(), object_type))
+        return {}; /// Other replica is already restoring user-defined SQL objects.
+
     auto backup = restorer.getBackup();
     fs::path data_path_in_backup_fs{data_path_in_backup};
 
@@ -67,12 +107,11 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
 
     for (const auto & filename : filenames)
     {
-        String escaped_function_name = filename.substr(0, filename.length() - strlen(".sql"));
-        String function_name = unescapeForFileName(escaped_function_name);
+        String escaped_object_name = filename.substr(0, filename.length() - strlen(".sql"));
+        String object_name = unescapeForFileName(escaped_object_name);
 
         String filepath = data_path_in_backup_fs / filename;
-        auto backup_entry = backup->readFile(filepath);
-        auto in = backup_entry->getReadBuffer();
+        auto in = backup->readFile(filepath);
         String statement_def;
         readStringUntilEOF(statement_def, *in);
 
@@ -94,7 +133,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
             }
         }
 
-        res.emplace_back(std::move(function_name), ast);
+        res.emplace_back(std::move(object_name), ast);
     }
 
     return res;

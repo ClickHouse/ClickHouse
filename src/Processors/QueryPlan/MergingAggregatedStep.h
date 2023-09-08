@@ -27,6 +27,7 @@ public:
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
+    const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -49,6 +50,9 @@ private:
     const size_t max_block_size;
     const size_t memory_bound_merging_max_block_bytes;
     SortDescription group_by_sort_description;
+
+    bool is_order_overwritten = false;
+    DataStream::SortScope overwritten_sort_scope = DataStream::SortScope::None;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;

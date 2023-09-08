@@ -32,18 +32,23 @@ void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr c
         structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context), "structure");
 }
 
-ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return parseColumnsListFromString(structure, context);
+    if (structure != "auto")
+        return parseColumnsListFromString(structure, context);
+    return default_structure;
 }
 
-StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
-        columns = getActualTableStructure(context);
+        columns = parseColumnsListFromString(structure, context);
     else if (!structure_hint.empty())
         columns = structure_hint;
+    else
+        columns = default_structure;
+
     auto res = std::make_shared<StorageNull>(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
     res->startup();
     return res;

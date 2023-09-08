@@ -21,14 +21,17 @@ namespace ErrorCodes
     M(String, id) \
     M(String, compression_method) \
     M(String, password) \
+    M(String, s3_storage_class) \
     M(Bool, structure_only) \
     M(Bool, async) \
+    M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
+    M(Bool, allow_s3_native_copy) \
+    M(Bool, read_from_filesystem_cache) \
     M(UInt64, shard_num) \
     M(UInt64, replica_num) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path) \
     M(OptionalUUID, backup_uuid)
     /// M(Int64, compression_level)
 

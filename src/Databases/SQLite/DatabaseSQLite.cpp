@@ -40,14 +40,14 @@ DatabaseSQLite::DatabaseSQLite(
 
 bool DatabaseSQLite::empty() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return fetchTablesList().empty();
 }
 
 
 DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     Tables tables;
     auto table_names = fetchTablesList();
@@ -120,14 +120,14 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
 bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return checkSQLiteTable(table_name);
 }
 
 
 StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return fetchTable(table_name, local_context, false);
 }
 
@@ -175,7 +175,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 {
     StoragePtr storage;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         storage = fetchTable(table_name, local_context, false);
     }
     if (!storage)
@@ -187,6 +187,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     }
     auto table_storage_define = database_engine_define->clone();
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+    ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     auto storage_engine_arguments = ast_storage->engine->arguments;
     auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments

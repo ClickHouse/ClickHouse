@@ -96,7 +96,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
@@ -166,6 +166,11 @@ public:
     double getRatioOfDefaultRows(double) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override

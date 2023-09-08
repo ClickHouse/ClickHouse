@@ -66,6 +66,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     using namespace DB;
     namespace po = boost::program_options;
 
+    bool print_stacktrace = false;
     try
     {
         po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
@@ -84,6 +85,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("level", po::value<int>(), "compression level for codecs specified via flags")
             ("none", "use no compression instead of LZ4")
             ("stat", "print block statistics of compressed data")
+            ("stacktrace", "print stacktrace of exception")
         ;
 
         po::positional_options_description positional_desc;
@@ -107,6 +109,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool use_deflate_qpl = options.count("deflate_qpl");
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
+        print_stacktrace = options.count("stacktrace");
         unsigned block_size = options["block-size"].as<unsigned>();
         std::vector<std::string> codecs;
         if (options.count("codec"))
@@ -188,11 +191,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             /// Compression
             CompressedWriteBuffer to(*wb, codec, block_size);
             copyData(*rb, to);
+            to.finalize();
         }
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(true) << '\n';
+        std::cerr << getCurrentExceptionMessage(print_stacktrace) << '\n';
         return getCurrentExceptionCode();
     }
 

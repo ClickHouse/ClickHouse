@@ -9,10 +9,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
 
-// for better debug: #include <Core/iostream_debug_helpers.h>
 
 /** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
   * This is very unusual function made as a special order for our dear customer - Metrica web analytics system.
@@ -60,7 +60,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 class FunctionArrayEnumerateUniqRanked;
@@ -133,18 +133,14 @@ private:
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
 {
-    UInt128 key;
     SipHash hash;
-
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
         // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key);
-
-    return key;
+    return hash.get128();
 }
 
 
@@ -194,7 +190,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         {
             if (*offsets_by_depth[0] != array->getOffsets())
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                                 "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
             }
         }
@@ -217,7 +213,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             {
                 if (*offsets_by_depth[col_depth] != array->getOffsets())
                 {
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                                 "Lengths and effective depths of all arrays passed to {} must be equal.", getName());
                 }
             }
@@ -225,7 +221,7 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
         if (col_depth < arrays_depths.depths[array_num])
         {
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                             "{}: Passed array number {} depth ({}) is more than the actual array depth ({}).",
                             getName(), array_num, std::to_string(arrays_depths.depths[array_num]), col_depth);
         }

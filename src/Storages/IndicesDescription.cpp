@@ -11,6 +11,7 @@
 #include <Storages/extractKeyExpressionList.h>
 
 #include <Core/Defines.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -89,19 +90,28 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.type = Poco::toLower(index_definition->type->name);
     result.granularity = index_definition->granularity;
 
-    ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
-    result.expression_list_ast = expr_list->clone();
+    ASTPtr expr_list;
+    if (index_definition->expr)
+    {
+        expr_list = extractKeyExpressionList(index_definition->expr->clone());
+        result.expression_list_ast = expr_list->clone();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
+    }
 
     auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
-    Block block_without_columns = result.expression->getSampleBlock();
+    result.sample_block = result.expression->getSampleBlock();
 
-    for (size_t i = 0; i < block_without_columns.columns(); ++i)
+    for (auto & elem : result.sample_block)
     {
-        const auto & column = block_without_columns.getByPosition(i);
-        result.column_names.emplace_back(column.name);
-        result.data_types.emplace_back(column.type);
-        result.sample_block.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
+        if (!elem.column)
+            elem.column = elem.type->createColumn();
+
+        result.column_names.push_back(elem.name);
+        result.data_types.push_back(elem.type);
     }
 
     const auto & definition_arguments = index_definition->type->arguments;
@@ -141,7 +151,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return serializeAST(list, true);
+    return serializeAST(list);
 }
 
 

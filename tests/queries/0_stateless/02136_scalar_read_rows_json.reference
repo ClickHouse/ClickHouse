@@ -30,7 +30,7 @@
 	"meta":
 	[
 		{
-			"type": "Tuple(UInt64, UInt64)"
+			"type": "Tuple(`max(number)` UInt64, `count(number)` UInt64)"
 		}
 	],
 

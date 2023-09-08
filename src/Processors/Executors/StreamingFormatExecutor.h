@@ -24,7 +24,7 @@ public:
     StreamingFormatExecutor(
         const Block & header_,
         InputFormatPtr format_,
-        ErrorCallback on_error_ = [](const MutableColumns &, Exception &) -> size_t { throw; },
+        ErrorCallback on_error_ = [](const MutableColumns &, Exception & e) -> size_t { throw std::move(e); },
         SimpleTransformPtr adding_defaults_transform_ = nullptr);
 
     /// Returns numbers of new read rows.

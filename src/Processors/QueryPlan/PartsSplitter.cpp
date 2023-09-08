@@ -94,7 +94,8 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             parts_ranges_queue.push(
                 {index_access->getValue(part_idx, range.begin), {range, part_idx}, PartsRangesIterator::EventType::RangeStart});
             const auto & index_granularity = parts[part_idx].data_part->index_granularity;
-            if (index_granularity.hasFinalMark() && range.end + 1 == index_granularity.getMarksCount())
+            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            if (value_is_defined_at_end_mark)
                 parts_ranges_queue.push(
                     {index_access->getValue(part_idx, range.end), {range, part_idx}, PartsRangesIterator::EventType::RangeEnd});
         }
@@ -125,7 +126,9 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             return marks_in_current_layer < intersected_parts * 2;
         };
 
-        result_layers.emplace_back();
+        auto & current_layer = result_layers.emplace_back();
+        /// Map part_idx into index inside layer, used to merge marks from the same part into one reader
+        std::unordered_map<size_t, size_t> part_idx_in_layer;
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
         {
@@ -139,10 +142,17 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
 
                 if (current.event == PartsRangesIterator::EventType::RangeEnd)
                 {
-                    result_layers.back().emplace_back(
-                        parts[part_idx].data_part,
-                        parts[part_idx].part_index_in_query,
-                        MarkRanges{{current_part_range_begin[part_idx], current.range.end}});
+                    const auto & mark = MarkRange{current_part_range_begin[part_idx], current.range.end};
+                    auto it = part_idx_in_layer.emplace(std::make_pair(part_idx, current_layer.size()));
+                    if (it.second)
+                        current_layer.emplace_back(
+                            parts[part_idx].data_part,
+                            parts[part_idx].alter_conversions,
+                            parts[part_idx].part_index_in_query,
+                            MarkRanges{mark});
+                    else
+                        current_layer[it.first->second].ranges.push_back(mark);
+
                     current_part_range_begin.erase(part_idx);
                     current_part_range_end.erase(part_idx);
                     continue;
@@ -167,10 +177,18 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
         }
         for (const auto & [part_idx, last_mark] : current_part_range_end)
         {
-            result_layers.back().emplace_back(
-                parts[part_idx].data_part,
-                parts[part_idx].part_index_in_query,
-                MarkRanges{{current_part_range_begin[part_idx], last_mark + 1}});
+            const auto & mark = MarkRange{current_part_range_begin[part_idx], last_mark + 1};
+            auto it = part_idx_in_layer.emplace(std::make_pair(part_idx, current_layer.size()));
+
+            if (it.second)
+                result_layers.back().emplace_back(
+                    parts[part_idx].data_part,
+                    parts[part_idx].alter_conversions,
+                    parts[part_idx].part_index_in_query,
+                    MarkRanges{mark});
+            else
+                current_layer[it.first->second].ranges.push_back(mark);
+
             current_part_range_begin[part_idx] = current_part_range_end[part_idx];
         }
     }
@@ -236,8 +254,35 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static void reorderColumns(ActionsDAG & dag, const Block & header, const std::string & filter_column)
+{
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_map;
+    for (const auto * input : dag.getInputs())
+        inputs_map[input->result_name] = input;
+
+    for (const auto & col : header)
+    {
+        auto & input = inputs_map[col.name];
+        if (!input)
+            input = &dag.addInput(col);
+    }
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(header.columns() + 1);
+
+    new_outputs.push_back(&dag.findInOutputs(filter_column));
+    for (const auto & col : header)
+    {
+        auto & input = inputs_map[col.name];
+        new_outputs.push_back(input);
+    }
+
+    dag.getOutputs() = std::move(new_outputs);
+}
+
 Pipes buildPipesForReadingByPKRanges(
     const KeyDescription & primary_key,
+    ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,
     ContextPtr context,
@@ -253,17 +298,17 @@ Pipes buildPipesForReadingByPKRanges(
     for (size_t i = 0; i < result_layers.size(); ++i)
     {
         pipes[i] = reading_step_getter(std::move(result_layers[i]));
+        pipes[i].addSimpleTransform([sorting_expr](const Block & header)
+                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
         auto & filter_function = filters[i];
         if (!filter_function)
             continue;
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+        reorderColumns(*actions, pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in [{}, {})", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
-        auto pk_expression = std::make_shared<ExpressionActions>(primary_key.expression->getActionsDAG().clone());
-        pipes[i].addSimpleTransform([pk_expression](const Block & header)
-                                    { return std::make_shared<ExpressionTransform>(header, pk_expression); });
         pipes[i].addSimpleTransform(
             [&](const Block & header)
             {

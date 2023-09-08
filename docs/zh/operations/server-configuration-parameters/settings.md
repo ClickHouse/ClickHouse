@@ -455,7 +455,7 @@ SSL客户端/服务器配置。
 -   verificationMode – The method for checking the node’s certificates. Details are in the description of the [A.背景](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 同学们 可能的值: `none`, `relaxed`, `strict`, `once`.
 -   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 -   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
--   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
+-   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`.
 -   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. 可接受的值: `true`, `false`.
 -   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. 始终建议使用此参数，因为如果服务器缓存会话，以及客户端请求缓存，它有助于避免出现问题。 默认值: `${application.name}`.
 -   sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
@@ -466,7 +466,7 @@ SSL客户端/服务器配置。
 -   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+-   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .
 -   disableProtocols – Protocols that are not allowed to use.
 -   preferServerCiphers – Preferred server ciphers on the client.
 
@@ -528,8 +528,9 @@ SSL客户端/服务器配置。
 
 包含数据的目录的路径。
 
-!!! note "注"
-    尾部斜杠是强制性的。
+:::note
+尾部斜杠是强制性的。
+:::
 
 **示例**
 
@@ -714,8 +715,9 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 
 用于处理大型查询的临时数据的路径。
 
-!!! note "注"
-    尾部斜杠是强制性的。
+:::note
+尾部斜杠是强制性的。
+:::
 
 **示例**
 
@@ -728,11 +730,12 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 从政策 [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) 存储临时文件。
 如果没有设置 [`tmp_path`](#server-settings-tmp_path) 被使用，否则被忽略。
 
-!!! note "注"
-    - `move_factor` 被忽略
+:::note
+- `move_factor` 被忽略
 - `keep_free_space_bytes` 被忽略
 - `max_data_part_size_bytes` 被忽略
 -您必须在该政策中只有一个卷
+:::
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -775,7 +778,7 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 
 ## zookeeper {#server-settings_zookeeper}
 
-包含允许ClickHouse与 [zookpeer](http://zookeeper.apache.org/) 集群。
+包含允许ClickHouse与 [zookeeper](http://zookeeper.apache.org/) 集群。
 
 ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复制的表，则可以省略此部分参数。
 

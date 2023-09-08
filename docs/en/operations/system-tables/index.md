@@ -11,14 +11,15 @@ pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 
 System tables provide information about:
 
--   Server states, processes, and environment.
--   Server’s internal processes.
+- Server states, processes, and environment.
+- Server’s internal processes.
+- Options used when the ClickHouse binary was built.
 
 System tables:
 
--   Located in the `system` database.
--   Available only for reading data.
--   Can’t be dropped or altered, but can be detached.
+- Located in the `system` database.
+- Available only for reading data.
+- Can’t be dropped or altered, but can be detached.
 
 Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
@@ -26,12 +27,12 @@ Unlike other system tables, the system log tables [metric_log](../../operations/
 
 System log tables can be customized by creating a config file with the same name as the table under `/etc/clickhouse-server/config.d/`, or setting corresponding elements in `/etc/clickhouse-server/config.xml`. Elements can be customized are:
 
--   `database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
--   `table`: table to insert data.
--   `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
--   `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
--   `flush_interval_milliseconds`: interval of flushing data to disk.
--   `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option is contradict with `partition_by` and `ttl`. If set together, the server would raise an exception and exit.
+- `database`: database the system log table belongs to. This option is deprecated now. All system log tables are under database `system`.
+- `table`: table to insert data.
+- `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
+- `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
+- `flush_interval_milliseconds`: interval of flushing data to disk.
+- `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option is contradict with `partition_by` and `ttl`. If set together, the server would raise an exception and exit.
 
 An example:
 
@@ -46,6 +47,10 @@ An example:
         <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </query_log>
 </clickhouse>
 ```
@@ -56,8 +61,8 @@ By default, table growth is unlimited. To control a size of a table, you can use
 
 For collecting system metrics ClickHouse server uses:
 
--   `CAP_NET_ADMIN` capability.
--   [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
+- `CAP_NET_ADMIN` capability.
+- [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
 
 **procfs**
 
@@ -65,13 +70,13 @@ If ClickHouse server does not have `CAP_NET_ADMIN` capability, it tries to fall 
 
 If procfs is supported and enabled on the system, ClickHouse server collects these metrics:
 
--   `OSCPUVirtualTimeMicroseconds`
--   `OSCPUWaitMicroseconds`
--   `OSIOWaitMicroseconds`
--   `OSReadChars`
--   `OSWriteChars`
--   `OSReadBytes`
--   `OSWriteBytes`
+- `OSCPUVirtualTimeMicroseconds`
+- `OSCPUWaitMicroseconds`
+- `OSIOWaitMicroseconds`
+- `OSReadChars`
+- `OSWriteChars`
+- `OSReadBytes`
+- `OSWriteBytes`
 
 ## Related content
 

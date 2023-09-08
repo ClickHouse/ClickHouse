@@ -4,6 +4,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -82,44 +83,6 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
     return true;
 }
-
-class StorageDummy : public IStorage
-{
-public:
-    StorageDummy(const StorageID & table_id_, const ColumnsDescription & columns_)
-        : IStorage(table_id_)
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_);
-        setInMemoryMetadata(storage_metadata);
-    }
-
-    std::string getName() const override { return "StorageDummy"; }
-
-    bool supportsSampling() const override { return true; }
-    bool supportsFinal() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool canMoveConditionsToPrewhere() const override { return false; }
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDummy does not support getQueryProcessingStage method");
-    }
-
-    Pipe read(const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDummy does not support read method");
-    }
-};
 
 Block getHeaderForProcessingStage(
     const Names & column_names,

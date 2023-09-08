@@ -23,6 +23,9 @@ struct PlusName { static constexpr auto name = "plus"; };
 struct MinusName { static constexpr auto name = "minus"; };
 struct MultiplyName { static constexpr auto name = "multiply"; };
 struct DivideName { static constexpr auto name = "divide"; };
+struct ModuloName { static constexpr auto name = "modulo"; };
+struct IntDivName { static constexpr auto name = "intDiv"; };
+struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
@@ -95,7 +98,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
                 types[i] = elem_func->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -141,6 +144,12 @@ using FunctionTupleMultiply = FunctionTupleOperator<MultiplyName>;
 
 using FunctionTupleDivide = FunctionTupleOperator<DivideName>;
 
+using FunctionTupleModulo = FunctionTupleOperator<ModuloName>;
+
+using FunctionTupleIntDiv = FunctionTupleOperator<IntDivName>;
+
+using FunctionTupleIntDivOrZero = FunctionTupleOperator<IntDivOrZeroName>;
+
 class FunctionTupleNegate : public ITupleFunction
 {
 public:
@@ -181,7 +190,7 @@ public:
                 auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
                 types[i] = elem_negate->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -258,7 +267,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
                 types[i] = elem_func->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -296,6 +305,12 @@ public:
 using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName>;
 
 using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
+
+using FunctionTupleModuloByNumber = FunctionTupleOperatorByNumber<ModuloName>;
+
+using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
+
+using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
 
 class FunctionDotProduct : public ITupleFunction
 {
@@ -363,7 +378,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -467,7 +482,7 @@ public:
                 auto plus_elem = plus->build({left, right});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -740,7 +755,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -842,7 +857,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -993,7 +1008,7 @@ public:
                 auto max_elem = max->build({left_type, right_type});
                 res_type = max_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1103,7 +1118,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (DB::Exception & e)
+            catch (Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1429,6 +1444,8 @@ private:
     FunctionPtr array_function;
 };
 
+extern FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
+
 extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
@@ -1441,6 +1458,14 @@ extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
+
+struct DotProduct
+{
+    static constexpr auto name = "dotProduct";
+
+    static constexpr auto CreateTupleFunction = FunctionDotProduct::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayDotProduct;
+};
 
 struct L1NormTraits
 {
@@ -1530,6 +1555,8 @@ struct CosineDistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
 };
 
+using TupleOrArrayFunctionDotProduct = TupleOrArrayFunction<DotProduct>;
+
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
 using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
 using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTraits>;
@@ -1551,35 +1578,38 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
+    factory.registerFunction<FunctionTupleModulo>();
+    factory.registerFunction<FunctionTupleIntDiv>();
+    factory.registerFunction<FunctionTupleIntDivOrZero>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    factory.registerFunction<FunctionAddTupleOfIntervals>(
+    factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Consecutively adds a tuple of intervals to a Date or a DateTime.
 [example:tuple]
 )",
-            Documentation::Examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+            .examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+            .categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionSubtractTupleOfIntervals>(
+    factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Consecutively subtracts a tuple of intervals from a Date or a DateTime.
 [example:tuple]
 )",
-            Documentation::Examples{
-                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))"},
+            .examples{
+                {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval", "Date", "DateTime"}
+            .categories{"Tuple", "Interval", "Date", "DateTime"}
         });
 
-    factory.registerFunction<FunctionTupleAddInterval>(
+    factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Adds an interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1587,16 +1617,16 @@ Adds an interval to another interval or tuple of intervals. The returned value i
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            Documentation::Examples{
-                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
-                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
-                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)"},
+            .examples{
+                {"tuple", "SELECT addInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
+                {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
+                {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval"}
+            .categories{"Tuple", "Interval"}
         });
-    factory.registerFunction<FunctionTupleSubtractInterval>(
+    factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 Adds an negated interval to another interval or tuple of intervals. The returned value is tuple of intervals.
 [example:tuple]
 [example:interval1]
@@ -1604,19 +1634,22 @@ Adds an negated interval to another interval or tuple of intervals. The returned
 If the types of the first interval (or the interval in the tuple) and the second interval are the same they will be merged into one interval.
 [example:interval2]
 )",
-            Documentation::Examples{
-                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)"},
-                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)"},
-                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)"},
+            .examples{
+                {"tuple", "SELECT subtractInterval((INTERVAL 1 DAY, INTERVAL 1 YEAR), INTERVAL 1 MONTH)", ""},
+                {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
+                {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
                 },
-            Documentation::Categories{"Tuple", "Interval"}
+            .categories{"Tuple", "Interval"}
         });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
+    factory.registerFunction<FunctionTupleModuloByNumber>();
+    factory.registerFunction<FunctionTupleIntDivByNumber>();
+    factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 
-    factory.registerFunction<FunctionDotProduct>();
-    factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<TupleOrArrayFunctionDotProduct>();
+    factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();

@@ -162,7 +162,7 @@ public:
 
     void insertDefault() override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
@@ -220,7 +220,12 @@ public:
 
     double getRatioOfDefaultRows(double) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction");
+        return 0.0;
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return 0;
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override

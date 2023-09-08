@@ -79,7 +79,7 @@ public:
     Float32 getFloat32(size_t n) const override { return getNestedColumn()->getFloat32(n); }
     bool getBool(size_t n) const override { return getNestedColumn()->getBool(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
@@ -144,6 +144,11 @@ public:
     double getRatioOfDefaultRows(double) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemented for ColumnUnique");
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
     }
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
@@ -368,7 +373,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
 }
 
 template <typename ColumnType>
-StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     if (is_nullable)
     {
@@ -665,8 +670,9 @@ UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & co
         for (size_t i = 0; i < column_size; ++i)
             column.updateHashWithValue(i, sip_hash);
 
+        hash = sip_hash.get128();
+
         std::lock_guard lock(mutex);
-        sip_hash.get128(hash);
         cur_hash = hash;
         num_added_rows.store(column_size);
     }

@@ -13,17 +13,22 @@ namespace ErrorCodes
 
 void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
-    compressed_hashing.next();
-    compressor.next();
-    plain_hashing.next();
+    /// Here the main goal is to do preFinalize calls for plain_file and marks_file
+    /// Before that all hashing and compression buffers have to be finalized
+    /// Otherwise some data might stuck in the buffers above plain_file and marks_file
+    /// Also the order is important
+
+    compressed_hashing.finalize();
+    compressor.finalize();
+    plain_hashing.finalize();
 
     if (compress_marks)
     {
-        marks_compressed_hashing.next();
-        marks_compressor.next();
+        marks_compressed_hashing.finalize();
+        marks_compressor.finalize();
     }
 
-    marks_hashing.next();
+    marks_hashing.finalize();
 
     plain_file->preFinalize();
     marks_file->preFinalize();
@@ -208,26 +213,26 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-    for (const auto & index_helper : skip_indices)
+    for (const auto & skip_index : skip_indices)
     {
-        String stream_name = index_helper->getFileName();
+        String stream_name = skip_index->getFileName();
         skip_indices_streams.emplace_back(
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
                         data_part->getDataPartStoragePtr(),
-                        stream_name, index_helper->getSerializedFileExtension(),
+                        stream_name, skip_index->getSerializedFileExtension(),
                         stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,
                         marks_compression_codec, settings.marks_compress_block_size,
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
         {
             store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
-        skip_indices_aggregators.push_back(index_helper->createIndexAggregatorForPart(store));
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -284,7 +289,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
         GinIndexStorePtr store;
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         {
             String stream_name = index_helper->getFileName();
             auto it = gin_index_stores.find(stream_name);
@@ -308,13 +313,13 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
 
-                writeIntBinary(stream.plain_hashing.count(), marks_out);
-                writeIntBinary(stream.compressed_hashing.offset(), marks_out);
+                writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
+                writeBinaryLittleEndian(stream.compressed_hashing.offset(), marks_out);
 
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with the normal .mrk2 file format
                 if (settings.can_use_adaptive_granularity)
-                    writeIntBinary(1UL, marks_out);
+                    writeBinaryLittleEndian(1UL, marks_out);
             }
 
             size_t pos = granule.start_row;
@@ -347,9 +352,12 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         }
 
         if (compress_primary_key)
-            index_source_hashing_stream->next();
+        {
+            index_source_hashing_stream->finalize();
+            index_compressor_stream->finalize();
+        }
 
-        index_file_hashing_stream->next();
+        index_file_hashing_stream->finalize();
 
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         if (compress_primary_key)
@@ -388,6 +396,18 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
             skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed_hashing);
+
+        /// Register additional files written only by the inverted index. Required because otherwise DROP TABLE complains about unknown
+        /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
+        /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_indices[i]) != nullptr)
+        {
+            String filename_without_extension = skip_indices[i]->getFileName();
+            checksums.files[filename_without_extension + ".gin_dict"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + ".gin_post"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + ".gin_seg"] = MergeTreeDataPartChecksums::Checksum();
+            checksums.files[filename_without_extension + ".gin_sid"] = MergeTreeDataPartChecksums::Checksum();
+        }
     }
 
     for (auto & stream : skip_indices_streams)

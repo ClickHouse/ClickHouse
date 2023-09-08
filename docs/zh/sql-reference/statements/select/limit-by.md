@@ -14,8 +14,9 @@ ClickHouse支持以下语法变体:
 
 处理查询时，ClickHouse首先选择经由排序键排序过后的数据。排序键可以显式地使用[ORDER BY](order-by.md#select-order-by)从句指定，或隐式地使用表引擎使用的排序键（数据的顺序仅在使用[ORDER BY](order-by.md#select-order-by)时才可以保证，否则由于多线程处理，数据顺序会随机化）。然后ClickHouse执行`LIMIT n BY expressions`从句，将每一行按 `expressions` 的值进行分组，并对每一分组返回前`n`行。如果指定了`OFFSET`，那么对于每一分组，ClickHouse会跳过前`offset_value`行，接着返回前`n`行。如果`offset_value`大于某一分组的行数，ClickHouse会从分组返回0行。
 
-!!! note "注"
-    `LIMIT BY`与[LIMIT](../../../sql-reference/statements/select/limit.md)没有关系。它们可以在同一个查询中使用。
+:::note
+`LIMIT BY`与[LIMIT](../../../sql-reference/statements/select/limit.md)没有关系。它们可以在同一个查询中使用。
+:::
 
 ## 例 {#examples}
 

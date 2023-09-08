@@ -19,6 +19,7 @@
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").get<UInt64>());
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();
@@ -135,7 +136,9 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     if (settings.http_max_multipart_form_data_size)
         read_buffer = std::make_unique<LimitReadBuffer>(
             stream, settings.http_max_multipart_form_data_size,
-            true, "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting");
+            /* trow_exception */ true, /* exact_limit */ std::optional<size_t>(),
+            "the maximum size of multipart/form-data. "
+            "This limit can be tuned by 'http_max_multipart_form_data_size' setting");
     else
         read_buffer = wrapReadBufferReference(stream);
 
@@ -164,7 +167,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
-    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
 
     /// Write data
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));

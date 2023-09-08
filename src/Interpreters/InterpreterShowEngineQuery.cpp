@@ -12,7 +12,7 @@ namespace DB
 
 BlockIO InterpreterShowEnginesQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.table_engines", getContext(), true);
+    return executeQuery("SELECT * FROM system.table_engines ORDER BY name", getContext(), true);
 }
 
 }

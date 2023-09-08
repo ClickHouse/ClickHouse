@@ -6,6 +6,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 #include <filesystem>
 #include <queue>
 
@@ -29,6 +30,7 @@ public:
     BackupEntriesCollector(const ASTBackupQuery::Elements & backup_query_elements_,
                            const BackupSettings & backup_settings_,
                            std::shared_ptr<IBackupCoordination> backup_coordination_,
+                           const ReadSettings & read_settings_,
                            const ContextPtr & context_);
     ~BackupEntriesCollector();
 
@@ -39,6 +41,7 @@ public:
 
     const BackupSettings & getBackupSettings() const { return backup_settings; }
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
+    const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
 
     /// Adds a backup entry which will be later returned by run().
@@ -92,10 +95,14 @@ private:
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
+    const ReadSettings read_settings;
     ContextPtr context;
     std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds consistent_metadata_snapshot_timeout;
     Poco::Logger * log;
+    /// Unfortunately we can use ZooKeeper for collecting information for backup
+    /// and we need to retry...
+    ZooKeeperRetriesInfo global_zookeeper_retries_info;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;

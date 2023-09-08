@@ -53,7 +53,7 @@ Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
 X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
 
 1
 ```
@@ -96,7 +96,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-默认情况下，返回的数据是`TabSeparated`格式的，更多信息，见[Formats](../interfaces/formats/)部分。
+默认情况下，返回的数据是`TabSeparated`格式的，更多信息，见[Formats](../interfaces/formats.md)部分。
 
 您可以使用查询的FORMAT子句来设置其他格式。
 
@@ -188,8 +188,9 @@ $ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number
 $ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
-!!! note "警告"
-    一些HTTP客户端可能会在默认情况下从服务器解压数据(使用`gzip`和`deflate`)，即使您未正确地使用了压缩设置，您也可能会得到解压数据。
+:::warning
+一些HTTP客户端可能会在默认情况下从服务器解压数据(使用`gzip`和`deflate`)，即使您未正确地使用了压缩设置，您也可能会得到解压数据。
+:::
 
 您可以使用`database`URL参数或`X-ClickHouse-Database`头来指定默认数据库。
 
@@ -261,9 +262,9 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 您可以在`X-ClickHouse-Progress`响应头中收到查询进度的信息。为此，启用[Http Header携带进度](../operations/settings/settings.md#settings-send_progress_in_http_headers)。示例：
 
 ``` text
-X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
-X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
-X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","peak_memory_usage":"4371480"}
+X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128","peak_memory_usage":"13621616"}
+X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128","peak_memory_usage":"23155600"}
 ```
 
 显示字段信息:
@@ -362,7 +363,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -447,8 +448,9 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-!!! note "警告"
-    在一个`predefined_query_handler`中，只支持insert类型的一个`查询`。
+:::warning
+在一个`predefined_query_handler`中，只支持insert类型的一个`查询`。
+:::
 
 ### 动态查询 {#dynamic_query_handler}
 
@@ -519,7 +521,7 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
 <
 * Connection #0 to host localhost left intact
 Say Hi!%
@@ -559,7 +561,7 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -611,7 +613,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -630,7 +632,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
 < Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","peak_memory_usage":"0"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact

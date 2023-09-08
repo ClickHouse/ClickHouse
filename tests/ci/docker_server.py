@@ -15,7 +15,7 @@ from github import Github
 
 from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, get_commit, post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
@@ -238,7 +238,7 @@ def build_and_push_image(
     result = []  # type: TestResults
     if os != "ubuntu":
         tag += f"-{os}"
-    init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
+    init_args = ["docker", "buildx", "build"]
     if push:
         init_args.append("--push")
         init_args.append("--output=type=image,push-by-digest=true")
@@ -369,11 +369,11 @@ def main():
 
     description = f"Processed tags: {', '.join(tags)}"
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    description = format_description(description)
 
     gh = Github(get_best_robot_token(), per_page=100)
-    post_commit_status(gh, pr_info.sha, NAME, description, status, url)
+    commit = get_commit(gh, pr_info.sha)
+    post_commit_status(commit, status, url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
