@@ -990,19 +990,10 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
         {
             ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
 
-            const auto & col_with_type_and_name =  columnGetNested(arguments[0]);
+            const auto & col_with_type_and_name = columnGetNested(arguments[0]);
             const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
             const DateLUTImpl * time_zone = nullptr;
-
-            if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
-                time_zone = &DateLUT::instance();
-            /// For argument of Date or DateTime type, second argument with time zone could be specified.
-            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
-            {
-                auto non_null_args = createBlockWithNestedColumns(arguments);
-                time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
-            }
 
             if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
             {
@@ -1013,17 +1004,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                 ColumnString::Offsets & offsets_to = col_to->getOffsets();
                 size_t size = vec_from.size();
 
-                if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
-                else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
-                else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
-                else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
-                else
-                    data_to.resize(size * 3);   /// Arbitrary
-
+                data_to.resize(size * 3);
                 offsets_to.resize(size);
 
                 WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
