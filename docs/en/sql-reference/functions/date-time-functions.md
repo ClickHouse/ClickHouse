@@ -720,6 +720,42 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┴───────────────┘
 ```
 
+## toDaysSinceYearZero
+
+Returns for a given date, the number of days passed since the [year 0](https://en.wikipedia.org/wiki/Year_zero).
+
+**Syntax**
+
+``` sql
+toDaysSinceYearZero(date)
+```
+
+Aliases: `TO_DAYS`
+
+**Arguments**
+
+- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date64](../../sql-reference/data-types/date64.md).
+
+**Returned value**
+
+The number of days passed since date 0000-01-01.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT toDaysSinceYearZero(toDate('2023-09-08'));
+```
+
+Result:
+
+``` text
+┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
+│                                     738772 │
+└────────────────────────────────────────────┘
+```
+
 ## age
 
 Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.

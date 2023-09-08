@@ -925,6 +925,31 @@ struct ToDayOfYearImpl
     using FactorTransform = ToStartOfYearImpl;
 };
 
+struct ToDaysSinceYearZeroImpl
+{
+    static constexpr auto name = "toDaysSinceYearZero";
+
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwDateTimeIsNotSupported(name);
+    }
+    static UInt32 execute(UInt32, const DateLUTImpl &)
+    {
+        throwDateTimeIsNotSupported(name);
+    }
+    static UInt32 execute(Int32 d, const DateLUTImpl &)
+    {
+        return /* days between 0000-01-01 and 1970-01-01 */ 719'164 + d;
+    }
+    static UInt32 execute(UInt16 d, const DateLUTImpl &)
+    {
+        return /* days between 0000-01-01 and 1970-01-01 */ 719'164 + d;
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToHourImpl
 {
     static constexpr auto name = "toHour";
