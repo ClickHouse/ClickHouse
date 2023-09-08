@@ -201,12 +201,10 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     comment_body = (
         f"<!-- automatic status comment for PR #{pr_info.number} "
         f"from {pr_info.head_name}:{pr_info.head_ref} -->\n"
-        f"This is an automated comment for commit {pr_info.sha} with "
-        f"description of existing statuses. It's updated for the latest CI running\n"
-        f"The full report is available [here]({report_url})\n"
-        f"{worst_state}\n\n<table>"
-        "<thead><tr><th>Check name</th><th>Description</th><th>Status</th></tr></thead>\n"
-        "<tbody>"
+        f"*This is an automated comment for commit {pr_info.sha} with "
+        f"description of existing statuses. It's updated for the latest CI running*\n"
+        f"📄 [Click here]({report_url}) to open a full report in a separate page\n"
+        f"{worst_state}\n\n"
     )
     # group checks by the name to get the worst one per each
     grouped_statuses = {}  # type: Dict[CheckDescription, CommitStatuses]
@@ -230,17 +228,45 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         else:
             grouped_statuses[cd] = [status]
 
-    table_rows = []  # type: List[str]
+    table_header = (
+        "<table>\n"
+        "<thead><tr><th>Check name</th><th>Description</th><th>Status</th></tr></thead>\n"
+        "<tbody>\n"
+    )
+    table_footer = "<tbody>\n</table>\n"
+
+    details_header = "<details><summary>Successfull checks</summary>\n"
+    details_footer = "</details>\n"
+
+    visible_table_rows = []  # type: List[str]
+    hidden_table_rows = []  # type: List[str]
     for desc, gs in grouped_statuses.items():
-        table_rows.append(
+        state = get_worst_state(gs)
+        table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{beauty_state(get_worst_state(gs))}</td></tr>\n"
+            f"<td>{beauty_state(state)}</td></tr>\n"
         )
+        if state == SUCCESS:
+            hidden_table_rows.append(table_row)
+        else:
+            visible_table_rows.append(table_row)
 
-    table_rows.sort()
+    visible_table_rows.sort()
+    hidden_table_rows.sort()
 
-    comment_footer = "</table>"
-    return "".join([comment_body, *table_rows, comment_footer])
+    return "".join(
+        [
+            comment_body,
+            table_header,
+            *visible_table_rows,
+            table_footer,
+            details_header,
+            table_header,
+            *hidden_table_rows,
+            table_footer,
+            details_footer,
+        ]
+    )
 
 
 def get_worst_state(statuses: CommitStatuses) -> str:
