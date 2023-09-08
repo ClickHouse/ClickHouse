@@ -993,8 +993,6 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
             const auto & col_with_type_and_name = columnGetNested(arguments[0]);
             const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
-            const DateLUTImpl * time_zone = nullptr;
-
             if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
             {
                 auto col_to = ColumnString::create();
@@ -1013,7 +1011,8 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, nullptr);
+                        /// We don't use timezones in this branch
                         null_map->getData()[i] |= !is_ok;
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
@@ -1023,7 +1022,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                 {
                     for (size_t i = 0; i < size; ++i)
                     {
-                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, nullptr);
                         writeChar(0, write_buffer);
                         offsets_to[i] = write_buffer.count();
                     }
