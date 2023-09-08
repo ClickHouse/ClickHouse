@@ -52,8 +52,11 @@ def release_branch(name: str) -> str:
 class Runner:
     """lightweight check_output wrapper with stripping last NEW_LINE"""
 
-    def __init__(self, cwd: str = CWD):
+    def __init__(self, cwd: str = CWD, set_cwd_to_git_root: bool = False):
         self._cwd = cwd
+        # delayed set cwd to the repo's root, to not do it at the import stage
+        self._git_root = None  # type: Optional[str]
+        self._set_cwd_to_git_root = set_cwd_to_git_root
 
     def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
         if cwd is None:
@@ -68,6 +71,12 @@ class Runner:
 
     @property
     def cwd(self) -> str:
+        if self._set_cwd_to_git_root:
+            if self._git_root is None:
+                self._git_root = p.realpath(
+                    p.join(self._cwd, self.run("git rev-parse --show-cdup", self._cwd))
+                )
+            return self._git_root
         return self._cwd
 
     @cwd.setter
@@ -81,11 +90,7 @@ class Runner:
         return self.run(*args, **kwargs)
 
 
-git_runner = Runner()
-# Set cwd to abs path of git root
-git_runner.cwd = p.relpath(
-    p.join(git_runner.cwd, git_runner.run("git rev-parse --show-cdup"))
-)
+git_runner = Runner(set_cwd_to_git_root=True)
 
 
 def is_shallow() -> bool:
