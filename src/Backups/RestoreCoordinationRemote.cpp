@@ -246,11 +246,6 @@ void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_que
             with_retries.renewZooKeeper(zk);
 
             String path = zookeeper_path + "/table_uuids/" + escapeForFileName(query_str);
-
-            Coordination::Requests ops;
-            ops.emplace_back(zkutil::makeCreateRequest(path, new_uuids_str, zkutil::CreateMode::Persistent));
-
-            Coordination::Responses responses;
             Coordination::Error res = zk->tryCreate(path, new_uuids_str, zkutil::CreateMode::Persistent);
 
             if (res == Coordination::Error::ZOK)
