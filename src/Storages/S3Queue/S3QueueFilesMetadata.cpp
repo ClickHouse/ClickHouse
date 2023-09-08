@@ -19,7 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TIMEOUT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -113,16 +113,9 @@ bool S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::str
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = storage->getZooKeeper();
 
-    /// The following requests to the following:
-    /// If !exists(processed_node) && !exists(failed_node) && !exists(processing_node) => create(processing_node)
     Coordination::Requests requests;
-    /// Check that processed node does not appear.
-    requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, "", zkutil::CreateMode::Persistent));
-    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processed_path / node_name, -1));
-    /// Check that failed node does not appear.
-    requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, "", zkutil::CreateMode::Persistent));
-    requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name, -1));
-    /// Check that processing node does not exist and create if not.
+    zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_processed_path / node_name);
+    zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
     requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata, zkutil::CreateMode::Ephemeral));
 
     Coordination::Responses responses;
@@ -139,42 +132,30 @@ bool S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::strin
     while (true)
     {
         Coordination::Requests requests;
-        zkutil::addCheckNotExistsRequest(requests, zk_client, zookeeper_failed_path / node_name);
-        zkutil::addCheckNotExistsRequest(requests, zk_client, zookeeper_processing_path / node_name);
-        requests.push_back(zkutil::makeGetRequest(zookeeper_processed_path));
+        zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
+        zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_processing_path / node_name);
 
         Coordination::Responses responses;
         auto code = zk_client->tryMulti(requests, responses);
-
         if (code != Coordination::Error::ZOK)
         {
-            if (responses[0]->error != Coordination::Error::ZOK
-                || responses[1]->error != Coordination::Error::ZOK)
-            {
-                /// Path is already in Failed or Processing.
-                return false;
-            }
-            /// GetRequest for zookeeper_processed_path should never fail,
-            /// because this is persistent node created at the creation of S3Queue storage.
-            throw zkutil::KeeperException::fromPath(code, requests.back()->getPath());
+            LOG_TEST(log, "Skipping file `{}`: {}",
+                    path, responses[0]->error != Coordination::Error::ZOK ? "failed" : "processing");
+            return false;
         }
 
         Coordination::Stat processed_node_stat;
+        auto data = zk_client->get(zookeeper_processed_path, &processed_node_stat);
         NodeMetadata processed_node_metadata;
-        if (const auto * get_response = dynamic_cast<const Coordination::GetResponse *>(responses.back().get()))
-        {
-            processed_node_stat = get_response->stat;
-            if (!get_response->data.empty())
-                processed_node_metadata = NodeMetadata::fromString(get_response->data);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected response type with error: {}", responses.back()->error);
+        if (!data.empty())
+            processed_node_metadata = NodeMetadata::fromString(data);
 
         auto max_processed_file_path = processed_node_metadata.file_path;
         if (!max_processed_file_path.empty() && path <= max_processed_file_path)
             return false;
 
         requests.clear();
+        responses.clear();
         zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
         requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata, zkutil::CreateMode::Ephemeral));
         requests.push_back(zkutil::makeCheckRequest(zookeeper_processed_path, processed_node_stat.version));
@@ -186,10 +167,14 @@ bool S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::strin
         if (responses[0]->error != Coordination::Error::ZOK
             || responses[1]->error != Coordination::Error::ZOK)
         {
-            /// Path is already in Failed or Processing.
+            LOG_TEST(log, "Skipping file `{}`: {}",
+                    path, responses[0]->error != Coordination::Error::ZOK ? "failed" : "processing");
             return false;
         }
-        /// Max processed path changed. Retry.
+        else
+        {
+            LOG_TEST(log, "Version of max processed file changed. Retring the check for file `{}`", path);
+        }
     }
 }
 
@@ -228,9 +213,9 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(const String & path)
 
     /// TODO this could be because of the expired session.
     if (responses[0]->error != Coordination::Error::ZOK)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to set file as processed but it is not processing");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set file as processed but it is not processing");
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to set file as processed but it is already processed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set file as processed but it is already processed");
 }
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedMode(const String & path)
@@ -273,36 +258,83 @@ void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exc
     auto node_metadata = createNodeMetadata(path, exception_message);
     const auto zk_client = storage->getZooKeeper();
 
-    Coordination::Requests requests;
-    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
-    requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, node_metadata.toString(), zkutil::CreateMode::Persistent));
-
-    Coordination::Responses responses;
-    auto code = zk_client->tryMulti(requests, responses);
-    if (code == Coordination::Error::ZOK)
-        return;
-
-    if (responses[0]->error != Coordination::Error::ZOK)
+    if (max_loading_retries == 0)
     {
-        /// TODO this could be because of the expired session.
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attemp to set file as filed but it is not processing");
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
+        requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name,
+                                                     node_metadata.toString(),
+                                                     zkutil::CreateMode::Persistent));
+
+        Coordination::Responses responses;
+        auto code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_TEST(log, "File `{}` failed to process and will not be retried. "
+                     "Error: {}", path, exception_message);
+            return;
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
     }
 
+    const auto node_name_with_retriable_suffix = node_name + ".retriable";
+
     Coordination::Stat stat;
-    auto failed_node_metadata = NodeMetadata::fromString(zk_client->get(zookeeper_failed_path / node_name, &stat));
-    node_metadata.retries = failed_node_metadata.retries + 1;
+    std::string res;
+    if (zk_client->tryGet(zookeeper_failed_path / node_name_with_retriable_suffix, res, &stat))
+    {
+        auto failed_node_metadata = NodeMetadata::fromString(res);
+        node_metadata.retries = failed_node_metadata.retries + 1;
+    }
 
-    /// Failed node already exists, update it.
-    requests.clear();
-    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
-    requests.push_back(zkutil::makeSetRequest(zookeeper_failed_path / node_name, node_metadata.toString(), stat.version));
+    LOG_TEST(log, "File `{}` failed to process, try {}/{} (Error: {})",
+             path, node_metadata.retries, max_loading_retries, exception_message);
 
-    responses.clear();
-    code = zk_client->tryMulti(requests, responses);
-    if (code == Coordination::Error::ZOK)
-        return;
+    if (node_metadata.retries >= max_loading_retries)
+    {
+        /// File is no longer retriable.
+        /// Make a failed/node_name node and remove failed/node_name.retriable node.
+        /// TODO always add version for processing node.
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
+        requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name_with_retriable_suffix,
+                                                     stat.version));
+        requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name,
+                                                     node_metadata.toString(),
+                                                     zkutil::CreateMode::Persistent));
+
+        Coordination::Responses responses;
+        auto code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+            return;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
+    }
+    else
+    {
+        Coordination::Requests requests;
+        requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
+        if (node_metadata.retries == 0)
+        {
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name_with_retriable_suffix,
+                                                         node_metadata.toString(),
+                                                         zkutil::CreateMode::Persistent));
+        }
+        else
+        {
+            requests.push_back(zkutil::makeSetRequest(zookeeper_failed_path / node_name_with_retriable_suffix,
+                                                      node_metadata.toString(),
+                                                      stat.version));
+        }
+        Coordination::Responses responses;
+        auto code = zk_client->tryMulti(requests, responses);
+        if (code == Coordination::Error::ZOK)
+            return;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
+    }
 }
 
 }

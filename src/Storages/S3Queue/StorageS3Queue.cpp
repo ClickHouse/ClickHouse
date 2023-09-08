@@ -41,7 +41,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_NOT_ALLOWED;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int INCOMPATIBLE_COLUMNS;
@@ -391,7 +390,7 @@ void StorageS3Queue::checkTableStructure(const String & zookeeper_prefix, const 
     S3QueueTableMetadata old_metadata(configuration, *s3queue_settings, storage_metadata);
     old_metadata.checkEquals(metadata_from_zk);
 
-    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns"));
+    auto columns_from_zk = ColumnsDescription::parse(metadata_from_zk.columns);
     const ColumnsDescription & old_columns = storage_metadata.getColumns();
     if (columns_from_zk != old_columns)
     {
