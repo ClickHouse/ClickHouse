@@ -41,6 +41,8 @@ bool MergeTreeThreadSelectAlgorithm::getNewTaskImpl()
 
 void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
 {
+    chassert(task->data_part);
+
     const std::string part_name = task->data_part->isProjectionPart() ? task->data_part->getParentPart()->name : task->data_part->name;
 
     /// Allows pool to reduce number of threads in case of too slow reads.
