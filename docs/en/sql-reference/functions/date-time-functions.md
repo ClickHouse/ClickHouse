@@ -1505,25 +1505,25 @@ Additionally, the `formatDateTime` function can take a third String argument con
 
 ```sql
 SELECT
-    time_zone,
     now() AS ts,
-    formatDateTime(ts, '%T', time_zone) AS str_time_timezone
+    time_zone,
+    formatDateTime(ts, '%T', time_zone) AS str_tz_time
 FROM system.time_zones
 WHERE time_zone LIKE 'Europe%'
 LIMIT 10
 
-┌─time_zone─────────┬──────────────────ts─┬─str_time_timezone─┐
-│ Europe/Amsterdam  │ 2023-09-08 19:03:14 │ 21:03:14          │
-│ Europe/Andorra    │ 2023-09-08 19:03:14 │ 21:03:14          │
-│ Europe/Astrakhan  │ 2023-09-08 19:03:14 │ 23:03:14          │
-│ Europe/Athens     │ 2023-09-08 19:03:14 │ 22:03:14          │
-│ Europe/Belfast    │ 2023-09-08 19:03:14 │ 20:03:14          │
-│ Europe/Belgrade   │ 2023-09-08 19:03:14 │ 21:03:14          │
-│ Europe/Berlin     │ 2023-09-08 19:03:14 │ 21:03:14          │
-│ Europe/Bratislava │ 2023-09-08 19:03:14 │ 21:03:14          │
-│ Europe/Brussels   │ 2023-09-08 19:03:14 │ 21:03:14          │
-│ Europe/Bucharest  │ 2023-09-08 19:03:14 │ 22:03:14          │
-└───────────────────┴─────────────────────┴───────────────────┘
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_time─┐
+│ 2023-09-08 19:13:40 │ Europe/Amsterdam  │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Andorra    │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Astrakhan  │ 23:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Athens     │ 22:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Belfast    │ 20:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Belgrade   │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Berlin     │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Bratislava │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Brussels   │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Bucharest  │ 22:13:40    │
+└─────────────────────┴───────────────────┴─────────────┘
 ```
 
 **See Also**
