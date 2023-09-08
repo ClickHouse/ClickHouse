@@ -12,6 +12,7 @@ from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
+from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
@@ -140,9 +141,11 @@ STATUS_ICON_MAP = defaultdict(
 )
 
 
-def update_pr_title_icon(pr: Github.PullRequest, status: str) -> None:
-    new_title = pr.title
+def update_pr_title_icon(pr: PullRequest, status: str) -> None:
     new_status_icon = STATUS_ICON_MAP[status]
+    if not new_status_icon:
+        return
+    new_title = pr.title
     if new_title and new_title[-1] != new_status_icon:
         if new_title[-1] in set(STATUS_ICON_MAP.values()):
             new_title = new_title[:-1] + " " + new_status_icon
@@ -207,20 +210,14 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
     report_url = create_ci_report(pr_info, statuses)
     worst_state = get_worst_state(statuses)
-    if not worst_state:
-        # Theoretically possible, although
-        # the function should not be used on empty statuses
-        worst_state = "The commit doesn't have the statuses yet"
-    else:
-        worst_state = f"The overall status of the commit is {STATUS_ICON_MAP[worst_state]} {worst_state}"
 
     comment_body = (
         f"<!-- automatic status comment for PR #{pr_info.number} "
         f"from {pr_info.head_name}:{pr_info.head_ref} -->\n"
         f"*This is an automated comment for commit {pr_info.sha} with "
         f"description of existing statuses. It's updated for the latest CI running*\n\n"
-        f"[📄 Click here]({report_url}) to open a full report in a separate page\n"
-        f"{worst_state}\n\n"
+        f"[{STATUS_ICON_MAP[worst_state]} Click here]({report_url}) to open a full report in a separate page\n"
+        f"\n"
     )
     # group checks by the name to get the worst one per each
     grouped_statuses = {}  # type: Dict[CheckDescription, CommitStatuses]
@@ -260,7 +257,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         state = get_worst_state(gs)
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{STATUS_ICON_MAP[worst_state]} {worst_state}</td></tr>\n"
+            f"<td>{STATUS_ICON_MAP[state]} {state}</td></tr>\n"
         )
         if state == SUCCESS:
             hidden_table_rows.append(table_row)
