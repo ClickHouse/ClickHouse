@@ -67,6 +67,7 @@ public:
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
+    bool isProjectInput() const { return project_input; }
 
     struct Node
     {

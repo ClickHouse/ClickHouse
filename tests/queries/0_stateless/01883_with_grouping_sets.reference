@@ -11,9 +11,7 @@ ExpressionTransform
             ExpressionTransform × 2
               AggregatingTransform × 2
                 Copy 1 → 2
-                  (Expression)
-                  ExpressionTransform
-                    (ReadFromMemoryStorage)
+                  (ReadFromMemoryStorage)
 1	0	1	4500
 1	0	3	4700
 1	0	5	4900
