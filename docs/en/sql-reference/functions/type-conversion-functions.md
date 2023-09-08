@@ -892,9 +892,9 @@ Query:
 
 ``` sql
 SELECT
-    time_zone,
     now() AS ts,
-    toString(ts, time_zone)
+    time_zone,
+    toString(ts, time_zone) AS str_tz_datetime
 FROM system.time_zones
 WHERE time_zone LIKE 'Europe%'
 LIMIT 10
@@ -903,18 +903,18 @@ LIMIT 10
 Result:
 
 ```response
-┌─time_zone─────────┬──────────────────ts─┬─toString(now(), time_zone)─┐
-│ Europe/Amsterdam  │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
-│ Europe/Andorra    │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
-│ Europe/Astrakhan  │ 2023-09-08 18:51:22 │ 2023-09-08 22:51:22        │
-│ Europe/Athens     │ 2023-09-08 18:51:22 │ 2023-09-08 21:51:22        │
-│ Europe/Belfast    │ 2023-09-08 18:51:22 │ 2023-09-08 19:51:22        │
-│ Europe/Belgrade   │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
-│ Europe/Berlin     │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
-│ Europe/Bratislava │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
-│ Europe/Brussels   │ 2023-09-08 18:51:22 │ 2023-09-08 20:51:22        │
-│ Europe/Bucharest  │ 2023-09-08 18:51:22 │ 2023-09-08 21:51:22        │
-└───────────────────┴─────────────────────┴────────────────────────────┘
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
+│ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Astrakhan  │ 2023-09-08 23:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Athens     │ 2023-09-08 22:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belfast    │ 2023-09-08 20:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belgrade   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Berlin     │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bratislava │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Brussels   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bucharest  │ 2023-09-08 22:14:59 │
+└─────────────────────┴───────────────────┴─────────────────────┘
 ```
 
 Also see the `toUnixTimestamp` function.
