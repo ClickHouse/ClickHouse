@@ -4,14 +4,15 @@ import logging
 import subprocess
 import os
 import sys
+from pathlib import Path
 
 from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
 from clickhouse_helper import (
+    CiLogsCredentials,
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
-    get_instance_type,
 )
 from commit_status_helper import (
     RerunHelper,
@@ -19,7 +20,7 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
 )
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import (
     REPORTS_PATH,
     TEMP_PATH,
@@ -29,25 +30,23 @@ from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
 
 def get_run_command(
-    check_start_time, check_name, pr_number, sha, download_url, workspace_path, image
-):
-    instance_type = get_instance_type()
-
+    pr_info: PRInfo,
+    build_url: str,
+    workspace_path: str,
+    ci_logs_args: str,
+    image: DockerImage,
+) -> str:
     envs = [
-        "-e CLICKHOUSE_CI_LOGS_HOST",
-        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-        f"-e PR_TO_TEST={pr_number}",
-        f"-e SHA_TO_TEST={sha}",
-        f"-e BINARY_URL_TO_DOWNLOAD='{download_url}'",
+        f"-e PR_TO_TEST={pr_info.number}",
+        f"-e SHA_TO_TEST={pr_info.sha}",
+        f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
     ]
 
     env_str = " ".join(envs)
@@ -57,6 +56,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
+        f"{ci_logs_args}"
         f"--volume={workspace_path}:/workspace "
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
@@ -107,14 +107,16 @@ def main():
     workspace_path = os.path.join(temp_path, "workspace")
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
+    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
 
     run_command = get_run_command(
-        stopwatch.start_time_str,
-        check_name,
-        pr_info.number,
-        pr_info.sha,
+        pr_info,
         build_url,
         workspace_path,
+        ci_logs_args,
         docker_image,
     )
     logging.info("Going to run %s", run_command)
@@ -122,35 +124,15 @@ def main():
     run_log_path = os.path.join(temp_path, "run.log")
     main_log_path = os.path.join(workspace_path, "main.log")
 
-    with open(run_log_path, "w", encoding="utf-8") as log:
-        with subprocess.Popen(
-            run_command, shell=True, stderr=log, stdout=log
-        ) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+    with TeePopen(run_command, run_log_path) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+        else:
+            logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-
-    if ci_logs_host not in ("CLICKHOUSE_CI_LOGS_HOST", ""):
-        subprocess.check_call(
-            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}' '{main_log_path}'",
-            shell=True,
-        )
+    ci_logs_credentials.clean_ci_logs_from_credentials(Path(run_log_path))
 
     check_name_lower = (
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
@@ -178,7 +160,7 @@ def main():
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(Path(paths[f]), s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""

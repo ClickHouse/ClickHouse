@@ -189,7 +189,7 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:

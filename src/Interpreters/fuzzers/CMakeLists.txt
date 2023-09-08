@@ -5,5 +5,4 @@ target_link_libraries(execute_query_fuzzer PRIVATE
     clickhouse_table_functions
     clickhouse_aggregate_functions
     clickhouse_dictionaries
-    clickhouse_dictionaries_embedded
-    ${LIB_FUZZING_ENGINE})
+    clickhouse_dictionaries_embedded)

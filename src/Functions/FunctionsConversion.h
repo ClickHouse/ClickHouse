@@ -58,6 +58,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/IPv6ToBinary.h>
+#include "DataTypes/IDataType.h"
 #include <Core/Types.h>
 
 
@@ -87,6 +88,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int CANNOT_PARSE_BOOL;
 }
 
 
@@ -883,75 +885,179 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
-        ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
-
-        const auto & col_with_type_and_name =  columnGetNested(arguments[0]);
-        const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
-
-        const DateLUTImpl * time_zone = nullptr;
-
-        if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
-            time_zone = &DateLUT::instance();
-        /// For argument of Date or DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
+        if constexpr (IsDataTypeDateOrDateTime<FromDataType>)
         {
-            auto non_null_args = createBlockWithNestedColumns(arguments);
-            time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
-        }
+            auto datetime_arg = arguments[0];
 
-        if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
-        {
-            auto col_to = ColumnString::create();
+            const DateLUTImpl * time_zone = nullptr;
+            const ColumnConst * time_zone_column = nullptr;
 
-            const typename ColVecType::Container & vec_from = col_from->getData();
-            ColumnString::Chars & data_to = col_to->getChars();
-            ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            size_t size = vec_from.size();
-
-            if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
-                data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
-            else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
-                data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
-            else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
-                data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
-            else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
-            else
-                data_to.resize(size * 3);   /// Arbitrary
-
-            offsets_to.resize(size);
-
-            WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
-
-            if (null_map)
+            if (arguments.size() == 1)
             {
-                for (size_t i = 0; i < size; ++i)
+                auto non_null_args = createBlockWithNestedColumns(arguments);
+                time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+            }
+            else /// When we have a column for timezone
+            {
+                datetime_arg.column = datetime_arg.column->convertToFullColumnIfConst();
+
+                if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
+                    time_zone = &DateLUT::instance();
+                /// For argument of Date or DateTime type, second argument with time zone could be specified.
+                if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
-                    bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
-                    null_map->getData()[i] |= !is_ok;
-                    writeChar(0, write_buffer);
-                    offsets_to[i] = write_buffer.count();
+                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
+                    {
+                        auto non_null_args = createBlockWithNestedColumns(arguments);
+                        time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+                    }
                 }
             }
-            else
+            const auto & col_with_type_and_name = columnGetNested(datetime_arg);
+
+            if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
             {
-                for (size_t i = 0; i < size; ++i)
+                auto col_to = ColumnString::create();
+
+                const typename ColVecType::Container & vec_from = col_from->getData();
+                ColumnString::Chars & data_to = col_to->getChars();
+                ColumnString::Offsets & offsets_to = col_to->getOffsets();
+                size_t size = vec_from.size();
+
+                if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
+                else
+                    data_to.resize(size * 3);   /// Arbitrary
+
+                offsets_to.resize(size);
+
+                WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
+                const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
+
+                ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
+
+                if (null_map)
                 {
-                    FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
-                    writeChar(0, write_buffer);
-                    offsets_to[i] = write_buffer.count();
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!time_zone_column && arguments.size() > 1)
+                        {
+                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            else
+                                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
+                        }
+                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        null_map->getData()[i] |= !is_ok;
+                        writeChar(0, write_buffer);
+                        offsets_to[i] = write_buffer.count();
+                    }
                 }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!time_zone_column && arguments.size() > 1)
+                        {
+                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                            time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            else
+                                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
+                        }
+                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                        writeChar(0, write_buffer);
+                        offsets_to[i] = write_buffer.count();
+                    }
+                }
+
+                write_buffer.finalize();
+
+                if (null_map)
+                    return ColumnNullable::create(std::move(col_to), std::move(null_map));
+                return col_to;
             }
-
-            write_buffer.finalize();
-
-            if (null_map)
-                return ColumnNullable::create(std::move(col_to), std::move(null_map));
-            return col_to;
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                        arguments[0].column->getName(), Name::name);
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), Name::name);
+        {
+            ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
+
+            const auto & col_with_type_and_name =  columnGetNested(arguments[0]);
+            const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
+
+            const DateLUTImpl * time_zone = nullptr;
+
+            if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
+                time_zone = &DateLUT::instance();
+            /// For argument of Date or DateTime type, second argument with time zone could be specified.
+            if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
+            {
+                auto non_null_args = createBlockWithNestedColumns(arguments);
+                time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
+            }
+
+            if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
+            {
+                auto col_to = ColumnString::create();
+
+                const typename ColVecType::Container & vec_from = col_from->getData();
+                ColumnString::Chars & data_to = col_to->getChars();
+                ColumnString::Offsets & offsets_to = col_to->getOffsets();
+                size_t size = vec_from.size();
+
+                if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeDate32>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+                else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                    data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
+                else
+                    data_to.resize(size * 3);   /// Arbitrary
+
+                offsets_to.resize(size);
+
+                WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
+
+                if (null_map)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        bool is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
+                        null_map->getData()[i] |= !is_ok;
+                        writeChar(0, write_buffer);
+                        offsets_to[i] = write_buffer.count();
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        FormatImpl<FromDataType>::template execute<void>(vec_from[i], write_buffer, &type, time_zone);
+                        writeChar(0, write_buffer);
+                        offsets_to[i] = write_buffer.count();
+                    }
+                }
+
+                write_buffer.finalize();
+
+                if (null_map)
+                    return ColumnNullable::create(std::move(col_to), std::move(null_map));
+                return col_to;
+            }
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                        arguments[0].column->getName(), Name::name);
+        }
     }
 };
 
@@ -1597,7 +1703,19 @@ struct ConvertImplGenericFromString
 
                 const auto & val = col_from_string->getDataAt(i);
                 ReadBufferFromMemory read_buffer(val.data, val.size);
-                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+                try
+                {
+                    serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && typeid_cast<ColumnNullable *>(&column_to))
+                    {
+                        column_to.insertDefault();
+                        continue;
+                    }
+                    throw;
+                }
 
                 if (!read_buffer.eof())
                 {
@@ -1854,7 +1972,7 @@ public:
             // toDateTime64(value, scale : Integer[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            optional_args.push_back({"timezone", &isString<IDataType>, &isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, nullptr, "String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1918,7 +2036,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+        if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+            return {};
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
             return {2};
         return {1};
     }
@@ -4054,15 +4174,21 @@ private:
             {
                 if constexpr (std::is_same_v<ToDataType, DataTypeIPv4>)
                 {
-                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, requested_result_is_nullable](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                            -> ColumnPtr
+                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value,
+                           input_format_ipv4_default_on_conversion_error_value,
+                           requested_result_is_nullable](
+                              ColumnsWithTypeAndName & arguments,
+                              const DataTypePtr & result_type,
+                              const ColumnNullable * column_nullable,
+                              size_t) -> ColumnPtr
                     {
                         if (!WhichDataType(result_type).isIPv4())
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
 
                         const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                        if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv4_default_on_conversion_error_value || requested_result_is_nullable)
+                        if (requested_result_is_nullable)
+                            return convertToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
+                        else if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv4_default_on_conversion_error_value)
                             return convertToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                         else
                             return convertToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
@@ -4073,16 +4199,22 @@ private:
 
                 if constexpr (std::is_same_v<ToDataType, DataTypeIPv6>)
                 {
-                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value, requested_result_is_nullable](
-                                  ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t)
-                            -> ColumnPtr
+                    ret = [cast_ipv4_ipv6_default_on_conversion_error_value,
+                           input_format_ipv6_default_on_conversion_error_value,
+                           requested_result_is_nullable](
+                              ColumnsWithTypeAndName & arguments,
+                              const DataTypePtr & result_type,
+                              const ColumnNullable * column_nullable,
+                              size_t) -> ColumnPtr
                     {
                         if (!WhichDataType(result_type).isIPv6())
                             throw Exception(
                                 ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv6", result_type->getName());
 
                         const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                        if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                        if (requested_result_is_nullable)
+                            return convertToIPv6<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
+                        else if (cast_ipv4_ipv6_default_on_conversion_error_value || input_format_ipv6_default_on_conversion_error_value)
                             return convertToIPv6<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                         else
                             return convertToIPv6<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
@@ -4093,7 +4225,18 @@ private:
 
                 if (to_type->getCustomSerialization() && to_type->getCustomName())
                 {
-                    ret = &ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute;
+                    ret = [requested_result_is_nullable](
+                              ColumnsWithTypeAndName & arguments,
+                              const DataTypePtr & result_type,
+                              const ColumnNullable * column_nullable,
+                              size_t input_rows_count) -> ColumnPtr
+                    {
+                        auto wrapped_result_type = result_type;
+                        if (requested_result_is_nullable)
+                            wrapped_result_type = makeNullable(result_type);
+                        return ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute(
+                            arguments, wrapped_result_type, column_nullable, input_rows_count);
+                    };
                     return true;
                 }
             }
@@ -4108,7 +4251,9 @@ private:
                             ErrorCodes::TYPE_MISMATCH, "Wrong result type {}. Expected IPv4", result_type->getName());
 
                     const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
-                    if (cast_ipv4_ipv6_default_on_conversion_error_value || requested_result_is_nullable)
+                    if (requested_result_is_nullable)
+                        return convertIPv6ToIPv4<IPStringToNumExceptionMode::Null>(arguments[0].column, null_map);
+                    else if (cast_ipv4_ipv6_default_on_conversion_error_value)
                         return convertIPv6ToIPv4<IPStringToNumExceptionMode::Default>(arguments[0].column, null_map);
                     else
                         return convertIPv6ToIPv4<IPStringToNumExceptionMode::Throw>(arguments[0].column, null_map);
