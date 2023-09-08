@@ -134,11 +134,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                     num_applied_projection
                         += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
 
-                if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes);
-
-                if (optimization_settings.distinct_in_order)
-                    tryDistinctReadInOrder(frame.node);
+                if (optimization_settings.distinct_in_order || optimization_settings.distinct_in_order_parallel)
+                    tryDistinctReadInOrder(frame.node, optimization_settings.distinct_in_order_parallel);
             }
 
             /// Traverse all children first.
