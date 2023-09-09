@@ -185,11 +185,18 @@ private:
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot,
-                                   const ASTSelectQuery & select, const TreeRewriterResultPtr & syntax_analyzer_result) const;
+    ClusterPtr getOptimizedCluster(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ASTSelectQuery & select,
+        const TreeRewriterResultPtr & syntax_analyzer_result) const;
 
-   ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTSelectQuery & select, const TreeRewriterResultPtr & syntax_analyzer_result,
-                               const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
+    ClusterPtr skipUnusedShards(
+        ClusterPtr cluster,
+        const ASTSelectQuery & select,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///
