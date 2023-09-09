@@ -4,6 +4,7 @@ add_library (daemon
     BaseDaemon.cpp
     GraphiteWriter.cpp
     SentryWriter.cpp
+    MinidumpWriter.cpp
     GitHash.generated.cpp
 )
 
@@ -12,3 +13,7 @@ target_link_libraries (daemon PUBLIC loggers common PRIVATE clickhouse_parsers c
 if (TARGET ch_contrib::sentry)
     target_link_libraries (daemon PRIVATE ch_contrib::sentry dbms)
 endif ()
+
+if (TARGET ch_contrib::breakpad)
+    target_link_libraries(daemon PRIVATE ch_contrib::breakpad dbms)
+endif()

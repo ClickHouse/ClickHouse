@@ -348,3 +348,6 @@
 [submodule "contrib/robin-map"]
 	path = contrib/robin-map
 	url = https://github.com/Tessil/robin-map.git
+[submodule "contrib/breakpad"]
+	path = contrib/breakpad
+	url = https://github.com/canhld94/breakpad.git
