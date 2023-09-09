@@ -183,9 +183,11 @@ def _query_imds(path):
             continue
     return ""
 
+
 # Obtain the machine type from IMDS:
 def get_instance_type():
     return _query_imds("latest/meta-data/instance-type")
+
 
 # Obtain the instance id from IMDS:
 def get_instance_id():
