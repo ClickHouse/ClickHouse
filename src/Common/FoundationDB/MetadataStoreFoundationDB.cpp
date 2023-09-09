@@ -1634,6 +1634,32 @@ void MetadataStoreFoundationDB::addPartMeta(const MergeTreePartDiskMeta & disk, 
     });
 }
 
+void MetadataStoreFoundationDB::addPartMeta(const MergeTreePartMeta & part, const PartKey & part_key)
+{
+    const auto part_meta_key = keys->getPartKey(part_key);
+    execTransaction(
+        [&](FDBTransaction * tr)
+        {
+            if (isExistsLarge(tr, part_meta_key))
+                throw Exception(ErrorCodes::FDB_META_EXCEPTION, "Part meta key is exists: {}", fdb_print_key(part_meta_key));
+            setLarge(tr, part_meta_key, part.SerializeAsString());
+            commitTransaction(tr);
+        });
+}
+
+void MetadataStoreFoundationDB::updatePartMeta(const MergeTreePartMeta & part, const PartKey & part_key)
+{
+    std::string key = keys->getPartKey(part_key);
+    execTransaction(
+        [&](FDBTransaction * tr)
+        {
+            if (!isExistsLarge(tr, key))
+                throw Exception(ErrorCodes::FDB_META_EXCEPTION, "Part meta key is not exists: {}", fdb_print_key(key));
+            setLarge(tr, key, part.SerializeAsString());
+            commitTransaction(tr);
+        });
+}
+
 std::unique_ptr<Proto::MergeTreePartMeta> MetadataStoreFoundationDB::getPartMeta(const PartKey & part_key)
 {
     const auto key = keys->getPartKey(part_key);
@@ -1657,9 +1683,9 @@ bool MetadataStoreFoundationDB::isExistsPart(const PartKey & part_key)
     return execTransaction([&](FDBTransaction * tr) { return isExistsLarge(tr, key); });
 }
 
-std::vector<std::unique_ptr<Proto::MergeTreePartDiskMeta>> MetadataStoreFoundationDB::listParts(const UUID & table_uuid)
+std::vector<std::unique_ptr<Proto::MergeTreePartMeta>> MetadataStoreFoundationDB::listParts(const UUID & table_uuid)
 {
-    return listValues<Proto::MergeTreePartDiskMeta>(keys->getPartDiskPrefix(table_uuid));
+    return listValues<Proto::MergeTreePartMeta>(keys->getPartPrefix(table_uuid));
 }
 
 std::unique_ptr<Proto::MergeTreeDetachedPartMeta> MetadataStoreFoundationDB::getDetachedPartMeta(const PartKey & part_key)

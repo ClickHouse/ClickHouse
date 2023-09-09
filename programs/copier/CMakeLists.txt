@@ -18,6 +18,7 @@ set (CLICKHOUSE_COPIER_LINK
                 clickhouse_table_functions
                 clickhouse_aggregate_functions
                 string_utils
+                clickhouse_common_foundationdb
 
         PUBLIC
                 daemon

@@ -1,38 +1,41 @@
 #include "IMergeTreeDataPart.h"
+#include "DataTypes/DataTypeFactory.h"
 #include "Storages/MergeTree/IDataPartStorage.h"
 
 #include <optional>
-#include <boost/algorithm/string/join.hpp>
 #include <string_view>
+#include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
-#include <IO/HashingWriteBuffer.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/HashingReadBuffer.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/localBackup.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <Storages/MergeTree/PartMetadataManagerWithCache.h>
-#include <Core/NamesAndTypes.h>
-#include <Storages/ColumnsDescription.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <base/JSON.h>
-#include <Common/logger_useful.h>
-#include <Compression/getCompressionCodecForFile.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
+#include <Storages/MergeTree/PartMetadataManagerWithCache.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/localBackup.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <base/JSON.h>
+#include <boost/algorithm/string/join.hpp>
+#include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
+#include <Common/FoundationDB/ProtobufTypeHelpers.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 
@@ -91,6 +94,34 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
         serialization->deserializeBinary(min_val, *file, {});
         Field max_val;
         serialization->deserializeBinary(max_val, *file, {});
+
+        // NULL_LAST
+        if (min_val.isNull())
+            min_val = POSITIVE_INFINITY;
+        if (max_val.isNull())
+            max_val = POSITIVE_INFINITY;
+
+        hyperrectangle.emplace_back(min_val, true, max_val, true);
+    }
+    initialized = true;
+}
+
+void IMergeTreeDataPart::MinMaxIndex::loadFromFDB(const MergeTreeData & data, MergeTreePartMetaPtr meta_part)
+{
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
+    size_t minmax_idx_size = minmax_column_types.size();
+
+    hyperrectangle.reserve(minmax_idx_size);
+    for (size_t i = 0; i < minmax_idx_size; ++i)
+    {
+        FieldRef min_val;
+        min_val = FoundationDB::makeField(meta_part->meta_minmax()[static_cast<int>(i)].left());
+        FieldRef max_val;
+        max_val = FoundationDB::makeField(meta_part->meta_minmax()[static_cast<int>(i)].right());
 
         // NULL_LAST
         if (min_val.isNull())
@@ -568,6 +599,11 @@ void IMergeTreeDataPart::assertOnDisk() const
             name, getType().toString());
 }
 
+bool IMergeTreeDataPart::assertOnFDB() const
+{
+    LOG_DEBUG(storage.log, "Assert data part {} existing on FDB", name);
+    return storage.getContext()->getMetadataStoreFoundationDB()->isExistsPart({storage.getStorageID().uuid, name});
+}
 
 UInt64 IMergeTreeDataPart::getMarksCount() const
 {
@@ -650,6 +686,50 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
 }
 
+
+void IMergeTreeDataPart::loadColumnsChecksumsIndexesFDB(bool require_columns_checksums, bool check_consistency)
+{
+    assertOnFDB();
+
+    /// Memory should not be limited during ATTACH TABLE query.
+    /// This is already true at the server startup but must be also ensured for manual table ATTACH.
+    /// Motivation: memory for index is shared between queries - not belong to the query itself.
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+
+    try
+    {
+        MergeTreePartMetaPtr meta_part
+            = storage.getContext()->getMetadataStoreFoundationDB()->getPartMeta({storage.getStorageID().uuid, name});
+        loadUUIDFDB(meta_part);
+        loadColumnsFDB(meta_part, require_columns_checksums);
+        loadChecksumsFDB(meta_part, require_columns_checksums);
+        loadIndexGranularity();
+        loadColumnsAndSecondaryIndicesSizesOnFDB(meta_part);
+        loadIndex();
+        loadRowsCountFDB(meta_part); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
+        loadPartitionAndMinMaxIndex(meta_part, true);
+        if (!parent_part)
+        {
+            loadTTLInfosFDB(meta_part);
+            loadProjections(require_columns_checksums, check_consistency);
+        }
+
+        if (check_consistency)
+            checkConsistency(require_columns_checksums);
+
+        loadDefaultCompressionCodecFDB(meta_part);
+        modification_time = meta_part->meta_modification_time();
+    }
+    catch (...)
+    {
+        // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
+        // into meta data before exception, need to clean them all.
+        metadata_manager->deleteAll(/*include_projection*/ true);
+        metadata_manager->assertAllDeleted(/*include_projection*/ true);
+        throw;
+    }
+}
+
 void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection) const
 {
     if (isStoredOnDisk())
@@ -720,6 +800,30 @@ void IMergeTreeDataPart::loadIndexGranularity()
 /// Currently we don't cache mark files of part, because cache other meta files is enough to speed up loading.
 void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) const
 {
+}
+
+void IMergeTreeDataPart::loadColumnsAndSecondaryIndicesSizesOnFDB(MergeTreePartMetaPtr meta_part)
+{
+    if (!meta_part->has_meta_total_columns_size())
+    {
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No total columns size meta data in part {} on FDB", name);
+    }
+    else
+    {
+        total_columns_size.marks = meta_part->meta_total_columns_size().col_marks();
+        total_columns_size.data_compressed = meta_part->meta_total_columns_size().col_data_compressed();
+        total_columns_size.data_uncompressed = meta_part->meta_total_columns_size().col_data_uncompressed();
+    }
+    if (!meta_part->has_meta_total_secondary_indices_size())
+    {
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No total secondary indices size meta data in part {} on FDB", name);
+    }
+    else
+    {
+        total_secondary_indices_size.marks = meta_part->meta_total_secondary_indices_size().col_marks();
+        total_secondary_indices_size.data_compressed = meta_part->meta_total_secondary_indices_size().col_data_compressed();
+        total_secondary_indices_size.data_uncompressed = meta_part->meta_total_secondary_indices_size().col_data_uncompressed();
+    }
 }
 
 void IMergeTreeDataPart::loadIndex()
@@ -857,6 +961,66 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     }
 }
 
+void IMergeTreeDataPart::loadDefaultCompressionCodecFDB(MergeTreePartMetaPtr meta_part)
+{
+    /// In memory parts doesn't have any compression
+    if (!isStoredOnDisk())
+    {
+        default_codec = CompressionCodecFactory::instance().get("NONE", {});
+        return;
+    }
+
+    bool exists = !meta_part->meta_default_codec().empty();
+    if (!exists)
+    {
+        default_codec = detectDefaultCompressionCodec();
+    }
+    else
+    {
+        String codec_line;
+        String codec_line_fdb = meta_part->meta_default_codec();
+        ReadBufferFromString buf_codec_line_fdb(codec_line_fdb);
+        readEscapedStringUntilEOL(codec_line, buf_codec_line_fdb);
+
+        ReadBufferFromString buf(codec_line);
+
+        if (!checkString("CODEC", buf))
+        {
+            LOG_WARNING(
+                storage.log,
+                "Cannot parse default codec for part {} from FDB, content '{}'. Default compression codec will be deduced "
+                "automatically, from data on disk",
+                name,
+                codec_line);
+            default_codec = detectDefaultCompressionCodec();
+        }
+
+        try
+        {
+            ParserCodec codec_parser;
+            auto codec_ast = parseQuery(
+                codec_parser,
+                codec_line.data() + buf.getPosition(),
+                codec_line.data() + codec_line.length(),
+                "codec parser",
+                0,
+                DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            default_codec = CompressionCodecFactory::instance().get(codec_ast, {});
+        }
+        catch (const DB::Exception & ex)
+        {
+            LOG_WARNING(
+                storage.log,
+                "Cannot parse default codec for part {} from FDB, content '{}', error '{}'. Default compression codec will be deduced "
+                "automatically, from data on disk.",
+                name,
+                codec_line,
+                ex.what());
+            default_codec = detectDefaultCompressionCodec();
+        }
+    }
+}
+
 template <typename Writer>
 void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer)
 {
@@ -912,7 +1076,7 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
     });
 }
 
-void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const
+void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir, bool from_fdb) const
 {
     static constexpr auto filename = "txn_version.txt";
     static constexpr auto tmp_filename = "txn_version.txt.tmp";
@@ -935,6 +1099,15 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
         SyncGuardPtr sync_guard;
         if (fsync_part_dir)
             sync_guard = data_part_storage.getDirectorySyncGuard();
+        if (from_fdb)
+        {
+            MergeTreePartMetaPtr meta_part
+                = storage.getContext()->getMetadataStoreFoundationDB()->getPartMeta({storage.getStorageID().uuid, name});
+            WriteBufferFromOwnString meta_trx_version;
+            version_.write(meta_trx_version);
+            meta_part->set_meta_trx_version(meta_trx_version.str());
+            storage.getContext()->getMetadataStoreFoundationDB()->updatePartMeta(*meta_part, {storage.getStorageID().uuid, name});
+        }
         data_part_storage.replaceFile(tmp_filename, filename);
     }
     catch (...)
@@ -1040,7 +1213,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     return result;
 }
 
-void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
+void IMergeTreeDataPart::loadPartitionAndMinMaxIndex(MergeTreePartMetaPtr meta_part, bool from_fdb)
 {
     if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING && !parent_part)
     {
@@ -1064,7 +1237,12 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
                 // projection parts don't have minmax_idx, and it's always initialized
                 minmax_idx->initialized = true;
             else
-                minmax_idx->load(storage, metadata_manager);
+            {
+                if (from_fdb)
+                    minmax_idx->loadFromFDB(storage, meta_part);
+                else
+                    minmax_idx->load(storage, metadata_manager);
+            }
         }
         if (parent_part)
             return;
@@ -1120,6 +1298,38 @@ void IMergeTreeDataPart::loadChecksums(bool require)
     }
 }
 
+void IMergeTreeDataPart::loadChecksumsFDB(MergeTreePartMetaPtr meta_part, bool require)
+{
+    bool exists = !meta_part->meta_checksums().empty();
+    if (exists)
+    {
+        auto buf = metadata_manager->read("checksums.txt");
+        if (checksums.read(*buf))
+        {
+            assertEOF(*buf);
+            bytes_on_disk = checksums.getTotalSizeOnDisk();
+        }
+        else
+            bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
+    }
+    else
+    {
+        if (require)
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksums in part {} on FDB", name);
+
+        /// If the checksums file is not present, calculate the checksums and write them to disk.
+        /// Check the data while we are at it.
+        LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+
+        checksums = checkDataPart(shared_from_this(), false);
+        writeChecksums(checksums, {});
+        WriteBufferFromOwnString meta_checksum;
+        checksums.write(meta_checksum);
+        meta_part->set_meta_checksums(meta_checksum.str());
+        bytes_on_disk = checksums.getTotalSizeOnDisk();
+        meta_part->set_meta_bytes_on_disk(bytes_on_disk);
+    }
+}
 void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
 {
     files.push_back("checksums.txt");
@@ -1243,6 +1453,135 @@ void IMergeTreeDataPart::loadRowsCount()
     }
 }
 
+void IMergeTreeDataPart::loadRowsCountFDB(MergeTreePartMetaPtr meta_part)
+{
+    auto read_rows_count = [&]() { rows_count = meta_part->meta_rows_count(); };
+
+    if (index_granularity.empty())
+    {
+        rows_count = 0;
+    }
+    else if (
+        storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::Compact || parent_part)
+    {
+        bool exists = meta_part->meta_rows_count() != 0;
+        if (!exists)
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count meta data in part {} on FDB", name);
+
+        read_rows_count();
+
+#ifndef NDEBUG
+        /// columns have to be loaded
+        for (const auto & column : getColumns())
+        {
+            /// Most trivial types
+            if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes()
+                && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
+            {
+                auto size = getColumnSize(column.name);
+
+                if (size.data_uncompressed == 0)
+                     continue;
+
+                size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
+                if (rows_in_column != rows_count)
+                {
+                     throw Exception(
+                         ErrorCodes::LOGICAL_ERROR,
+                         "Column {} has rows count {} according to size in memory "
+                         "and size of single value, but data part {} has {} rows",
+                         backQuote(column.name),
+                         rows_in_column,
+                         name,
+                         rows_count);
+                }
+
+                size_t last_possibly_incomplete_mark_rows = index_granularity.getLastNonFinalMarkRows();
+                /// All this rows have to be written in column
+                size_t index_granularity_without_last_mark = index_granularity.getTotalRows() - last_possibly_incomplete_mark_rows;
+                /// We have more rows in column than in index granularity without last possibly incomplete mark
+                if (rows_in_column < index_granularity_without_last_mark)
+                {
+                     throw Exception(
+                         ErrorCodes::LOGICAL_ERROR,
+                         "Column {} has rows count {} according to size in memory "
+                         "and size of single value, "
+                         "but index granularity in part {} without last mark has {} rows, which "
+                         "is more than in column",
+                         backQuote(column.name),
+                         rows_in_column,
+                         name,
+                         index_granularity.getTotalRows());
+                }
+
+                /// In last mark we actually written less or equal rows than stored in last mark of index granularity
+                if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
+                {
+                     throw Exception(
+                         ErrorCodes::LOGICAL_ERROR,
+                         "Column {} has rows count {} in last mark according to size in memory "
+                         "and size of single value, "
+                         "but index granularity in part {} "
+                         "in last mark has {} rows which is less than in column",
+                         backQuote(column.name),
+                         rows_in_column - index_granularity_without_last_mark,
+                         name,
+                         last_possibly_incomplete_mark_rows);
+                }
+            }
+        }
+#endif
+    }
+    else
+    {
+        if (meta_part->meta_rows_count())
+        {
+            read_rows_count();
+            return;
+        }
+
+        for (const NameAndTypePair & column : columns)
+        {
+            ColumnPtr column_col = column.type->createColumn(*getSerialization(column.name));
+            if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
+                continue;
+
+            size_t column_size = getColumnSize(column.name).data_uncompressed;
+            if (!column_size)
+                continue;
+
+            size_t sizeof_field = column_col->sizeOfValueIfFixed();
+            rows_count = column_size / sizeof_field;
+
+            if (column_size % sizeof_field != 0)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Uncompressed size of column {}({}) is not divisible by the size of value ({})",
+                    column.name,
+                    column_size,
+                    sizeof_field);
+            }
+
+            size_t last_mark_index_granularity = index_granularity.getLastNonFinalMarkRows();
+            size_t rows_approx = index_granularity.getTotalRows();
+            if (!(rows_count <= rows_approx && rows_approx < rows_count + last_mark_index_granularity))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of column {}: "
+                    "{} rows, expected {}+-{} rows according to the index",
+                    column.name,
+                    rows_count,
+                    rows_approx,
+                    toString(last_mark_index_granularity));
+
+            return;
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part doesn't contain fixed size column (even Date column)");
+    }
+}
+
 void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files)
 {
     files.push_back("count.txt");
@@ -1275,6 +1614,32 @@ void IMergeTreeDataPart::loadTTLInfos()
     }
 }
 
+void IMergeTreeDataPart::loadTTLInfosFDB(MergeTreePartMetaPtr meta_part)
+{
+    bool exists = !meta_part->meta_ttl_infos().empty();
+    if (exists)
+    {
+        ReadBufferFromString ttl_buf(meta_part->meta_ttl_infos());
+        assertString("ttl format version: ", ttl_buf);
+        size_t format_version;
+        readText(format_version, ttl_buf);
+        assertChar('\n', ttl_buf);
+
+        if (format_version == 1)
+        {
+            try
+            {
+                ttl_infos.read(ttl_buf);
+            }
+            catch (const JSONException &)
+            {
+                throw Exception(ErrorCodes::BAD_TTL_FILE, "Error while parsing file ttl.txt in part: {}", name);
+            }
+        }
+        else
+            throw Exception(ErrorCodes::BAD_TTL_FILE, "Unknown ttl format version: {}", toString(format_version));
+    }
+}
 
 void IMergeTreeDataPart::appendFilesOfTTLInfos(Strings & files)
 {
@@ -1290,6 +1655,16 @@ void IMergeTreeDataPart::loadUUID()
         readText(uuid, *in);
         if (uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty {} in part: {}", String(UUID_FILE_NAME), name);
+    }
+}
+
+void IMergeTreeDataPart::loadUUIDFDB(MergeTreePartMetaPtr meta_part)
+{
+    if (meta_part->has_meta_uuid())
+    {
+        uuid = FoundationDB::toNativeUUID(meta_part->meta_uuid());
+        if (uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty UUID in part: " + meta_part->meta_name());
     }
 }
 
@@ -1370,7 +1745,155 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setColumns(loaded_columns, infos, loaded_metadata_version);
 }
 
+void IMergeTreeDataPart::loadColumnsFDB(MergeTreePartMetaPtr meta_part, bool require)
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (parent_part)
+        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    NamesAndTypesList loaded_columns;
 
+    bool is_readonly_storage = getDataPartStorage().isReadonly();
+    if (meta_part->meta_col().empty())
+    {
+        /// We can get list of columns only from columns.txt in compact parts.
+        if (require || part_type == Type::Compact)
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns meta data in part {} in FDB", name);
+
+        /// If there is no file with a list of columns, write it down.
+        for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
+            if (getDataPartStorage().exists(getFileNameForColumn(column) + ".bin"))
+                loaded_columns.push_back(column);
+
+        if (columns.empty())
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
+
+        if (!is_readonly_storage)
+            writeColumns(loaded_columns, {});
+        using Proto_ColInfo = DB::FoundationDB::Proto::MergeTreePartMeta_ColInfo;
+        for (const auto & col : loaded_columns)
+        {
+            Proto_ColInfo * meta_col = meta_part->add_meta_col();
+            meta_col->set_column_name(col.name);
+            meta_col->set_column_type(col.type->getName());
+        }
+    }
+    else
+    {
+        const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+        for (const auto & col : meta_part->meta_col())
+        {
+            loaded_columns.emplace_back(col.column_name(), data_type_factory.get(col.column_type()));
+        }
+
+        for (auto & column : loaded_columns)
+            setVersionToAggregateFunctions(column.type, true);
+    }
+    SerializationInfo::Settings settings = {
+        .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .choose_kind = false,
+    };
+
+    SerializationInfoByName infos(loaded_columns, settings);
+    String meta_serialization_infos = meta_part->meta_serialization_infos();
+    ReadBufferFromString buf_index(meta_serialization_infos);
+    infos.readJSON(buf_index);
+
+    int32_t loaded_metadata_version;
+    if (meta_part->meta_loaded_version() == 0)
+    {
+        loaded_metadata_version = meta_part->meta_loaded_version();
+    }
+    else
+    {
+        LOG_WARNING(storage.log, "Loaded metadata version for part {} not found. Will get it from memory.", name);
+        loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+
+        if (!is_readonly_storage)
+        {
+            writeMetadata(
+                METADATA_VERSION_FILE_NAME,
+                {},
+                [loaded_metadata_version](auto & buffer) { writeIntText(loaded_metadata_version, buffer); });
+            meta_part->set_meta_loaded_version(loaded_metadata_version);
+        }
+    }
+
+
+    setColumns(loaded_columns, infos, loaded_metadata_version);
+}
+
+MergeTreePartMetaPtr IMergeTreeDataPart::toMetaDataPart() const
+{
+    /// IMergeTreeDataPart -> MetaDataPart
+    MergeTreePartMetaPtr meta_part = std::make_shared<FoundationDB::Proto::MergeTreePartMeta>();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (uuid != UUIDHelpers::Nil)
+        FoundationDB::toProtoUUID(uuid, *meta_part->mutable_meta_uuid());
+    meta_part->set_meta_rows_count(rows_count);
+    meta_part->set_meta_name(name);
+    meta_part->set_meta_modification_time(modification_time);
+    meta_part->set_meta_bytes_on_disk(bytes_on_disk);
+    meta_part->set_meta_loaded_version(metadata_version);
+    /// Minmax
+    using Proto_Range = DB::FoundationDB::Proto::MergeTreePartMeta_Range;
+    for (const auto & i : minmax_idx->hyperrectangle)
+    {
+        Proto_Range * r = meta_part->add_meta_minmax();
+        r->set_left_included(i.left_included);
+        DB::FoundationDB::Proto::Field * le = r->mutable_left();
+        *le = FoundationDB::toProto(i.left);
+        r->set_right_included(i.right_included);
+        DB::FoundationDB::Proto::Field * ri = r->mutable_right();
+        *ri = FoundationDB::toProto(i.right);
+    }
+    /// Checksums
+    WriteBufferFromOwnString meta_checksum;
+    checksums.write(meta_checksum);
+    meta_part->set_meta_checksums(meta_checksum.str());
+
+    /// Column
+    using Proto_ColInfo = DB::FoundationDB::Proto::MergeTreePartMeta_ColInfo;
+    for (const auto & col : columns)
+    {
+        Proto_ColInfo * meta_col = meta_part->add_meta_col();
+        meta_col->set_column_name(col.name);
+        meta_col->set_column_type(col.type->getName());
+    }
+    /// Columns Size
+    using Proto_ColSize = DB::FoundationDB::Proto::MergeTreePartMeta_ColSize;
+    Proto_ColSize * meta_total_columns_size = meta_part->mutable_meta_total_columns_size();
+    meta_total_columns_size->set_col_marks(total_columns_size.marks);
+    meta_total_columns_size->set_col_data_compressed(total_columns_size.data_compressed);
+    meta_total_columns_size->set_col_data_uncompressed(total_columns_size.data_uncompressed);
+
+    Proto_ColSize * meta_total_secondary_indices_size = meta_part->mutable_meta_total_secondary_indices_size();
+    meta_total_secondary_indices_size->set_col_marks(total_secondary_indices_size.marks);
+    meta_total_secondary_indices_size->set_col_data_compressed(total_secondary_indices_size.data_compressed);
+    meta_total_secondary_indices_size->set_col_data_uncompressed(total_secondary_indices_size.data_uncompressed);
+    /// TTL infos
+    WriteBufferFromOwnString meta_ttl_infos;
+    ttl_infos.write(meta_ttl_infos);
+    meta_part->set_meta_ttl_infos(meta_ttl_infos.str());
+    /// Partition
+    using Proto_Field = DB::FoundationDB::Proto::Field;
+    for (const auto & v : partition.value)
+    {
+        Proto_Field * f = meta_part->add_meta_partition();
+        *f = FoundationDB::toProto(v);
+    }
+    /// Default codec
+    meta_part->set_meta_default_codec(queryToString(default_codec->getFullCodecDesc()));
+    /// Serialization infos
+    WriteBufferFromOwnString meta_serialization_infos_buf;
+    getSerializationInfos().writeJSON(meta_serialization_infos_buf);
+    meta_part->set_meta_serialization_infos(meta_serialization_infos_buf.str());
+    /// trx version
+    WriteBufferFromOwnString meta_trx_version;
+    version.write(meta_trx_version);
+    meta_part->set_meta_trx_version(meta_trx_version.str());
+
+    return meta_part;
+}
 /// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
@@ -1390,7 +1913,7 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
     assert(!txn || getDataPartStorage().exists(TXN_VERSION_METADATA_FILE_NAME));
 }
 
-void IMergeTreeDataPart::storeVersionMetadata(bool force) const
+void IMergeTreeDataPart::storeVersionMetadata(bool force, bool from_fdb) const
 {
     if (!wasInvolvedInTransaction() && !force)
         return;
@@ -1402,7 +1925,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for in-memory parts (table: {}, part: {})",
                         storage.getStorageID().getNameForLogs(), name);
 
-    writeVersionMetadata(version, storage.getSettings()->fsync_part_directory);
+    writeVersionMetadata(version, storage.getSettings()->fsync_part_directory, from_fdb);
 }
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
@@ -1465,7 +1988,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartSto
     return part_storage.readFile(filename, ReadSettings().adjustBufferSize(file_size), file_size, file_size);
 }
 
-void IMergeTreeDataPart::loadVersionMetadata() const
+void IMergeTreeDataPart::loadVersionMetadata(bool from_fdb) const
 try
 {
     static constexpr auto version_file_name = "txn_version.txt";
@@ -1484,13 +2007,29 @@ try
         data_part_storage.removeFile(tmp_version_file_name);
     };
 
-    if (data_part_storage.exists(version_file_name))
+    if (from_fdb)
     {
-        auto buf = openForReading(data_part_storage, version_file_name);
-        version.read(*buf);
-        if (data_part_storage.exists(tmp_version_file_name))
-            remove_tmp_file();
-        return;
+        MergeTreePartMetaPtr meta_part
+            = storage.getContext()->getMetadataStoreFoundationDB()->getPartMeta({storage.getStorageID().uuid, name});
+        if (!meta_part->meta_trx_version().empty())
+        {
+            ReadBufferFromString trx_version_buf(meta_part->meta_trx_version());
+            version.read(trx_version_buf);
+            if (data_part_storage.exists(tmp_version_file_name))
+                remove_tmp_file();
+            return;
+        }
+    }
+    else
+    {
+        if (data_part_storage.exists(version_file_name))
+        {
+            auto buf = openForReading(data_part_storage, version_file_name);
+            version.read(*buf);
+            if (data_part_storage.exists(tmp_version_file_name))
+                remove_tmp_file();
+            return;
+        }
     }
 
     /// Four (?) cases are possible:

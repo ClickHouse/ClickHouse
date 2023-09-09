@@ -1,8 +1,9 @@
-#include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Storages/StorageMergeTree.h>
-#include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
+#include <Interpreters/PartLog.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/StorageMergeTree.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace ProfileEvents
@@ -173,6 +174,12 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
+            if (storage.supportFDB())
+            {
+                LOG_DEBUG(storage.log, "Write the {} part to fdb", part->name);
+                std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = part->toMetaDataPart();
+                storage.getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {storage.getStorageID().uuid, part->name});
+            }
             added = storage.renameTempPartAndAdd(part, transaction, lock);
             transaction.commit(&lock);
         }

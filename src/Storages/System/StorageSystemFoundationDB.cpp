@@ -238,8 +238,8 @@ void fillData<Proto::MergeTreePartMeta>(MutableColumns & res_columns, ContextPtr
     {
         // Get all parts of table
 	part_names.clear();
-        for (const auto & part_disk : meta_store->listParts(table_uuid))
-            part_names.emplace_back(part_disk->part_name());
+    for (const auto & part : meta_store->listParts(table_uuid))
+            part_names.emplace_back(part->meta_name());
     }
 
     for (const auto & part_name : part_names)
@@ -251,30 +251,6 @@ void fillData<Proto::MergeTreePartMeta>(MutableColumns & res_columns, ContextPtr
 
         res_columns[0]->insert(MetaTypeName<Proto::MergeTreePartMeta>);
         res_columns[1]->insert(Array{table_uuid_str, part_name});
-        res_columns[2]->insert(pbJson(*part_meta));
-    }
-}
-
-TypeName(Proto::MergeTreePartDiskMeta, "part_disk");
-template <>
-void fillData<Proto::MergeTreePartDiskMeta>(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info)
-{
-    String table_uuid_str;
-    if (!extractEqualColumn(context, query_info.query, "key[1]", table_uuid_str))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "SELECT parts_disk from system.foundationdb table must specify table uuid, "
-            "e.g. key[1] = '68be117f-a13b-464f-825c-ae75bf6baa24'");
-    UUID table_uuid = toUUID(table_uuid_str);
-
-    const auto meta_store = context->getMetadataStoreFoundationDB();
-
-    const auto part_metas = meta_store->listParts(table_uuid);
-
-    for (const auto & part_meta : part_metas)
-    {
-        res_columns[0]->insert(MetaTypeName<Proto::MergeTreePartDiskMeta>);
-        res_columns[1]->insert(Array{table_uuid_str, part_meta->part_name()});
         res_columns[2]->insert(pbJson(*part_meta));
     }
 }
@@ -322,8 +298,6 @@ void StorageSystemFoundationDB::fillData(MutableColumns & res_columns, ContextPt
         fillData<Proto::MetadataConfigParam>(res_columns, context, query_info);
     else if (select_type == MetaTypeName<Proto::MergeTreePartMeta>)
         fillData<Proto::MergeTreePartMeta>(res_columns, context, query_info);
-    else if (select_type == MetaTypeName<Proto::MergeTreePartDiskMeta>)
-        fillData<Proto::MergeTreePartDiskMeta>(res_columns, context, query_info);
     else if (select_type == MetaTypeName<Proto::MergeTreeDetachedPartMeta>)
         fillData<Proto::MergeTreeDetachedPartMeta>(res_columns, context, query_info);
     else

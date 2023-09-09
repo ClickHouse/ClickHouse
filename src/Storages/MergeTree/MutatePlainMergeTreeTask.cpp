@@ -1,7 +1,8 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
-#include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
+#include <Storages/StorageMergeTree.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB
@@ -91,6 +92,13 @@ bool MutatePlainMergeTreeTask::executeStep()
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
                 storage.renameTempPartAndReplace(new_part, transaction);
+                if (storage.supportFDB())
+                {
+                    LOG_DEBUG(storage.log, "After mutation, write the {} part to fdb", new_part->name);
+                    std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = new_part->toMetaDataPart();
+                    storage.getContext()->getMetadataStoreFoundationDB()->addPartMeta(
+                        *meta_part, {storage.getStorageID().uuid, meta_part->meta_name()});
+                }
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");

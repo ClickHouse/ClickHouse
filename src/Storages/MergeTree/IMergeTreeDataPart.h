@@ -1,29 +1,28 @@
 #pragma once
 
-#include <IO/WriteSettings.h>
 #include <Core/Block.h>
-#include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <IO/WriteSettings.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/ColumnsDescription.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/IPartMetadataManager.h>
-
-
+#include <base/types.h>
+#include <Common/FoundationDB/protos/MergeTreePartInfo.pb.h>
 namespace zkutil
 {
     class ZooKeeper;
@@ -44,6 +43,8 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
+
+using MergeTreePartMetaPtr = std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta>;
 
 
 enum class DataPartRemovalState
@@ -158,11 +159,17 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
+    bool assertOnFDB() const;
+
+    void loadColumnsAndSecondaryIndicesSizesOnFDB(MergeTreePartMetaPtr meta_part);
+
     void remove();
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+    void loadColumnsChecksumsIndexesFDB(bool require_columns_checksums, bool check_consistency);
+
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
@@ -292,6 +299,7 @@ public:
         }
 
         void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        void loadFromFDB(const MergeTreeData & data, MergeTreePartMetaPtr meta_part);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
@@ -416,12 +424,13 @@ public:
     /// Return some uniq string for file.
     /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
+    MergeTreePartMetaPtr toMetaDataPart() const;
 
     /// Ensures that creation_tid was correctly set after part creation.
     void assertHasVersionMetadata(MergeTreeTransaction * txn) const;
 
     /// [Re]writes file with transactional metadata on disk
-    void storeVersionMetadata(bool force = false) const;
+    void storeVersionMetadata(bool force = false, bool from_fdb = false) const;
 
     /// Appends the corresponding CSN to file on disk (without fsync)
     void appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const;
@@ -430,7 +439,7 @@ public:
     void appendRemovalTIDToVersionMetadata(bool clear = false) const;
 
     /// Loads transactional metadata from disk
-    void loadVersionMetadata() const;
+    void loadVersionMetadata(bool from_fdb = false) const;
 
     /// Returns true if part was created or removed by a transaction
     bool wasInvolvedInTransaction() const;
@@ -546,16 +555,19 @@ private:
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
+    void loadUUIDFDB(MergeTreePartMetaPtr meta_part);
 
     static void appendFilesOfUUID(Strings & files);
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
+    void loadColumnsFDB(MergeTreePartMetaPtr meta_part, bool require);
 
     static void appendFilesOfColumns(Strings & files);
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
+    void loadChecksumsFDB(MergeTreePartMetaPtr meta_part, bool require);
 
     static void appendFilesOfChecksums(Strings & files);
 
@@ -572,15 +584,17 @@ private:
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
+    void loadRowsCountFDB(MergeTreePartMetaPtr meta_part);
 
     static void appendFilesOfRowsCount(Strings & files);
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
+    void loadTTLInfosFDB(MergeTreePartMetaPtr meta_part);
 
     static void appendFilesOfTTLInfos(Strings & files);
 
-    void loadPartitionAndMinMaxIndex();
+    void loadPartitionAndMinMaxIndex(MergeTreePartMetaPtr meta_part = nullptr, bool from_fdb = false);
 
     void calculateColumnsSizesOnDisk();
 
@@ -592,9 +606,10 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
+    void loadDefaultCompressionCodecFDB(MergeTreePartMetaPtr meta_part);
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
-    void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
+    void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir, bool from_fdb = false) const;
 
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);

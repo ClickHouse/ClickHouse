@@ -1,10 +1,11 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Common/ProfileEventsScope.h>
+#include <Storages/StorageMergeTree.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -144,6 +145,13 @@ void MergePlainMergeTreeTask::finish()
 
     MergeTreeData::Transaction transaction(storage, txn.get());
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
+    if (storage.supportFDB())
+    {
+        LOG_DEBUG(storage.log, "After merging, write the {} part to fdb", new_part->name);
+        std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = new_part->toMetaDataPart();
+        storage.getContext()->getMetadataStoreFoundationDB()->addPartMeta(
+            *meta_part, {storage.getStorageID().uuid, meta_part->meta_name()});
+    }
     transaction.commit();
 
     write_part_log({});

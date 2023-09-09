@@ -7,44 +7,33 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Common/escapeForFileName.h>
-#include <Common/Increment.h>
-#include <Common/noexcept_scope.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/SimpleIncrement.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/CurrentMetrics.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/hasNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/ObjectUtils.h>
-#include <Disks/createVolume.h>
+#include <DataTypes/hasNullable.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/createVolume.h>
 #include <Functions/IFunction.h>
+#include <IO/Operators.h>
+#include <IO/S3Common.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
-#include <IO/S3Common.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -59,15 +48,27 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Freeze.h>
-#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
+#include <Common/Increment.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/SimpleIncrement.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -1166,8 +1167,14 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     MergeTreeDataPartState to_state,
     std::mutex & part_loading_mutex)
 {
-    LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
-
+    bool has_fdb = supportFDB();
+    bool is_first_boot = true;
+    if (has_fdb)
+        is_first_boot = getContext()->getMetadataStoreFoundationDB()->isFirstBoot();
+    if (!is_first_boot)
+        LOG_TRACE(log, "Loading {} part {} from FDB", magic_enum::enum_name(to_state), part_name);
+    else
+        LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
     LoadPartResult res;
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
     auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
@@ -1198,7 +1205,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     try
     {
-        res.part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+        if (!is_first_boot)
+            res.part->loadColumnsChecksumsIndexesFDB(require_part_metadata, true);
+        else
+            res.part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     }
     catch (const Exception & e)
     {
@@ -1232,7 +1242,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
 
     res.part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
-    res.part->loadVersionMetadata();
+    res.part->loadVersionMetadata(has_fdb && !is_first_boot);
 
     if (res.part->wasInvolvedInTransaction())
     {
@@ -1286,7 +1296,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid version metadata: {}", res.part->name, version.toString());
 
         if (version_updated)
-            res.part->storeVersionMetadata(/* force */ true);
+            res.part->storeVersionMetadata(/* force */ true, has_fdb && !is_first_boot);
 
         /// Deactivate part if creation was not committed or if removal was.
         if (version.creation_csn == Tx::RolledBackCSN || version.removal_csn)
@@ -1322,7 +1332,19 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     if (to_state == DataPartState::Active)
         addPartContributionToDataVolume(res.part);
-
+    if (has_fdb && is_first_boot)
+    {
+        try
+        {
+            MergeTreePartMetaPtr meta_part = res.part->toMetaDataPart();
+            getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {getStorageID().uuid, part_name});
+        }
+        catch (const Exception & e)
+        {
+            LOG_DEBUG(log, "Failed to load data part {} from disk to fdb with error:{}", part_name, e.message());
+            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists on fdb", res.part->name);
+        }
+    }
     LOG_TRACE(log, "Finished loading {} part {} on disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
     return res;
 }
@@ -1358,11 +1380,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     UNREACHABLE();
 }
 
-std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
-    ThreadPool & pool,
-    size_t num_parts,
-    std::queue<PartLoadingTreeNodes> & parts_queue,
-    const MergeTreeSettingsPtr & settings)
+std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDiskOrFDB(
+    ThreadPool & pool, size_t num_parts, std::queue<PartLoadingTreeNodes> & parts_queue, const MergeTreeSettingsPtr & settings)
 {
     /// Parallel loading of data parts.
     pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
@@ -1687,7 +1706,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (num_parts > 0)
     {
-        auto loaded_parts = loadDataPartsFromDisk(pool, num_parts, parts_queue, settings);
+        auto loaded_parts = loadDataPartsFromDiskOrFDB(pool, num_parts, parts_queue, settings);
 
         for (const auto & res : loaded_parts)
         {
@@ -2325,7 +2344,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         return;
 
     const auto settings = getSettings();
-
     auto remove_single_thread = [this, &parts_to_remove, part_names_succeed]()
     {
         LOG_DEBUG(
@@ -2333,6 +2351,12 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         for (const DataPartPtr & part : parts_to_remove)
         {
             asMutableDeletingPart(part)->remove();
+            if (supportFDB())
+            {
+                LOG_DEBUG(log, "After removing part from clickhouse, remove the {} part from fdb", part->name);
+                auto table_id = getStorageID();
+                getContext()->getMetadataStoreFoundationDB()->removePartMeta({table_id.uuid, part->name});
+            }
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
         }
@@ -2367,22 +2391,26 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.scheduleOrThrowOnError([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
-            {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachFromGroupIfNotDetached();
-                );
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-
-                asMutableDeletingPart(part)->remove();
-                if (part_names_succeed)
+            pool.scheduleOrThrowOnError(
+                [this, &part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
                 {
-                    std::lock_guard lock(part_names_mutex);
-                    part_names_succeed->insert(part->name);
-                }
-            });
+                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+
+                    asMutableDeletingPart(part)->remove();
+                    if (supportFDB())
+                    {
+                        LOG_DEBUG(log, "After removing part from clickhouse, remove the {} part from fdb", part->name);
+                        auto table_id = getStorageID();
+                        getContext()->getMetadataStoreFoundationDB()->removePartMeta({table_id.uuid, part->name});
+                    }
+                    if (part_names_succeed)
+                    {
+                        std::lock_guard lock(part_names_mutex);
+                        part_names_succeed->insert(part->name);
+                    }
+                });
         }
 
         pool.wait();
@@ -2442,6 +2470,12 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             for (const auto & part : batch)
             {
                 asMutableDeletingPart(part)->remove();
+                if (supportFDB())
+                {
+                    LOG_DEBUG(log, "After removing part from clickhouse, remove the {} part from fdb", part->name);
+                    auto table_id = getStorageID();
+                    getContext()->getMetadataStoreFoundationDB()->removePartMeta({table_id.uuid, part->name});
+                }
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
@@ -4342,10 +4376,22 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
             data_parts_indexes.erase(active_part_it);
+            auto table_id = getStorageID();
+            if (supportFDB())
+            {
+                LOG_DEBUG(log, "After moving part to disk/volume, remove the {} part from fdb", original_active_part->name);
+                getContext()->getMetadataStoreFoundationDB()->removePartMeta({table_id.uuid, original_active_part->name});
+            }
 
             LOG_TEST(log, "swapActivePart: inserting {} into data_parts_indexes", part_copy->getNameWithState());
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Active);
+            if (supportFDB())
+            {
+                LOG_DEBUG(log, "After moving part to disk/volume, insert the {} part to fdb", part_copy->name);
+                std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = part_copy->toMetaDataPart();
+                getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {table_id.uuid, part_copy->name});
+            }
 
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
@@ -5485,6 +5531,31 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
     return res;
 }
 
+DetachedPartsInfo MergeTreeData::getDetachedPartsFromFDB() const
+{
+    DetachedPartsInfo res;
+
+    const auto detached_parts = getContext()->getMetadataStoreFoundationDB()->listDetachedParts(getStorageID().uuid);
+    std::map<String, std::vector<String>> fdb_detached_part_map;
+    for (const auto & d : detached_parts)
+    {
+        auto & fdb_detached_parts = fdb_detached_part_map[d->disk_name()];
+        fdb_detached_parts.emplace_back(d->dir_name());
+    }
+    for (const auto & disk : getDisks())
+    {
+        auto it = fdb_detached_part_map.find(disk->getName());
+        std::vector<String> fdb_detached_parts;
+        if (it != fdb_detached_part_map.end())
+            fdb_detached_parts = fdb_detached_part_map.find(disk->getName())->second;
+        for (const auto & d : fdb_detached_parts)
+        {
+            res.push_back(DetachedPartInfo::parseDetachedPartName(disk, d, format_version));
+        }
+    }
+    return res;
+}
+
 DetachedPartsInfo MergeTreeData::getDetachedParts() const
 {
     DetachedPartsInfo res;
@@ -5529,7 +5600,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     else
     {
         String partition_id = getPartitionIDFromQuery(partition, local_context);
-        DetachedPartsInfo detached_parts = getDetachedParts();
+        DetachedPartsInfo detached_parts = supportFDB() ? getDetachedPartsFromFDB() : getDetachedParts();
         for (const auto & part_info : detached_parts)
             if (part_info.valid_name && part_info.partition_id == partition_id
                 && part_info.prefix != "attaching" && part_info.prefix != "deleting")
@@ -5543,6 +5614,13 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
+        /// If part is not deleted on fdb in detaching part, it needs to be deleted
+        if (supportFDB())
+        {
+            LOG_DEBUG(log, "After droping detached part, remove the {} part on fdb", old_name);
+            auto table_id = getStorageID();
+            getContext()->getMetadataStoreFoundationDB()->removeDetachedPartMeta({table_id.uuid, old_name});
+        }
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
         old_name.clear();
     }
@@ -5572,8 +5650,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         LOG_DEBUG(log, "Looking for parts for partition {} in {}", partition_id, source_dir);
 
         ActiveDataPartSet active_parts(format_version);
-
-        auto detached_parts = getDetachedParts();
+        DetachedPartsInfo detached_parts = supportFDB() ? getDetachedPartsFromFDB() : getDetachedParts();
         auto new_end_it = std::remove_if(detached_parts.begin(), detached_parts.end(), [&partition_id](const DetachedPartInfo & part_info)
         {
             return !part_info.valid_name || !part_info.prefix.empty() || part_info.partition_id != partition_id;
@@ -7145,12 +7222,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-    dst_data_part->version.setCreationTID(tid, nullptr);
-    dst_data_part->storeVersionMetadata();
 
     dst_data_part->is_temp = true;
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+    dst_data_part->version.setCreationTID(tid, nullptr);
+    dst_data_part->storeVersionMetadata();
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }

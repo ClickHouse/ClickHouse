@@ -4,43 +4,44 @@
 
 #include <optional>
 
-#include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/typeid_cast.h>
-#include <Common/ThreadPool.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/copyData.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
-#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
-#include <Storages/MergeTree/PartitionPruner.h>
-#include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/PartitionCommands.h>
+#include <base/sort.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -1724,6 +1725,16 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto metadata_snapshot = getInMemoryMetadataPtr();
                 LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
                 part->makeCloneInDetached("", metadata_snapshot);
+                if (supportFDB())
+                {
+                    using DetachedPartMetaPtr = std::shared_ptr<FoundationDB::Proto::MergeTreeDetachedPartMeta>;
+                    DetachedPartMetaPtr meta_detached_part = std::make_shared<FoundationDB::Proto::MergeTreeDetachedPartMeta>();
+                    meta_detached_part->set_disk_name(part->getDataPartStorage().getDiskName());
+                    meta_detached_part->set_dir_name(part->name);
+                    meta_detached_part->set_part_name(part->name);
+                    getContext()->getMetadataStoreFoundationDB()->addPartDetachedMeta(
+                        *meta_detached_part, {getStorageID().uuid, part->name});
+                }
             }
 
             {
@@ -1790,6 +1801,16 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                     auto metadata_snapshot = getInMemoryMetadataPtr();
                     LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
                     part->makeCloneInDetached("", metadata_snapshot);
+                    if (supportFDB())
+                    {
+                        using DetachedPartMetaPtr = std::shared_ptr<FoundationDB::Proto::MergeTreeDetachedPartMeta>;
+                        DetachedPartMetaPtr meta_detached_part = std::make_shared<FoundationDB::Proto::MergeTreeDetachedPartMeta>();
+                        meta_detached_part->set_disk_name(part->getDataPartStorage().getDiskName());
+                        meta_detached_part->set_dir_name(part->name);
+                        meta_detached_part->set_part_name(part->name);
+                        getContext()->getMetadataStoreFoundationDB()->addPartDetachedMeta(
+                            *meta_detached_part, {getStorageID().uuid, part->name});
+                    }
                 }
 
             auto future_parts = initCoverageWithNewEmptyParts(parts);
@@ -1825,6 +1846,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 {
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, "detached/");
+    bool has_fdb_implemented = supportFDB();
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, local_context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
@@ -1844,6 +1866,14 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
             auto lock = lockParts();
             fillNewPartName(loaded_parts[i], lock);
             renameTempPartAndAdd(loaded_parts[i], transaction, lock);
+            if (has_fdb_implemented)
+            {
+                LOG_DEBUG(log, "After attaching part, write the {} part to fdb", loaded_parts[i]->name);
+                std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = loaded_parts[i]->toMetaDataPart();
+                getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {getStorageID().uuid, loaded_parts[i]->name});
+                LOG_DEBUG(log, "After attaching part, remove the {} detached part from fdb", old_name);
+                getContext()->getMetadataStoreFoundationDB()->removeDetachedPartMeta({getStorageID().uuid, old_name});
+            }
             transaction.commit(&lock);
         }
 
@@ -1929,6 +1959,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             {
                 fillNewPartName(part, data_parts_lock);
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock);
+                if (supportFDB())
+                {
+                    auto table_id = getStorageID();
+                    LOG_DEBUG(log, "After replacing part, write the {} part to fdb", part->name);
+                    std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = part->toMetaDataPart();
+                    getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {table_id.uuid, part->name});
+                }
             }
             /// Populate transaction
             transaction.commit(&data_parts_lock);
@@ -2014,6 +2051,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             {
                 dest_table_storage->fillNewPartName(part, dest_data_parts_lock);
                 dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock);
+                if (supportFDB())
+                {
+                    LOG_DEBUG(log, "Write the new part {} to fdb", part->name);
+                    std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = part->toMetaDataPart();
+                    getContext()->getMetadataStoreFoundationDB()->addPartMeta(
+                        *meta_part, {dest_table_storage->getStorageID().uuid, part->name});
+                }
             }
 
 
@@ -2078,7 +2122,12 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
-
+                if (supportFDB())
+                {
+                    LOG_DEBUG(log, "Update the {} part meta data on fdb", part_mutable.name);
+                    std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = part_mutable.toMetaDataPart();
+                    getContext()->getMetadataStoreFoundationDB()->updatePartMeta(*meta_part, {getStorageID().uuid, part_mutable.name});
+                }
                 part->checkMetadata();
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
@@ -2146,6 +2195,12 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
             auto lock = lockParts();
             fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock);
+            if (supportFDB())
+            {
+                LOG_DEBUG(log, "After attaching part, write the {} part to fdb", part->name);
+                std::shared_ptr<FoundationDB::Proto::MergeTreePartMeta> meta_part = part->toMetaDataPart();
+                getContext()->getMetadataStoreFoundationDB()->addPartMeta(*meta_part, {getStorageID().uuid, part->name});
+            }
             transaction.commit(&lock);
         }
     }
