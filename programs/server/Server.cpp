@@ -1264,8 +1264,11 @@ try
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
-            global_context->loadOrReloadDictionaries(*config);
-            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            if (!global_context->hasMetadataStoreFoundationDB())
+            {
+                global_context->loadOrReloadDictionaries(*config);
+                global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+            }
 
             global_context->setRemoteHostFilter(*config);
 
@@ -1674,8 +1677,13 @@ try
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
         /// Then, load remaining databases
-        loadMetadata(global_context, default_database);
-        convertDatabasesEnginesIfNeed(global_context);
+        if (global_context->hasMetadataStoreFoundationDB())
+            loadMetadataFromFDB(global_context, default_database);
+        else
+        {
+            loadMetadata(global_context, default_database);
+            convertDatabasesEnginesIfNeed(global_context);
+        }
         startupSystemTables();
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists

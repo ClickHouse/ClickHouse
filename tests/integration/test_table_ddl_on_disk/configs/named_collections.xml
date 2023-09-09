@@ -1,0 +1,11 @@
+<clickhouse>
+    <named_collections>
+        <postgres>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres1</host>
+            <port>5432</port>
+            <database>postgres</database>
+        </postgres>
+    </named_collections>
+</clickhouse>
