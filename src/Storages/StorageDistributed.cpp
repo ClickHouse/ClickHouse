@@ -1316,7 +1316,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(ContextPtr local_context, con
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, select, syntax_analyzer_result,  storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, select, syntax_analyzer_result, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
