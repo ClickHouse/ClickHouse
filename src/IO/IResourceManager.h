@@ -49,7 +49,7 @@ public:
 
     /// For introspection, see `system.scheduler` table
     using VisitorFunc = std::function<void(const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)>;
-    void forEachNode(VisitorFunc visitor) override;
+    virtual void forEachNode(VisitorFunc visitor) = 0;
 };
 
 using ResourceManagerPtr = std::shared_ptr<IResourceManager>;
