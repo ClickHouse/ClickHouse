@@ -33,6 +33,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -3188,14 +3189,40 @@ private:
         {
             return &ConvertImplGenericFromString<ColumnString>::execute;
         }
-        else
+        else if (const auto * agg_type = checkAndGetDataType<DataTypeAggregateFunction>(from_type_untyped.get()))
         {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type_untyped->getName(), to_type->getName());
+            if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
+            {
+                return [agg_type](
+                           ColumnsWithTypeAndName & arguments,
+                           const DataTypePtr & /* result_type */,
+                           const ColumnNullable * /* nullable_source */,
+                           size_t /*input_rows_count*/) -> ColumnPtr
+                {
+                    const auto & argument_column = arguments.front();
+                    const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
+                    if (col_agg)
+                    {
+                        auto new_col_agg = ColumnAggregateFunction::create(*col_agg);
+                        new_col_agg->set(agg_type->getFunction());
+                        return new_col_agg;
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Illegal column {} for function CAST AS AggregateFunction",
+                            argument_column.column->getName());
+                    }
+                };
+            }
         }
+
+        if (cast_type == CastType::accurateOrNull)
+            return createToNullableColumnWrapper();
+        else
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+                from_type_untyped->getName(), to_type->getName());
     }
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
