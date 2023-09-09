@@ -21,7 +21,7 @@ struct ProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool has_partial_result_setting = false);
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
