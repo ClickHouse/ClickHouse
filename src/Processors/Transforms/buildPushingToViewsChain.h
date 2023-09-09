@@ -67,11 +67,12 @@ Chain buildPushingToViewsChain(
     /// may not have ThreadGroup (i.e. Buffer background flush), and in this
     /// case it should be passed outside.
     ThreadGroupPtr running_group,
-    /// Counter to measure time spent separately per view. Should be improved.
-    std::atomic_uint64_t * elapsed_counter_ms,
     /// True if it's part of async insert flush
     bool async_insert,
+    const InsertBlockIDGeneratorPtr & block_id_generator,
     /// LiveView executes query itself, it needs source block structure.
-    const Block & live_view_header = {});
+    const Block & live_view_header,
+    /// Counter to measure time spent separately per view. Should be improved.
+    std::atomic_uint64_t * elapsed_counter_ms);
 
 }

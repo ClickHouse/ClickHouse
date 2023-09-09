@@ -53,6 +53,9 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
+class InsertBlockIDGenerator;
+using InsertBlockIDGeneratorPtr = std::shared_ptr<InsertBlockIDGenerator>;
+
 class QueryPipeline;
 
 class IStoragePolicy;
@@ -415,7 +418,8 @@ public:
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
-        bool /*async_insert*/)
+        bool /*async_insert*/,
+        const InsertBlockIDGeneratorPtr & /*block_id_generator*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }

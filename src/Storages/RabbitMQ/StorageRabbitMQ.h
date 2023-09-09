@@ -58,7 +58,8 @@ public:
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        bool async_insert) override;
+        bool /*async_insert*/,
+        const InsertBlockIDGeneratorPtr & /*block_id_generator*/) override;
 
     /// We want to control the number of rows in a chunk inserted into RabbitMQ
     bool prefersLargeBlocks() const override { return false; }

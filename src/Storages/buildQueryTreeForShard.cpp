@@ -278,7 +278,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
-    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false, /*block_id_generator=*/nullptr);
 
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);

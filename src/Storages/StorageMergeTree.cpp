@@ -280,11 +280,11 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
 }
 
 SinkToStoragePtr
-StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/, const InsertBlockIDGeneratorPtr & block_id_generator)
 {
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(
-        *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context, block_id_generator);
 }
 
 void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const

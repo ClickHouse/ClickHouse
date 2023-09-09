@@ -813,7 +813,7 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/, const InsertBlockIDGeneratorPtr & /*block_id_generator*/)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();

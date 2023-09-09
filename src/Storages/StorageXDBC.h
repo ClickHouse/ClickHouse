@@ -38,7 +38,7 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/, const InsertBlockIDGeneratorPtr & /*block_id_generator*/) override;
 
     std::string getName() const override;
 private:

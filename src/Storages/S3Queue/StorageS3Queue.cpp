@@ -210,7 +210,7 @@ Pipe StorageS3Queue::read(
         max_download_threads));
 }
 
-SinkToStoragePtr StorageS3Queue::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool)
+SinkToStoragePtr StorageS3Queue::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, bool, const InsertBlockIDGeneratorPtr &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write is not supported by storage {}", getName());
 }

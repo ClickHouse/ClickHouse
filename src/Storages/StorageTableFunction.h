@@ -131,7 +131,8 @@ public:
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,
-            bool async_insert) override
+            bool async_insert,
+            const InsertBlockIDGeneratorPtr & block_id_generator) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
@@ -140,7 +141,7 @@ public:
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
         }
-        return storage->write(query, metadata_snapshot, context, async_insert);
+        return storage->write(query, metadata_snapshot, context, async_insert, block_id_generator);
     }
 
     void renameInMemory(const StorageID & new_table_id) override

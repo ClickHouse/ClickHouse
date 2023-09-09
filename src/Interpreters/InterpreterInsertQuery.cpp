@@ -28,6 +28,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/InsertBlockIDGenerator.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -252,7 +253,7 @@ Chain InterpreterInsertQuery::buildChain(
 
     auto sample = getSampleBlock(columns, table, metadata_snapshot);
 
-    Chain sink = buildSink(table, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
+    Chain sink = buildSink(table, metadata_snapshot, thread_status_holder, running_group, nullptr, elapsed_counter_ms);
     Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample, thread_status_holder);
 
     chain.appendChain(std::move(sink));
@@ -264,6 +265,7 @@ Chain InterpreterInsertQuery::buildSink(
     const StorageMetadataPtr & metadata_snapshot,
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
+    const InsertBlockIDGeneratorPtr & block_id_generator,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
     ThreadStatus * thread_status = current_thread;
@@ -282,7 +284,7 @@ Chain InterpreterInsertQuery::buildSink(
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
     {
-        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
+        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert, block_id_generator);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         out.addSource(std::move(sink));
     }
@@ -290,7 +292,7 @@ Chain InterpreterInsertQuery::buildSink(
     {
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
             query_ptr, no_destination,
-            thread_status_holder, running_group, elapsed_counter_ms, async_insert);
+            thread_status_holder, running_group, async_insert, block_id_generator, /*live_view_header=*/ {}, elapsed_counter_ms);
     }
 
     return out;
@@ -529,10 +531,18 @@ BlockIO InterpreterInsertQuery::execute()
             running_group = current_thread->getThreadGroup();
         if (!running_group)
             running_group = std::make_shared<ThreadGroup>(getContext());
+
+        InsertBlockIDGeneratorPtr block_id_generator;
+        if (sink_streams_size > 1)
+        {
+            /// InsertBlockIDGenerator must be shared between all sinks.
+            block_id_generator = std::make_shared<InsertBlockIDGenerator>(getContext()->getSettingsRef().insert_deduplication_token);
+        }
+
         for (size_t i = 0; i < sink_streams_size; ++i)
         {
             auto out = buildSink(table, metadata_snapshot, /* thread_status_holder= */ nullptr,
-                running_group, /* elapsed_counter_ms= */ nullptr);
+                                 running_group, block_id_generator, /* elapsed_counter_ms= */ nullptr);
             sink_chains.emplace_back(std::move(out));
         }
         for (size_t i = 0; i < pre_streams_size; ++i)

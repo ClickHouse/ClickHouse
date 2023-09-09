@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/InsertBlockIDGenerator.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
@@ -19,7 +20,7 @@ struct MergeTreeSink::DelayedChunk
     {
         MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
-        String block_dedup_token;
+        String block_id;
         ProfileEvents::Counters part_counters;
     };
 
@@ -33,14 +34,20 @@ MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     size_t max_parts_per_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    const InsertBlockIDGeneratorPtr & block_id_generator_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
+    , log(&Poco::Logger::get(storage.getLogName() + " (MergeTreeSink)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
+    , deduplicate(storage.getDeduplicationLog())
+    , block_id_generator(block_id_generator_)
 {
+    if (deduplicate && !block_id_generator)
+        block_id_generator = std::make_shared<InsertBlockIDGenerator>(context->getSettingsRef().insert_deduplication_token);
 }
 
 void MergeTreeSink::onStart()
@@ -96,17 +103,15 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        String block_dedup_token;
-        if (storage.getDeduplicationLog())
+        String block_id;
+        if (deduplicate)
         {
-            const String & dedup_token = settings.insert_deduplication_token;
-            if (!dedup_token.empty())
-            {
-                /// multiple blocks can be inserted within the same insert query
-                /// an ordinal number is added to dedup token to generate a distinctive block id for each block
-                block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
-                ++chunk_dedup_seqnum;
-            }
+            block_id = block_id_generator->generateBlockID(*temp_part.part);
+            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
+        }
+        else
+        {
+            LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
         size_t max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
@@ -131,7 +136,7 @@ void MergeTreeSink::consume(Chunk chunk)
         {
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
-            .block_dedup_token = std::move(block_dedup_token),
+            .block_id = std::move(block_id),
             .part_counters = std::move(part_counters),
         });
     }
@@ -165,15 +170,14 @@ void MergeTreeSink::finishDelayedChunk()
             auto lock = storage.lockParts();
             storage.fillNewPartName(part, lock);
 
-            auto * deduplication_log = storage.getDeduplicationLog();
-            if (deduplication_log)
+            if (deduplicate)
             {
-                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
-                auto res = deduplication_log->addPart(block_id, part->info);
+                const String & block_id = partition.block_id;
+                auto res = storage.getDeduplicationLog()->addPart(block_id, part->info);
                 if (!res.second)
                 {
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
+                    LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
                     continue;
                 }
             }

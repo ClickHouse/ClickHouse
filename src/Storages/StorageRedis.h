@@ -34,10 +34,11 @@ public:
         size_t num_streams) override;
 
     SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool /*async_insert*/) override;
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr /*context*/,
+        bool /*async_insert*/,
+        const InsertBlockIDGeneratorPtr & /*block_id_generator*/) override;
 
     void truncate(const ASTPtr &,
         const StorageMetadataPtr & metadata_snapshot,

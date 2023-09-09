@@ -461,7 +461,7 @@ Pipe StorageEmbeddedRocksDB::read(
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/, const InsertBlockIDGeneratorPtr & /*block_id_generator*/)
 {
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }

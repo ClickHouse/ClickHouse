@@ -195,9 +195,10 @@ Chain buildPushingToViewsChain(
     bool no_destination,
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
-    std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
-    const Block & live_view_header)
+    const InsertBlockIDGeneratorPtr & block_id_generator,
+    const Block & live_view_header,
+    std::atomic_uint64_t * elapsed_counter_ms)
 {
     checkStackSize();
     Chain result_chain;
@@ -352,7 +353,7 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ true,
-                thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
+                thread_status_holder, running_group, async_insert, block_id_generator, storage_header, view_counter_ms);
         }
         else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
         {
@@ -361,13 +362,13 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ true,
-                thread_status_holder, running_group, view_counter_ms, async_insert);
+                thread_status_holder, running_group, async_insert, block_id_generator, /*live_view_header=*/ {}, view_counter_ms);
         }
         else
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(),
                 /* no_destination= */ false,
-                thread_status_holder, running_group, view_counter_ms, async_insert);
+                thread_status_holder, running_group, async_insert, block_id_generator, /*live_view_header=*/{}, view_counter_ms);
 
         views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
@@ -450,7 +451,7 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
+        auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert, block_id_generator);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));

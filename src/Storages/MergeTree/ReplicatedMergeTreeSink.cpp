@@ -1,6 +1,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Storages/MergeTree/InsertBlockIDGenerator.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
 #include <Common/FailPoint.h>
@@ -125,6 +126,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
+    const InsertBlockIDGeneratorPtr & block_id_generator_,
     bool majority_quorum,
     ContextPtr context_,
     bool is_attach_)
@@ -137,6 +139,7 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
+    , block_id_generator(block_id_generator_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
@@ -144,6 +147,9 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
         required_quorum_size = 0;
+
+    if (deduplicate && !block_id_generator)
+        block_id_generator = std::make_shared<InsertBlockIDGenerator>(context->getSettingsRef().insert_deduplication_token);
 }
 
 template<bool async_insert>
@@ -322,24 +328,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         }
         else
         {
-
             if (deduplicate)
             {
-                String block_dedup_token;
-
-                /// We add the hash from the data and partition identifier to deduplication ID.
-                /// That is, do not insert the same data to the same partition twice.
-
-                const String & dedup_token = settings.insert_deduplication_token;
-                if (!dedup_token.empty())
-                {
-                    /// multiple blocks can be inserted within the same insert query
-                    /// an ordinal number is added to dedup token to generate a distinctive block id for each block
-                    block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
-                    ++chunk_dedup_seqnum;
-                }
-
-                block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
+                block_id = block_id_generator->generateBlockID(*temp_part.part);
                 LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
             }
             else

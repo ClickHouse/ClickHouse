@@ -15,6 +15,9 @@ class ThreadStatus;
 struct ThreadStatusesHolder;
 using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
 
+class InsertBlockIDGenerator;
+using InsertBlockIDGeneratorPtr = std::shared_ptr<InsertBlockIDGenerator>;
+
 /** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter, WithContext
@@ -71,6 +74,7 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         ThreadStatusesHolderPtr thread_status_holder,
         ThreadGroupPtr running_group,
+        const InsertBlockIDGeneratorPtr & block_id_generator,
         std::atomic_uint64_t * elapsed_counter_ms);
 
     Chain buildPreSinkChain(

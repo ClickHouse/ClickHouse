@@ -22,6 +22,8 @@ namespace DB
 class StorageReplicatedMergeTree;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+class InsertBlockIDGenerator;
+using InsertBlockIDGeneratorPtr = std::shared_ptr<InsertBlockIDGenerator>;
 
 
 /// ReplicatedMergeTreeSink will sink data to replicated merge tree with deduplication.
@@ -41,6 +43,7 @@ public:
         size_t max_parts_per_block_,
         bool quorum_parallel_,
         bool deduplicate_,
+        const InsertBlockIDGeneratorPtr & block_id_generator_,
         bool majority_quorum_,
         ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
@@ -122,6 +125,7 @@ private:
     bool is_attach = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
+    InsertBlockIDGeneratorPtr block_id_generator;
     bool last_block_is_duplicate = false;
     UInt64 num_blocks_processed = 0;
 
@@ -130,8 +134,6 @@ private:
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
-
-    UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<DelayedChunk> delayed_chunk;
