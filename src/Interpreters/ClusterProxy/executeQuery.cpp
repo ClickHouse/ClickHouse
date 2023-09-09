@@ -38,7 +38,7 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
-    const SelectQueryInfo * query_info,
+    ASTPtr additional_filter_ast,
     Poco::Logger * log)
 {
     Settings new_settings = settings;
@@ -115,11 +115,11 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ///
     /// Here we don't try to analyze setting again. In case if query_info->additional_filter_ast is not empty, some filter was applied.
     /// It's just easier to add this filter for a source table.
-    if (query_info && query_info->additional_filter_ast)
+    if (additional_filter_ast)
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(queryToString(query_info->additional_filter_ast));
+        tuple.push_back(queryToString(additional_filter_ast));
         new_settings.additional_table_filters.value.push_back(std::move(tuple));
     }
 
@@ -174,7 +174,8 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(!query_info.getCluster()->getSecret().empty(), context, settings, main_table, &query_info, log);
+    auto new_context = updateSettingsForCluster(!not_optimized_cluster->getSecret().empty(), context, settings,
+                                                main_table, query_info.additional_filter_ast, log);
     new_context->increaseDistributedDepth();
 
     size_t shards = query_info.getCluster()->getShardCount();
@@ -269,7 +270,7 @@ void executeQueryWithParallelReplicas(
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    const SelectQueryInfo & query_info,
+    std::shared_ptr<const StorageLimitsList> storage_limits,
     const ClusterPtr & not_optimized_cluster)
 {
     const auto & settings = context->getSettingsRef();
@@ -333,7 +334,7 @@ void executeQueryWithParallelReplicas(
         std::move(scalars),
         std::move(external_tables),
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-        query_info.storage_limits);
+        std::move(storage_limits));
 
     query_plan.addStep(std::move(read_from_remote));
 }
