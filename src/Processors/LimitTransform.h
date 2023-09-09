@@ -55,8 +55,6 @@ private:
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
-    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
-
 public:
     LimitTransform(
         const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
@@ -75,8 +73,6 @@ public:
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }
-
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
 };
 
 }
