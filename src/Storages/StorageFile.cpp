@@ -875,10 +875,7 @@ StorageFile::StorageFile(const std::vector<std::string> & table_paths_, const st
     : StorageFile(args)
 {
     if (!args.path_to_archive.empty())
-    {
-        paths_to_archive = getPathsList(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
-        paths = {table_paths_};
-    }
+        archive_info = getArchiveInfo(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
     else
         paths = getPathsList(table_paths_, user_files_path, args.getContext(), total_bytes_to_read);
 
