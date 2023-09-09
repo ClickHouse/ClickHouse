@@ -96,7 +96,10 @@ def threaded_run_test(sessions):
         thread.start()
 
     if len(sessions) > MAX_SESSIONS_FOR_USER:
-        assert_logs_contain_with_retry(instance, "overflown session count")
+        # High retry amount to avoid flakiness in ASAN (+Analyzer) tests
+        assert_logs_contain_with_retry(
+            instance, "overflown session count", retry_count=60
+        )
 
     instance.query(f"KILL QUERY WHERE user='{TEST_USER}' SYNC")
 
@@ -108,6 +111,10 @@ def threaded_run_test(sessions):
 def started_cluster():
     try:
         cluster.start()
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        instance.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()
