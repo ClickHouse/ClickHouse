@@ -36,6 +36,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -52,7 +53,9 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
+#include <Storages/StorageAzureBlob.h>
 #include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -84,6 +87,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int ABORTED;
 }
 
 
@@ -319,33 +323,33 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropMarkCache();
+            system_context->clearMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropUncompressedCache();
+            system_context->clearUncompressedCache();
             break;
         case Type::DROP_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropIndexMarkCache();
+            system_context->clearIndexMarkCache();
             break;
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropIndexUncompressedCache();
+            system_context->clearIndexUncompressedCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            system_context->dropMMappedFileCache();
+            system_context->clearMMappedFileCache();
             break;
         case Type::DROP_QUERY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->dropQueryCache();
+            getContext()->clearQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+                cache->clear();
             break;
 #endif
 #if USE_AWS_S3
@@ -383,12 +387,60 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
+
+            ColumnsDescription columns{NamesAndTypesList{
+                {"cache_name", std::make_shared<DataTypeString>()},
+                {"path", std::make_shared<DataTypeString>()},
+                {"size", std::make_shared<DataTypeUInt64>()},
+            }};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const FileSegments & file_segments)
+            {
+                for (const auto & file_segment : file_segments)
+                {
+                    size_t i = 0;
+                    const auto path = cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind());
+                    res_columns[i++]->insert(cache_name);
+                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment->getDownloadedSize());
+                }
+            };
+
+            if (query.filesystem_cache_name.empty())
+            {
+                auto caches = FileCacheFactory::instance().getAll();
+                for (const auto & [cache_name, cache_data] : caches)
+                {
+                    auto file_segments = cache_data->cache->sync();
+                    fill_data(cache_name, cache_data->cache, file_segments);
+                }
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto file_segments = cache->sync();
+                fill_data(query.filesystem_cache_name, cache, file_segments);
+            }
+
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
+            break;
+        }
         case Type::DROP_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
             if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
             else
                 caches_to_drop = {query.schema_cache_storage};
 
@@ -404,6 +456,10 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
+#if USE_AZURE_BLOB_STORAGE
+            if (caches_to_drop.contains("AZURE"))
+                StorageAzureBlob::getSchemaCache(getContext()).clear();
+#endif
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -628,12 +684,15 @@ void InterpreterSystemQuery::restoreReplica()
     table_replicated_ptr->restoreMetadataInZooKeeper();
 }
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
-    auto table_ddl_guard = need_ddl_guard
-        ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
-        : nullptr;
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+
+    auto restart_replica_lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(replica.getDatabaseName());
+    if (!restart_replica_lock)
+        throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
+                        backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
@@ -712,21 +771,13 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     if (replica_names.empty())
         return;
 
-    TableGuards guards;
-
-    for (const auto & name : replica_names)
-        guards.emplace(UniqueTableName{name.database_name, name.table_name}, nullptr);
-
-    for (auto & guard : guards)
-        guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
-
     size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
     ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
     }
     pool.wait();
 }
@@ -1020,6 +1071,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:

@@ -198,10 +198,10 @@ def test_delete_after_processing(started_cluster, mode):
         """
     )
 
-    get_query = f"SELECT * FROM test.s3_queue"
+    get_query = f"SELECT * FROM test.s3_queue ORDER BY column1, column2, column3"
     assert [
         list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ] == total_values
+    ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
     assert len(objects) == 0

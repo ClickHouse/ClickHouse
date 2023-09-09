@@ -1,1 +1,1 @@
-CREATE DATABASE test_00604\nENGINE = Atomic
+CREATE DATABASE default\nENGINE = Atomic

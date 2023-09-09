@@ -5,7 +5,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -67,14 +66,14 @@ template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot delta compress, data size {}  is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot delta compress, data size {} is not aligned to {}", source_size, sizeof(T));
 
     T prev_src = 0;
     const char * const source_end = source + source_size;
     while (source < source_end)
     {
-        T curr_src = unalignedLoad<T>(source);
-        unalignedStore<T>(dest, curr_src - prev_src);
+        T curr_src = unalignedLoadLittleEndian<T>(source);
+        unalignedStoreLittleEndian<T>(dest, curr_src - prev_src);
         prev_src = curr_src;
 
         source += sizeof(T);
@@ -88,16 +87,16 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     const char * const output_end = dest + output_size;
 
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {}  is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {} is not aligned to {}", source_size, sizeof(T));
 
     T accumulator{};
     const char * const source_end = source + source_size;
     while (source < source_end)
     {
-        accumulator += unalignedLoad<T>(source);
+        accumulator += unalignedLoadLittleEndian<T>(source);
         if (dest + sizeof(accumulator) > output_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-        unalignedStore<T>(dest, accumulator);
+        unalignedStoreLittleEndian<T>(dest, accumulator);
 
         source += sizeof(T);
         dest += sizeof(T);
