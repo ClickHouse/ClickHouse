@@ -75,7 +75,6 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/TreeRewriter.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
