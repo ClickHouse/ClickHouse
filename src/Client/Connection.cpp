@@ -886,7 +886,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             return sink;
         });
         executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1);
+        executor->execute(/*num_threads = */ 1, false);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;
@@ -1013,8 +1013,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
-                res.announcement = receiveInitialParallelReadAnnounecement();
+            case Protocol::Server::MergeTreeAllRangesAnnouncement:
+                res.announcement = receiveInitialParallelReadAnnouncement();
                 return res;
 
             case Protocol::Server::MergeTreeReadTaskRequest:
@@ -1181,7 +1181,7 @@ ParallelReadRequest Connection::receiveParallelReadRequest() const
     return ParallelReadRequest::deserialize(*in);
 }
 
-InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
+InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
     return InitialAllRangesAnnouncement::deserialize(*in);
 }

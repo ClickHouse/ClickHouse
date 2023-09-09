@@ -897,7 +897,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
             in.ignore(size);
             return std::make_shared<DataTypeString>();
         }
-        case BSONType::OBJECT_ID:;
+        case BSONType::OBJECT_ID:
         {
             in.ignore(BSON_OBJECT_ID_SIZE);
             return makeNullable(std::make_shared<DataTypeFixedString>(BSON_OBJECT_ID_SIZE));

@@ -124,6 +124,27 @@ if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
 endif ()
 
+if (USE_GPERF)
+    # Only for regenerating
+    add_custom_target(generate-html-char-ref-gperf ./HTMLCharacterReference.sh
+            SOURCES ./HTMLCharacterReference.sh
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            BYPRODUCTS "${CMAKE_CURRENT_SOURCE_DIR}/HTMLCharacterReference.gperf"
+            )
+    add_custom_target(generate-html-char-ref ${GPERF} -t HTMLCharacterReference.gperf --output-file=HTMLCharacterReference.generated.cpp
+            && clang-format -i HTMLCharacterReference.generated.cpp
+            # for clang-tidy, since string.h is deprecated
+            && sed -i 's/\#include <string.h>/\#include <cstring>/g' HTMLCharacterReference.generated.cpp
+            SOURCES HTMLCharacterReference.gperf
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            )
+    add_dependencies(generate-html-char-ref generate-html-char-ref-gperf)
+    if (NOT TARGET generate-source)
+        add_custom_target(generate-source)
+    endif ()
+    add_dependencies(generate-source generate-html-char-ref)
+endif ()
+
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
 
 # Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
