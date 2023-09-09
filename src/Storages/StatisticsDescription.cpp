@@ -30,6 +30,18 @@ StatisticType StatisticDescription::stringToType(String type)
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
 }
 
+namespace
+{
+
+String typeToString(StatisticType type)
+{
+    if (type == TDigest)
+        return "tdigest";
+    return "unknown";
+}
+
+}
+
 StatisticsDescriptions StatisticsDescriptions::getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
 {
     const auto * stat_definition = definition_ast->as<ASTStatisticDeclaration>();
@@ -54,7 +66,7 @@ StatisticsDescriptions StatisticsDescriptions::getStatisticsFromAST(const ASTPtr
         stat.data_type = column.type;
         stats.push_back(stat);
     }
-    stats.definition_asts.push_back(definition_ast);
+    /// stats.definition_asts.push_back(definition_ast);
 
     if (stats.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Empty statistic column list");
@@ -77,7 +89,28 @@ bool StatisticsDescriptions::has(const String & name) const
 void StatisticsDescriptions::merge(const StatisticsDescriptions & other)
 {
     insert(end(), other.begin(), other.end());
-    definition_asts.insert(definition_asts.end(), other.definition_asts.begin(), other.definition_asts.end());
+    /// definition_asts.insert(definition_asts.end(), other.definition_asts.begin(), other.definition_asts.end());
+}
+
+ASTPtr StatisticsDescriptions::getAST() const
+{
+
+    auto list = std::make_shared<ASTExpressionList>();
+    /// for (const auto & ast : definition_asts)
+    ///    list.children.push_back(ast);
+
+    for (const auto & stat : *this)
+    {
+        auto stat_ast = std::make_shared<ASTStatisticDeclaration>();
+        auto cols_ast  = std::make_shared<ASTExpressionList>();
+        auto col_ast  = std::make_shared<ASTIdentifier>(stat.column_name);
+        cols_ast->children.push_back(col_ast);
+        stat_ast->set(stat_ast->columns, cols_ast);
+        stat_ast->type = typeToString(stat.type);
+
+        list->children.push_back(stat_ast);
+    }
+    return list;
 }
 
 String StatisticsDescriptions::toString() const
@@ -85,11 +118,7 @@ String StatisticsDescriptions::toString() const
     if (empty())
         return {};
 
-    ASTExpressionList list;
-    for (const auto & ast : definition_asts)
-        list.children.push_back(ast);
-
-    return serializeAST(list);
+    return serializeAST(*getAST());
 }
 
 }

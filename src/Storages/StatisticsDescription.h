@@ -35,6 +35,8 @@ struct StatisticsDescriptions : public std::vector<StatisticDescription>
     bool has(const String & name) const;
     /// merge with other Statistics
     void merge(const StatisticsDescriptions & other);
+
+    ASTPtr getAST() const;
     /// Convert description to string
     String toString() const;
     /// Parse description from string

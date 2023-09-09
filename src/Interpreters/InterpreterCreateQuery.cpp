@@ -457,12 +457,7 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 
 ASTPtr InterpreterCreateQuery::formatStatistics(const StatisticsDescriptions & statistics)
 {
-    auto res = std::make_shared<ASTExpressionList>();
-
-    for (const auto & definition_ast : statistics.definition_asts)
-        res->children.push_back(definition_ast->clone());
-
-    return res;
+    return statistics.getAST();
 }
 
 ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & constraints)

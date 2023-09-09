@@ -25,13 +25,13 @@ SELECT 'After drop statistic';
 EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 
---SHOW CREATE TABLE t1;
+SHOW CREATE TABLE t1;
 
 ALTER TABLE t1 ADD STATISTIC a, b TYPE tdigest;
 
 SELECT 'After add statistic';
 
---SHOW CREATE TABLE t1;
+SHOW CREATE TABLE t1;
 
 ALTER TABLE t1 MATERIALIZE STATISTIC a, b TYPE tdigest;
 INSERT INTO t1 select number, -number, generateUUIDv4() FROM system.numbers LIMIT 10000;

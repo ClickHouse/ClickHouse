@@ -438,6 +438,9 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
+    if (!local_context->getSettings().allow_statistic_optimize)
+        return {};
+
     auto parts = getDataPartsVectorForInternalUsage();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
