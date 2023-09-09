@@ -38,7 +38,7 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
-    const ASTPtr & additional_filter_ast,
+    ASTPtr additional_filter_ast,
     Poco::Logger * log)
 {
     Settings new_settings = settings;
