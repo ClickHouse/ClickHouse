@@ -41,7 +41,7 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
-    const SelectQueryInfo * query_info = nullptr,
+    ASTPtr additional_filter_ast = nullptr,
     Poco::Logger * log = nullptr);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
