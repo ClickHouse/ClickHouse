@@ -178,8 +178,9 @@ void executeQuery(
                                                 main_table, query_info.additional_filter_ast, log);
     new_context->increaseDistributedDepth();
 
-    size_t shards = query_info.getCluster()->getShardCount();
-    for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
+    ClusterPtr cluster = query_info.getCluster();
+    const size_t shards = cluster->getShardCount();
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
         ASTPtr query_ast_for_shard = query_ast->clone();
         if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
@@ -210,9 +211,14 @@ void executeQuery(
             }
         }
 
+        const auto & addresses = cluster->getShardsAddresses().at(shard_info.shard_num - 1);
+        const bool parallel_replicas_enabled = addresses.size() > 1
+            && context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS && settings.max_parallel_replicas > 1;
+
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, static_cast<UInt32>(shards));
+            new_context, plans, remote_shards, static_cast<UInt32>(shards),
+            parallel_replicas_enabled);
     }
 
     if (!remote_shards.empty())
@@ -236,7 +242,7 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            query_info.getCluster()->getName());
+            not_optimized_cluster->getName());
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
