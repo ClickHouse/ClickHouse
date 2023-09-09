@@ -487,6 +487,7 @@ class IColumn;
     M(Bool, enable_job_stack_trace, false, "Output stack trace of a job creator when job results in exception", 0) \
     M(Bool, allow_ddl, true, "If it is set to true, then a user is allowed to executed DDL queries.", 0) \
     M(Bool, parallel_view_processing, false, "Enables pushing to attached views concurrently instead of sequentially.", 0) \
+    M(Bool, parallel_view_query_execution, false, "Enables asynchronous view query execution on pushing to attached views.", 0) \
     M(Bool, enable_unaligned_array_join, false, "Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.", 0) \
     M(Bool, optimize_read_in_order, true, "Enable ORDER BY optimization for reading data in corresponding order in MergeTree tables.", 0) \
     M(Bool, optimize_read_in_window_order, true, "Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.", 0) \

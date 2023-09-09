@@ -8,6 +8,7 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
@@ -100,6 +101,7 @@ private:
 };
 
 /// For source chunk, execute view query over it.
+template <typename ExecutorType>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
@@ -118,7 +120,7 @@ private:
     struct State
     {
         QueryPipeline pipeline;
-        PullingPipelineExecutor executor;
+        ExecutorType executor;
 
         explicit State(QueryPipeline pipeline_)
             : pipeline(std::move(pipeline_))
@@ -378,11 +380,22 @@ Chain buildPushingToViewsChain(
 
         if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
         {
-            auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-                storage_header, views_data->views.back(), views_data);
-            executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
+            if (context->getSettingsRef().parallel_view_query_execution)
+            {
+                auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingAsyncPipelineExecutor>>(
+                    storage_header, views_data->views.back(), views_data);
+                executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
-            out.addSource(std::move(executing_inner_query));
+                out.addSource(std::move(executing_inner_query));
+            }
+            else
+            {
+                auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingPipelineExecutor>>(
+                    storage_header, views_data->views.back(), views_data);
+                executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
+
+                out.addSource(std::move(executing_inner_query));
+            }
         }
 
         chains.emplace_back(std::move(out));
@@ -605,7 +618,8 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
 }
 
 
-ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
+template <typename ExecutorType>
+ExecutingInnerQueryFromViewTransform<ExecutorType>::ExecutingInnerQueryFromViewTransform(
     const Block & header,
     ViewRuntimeData & view_,
     std::shared_ptr<ViewsData> views_data_)
@@ -615,14 +629,15 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 {
 }
 
-void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
+template <typename ExecutorType>
+void ExecutingInnerQueryFromViewTransform<ExecutorType>::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
     state.emplace(process(block, view, *views_data));
 }
 
-
-ExecutingInnerQueryFromViewTransform::GenerateResult ExecutingInnerQueryFromViewTransform::onGenerate()
+template <typename ExecutorType>
+ExecutingInnerQueryFromViewTransform<ExecutorType>::GenerateResult ExecutingInnerQueryFromViewTransform<ExecutorType>::onGenerate()
 {
     GenerateResult res;
     if (!state.has_value())
