@@ -874,10 +874,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 StorageFile::StorageFile(const std::vector<std::string> & table_paths_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
-    if (!args.path_to_archive.empty())
-        archive_info = getArchiveInfo(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
-    else
-        paths = getPathsList(table_paths_, user_files_path, args.getContext(), total_bytes_to_read);
+    paths = getPathsList(table_paths_, user_files_path, args.getContext(), total_bytes_to_read);
 
     is_db_table = false;
     is_path_with_globs = paths.size() > 1;

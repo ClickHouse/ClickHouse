@@ -104,13 +104,21 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
         Strings paths;
         std::optional<StorageFile::ArchiveInfo> archive_info;
-        if (path_to_archive.empty() && !filenames.empty())
-            paths = StorageFile::getPathsList(filenames, context->getUserFilesPath(), context, total_bytes_to_read);
-        else if (paths_to_archives.empty())
-            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        if (path_to_archive.empty())
+        {
+            if (filenames.empty())
+                paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+            else
+                paths = StorageFile::getPathsList(filenames, context->getUserFilesPath(), context, total_bytes_to_read);
+        }
         else
-            archive_info
-                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        {
+            if (filenames.empty())
+                archive_info
+                    = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' can't archive Array", getName());
+        }
 
         return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
