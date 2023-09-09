@@ -26,6 +26,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
         StorageFile::parseFileSource(std::move(filename), filename, path_to_archive);
+        for (auto & file_path : filenames)
+            StorageFile::parseFileSource(std::move(file_path), file_path, path_to_archive);
         return;
     }
 
@@ -58,6 +60,8 @@ String TableFunctionFile::getFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().getFormatFromFileDescriptor(fd);
+    else if (!filenames.empty())
+        return FormatFactory::instance().getFormatFromFileName(filenames.at(0), true);
     else
         return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
@@ -84,8 +88,10 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
 
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
-
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
+    else if (!filenames.empty())
+        return std::make_shared<StorageFile>(filenames, global_context->getUserFilesPath(), args);
+    else
+        return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -98,7 +104,9 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
         Strings paths;
         Strings paths_to_archives;
-        if (path_to_archive.empty())
+        if (path_to_archive.empty() && !filenames.empty())
+            paths = StorageFile::getPathsList(filenames, context->getUserFilesPath(), context, total_bytes_to_read);
+        else if (paths_to_archives.empty())
             paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         else
             paths_to_archives = StorageFile::getPathsList(path_to_archive, context->getUserFilesPath(), context, total_bytes_to_read);

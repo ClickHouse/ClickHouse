@@ -32,6 +32,9 @@ public:
     /// From user's file
     StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
 
+    /// From user's file
+    StorageFile(const std::vector<std::string> & table_paths_, const std::string & user_files_path, CommonArguments args);
+
     /// From table in database
     StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
 
@@ -68,6 +71,9 @@ public:
     NamesAndTypesList getVirtuals() const override { return virtual_columns; }
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
+
+    static Strings
+    getPathsList(const std::vector<String> & table_paths, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns

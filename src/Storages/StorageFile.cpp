@@ -464,6 +464,19 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     return paths;
 }
 
+Strings StorageFile::getPathsList(
+    const std::vector<String> & table_paths, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)
+{
+    Strings paths;
+    for (const auto & table_path : table_paths)
+    {
+        Strings sub_paths = getPathsList(table_path, user_files_path, context, total_bytes_to_read);
+        paths.insert(paths.end(), sub_paths.begin(), sub_paths.end());
+    }
+
+    return paths;
+}
+
 namespace
 {
     struct ReadBufferFromFileIterator : public IReadBufferIterator, WithContext
@@ -658,6 +671,29 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
         path_for_partitioned_write = paths.front();
     else
         path_for_partitioned_write = table_path_;
+
+    file_renamer = FileRenamer(args.rename_after_processing);
+
+    setStorageMetadata(args);
+}
+
+StorageFile::StorageFile(const std::vector<std::string> & table_paths_, const std::string & user_files_path, CommonArguments args)
+    : StorageFile(args)
+{
+    if (!args.path_to_archive.empty())
+    {
+        paths_to_archive = getPathsList(args.path_to_archive, user_files_path, args.getContext(), total_bytes_to_read);
+        paths = {table_paths_};
+    }
+    else
+        paths = getPathsList(table_paths_, user_files_path, args.getContext(), total_bytes_to_read);
+
+    is_db_table = false;
+    is_path_with_globs = paths.size() > 1;
+    if (!paths.empty())
+        path_for_partitioned_write = paths.front();
+    else
+        path_for_partitioned_write = table_paths_.empty() ? "" : table_paths_.front();
 
     file_renamer = FileRenamer(args.rename_after_processing);
 

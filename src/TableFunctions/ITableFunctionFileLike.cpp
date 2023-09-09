@@ -12,9 +12,6 @@
 
 #include <Formats/FormatFactory.h>
 
-#include <filesystem>
-#include <regex>
-
 namespace DB
 {
 
@@ -31,60 +28,16 @@ void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const Conte
     // Take Array argument like: ['file1.csv', 'file2.csv', ...]
     if (type == Field::Types::Array)
     {
-        auto filenames = checkAndGetLiteralArgument<Array>(arg, "source");
-        bool first = true;
-        String first_ext;
-        std::vector<String> file_bases;
-        for (auto & single_filename : filenames)
+        filenames.clear();
+        auto file_paths = checkAndGetLiteralArgument<Array>(arg, "source");
+        for (const auto & file_path : file_paths)
         {
-            String file_base = std::filesystem::path(single_filename.safeGet<String>()).stem();
-            String file_ext = std::filesystem::path(single_filename.safeGet<String>()).extension();
-            if (first)
-            {
-                first = false;
-                first_ext = file_ext;
-            }
-            if (first_ext != file_ext)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "File extension must be a literal {}, got {}", first_ext, file_ext);
-            }
-            file_bases.push_back(file_base);
+            filenames.push_back(file_path.safeGet<String>());
         }
-
-        if (file_bases.empty())
-        {
-            return;
-        }
-        if (file_bases.size() == 1)
-        {
-            filename = (file_bases[0] + first_ext);
-            return;
-        }
-        filename = "{";
-        for (size_t i = 0; i < file_bases.size(); i++)
-        {
-            filename += file_bases.at(i);
-            if (i != file_bases.size() - 1)
-            {
-                filename += ',';
-            }
-        }
-        filename += "}";
-        if (!first_ext.empty())
-        {
-            filename += first_ext;
-        }
-
         return;
     }
 
     filename = checkAndGetLiteralArgument<String>(arg, "source");
-    // Reject argument like {file1,file2}.csv
-    std::regex pattern(R"(\{[^{}]*,[^{}]*\})");
-    if (std::regex_search(filename, pattern))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong file path {}", filename);
-    }
 }
 
 String ITableFunctionFileLike::getFormatFromFirstArgument()
