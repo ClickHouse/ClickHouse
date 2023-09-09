@@ -192,6 +192,8 @@ def test_hardlinks_preserved_when_projection_dropped(
         first_cluster_node.query(create_query + first_node_settings)
         second_cluster_node.query(create_query + second_node_settings)
 
+        objects_empty_table = list_objects(cluster)
+
         first_cluster_node.query("SYSTEM FLUSH LOGS")
         table_uuid = first_cluster_node.query(
             """
@@ -239,6 +241,7 @@ def test_hardlinks_preserved_when_projection_dropped(
             sleep_time=1,
         )
 
+        # make sure that alter update made hardlinks inside projection
         hardlinks = (
             first_cluster_node.query(
                 f"""
@@ -254,8 +257,6 @@ def test_hardlinks_preserved_when_projection_dropped(
         )
         assert len(hardlinks) > 0, ",".join(hardlinks)
         assert any(["proj/" in x for x in hardlinks]), ",".join(hardlinks)
-
-        logging.info("hardlinks has been planted")
 
         part_path_on_second_node = second_cluster_node.query(
             """
@@ -284,6 +285,7 @@ def test_hardlinks_preserved_when_projection_dropped(
 
         second_cluster_node.query("SYSTEM FLUSH LOGS")
 
+        # make sure there is outdated broken-on-start part
         broken_parts = (
             second_cluster_node.query(
                 """
@@ -310,6 +312,7 @@ def test_hardlinks_preserved_when_projection_dropped(
         )
         second_cluster_node.exec_in_container(["bash", "-c", script])
 
+        # when detached part is removed, removeSharedRecursive is called
         second_cluster_node.query(
             f"""
             ALTER TABLE test_hardlinks_preserved_when_projection_dropped
@@ -318,21 +321,35 @@ def test_hardlinks_preserved_when_projection_dropped(
             settings={"allow_drop_detached": "1"},
         )
 
-        res = first_cluster_node.query(
-            """
-            CHECK TABLE test_hardlinks_preserved_when_projection_dropped
-            """
-        ).strip()
+        # it is an easy way to read all data in part
+        # "0" means corrupted, https://clickhouse.com/docs/en/sql-reference/statements/check-table
+        assert (
+            "1"
+            == first_cluster_node.query(
+                """
+                CHECK TABLE test_hardlinks_preserved_when_projection_dropped
+                """
+            ).strip()
+        )
 
-        # corrupted
-        assert res == "0"
+        assert (
+            "1"
+            == second_cluster_node.query(
+                """
+                CHECK TABLE test_hardlinks_preserved_when_projection_dropped
+                """
+            ).strip()
+        )
 
-        data = first_cluster_node.query(
-            """
-            SELECT a, b FROM test_hardlinks_preserved_when_projection_dropped
-            WHERE b > 104
-            ORDER BY b
-            """
-        ).split("\n")
+        second_cluster_node.query(
+            f"""
+            ALTER TABLE test_hardlinks_preserved_when_projection_dropped
+            DROP PART 'all_0_0_0_1'
+            """,
+            settings={"alter_sync": 2},
+        )
 
-        assert len(data) == 5, data
+        wait_for_delete_s3_objects(cluster, len(objects_empty_table))
+
+        objects_at_the_end = list_objects(cluster)
+        assert objects_at_the_end == objects_empty_table
