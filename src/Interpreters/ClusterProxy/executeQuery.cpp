@@ -211,6 +211,8 @@ void executeQuery(
             }
         }
 
+        // decide for each shard if parallel reading from replicas should be enabled
+        // according to settings and number of replicas declared per shard
         bool parallel_replicas_enabled = false;
         if (shard_info.shard_num > 0 && shard_info.shard_num <= cluster->getShardsAddresses().size())
         {
