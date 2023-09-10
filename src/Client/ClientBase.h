@@ -63,7 +63,7 @@ void interruptSignalHandler(int signum);
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
+class ClientBase : public Poco::Util::Application, public IHints<2>
 {
 
 public:
