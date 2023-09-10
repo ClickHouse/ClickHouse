@@ -722,7 +722,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## toDaysSinceYearZero
 
-Returns for a given date, the number of days passed since the [year 0](https://en.wikipedia.org/wiki/Year_zero).
+Returns for a given date, the number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar). The calculation is the same as in MySQL's [`TO_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_to-days) function.
 
 **Syntax**
 
@@ -734,7 +734,7 @@ Aliases: `TO_DAYS`
 
 **Arguments**
 
-- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date64](../../sql-reference/data-types/date64.md).
+- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md).
 
 **Returned value**
 
@@ -752,7 +752,7 @@ Result:
 
 ``` text
 ┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
-│                                     738772 │
+│                                     713569 │
 └────────────────────────────────────────────┘
 ```
 
