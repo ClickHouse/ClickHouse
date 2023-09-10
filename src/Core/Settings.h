@@ -1070,7 +1070,7 @@ DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 /** Settings of query execution.
   * These settings go to users.xml.
   */
-struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings>
+struct Settings : public BaseSettings<SettingsTraits>, public IHints<2>
 {
     Settings() = default;
 
