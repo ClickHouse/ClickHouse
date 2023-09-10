@@ -732,6 +732,8 @@ void StorageKafka::threadFunc(size_t idx)
 {
     assert(idx < tasks.size());
     auto task = tasks[idx];
+    std::string exception_str;
+
     try
     {
         auto table_id = getStorageID();
@@ -771,7 +773,24 @@ void StorageKafka::threadFunc(size_t idx)
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// do bare minimum in catch block
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        exception_str = getCurrentExceptionMessage(true /* with_stacktrace */);
+    }
+
+    if (!exception_str.empty())
+    {
+        LOG_ERROR(log, "{} {}", __PRETTY_FUNCTION__, exception_str);
+
+        auto safe_consumers = getSafeConsumers();
+        for (auto const & consumer_ptr_weak : safe_consumers.consumers)
+        {
+            /// propagate materialized view exception to all consumers
+            if (auto consumer_ptr = consumer_ptr_weak.lock())
+            {
+                consumer_ptr->setExceptionInfo(exception_str, false /* no stacktrace, reuse passed one */);
+            }
+        }
     }
 
     mv_attached.store(false);
@@ -846,6 +865,7 @@ bool StorageKafka::streamToViews()
         // we need to read all consumers in parallel (sequential read may lead to situation
         // when some of consumers are not used, and will break some Kafka consumer invariants)
         block_io.pipeline.setNumThreads(stream_count);
+        block_io.pipeline.setConcurrencyControl(kafka_context->getSettingsRef().use_concurrency_control);
 
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);

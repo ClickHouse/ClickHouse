@@ -596,7 +596,13 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
     auto tmp_table = arrow::Table::FromRecordBatches({*batch});
 
     size_t approx_chunk_original_size = static_cast<size_t>(std::ceil(static_cast<double>(row_group_batch.total_bytes_compressed) / row_group_batch.total_rows * (*tmp_table)->num_rows()));
-    PendingChunk res = {.chunk_idx = row_group_batch.next_chunk_idx, .row_group_batch_idx = row_group_batch_idx, .approx_original_chunk_size = approx_chunk_original_size};
+    PendingChunk res = {
+            .chunk = {},
+            .block_missing_values = {},
+            .chunk_idx = row_group_batch.next_chunk_idx,
+            .row_group_batch_idx = row_group_batch_idx,
+            .approx_original_chunk_size = approx_chunk_original_size
+    };
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -723,12 +729,19 @@ ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings 
 {
 }
 
+void ParquetSchemaReader::initializeIfNeeded()
+{
+    if (arrow_file)
+        return;
+
+    std::atomic<int> is_stopped{0};
+    arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    metadata = parquet::ReadMetaData(arrow_file);
+}
+
 NamesAndTypesList ParquetSchemaReader::readSchema()
 {
-    std::atomic<int> is_stopped{0};
-    auto file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-
-    auto metadata = parquet::ReadMetaData(file);
+    initializeIfNeeded();
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(parquet::arrow::FromParquetSchema(metadata->schema(), &schema));
@@ -738,6 +751,12 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     if (format_settings.schema_inference_make_columns_nullable)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
+}
+
+std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+{
+    initializeIfNeeded();
+    return metadata->num_rows();
 }
 
 void registerInputFormatParquet(FormatFactory & factory)
