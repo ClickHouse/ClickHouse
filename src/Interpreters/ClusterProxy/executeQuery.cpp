@@ -211,9 +211,19 @@ void executeQuery(
             }
         }
 
-        const auto & addresses = cluster->getShardsAddresses().at(shard_info.shard_num - 1);
-        const bool parallel_replicas_enabled = addresses.size() > 1
-            && context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS && settings.max_parallel_replicas > 1;
+        bool parallel_replicas_enabled = false;
+        if (shard_info.shard_num > 0 && shard_info.shard_num <= cluster->getShardsAddresses().size())
+        {
+            const auto & addresses = cluster->getShardsAddresses().at(shard_info.shard_num - 1);
+            parallel_replicas_enabled = addresses.size() > 1
+                && context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS && settings.max_parallel_replicas > 1;
+        }
+        else
+        {
+            chassert(shard_info.shard_num > 0);
+
+            // FIXME or code: when can it happened (shard_num bigger than shard's addresses)? looks inconsistent
+        }
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
