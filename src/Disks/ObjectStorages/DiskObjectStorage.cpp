@@ -491,7 +491,7 @@ static inline Settings updateResourceLink(const Settings & settings, const Strin
     if (auto query_context = CurrentThread::getQueryContext())
     {
         Settings result(settings);
-        result.resource_link = query_context->getClassifier()->get(resource_name);
+        result.resource_link = query_context->getWorkloadClassifier()->get(resource_name);
         return result;
     }
     return settings;
