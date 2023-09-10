@@ -63,7 +63,7 @@ void interruptSignalHandler(int signum);
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
+class ClientBase : public Poco::Util::Application, public IHints<2>
 {
 
 public:
@@ -202,6 +202,7 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
+    std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<String> cmd_options;

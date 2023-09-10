@@ -68,7 +68,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -1245,32 +1245,13 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             .withPartFormatFromDisk()
             .build();
     }
-    catch (const Exception & e)
+    catch (...)
     {
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
-        if (isRetryableException(e))
+        if (isRetryableException(std::current_exception()))
             throw;
-
-        mark_broken();
-        return res;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        throw;
-    }
-    catch (const Poco::TimeoutException &)
-    {
-        throw;
-    }
-#if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::Http::TransportException &)
-    {
-        throw;
-    }
-#endif
-    catch (...)
-    {
+        LOG_DEBUG(log, "Failed to load data part {}, unknown exception", part_name);
         mark_broken();
         return res;
     }
@@ -1295,18 +1276,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         res.part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     }
-    catch (const Exception & e)
+    catch (...)
     {
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
-        if (isRetryableException(e))
+        if (isRetryableException(std::current_exception()))
             throw;
-
-        mark_broken();
-        return res;
-    }
-    catch (...)
-    {
         mark_broken();
         return res;
     }
@@ -1417,10 +1392,27 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     size_t max_backoff_ms,
     size_t max_tries)
 {
-    auto handle_exception = [&, this](String exception_message, size_t try_no)
+    auto handle_exception = [&, this](std::exception_ptr exception_ptr, size_t try_no)
     {
         if (try_no + 1 == max_tries)
             throw;
+
+        String exception_message;
+        try
+        {
+            rethrow_exception(exception_ptr);
+        }
+        catch (const Exception & e)
+        {
+            exception_message = e.message();
+        }
+        #if USE_AZURE_BLOB_STORAGE
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+             exception_message = e.Message;
+        }
+        #endif
+
 
         LOG_DEBUG(log, "Failed to load data part {} at try {} with retryable error: {}. Will retry in {} ms",
                   part_name, try_no, exception_message, initial_backoff_ms);
@@ -1435,19 +1427,13 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
         {
             return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex);
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (isRetryableException(e))
-                handle_exception(e.message(),try_no);
+            if (isRetryableException(std::current_exception()))
+                handle_exception(std::current_exception(),try_no);
             else
                 throw;
         }
-#if USE_AZURE_BLOB_STORAGE
-        catch (const Azure::Core::Http::TransportException & e)
-        {
-            handle_exception(e.Message,try_no);
-        }
-#endif
     }
     UNREACHABLE();
 }
@@ -5523,11 +5509,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         {
             load_part();
         }
-        catch (const Exception & e)
-        {
-            error = std::current_exception();
-            retryable = isRetryableException(e);
-        }
         catch (const Poco::Net::NetException &)
         {
             error = std::current_exception();
@@ -5541,6 +5522,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         catch (...)
         {
             error = std::current_exception();
+            retryable = isRetryableException(std::current_exception());
         }
 
         if (!error)

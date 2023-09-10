@@ -40,9 +40,6 @@
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
-[submodule "contrib/base64"]
-	path = contrib/base64
-	url = https://github.com/ClickHouse/Turbo-Base64
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse/arrow
@@ -348,3 +345,6 @@
 [submodule "contrib/robin-map"]
 	path = contrib/robin-map
 	url = https://github.com/Tessil/robin-map.git
+[submodule "contrib/aklomp-base64"]
+	path = contrib/aklomp-base64
+	url = https://github.com/aklomp/base64.git
