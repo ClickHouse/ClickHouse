@@ -927,6 +927,12 @@ struct ToDayOfYearImpl
 
 struct ToDaysSinceYearZeroImpl
 {
+private:
+    /// Constant calculated from MySQL's TO_DAYS() implementation.
+    /// https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/mysys/my_time.cc#L1042
+    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1900 = 693'961; /// 01 January, each
+
+public:
     static constexpr auto name = "toDaysSinceYearZero";
 
     static UInt32 execute(Int64, const DateLUTImpl &)
@@ -939,11 +945,11 @@ struct ToDaysSinceYearZeroImpl
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        return /* days between 0000-01-01 and 1970-01-01 */ 719'164 + d;
+        return DAYS_BETWEEN_YEARS_0_AND_1900 + d;
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {
-        return /* days between 0000-01-01 and 1970-01-01 */ 719'164 + d;
+        return DAYS_BETWEEN_YEARS_0_AND_1900 + d;
     }
     static constexpr bool hasPreimage() { return false; }
 

@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-/** Returns number of days passed since 0001-01-01 */
+/** Returns number of days passed since 0000-01-01 */
 class FunctionToDaysSinceYearZero : public IFunction
 {
     using ResultType = DataTypeUInt32;
@@ -65,7 +65,17 @@ public:
 
 REGISTER_FUNCTION(ToDaysSinceYearZero)
 {
-    factory.registerFunction<FunctionToDaysSinceYearZero>();
+    factory.registerFunction<FunctionToDaysSinceYearZero>(
+    FunctionDocumentation{
+    .description=R"(
+Returns for a given date, the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601.
+The calculation is the same as in MySQL's TO_DAYS() function.
+)",
+    .examples{
+        {"typical", "SELECT toDaysSinceYearZero(toDate('2023-09-08'))", "713569"}},
+    .categories{"Dates and Times"}
+    });
+
     /// MySQL compatibility alias.
     factory.registerAlias("TO_DAYS", FunctionToDaysSinceYearZero::name, FunctionFactory::CaseInsensitive);
 }
