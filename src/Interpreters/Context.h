@@ -581,7 +581,7 @@ public:
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
-    ClassifierPtr getClassifier() const;
+    ClassifierPtr getWorkloadClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);

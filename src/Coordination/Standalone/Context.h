@@ -118,6 +118,10 @@ public:
 
     ReadSettings getReadSettings() const;
 
+    /// Resource management related
+    ResourceManagerPtr getResourceManager() const;
+    ClassifierPtr getWorkloadClassifier() const;
+
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
     void initializeKeeperDispatcher(bool start_async) const;

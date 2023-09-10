@@ -1294,7 +1294,7 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
-ClassifierPtr Context::getClassifier() const
+ClassifierPtr Context::getWorkloadClassifier() const
 {
     auto lock = getLock();
     if (!classifier)
