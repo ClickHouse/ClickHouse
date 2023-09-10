@@ -147,6 +147,9 @@ void SelectStreamFactory::createForShard(
         return;
     });
 
+    // prefer_localhost_replica is not effective in case of parallel replicas
+    // (1) prefer_localhost_replica is about choosing one replica on a shard
+    // (2) parallel replica coordinator has own logic to choose replicas to read from
     if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
     {
         StoragePtr main_table_storage;
