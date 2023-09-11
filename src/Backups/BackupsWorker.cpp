@@ -913,7 +913,8 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, bool in
 
     if (backup_log)
         backup_log->add(BackupLogElement{info});
-    storage->add(BackupInfoElement{info});
+    if (storage)
+        storage->add(BackupInfoElement{info});
 
     infos[id] = std::move(info);
 
@@ -950,7 +951,8 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 
     if (backup_log)
         backup_log->add(BackupLogElement{info});
-    storage->update(info);
+    if (storage)
+        storage->update(info);
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
