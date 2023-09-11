@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from os import path as op
 from pathlib import Path
-from typing import List
+from typing import List, Union
+
+from github.Commit import Commit
 
 from build_download_helper import download_build_with_progress
+from commit_status_helper import post_commit_status
 from compress_files import SUFFIX, compress_fast, decompress_fast
 from env_helper import S3_BUILDS_BUCKET, S3_DOWNLOAD, TEMP_PATH
 from git_helper import SHA_REGEXP
@@ -27,15 +30,29 @@ class ArtifactsHelper:
     INDEX = "index.html"
     RESTRICTED_SYMBOLS = r"\/':<>|*?\""
 
-    def __init__(self, s3_helper: S3Helper, commit: str, s3_prefix: str = "artifacts"):
-        """The helper to compress+upload and download+decompress artifacts"""
-        assert SHA_REGEXP.match(commit)
-        self.TEMP_PATH = Path(TEMP_PATH)
+    def __init__(
+        self,
+        s3_helper: S3Helper,
+        commit: Union[str, Commit],
+        s3_prefix: str = "artifacts",
+    ):
+        """The helper to compress+upload and download+decompress artifacts
+        If `commit` is github.Commit.Commit instance, the status Artifacts for a
+        given commit will be updated on an uploading"""
+        self._commit = commit
+        assert SHA_REGEXP.match(self.commit)
+        self.temp_path = Path(TEMP_PATH)
         self.s3_helper = s3_helper
-        self.commit = commit
         # The s3 prefix is done with trailing slash!
         self._s3_prefix = op.join(s3_prefix, self.commit, "")
         self._s3_index_key = f"{self.s3_prefix}{self.INDEX}"
+
+    @property
+    def commit(self) -> str:
+        """string of the commit SHA"""
+        if isinstance(self._commit, str):
+            return self._commit
+        return self._commit.sha
 
     @property
     def s3_prefix(self) -> str:
@@ -50,7 +67,7 @@ class ArtifactsHelper:
     def upload(self, artifact_name: str, artifact_path: Path) -> None:
         """Creates archive 'artifact_name.tar{compress_files.SUFFIX} with directory of"""
         assert not any(s in artifact_name for s in self.RESTRICTED_SYMBOLS)
-        archive_path = self.TEMP_PATH / f"{artifact_name}.tar{SUFFIX}"
+        archive_path = self.temp_path / f"{artifact_name}.tar{SUFFIX}"
         s3_artifact_key = f"{self.s3_prefix}{archive_path.name}"
         compress_fast(artifact_path, archive_path)
         self.s3_helper.upload_build_file_to_s3(archive_path, s3_artifact_key)
@@ -62,7 +79,7 @@ class ArtifactsHelper:
         """Downloads artifact, if exists, and extracts it. If not, returns False"""
         assert not any(s in artifact_name for s in self.RESTRICTED_SYMBOLS)
         assert extract_directory.is_dir()
-        archive_path = self.TEMP_PATH / f"{artifact_name}.tar{SUFFIX}"
+        archive_path = self.temp_path / f"{artifact_name}.tar{SUFFIX}"
         artifact_path = extract_directory / artifact_name
         s3_artifact_key = f"{self.s3_prefix}{archive_path.name}"
         if not self.s3_helper.exists(s3_artifact_key, S3_BUILDS_BUCKET):
@@ -111,7 +128,7 @@ class ArtifactsHelper:
                 f"<td>{f.last_modified}</td></tr>"
                 for f in files
             ]
-        index_path = self.TEMP_PATH / self.INDEX
+        index_path = self.temp_path / self.INDEX
         title = f"Artifacts for workflow commit {self.commit}"
         index_content = (
             HEAD_HTML_TEMPLATE.format(title=title, header=title)
@@ -121,4 +138,8 @@ class ArtifactsHelper:
             + FOOTER_HTML_TEMPLATE
         )
         index_path.write_text(index_content, encoding="utf-8")
-        self.s3_helper.upload_build_file_to_s3(index_path, self.s3_index_key)
+        url = self.s3_helper.upload_build_file_to_s3(index_path, self.s3_index_key)
+        if isinstance(self._commit, Commit):
+            post_commit_status(
+                self._commit, "success", url, "Artifacts for workflow", "Artifacts"
+            )
