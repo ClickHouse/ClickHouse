@@ -7,6 +7,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/UnionNode.h>
 
 #include <Interpreters/Context.h>
@@ -90,25 +91,24 @@ private:
 template <typename Derived>
 using ConstInDepthQueryTreeVisitor = InDepthQueryTreeVisitor<Derived, true /*const_visitor*/>;
 
-/** Same as InDepthQueryTreeVisitor and additionally keeps track of current scope context.
+/** Same as InDepthQueryTreeVisitor (but has a different interface) and additionally keeps track of current scope context.
   * This can be useful if your visitor has special logic that depends on current scope context.
+  *
+  * To specify behavior of the visitor you can implement following methods in derived class:
+  * 1. needChildVisit – This methods allows to skip subtree.
+  * 2. enterImpl – This method is called before children are processed.
+  * 3. leaveImpl – This method is called after children are processed.
   */
 template <typename Derived, bool const_visitor = false>
 class InDepthQueryTreeVisitorWithContext
 {
 public:
-    using VisitQueryTreeNodeType = std::conditional_t<const_visitor, const QueryTreeNodePtr, QueryTreeNodePtr>;
+    using VisitQueryTreeNodeType = QueryTreeNodePtr;
 
     explicit InDepthQueryTreeVisitorWithContext(ContextPtr context, size_t initial_subquery_depth = 0)
         : current_context(std::move(context))
         , subquery_depth(initial_subquery_depth)
     {}
-
-    /// Return true if visitor should traverse tree top to bottom, false otherwise
-    bool shouldTraverseTopToBottom() const
-    {
-        return true;
-    }
 
     /// Return true if visitor should visit child, false otherwise
     bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
@@ -146,17 +146,15 @@ public:
 
         ++subquery_depth;
 
-        bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
-        if (!traverse_top_to_bottom)
-            visitChildren(query_tree_node);
+        getDerived().enterImpl(query_tree_node);
 
-        getDerived().visitImpl(query_tree_node);
-
-        if (traverse_top_to_bottom)
-            visitChildren(query_tree_node);
+        visitChildren(query_tree_node);
 
         getDerived().leaveImpl(query_tree_node);
     }
+
+    void enterImpl(VisitQueryTreeNodeType & node [[maybe_unused]])
+    {}
 
     void leaveImpl(VisitQueryTreeNodeType & node [[maybe_unused]])
     {}
@@ -171,68 +169,36 @@ private:
         return *static_cast<Derived *>(this);
     }
 
+    bool shouldSkipSubtree(
+        VisitQueryTreeNodeType & parent,
+        VisitQueryTreeNodeType & child,
+        size_t subtree_index)
+    {
+        bool need_visit_child = getDerived().needChildVisit(parent, child);
+        if (!need_visit_child)
+            return true;
+
+        if (auto * table_function_node = parent->as<TableFunctionNode>())
+        {
+            const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
+            return std::find(unresolved_indexes.begin(), unresolved_indexes.end(), subtree_index) != unresolved_indexes.end();
+        }
+        return false;
+    }
+
     void visitChildren(VisitQueryTreeNodeType & expression)
     {
+        size_t index = 0;
         for (auto & child : expression->getChildren())
         {
-            if (!child)
-                continue;
-
-            bool need_visit_child = getDerived().needChildVisit(expression, child);
-
-            if (need_visit_child)
+            if (child && !shouldSkipSubtree(expression, child, index))
                 visit(child);
+            ++index;
         }
     }
 
     ContextPtr current_context;
     size_t subquery_depth = 0;
 };
-
-template <typename Derived>
-using ConstInDepthQueryTreeVisitorWithContext = InDepthQueryTreeVisitorWithContext<Derived, true /*const_visitor*/>;
-
-/** Visitor that use another visitor to visit node only if condition for visiting node is true.
-  * For example, your visitor need to visit only query tree nodes or union nodes.
-  *
-  * Condition interface:
-  * struct Condition
-  * {
-  *     bool operator()(VisitQueryTreeNodeType & node)
-  *     {
-  *         return shouldNestedVisitorVisitNode(node);
-  *     }
-  * }
-  */
-template <typename Visitor, typename Condition, bool const_visitor = false>
-class InDepthQueryTreeConditionalVisitor : public InDepthQueryTreeVisitor<InDepthQueryTreeConditionalVisitor<Visitor, Condition, const_visitor>, const_visitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitor<InDepthQueryTreeConditionalVisitor<Visitor, Condition, const_visitor>, const_visitor>;
-    using VisitQueryTreeNodeType = typename Base::VisitQueryTreeNodeType;
-
-    explicit InDepthQueryTreeConditionalVisitor(Visitor & visitor_, Condition & condition_)
-        : visitor(visitor_)
-        , condition(condition_)
-    {
-    }
-
-    bool shouldTraverseTopToBottom() const
-    {
-        return visitor.shouldTraverseTopToBottom();
-    }
-
-    void visitImpl(VisitQueryTreeNodeType & query_tree_node)
-    {
-        if (condition(query_tree_node))
-            visitor.visit(query_tree_node);
-    }
-
-    Visitor & visitor;
-    Condition & condition;
-};
-
-template <typename Visitor, typename Condition>
-using ConstInDepthQueryTreeConditionalVisitor = InDepthQueryTreeConditionalVisitor<Visitor, Condition, true /*const_visitor*/>;
 
 }

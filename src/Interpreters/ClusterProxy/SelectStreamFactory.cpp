@@ -14,6 +14,7 @@
 
 #include <Client/IConnections.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -33,6 +34,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALL_REPLICAS_ARE_STALE;
+}
+
+namespace FailPoints
+{
+    extern const char use_delayed_remote_source[];
 }
 
 namespace ClusterProxy
@@ -117,13 +123,14 @@ void SelectStreamFactory::createForShard(
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
+            .main_table = main_table,
             .header = header,
             .shard_info = shard_info,
             .lazy = lazy,
@@ -132,6 +139,12 @@ void SelectStreamFactory::createForShard(
     };
 
     const auto & settings = context->getSettingsRef();
+
+    fiu_do_on(FailPoints::use_delayed_remote_source,
+    {
+        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
+        return;
+    });
 
     if (settings.prefer_localhost_replica && shard_info.isLocal())
     {

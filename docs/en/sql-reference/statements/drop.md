@@ -57,7 +57,7 @@ Deletes a user.
 Syntax:
 
 ``` sql
-DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP ROLE
@@ -67,7 +67,7 @@ Deletes a role. The deleted role is revoked from all the entities where it was a
 Syntax:
 
 ``` sql
-DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP ROW POLICY
@@ -77,7 +77,7 @@ Deletes a row policy. Deleted row policy is revoked from all the entities where 
 Syntax:
 
 ``` sql
-DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP QUOTA
@@ -87,7 +87,7 @@ Deletes a quota. The deleted quota is revoked from all the entities where it was
 Syntax:
 
 ``` sql
-DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP SETTINGS PROFILE
@@ -97,7 +97,7 @@ Deletes a settings profile. The deleted settings profile is revoked from all the
 Syntax:
 
 ``` sql
-DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP VIEW
@@ -126,4 +126,21 @@ DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
 ``` sql
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
+```
+
+## DROP NAMED COLLECTION
+
+Deletes a named collection.
+
+**Syntax**
+
+``` sql
+DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
+```
+
+**Example**
+
+``` sql
+CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
+DROP NAMED COLLECTION foobar;
 ```

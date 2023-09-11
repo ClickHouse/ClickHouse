@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-upgrade-check
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Test that running distributed query and cancel it ASAP,
 # this can trigger a hung/deadlock in ProcessorList.
-for i in {1..100}; do
+for i in {1..50}; do
     query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-$i"
     $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "select * from remote('127.{1|2|3|4|5|6}', numbers(1e12))" 2>/dev/null &
     while :; do

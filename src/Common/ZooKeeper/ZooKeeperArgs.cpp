@@ -36,7 +36,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
     }
 
     if (session_timeout_ms < 0 || operation_timeout_ms < 0 || connection_timeout_ms < 0)
-        throw KeeperException("Timeout cannot be negative", Coordination::Error::ZBADARGUMENTS);
+        throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Timeout cannot be negative");
 
     /// init get_priority_load_balancing
     get_priority_load_balancing.hostname_differences.resize(hosts.size());
@@ -63,7 +63,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
         auto tcp_port_secure = config.getString(key);
 
         if (tcp_port_secure.empty())
-            throw KeeperException("Empty tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
+            throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Empty tcp_port_secure in config file");
     }
 
     bool secure{false};
@@ -81,7 +81,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
     }
 
     if (tcp_port.empty())
-        throw KeeperException("No tcp_port or tcp_port_secure in config file", Coordination::Error::ZBADARGUMENTS);
+        throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No tcp_port or tcp_port_secure in config file");
 
     if (auto coordination_key = std::string{config_name} + ".coordination_settings";
         config.has(coordination_key))
@@ -204,8 +204,16 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown load balancing: {}", load_balancing_str);
             get_priority_load_balancing.load_balancing = *load_balancing;
         }
+        else if (key == "fallback_session_lifetime")
+        {
+            fallback_session_lifetime = SessionLifetimeConfiguration
+            {
+                .min_sec = config.getUInt(config_name + "." + key + ".min"),
+                .max_sec = config.getUInt(config_name + "." + key + ".max"),
+            };
+        }
         else
-            throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
+            throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }
 }
 

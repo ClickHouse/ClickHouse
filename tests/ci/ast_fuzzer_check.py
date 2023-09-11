@@ -4,20 +4,24 @@ import logging
 import subprocess
 import os
 import sys
+from pathlib import Path
 
 from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from clickhouse_helper import (
+    CiLogsCredentials,
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
     post_commit_status,
 )
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import (
-    GITHUB_RUN_URL,
     REPORTS_PATH,
     TEMP_PATH,
 )
@@ -26,19 +30,36 @@ from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
 
-def get_run_command(pr_number, sha, download_url, workspace_path, image):
+def get_run_command(
+    pr_info: PRInfo,
+    build_url: str,
+    workspace_path: str,
+    ci_logs_args: str,
+    image: DockerImage,
+) -> str:
+    envs = [
+        f"-e PR_TO_TEST={pr_info.number}",
+        f"-e SHA_TO_TEST={pr_info.sha}",
+        f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
+    ]
+
+    env_str = " ".join(envs)
+
     return (
         f"docker run "
         # For sysctl
         "--privileged "
         "--network=host "
+        f"{ci_logs_args}"
         f"--volume={workspace_path}:/workspace "
+        f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
-        f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '
         f"{image}"
     )
 
@@ -79,31 +100,39 @@ def main():
             build_url = url
             break
     else:
-        raise Exception("Cannot binary clickhouse among build results")
+        raise Exception("Cannot find the clickhouse binary among build results")
 
     logging.info("Got build url %s", build_url)
 
     workspace_path = os.path.join(temp_path, "workspace")
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
+    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
 
     run_command = get_run_command(
-        pr_info.number, pr_info.sha, build_url, workspace_path, docker_image
+        pr_info,
+        build_url,
+        workspace_path,
+        ci_logs_args,
+        docker_image,
     )
     logging.info("Going to run %s", run_command)
 
     run_log_path = os.path.join(temp_path, "run.log")
-    with open(run_log_path, "w", encoding="utf-8") as log:
-        with subprocess.Popen(
-            run_command, shell=True, stderr=log, stdout=log
-        ) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+    main_log_path = os.path.join(workspace_path, "main.log")
+
+    with TeePopen(run_command, run_log_path) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+        else:
+            logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    ci_logs_credentials.clean_ci_logs_from_credentials(Path(run_log_path))
 
     check_name_lower = (
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
@@ -111,25 +140,30 @@ def main():
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "main.log": os.path.join(workspace_path, "main.log"),
-        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
+        "main.log": main_log_path,
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
         "core.zst": os.path.join(workspace_path, "core.zst"),
         "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
     }
 
+    compressed_server_log_path = os.path.join(workspace_path, "server.log.zst")
+    if os.path.exists(compressed_server_log_path):
+        paths["server.log.zst"] = compressed_server_log_path
+
+    # The script can fail before the invocation of `zstd`, but we are still interested in its log:
+
+    not_compressed_server_log_path = os.path.join(workspace_path, "server.log")
+    if os.path.exists(not_compressed_server_log_path):
+        paths["server.log"] = not_compressed_server_log_path
+
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(Path(paths[f]), s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
-
-    report_url = GITHUB_RUN_URL
-    if paths["report.html"]:
-        report_url = paths["report.html"]
 
     # Try to get status message saved by the fuzzer
     try:
@@ -151,6 +185,19 @@ def main():
     test_result = TestResult(description, "OK")
     if "fail" in status:
         test_result.status = "FAIL"
+
+    if paths["report.html"]:
+        report_url = paths["report.html"]
+    else:
+        report_url = upload_results(
+            s3_helper,
+            pr_info.number,
+            pr_info.sha,
+            [test_result],
+            [],
+            check_name,
+            [url for url in paths.values() if url],
+        )
 
     ch_helper = ClickHouseHelper()
 
