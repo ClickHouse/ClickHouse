@@ -68,7 +68,6 @@ using HolderPtr = FileSegmentsHolderPtr;
 fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 
-FileSegment::setCallerId("unit_test");
 
 void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::const_iterator segments_end, size_t segments_size, const Ranges & expected_ranges, const States & expected_states = {})
 {
@@ -196,6 +195,8 @@ public:
 
 TEST_F(FileCacheTest, get)
 {
+    FileSegment::setCallerId("unit_test");
+
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
@@ -664,6 +665,8 @@ TEST_F(FileCacheTest, get)
 
 TEST_F(FileCacheTest, writeBuffer)
 {
+    FileSegment::setCallerId("unit_test");
+
     FileCacheSettings settings;
     settings.max_size = 100;
     settings.max_elements = 5;
@@ -770,6 +773,8 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 
 TEST_F(FileCacheTest, temporaryData)
 {
+    FileSegment::setCallerId("unit_test");
+
     DB::FileCacheSettings settings;
     settings.max_size = 10_KiB;
     settings.max_file_segment_size = 1_KiB;
@@ -875,6 +880,8 @@ TEST_F(FileCacheTest, temporaryData)
 
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
+    FileSegment::setCallerId("unit_test");
+
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
