@@ -4067,6 +4067,17 @@ Result:
 └─────┴─────┴───────┘
 ```
 
+## split_tokens_like_python {#split-tokens-like-python}
+
+Controls if functions [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with `max_substring` argument > 0 include the remaining string (if any) in the result array (Python semantics) or not (Spark semantics).
+
+Possible values:
+
+- 0 - Don't include the remaining string (Spark semantics).
+- 1 - Include the remaining string (Python semantics).
+
+Default value: `0`.
+
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:

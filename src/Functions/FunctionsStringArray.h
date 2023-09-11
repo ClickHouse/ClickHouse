@@ -56,6 +56,13 @@ namespace ErrorCodes
 
 using Pos = const char *;
 
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position);
+
+enum class SplitTokenMode
+{
+    LikeSpark,
+    LikePython
+};
 
 /// Substring generators. All of them have a common interface.
 
@@ -64,6 +71,9 @@ class SplitByAlphaImpl
 private:
     Pos pos;
     Pos end;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    SplitTokenMode split_token_mode;
 
 public:
     static constexpr auto name = "alphaTokens";
@@ -87,15 +97,19 @@ public:
     }
 
     static constexpr auto strings_argument_position = 0uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional(1);
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    {
+        split_token_mode = split_token_mode_;
+        max_splits = extractMaxSplits(arguments, 1);
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -110,10 +124,26 @@ public:
 
         token_begin = pos;
 
+        if (max_splits && splits >= max_splits)
+        {
+            switch (split_token_mode)
+            {
+            case SplitTokenMode::LikeSpark:
+                return false;
+            case SplitTokenMode::LikePython:
+            {
+                token_end = end;
+                pos = end;
+                return true;
+            }
+            }
+        }
+
         while (pos < end && isAlphaASCII(*pos))
             ++pos;
 
         token_end = pos;
+        ++splits;
 
         return true;
     }
@@ -124,6 +154,9 @@ class SplitByNonAlphaImpl
 private:
     Pos pos;
     Pos end;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    SplitTokenMode split_token_mode;
 
 public:
     /// Get the name of the function.
@@ -139,15 +172,19 @@ public:
     }
 
     static constexpr auto strings_argument_position = 0uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional(1);
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    {
+        split_token_mode = split_token_mode_;
+        max_splits = extractMaxSplits(arguments, 1);
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -162,10 +199,25 @@ public:
 
         token_begin = pos;
 
+        if (max_splits && splits >= max_splits)
+        {
+            switch (split_token_mode)
+            {
+            case SplitTokenMode::LikeSpark:
+                return false;
+            case SplitTokenMode::LikePython:
+            {
+                token_end = end;
+                pos = end;
+                return true;
+            }
+            }
+        }
         while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
             ++pos;
 
         token_end = pos;
+        splits++;
 
         return true;
     }
@@ -176,6 +228,9 @@ class SplitByWhitespaceImpl
 private:
     Pos pos;
     Pos end;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    SplitTokenMode split_token_mode;
 
 public:
     static constexpr auto name = "splitByWhitespace";
@@ -190,15 +245,19 @@ public:
     }
 
     static constexpr auto strings_argument_position = 0uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional(1);
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    {
+        split_token_mode = split_token_mode_;
+        max_splits = extractMaxSplits(arguments, 1);
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -213,10 +272,26 @@ public:
 
         token_begin = pos;
 
+        if (max_splits && splits >= max_splits)
+        {
+            switch (split_token_mode)
+            {
+            case SplitTokenMode::LikeSpark:
+                return false;
+            case SplitTokenMode::LikePython:
+            {
+                token_end = end;
+                pos = end;
+                return true;
+            }
+            }
+        }
+
         while (pos < end && !isWhitespaceASCII(*pos))
             ++pos;
 
         token_end = pos;
+        splits++;
 
         return true;
     }
@@ -228,6 +303,9 @@ private:
     Pos pos;
     Pos end;
     char separator;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    SplitTokenMode split_token_mode;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -250,9 +328,8 @@ public:
     }
 
     static constexpr auto strings_argument_position = 1uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional(2);
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -266,12 +343,16 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal separator for function {}. Must be exactly one byte.", getName());
 
         separator = sep_str[0];
+
+        split_token_mode = split_token_mode_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     bool get(Pos & token_begin, Pos & token_end)
@@ -280,12 +361,28 @@ public:
             return false;
 
         token_begin = pos;
-        pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
 
+        if (max_splits && splits >= max_splits)
+        {
+            switch (split_token_mode)
+            {
+            case SplitTokenMode::LikeSpark:
+                return false;
+            case SplitTokenMode::LikePython:
+            {
+                token_end = end;
+                pos = nullptr;
+                return true;
+            }
+            }
+        }
+
+        pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
         if (pos)
         {
             token_end = pos;
             ++pos;
+            ++splits;
         }
         else
             token_end = end;
@@ -300,8 +397,10 @@ class SplitByStringImpl
 private:
     Pos pos;
     Pos end;
-
     String separator;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    SplitTokenMode split_token_mode;
 
 public:
     static constexpr auto name = "splitByString";
@@ -315,9 +414,8 @@ public:
     }
 
     static constexpr auto strings_argument_position = 1uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional(2);
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -326,6 +424,9 @@ public:
                 "Must be constant string.", arguments[0].column->getName(), getName());
 
         separator = col->getValue<String>();
+
+        split_token_mode = split_token_mode_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     /// Called for each next string.
@@ -333,6 +434,7 @@ public:
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -344,8 +446,25 @@ public:
                 return false;
 
             token_begin = pos;
+
+            if (max_splits && splits >= max_splits)
+            {
+                switch (split_token_mode)
+                {
+                case SplitTokenMode::LikeSpark:
+                    return false;
+                case SplitTokenMode::LikePython:
+                {
+                    token_end = end;
+                    pos = end;
+                    return true;
+                }
+                }
+            }
+
             pos += 1;
             token_end = pos;
+            ++splits;
         }
         else
         {
@@ -354,8 +473,22 @@ public:
 
             token_begin = pos;
 
-            pos = reinterpret_cast<Pos>(memmem(pos, end - pos, separator.data(), separator.size()));
+            if (max_splits && splits >= max_splits)
+            {
+                switch (split_token_mode)
+                {
+                case SplitTokenMode::LikeSpark:
+                    return false;
+                case SplitTokenMode::LikePython:
+                {
+                    token_end = end;
+                    pos = nullptr;
+                    return true;
+                }
+                }
+            }
 
+            pos = reinterpret_cast<Pos>(memmem(pos, end - pos, separator.data(), separator.size()));
             if (pos)
             {
                 token_end = pos;
@@ -363,6 +496,7 @@ public:
             }
             else
                 token_end = end;
+            ++splits;
         }
 
         return true;
@@ -378,6 +512,10 @@ private:
     Pos pos;
     Pos end;
 
+    std::optional<size_t> max_splits;
+    size_t splits;
+    SplitTokenMode split_token_mode;
+
 public:
     static constexpr auto name = "splitByRegexp";
     static String getName() { return name; }
@@ -391,9 +529,8 @@ public:
     }
 
     static constexpr auto strings_argument_position = 1uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional(2);
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -403,6 +540,9 @@ public:
 
         if (!col->getValue<String>().empty())
             re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+
+        split_token_mode = split_token_mode_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     /// Called for each next string.
@@ -410,6 +550,7 @@ public:
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -421,8 +562,25 @@ public:
                 return false;
 
             token_begin = pos;
+
+            if (max_splits && splits >= max_splits)
+            {
+                switch (split_token_mode)
+                {
+                case SplitTokenMode::LikeSpark:
+                    return false;
+                case SplitTokenMode::LikePython:
+                {
+                    token_end = end;
+                    pos = end;
+                    return true;
+                }
+                }
+            }
+
             pos += 1;
             token_end = pos;
+            ++splits;
         }
         else
         {
@@ -430,6 +588,21 @@ public:
                 return false;
 
             token_begin = pos;
+
+            if (max_splits && splits >= max_splits)
+            {
+                switch (split_token_mode)
+                {
+                case SplitTokenMode::LikeSpark:
+                    return false;
+                case SplitTokenMode::LikePython:
+                {
+                    token_end = end;
+                    pos = nullptr;
+                    return true;
+                }
+                }
+            }
 
             if (!re->match(pos, end - pos, matches) || !matches[0].length)
             {
@@ -441,6 +614,7 @@ public:
                 token_end = pos + matches[0].offset;
                 pos = token_end + matches[0].length;
             }
+            ++splits;
         }
 
         return true;
@@ -473,9 +647,8 @@ public:
     }
 
     static constexpr auto strings_argument_position = 0uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional<size_t>();
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode /*split_token_mode*/)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
 
@@ -527,9 +700,18 @@ public:
 template <typename Generator>
 class FunctionTokens : public IFunction
 {
+private:
+    SplitTokenMode split_token_mode;
+
 public:
     static constexpr auto name = Generator::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokens>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTokens>(context); }
+
+    explicit FunctionTokens<Generator>(ContextPtr context)
+    {
+        const Settings & settings = context->getSettingsRef();
+        split_token_mode = settings.split_tokens_like_python ? SplitTokenMode::LikePython : SplitTokenMode::LikeSpark;
+    }
 
     String getName() const override { return name; }
 
@@ -549,13 +731,9 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         Generator generator;
-        generator.init(arguments);
+        generator.init(arguments, split_token_mode);
 
         const auto & array_argument = arguments[generator.strings_argument_position];
-
-        /// Whether we need to limit max tokens returned by Generator::get
-        /// If max_substrings is std::nullopt, no limit is applied.
-        auto max_substrings = getMaxSubstrings(arguments);
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(array_argument.column.get());
         const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(array_argument.column.get());
@@ -592,7 +770,7 @@ public:
 
                 generator.set(pos, end);
                 size_t j = 0;
-                while (generator.get(token_begin, token_end) && !(max_substrings && j >= *max_substrings))
+                while (generator.get(token_begin, token_end))
                 {
                     size_t token_size = token_end - token_begin;
 
@@ -620,7 +798,7 @@ public:
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
 
-            while (generator.get(token_begin, token_end) && !(max_substrings && dst.size() >= *max_substrings))
+            while (generator.get(token_begin, token_end))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
             return result_type->createColumnConst(col_str_const->size(), dst);
@@ -628,47 +806,6 @@ public:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
                     array_argument.column->getName(), array_argument.column->getName(), getName());
-    }
-
-private:
-    template <typename DataType>
-    std::optional<Int64> getMaxSubstringsImpl(const ColumnWithTypeAndName & argument) const
-    {
-        const auto * col = checkAndGetColumnConst<ColumnVector<DataType>>(argument.column.get());
-        if (!col)
-            return {};
-
-        auto value = col->template getValue<DataType>();
-        return static_cast<Int64>(value);
-    }
-
-    std::optional<size_t> getMaxSubstrings(const ColumnsWithTypeAndName & arguments) const
-    {
-        const auto pos = Generator::max_substrings_argument_position;
-        if (!pos)
-            return std::nullopt;
-
-        if (*pos >= arguments.size())
-            return std::nullopt;
-
-        std::optional<Int64> max_substrings;
-        if (!((max_substrings = getMaxSubstringsImpl<UInt8>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int8>(arguments[*pos]))
-              || (max_substrings = getMaxSubstringsImpl<UInt16>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int16>(arguments[*pos]))
-              || (max_substrings = getMaxSubstringsImpl<UInt32>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int32>(arguments[*pos]))
-              || (max_substrings = getMaxSubstringsImpl<UInt64>(arguments[*pos])) || (max_substrings = getMaxSubstringsImpl<Int64>(arguments[*pos]))))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {}, which is {}-th argument of function {}",
-                arguments[*pos].column->getName(),
-                *pos + 1,
-                getName());
-
-        /// If max_substrings is negative or zero, tokenize will be applied as many times as possible, which is equivalent to
-        /// no max_substrings argument in function
-        if (max_substrings && *max_substrings <= 0)
-            return std::nullopt;
-
-        return max_substrings;
     }
 };
 

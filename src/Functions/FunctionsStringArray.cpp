@@ -9,6 +9,40 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename DataType>
+std::optional<Int64> extractMaxSplitsImpl(const ColumnWithTypeAndName & argument)
+{
+    const auto * col = checkAndGetColumnConst<ColumnVector<DataType>>(argument.column.get());
+    if (!col)
+        return std::nullopt;
+
+    auto value = col->template getValue<DataType>();
+    return static_cast<Int64>(value);
+}
+
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position)
+{
+    if (max_substrings_argument_position >= arguments.size())
+        return std::nullopt;
+
+    std::optional<Int64> max_splits;
+    if (!((max_splits = extractMaxSplitsImpl<UInt8>(arguments[max_substrings_argument_position])) || (max_splits = extractMaxSplitsImpl<Int8>(arguments[max_substrings_argument_position]))
+          || (max_splits = extractMaxSplitsImpl<UInt16>(arguments[max_substrings_argument_position])) || (max_splits = extractMaxSplitsImpl<Int16>(arguments[max_substrings_argument_position]))
+          || (max_splits = extractMaxSplitsImpl<UInt32>(arguments[max_substrings_argument_position])) || (max_splits = extractMaxSplitsImpl<Int32>(arguments[max_substrings_argument_position]))
+          || (max_splits = extractMaxSplitsImpl<UInt64>(arguments[max_substrings_argument_position])) || (max_splits = extractMaxSplitsImpl<Int64>(arguments[max_substrings_argument_position]))))
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {}, which is {}-th argument",// of function {}",
+            arguments[max_substrings_argument_position].column->getName(),
+            max_substrings_argument_position + 1);//,
+            /// getName());
+
+    if (max_splits && *max_splits <= 0)
+        return std::nullopt;
+
+    return max_splits;
+}
+
 DataTypePtr FunctionArrayStringConcat::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     FunctionArgumentDescriptors mandatory_args{
