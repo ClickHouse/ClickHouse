@@ -3193,7 +3193,7 @@ private:
         {
             if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
             {
-                return [function = agg_type->getFunction()](
+                return [function = to_type->getFunction()](
                            ColumnsWithTypeAndName & arguments,
                            const DataTypePtr & /* result_type */,
                            const ColumnNullable * /* nullable_source */,
@@ -4003,7 +4003,16 @@ private:
             safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
 
         if (from_type->equals(*to_type) && safe_convert_custom_types)
-            return createIdentityWrapper(from_type);
+        {
+            /// We can only use identity conversion for DataTypeAggregateFunction when they are strictly equivalent.
+            if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))
+            {
+                if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
+                    return createIdentityWrapper(from_type);
+            }
+            else
+                return createIdentityWrapper(from_type);
+        }
         else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 
