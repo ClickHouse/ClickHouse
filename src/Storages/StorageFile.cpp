@@ -526,9 +526,9 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     return columns;
 }
 
-bool StorageFile::supportsSubsetOfColumns() const
+bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -949,7 +949,7 @@ Pipe StorageFile::read(
     {
         ColumnsDescription columns_description;
         Block block_for_format;
-        if (supportsSubsetOfColumns())
+        if (supportsSubsetOfColumns(context))
         {
             auto fetch_columns = column_names;
             const auto & virtuals = getVirtuals();

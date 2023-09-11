@@ -352,7 +352,7 @@ private:
 
     bool supportsSubcolumns() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool prefersLargeBlocks() const override;
 
@@ -372,8 +372,6 @@ private:
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
-};
-
 }
 
 #endif
