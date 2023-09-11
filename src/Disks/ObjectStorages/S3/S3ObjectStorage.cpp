@@ -320,7 +320,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 
     throwIfUnexpectedError(outcome, if_exists);
 
-    LOG_TRACE(log, "Object with path {} was removed from S3", object.remote_path);
+    LOG_DEBUG(log, "Object with path {} was removed from S3", object.remote_path);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
@@ -368,7 +368,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
             throwIfUnexpectedError(outcome, if_exists);
 
-            LOG_TRACE(log, "Objects with paths [{}] were removed from S3", keys);
+            LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", keys);
         }
     }
 }
