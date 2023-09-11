@@ -236,24 +236,45 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
+    ContextPtr execution_context = context;
+    if (context->canUseParallelReplicas())
     {
-        if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+        if (shard.shard_info.getAllNodeCount() > 1)
         {
-            const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
-            if (cluster_for_parallel_replicas != cluster_name)
-                LOG_INFO(log, "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
-                         cluster_for_parallel_replicas, cluster_name);
-        }
+            if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
+            {
+                const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
+                if (cluster_for_parallel_replicas != cluster_name)
+                    LOG_INFO(
+                        log,
+                        "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
+                        "used: {}",
+                        cluster_for_parallel_replicas,
+                        cluster_name);
+            }
 
-        LOG_TRACE(&Poco::Logger::get("ReadFromRemote"), "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
-        context->setSetting("cluster_for_parallel_replicas", cluster_name);
+            LOG_TRACE(&Poco::Logger::get("ReadFromRemote"), "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
+            context->setSetting("cluster_for_parallel_replicas", cluster_name);
+        }
+        else
+        {
+            ContextMutablePtr tmp = Context::createCopy(context);
+            tmp->setSetting("allow_experimental_parallel_reading_from_replicas", Field{0});
+            execution_context = tmp;
+
+            LOG_TRACE(
+                &Poco::Logger::get("ReadFromRemote"),
+                "Parallel reading from replicas is disabled for shard. Not enough nodes: shard={} cluster={} nodes={}",
+                shard.shard_info.shard_num,
+                cluster_name,
+                shard.shard_info.getAllNodeCount());
+        }
     }
 
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
 
     remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
+        shard.shard_info.pool, query_string, output_stream->header, execution_context, throttler, scalars, external_tables, stage);
 
     remote_query_executor->setLogger(log);
 
