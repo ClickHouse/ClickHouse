@@ -147,7 +147,7 @@ def update_pr_status_label(pr: PullRequest, status: str) -> None:
         if label.name == new_label:
             return
         if label.name.startswith("pr-status-"):
-            label.delete()
+            pr.remove_from_labels(label.name)
     pr.add_to_labels(new_label)
 
 
