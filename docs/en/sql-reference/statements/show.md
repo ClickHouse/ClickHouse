@@ -638,3 +638,16 @@ Outputs the content of the [system.table_engines](../../operations/system-tables
 **See Also**
 
 - [system.table_engines](../../operations/system-tables/table_engines.md) table
+
+## SHOW FUNCTIONS
+
+``` sql
+SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
+```
+
+Outputs the content of the [system.functions](../../operations/system-tables/functions.md) table.
+
+If either `LIKE` or `ILIKE` clause is specified, the query returns a list of system functions whose names match the provided `<pattern>`.
+
+**See Also**
+- [system.functions](../../operations/system-tables/functions.md) table

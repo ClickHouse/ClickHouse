@@ -82,8 +82,10 @@ def run_query_without_errors(
 
 
 def supported_scenarios_without_key():
+    rows_number = 2e7 + 1
+
     # Simple aggregation query
-    query = "select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) from numbers_mt(1e7+1) settings max_threads = 1, partial_result_update_duration_ms = 1"
+    query = f"select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) from numbers_mt({rows_number}) settings max_threads = 1, partial_result_update_duration_ms = 1"
     invariants = {
         "median(number)": lambda old_value, new_value: old_value <= new_value,
         "max(number)": lambda old_value, new_value: old_value <= new_value,
@@ -97,7 +99,7 @@ def supported_scenarios_without_key():
     )
 
     # Aggregation query with a nested ORDER BY subquery
-    query = "select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) FROM (SELECT number FROM numbers_mt(1e7) ORDER BY -number LIMIT 3) settings max_threads = 1, partial_result_update_duration_ms=1"
+    query = f"select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) FROM (SELECT number FROM numbers_mt({rows_number}) ORDER BY -number LIMIT 3) settings max_threads = 1, partial_result_update_duration_ms=1"
 
     # Aggregation receives small partial result blocks from ORDER BY which always sends blocks with bigger values
     invariants["min(number)"] = lambda old_value, new_value: old_value <= new_value
@@ -107,12 +109,14 @@ def supported_scenarios_without_key():
 
 
 def unsupported_scenarios():
+    rows_number = 2e7 + 1
+
     # Currently aggregator for partial result supports only single thread aggregation without key
     # Update test when multithreading or aggregation with GROUP BY will be supported for partial result updates
-    multithread_query = "select sum(number) from numbers_mt(1e7+1) settings max_threads = 2, partial_result_update_duration_ms = 100"
+    multithread_query = f"select sum(number) from numbers_mt({rows_number}) settings max_threads = 2, partial_result_update_duration_ms = 100"
     run_query_without_errors(multithread_query, support_partial_result=False)
 
-    group_with_key_query = "select mod2, sum(number) from numbers_mt(1e7+1) group by number % 2 as mod2 settings max_threads = 1, partial_result_update_duration_ms = 100"
+    group_with_key_query = f"select mod2, sum(number) from numbers_mt({rows_number}) group by number % 2 as mod2 settings max_threads = 1, partial_result_update_duration_ms = 100"
     run_query_without_errors(group_with_key_query, support_partial_result=False)
 
 
