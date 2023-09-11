@@ -43,6 +43,7 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
+    bool isNull() { return value.isNull(); }
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
