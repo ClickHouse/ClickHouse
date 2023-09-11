@@ -361,8 +361,8 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
-:::note "Примечание"
-    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_EXISTS(path, json)
+:::note Примечание
+До версии 21.11 порядок аргументов функции был обратный, т.е. JSON_EXISTS(path, json)
 :::
 
 ## JSON_QUERY(json, path) {#json-query}
@@ -388,8 +388,8 @@ SELECT toTypeName(JSON_QUERY('{"hello":2}', '$.hello'));
 [2]
 String
 ```
-:::note "Примечание"
-    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_QUERY(path, json)
+:::note Примечание
+До версии 21.11 порядок аргументов функции был обратный, т.е. JSON_QUERY(path, json)
 :::
 
 ## JSON_VALUE(json, path) {#json-value}
@@ -416,8 +416,8 @@ world
 String
 ```
 
-:::note "Примечание"
-    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_VALUE(path, json)
+:::note Примечание
+До версии 21.11 порядок аргументов функции был обратный, т.е. JSON_VALUE(path, json)
 :::
 
 ## toJSONString {#tojsonstring}

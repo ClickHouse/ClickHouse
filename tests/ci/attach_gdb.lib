@@ -42,3 +42,5 @@ quit
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     run_with_retry 60 clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'"
 }
+
+# vi: ft=bash
