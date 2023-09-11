@@ -2002,6 +2002,7 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
+proleptic
 prometheus
 proto
 protobuf
@@ -2358,6 +2359,7 @@ toDateTimeOrZero
 toDayOfMonth
 toDayOfWeek
 toDayOfYear
+toDaysSinceYearZero
 toDecimal
 toDecimalString
 toFixedString
