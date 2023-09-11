@@ -110,10 +110,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-def query_with_id(node, id_, query, **kwargs):
-    return node.query("WITH '{}' AS __id {}".format(id_, query), **kwargs)
-
-
 # @return -- [user, initial_user]
 def get_query_user_info(node, query_pattern):
     node.query("SYSTEM FLUSH LOGS")
@@ -334,7 +330,7 @@ def test_secure_disagree_insert():
 @users
 def test_user_insecure_cluster(user, password):
     id_ = "query-dist_insecure-" + user
-    query_with_id(n1, id_, "SELECT * FROM dist_insecure", user=user, password=password)
+    n1.query(f"SELECT *, '{id_}' FROM dist_insecure", user=user, password=password)
     assert get_query_user_info(n1, id_) == [
         user,
         user,
@@ -345,7 +341,7 @@ def test_user_insecure_cluster(user, password):
 @users
 def test_user_secure_cluster(user, password):
     id_ = "query-dist_secure-" + user
-    query_with_id(n1, id_, "SELECT * FROM dist_secure", user=user, password=password)
+    n1.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
     assert get_query_user_info(n1, id_) == [user, user]
     assert get_query_user_info(n2, id_) == [user, user]
 
@@ -353,16 +349,14 @@ def test_user_secure_cluster(user, password):
 @users
 def test_per_user_inline_settings_insecure_cluster(user, password):
     id_ = "query-ddl-settings-dist_insecure-" + user
-    query_with_id(
-        n1,
-        id_,
-        """
-    SELECT * FROM dist_insecure
-    SETTINGS
-        prefer_localhost_replica=0,
-        max_memory_usage_for_user=1e9,
-        max_untracked_memory=0
-    """,
+    n1.query(
+        f"""
+        SELECT *, '{id_}' FROM dist_insecure
+        SETTINGS
+            prefer_localhost_replica=0,
+            max_memory_usage_for_user=1e9,
+            max_untracked_memory=0
+        """,
         user=user,
         password=password,
     )
@@ -372,16 +366,14 @@ def test_per_user_inline_settings_insecure_cluster(user, password):
 @users
 def test_per_user_inline_settings_secure_cluster(user, password):
     id_ = "query-ddl-settings-dist_secure-" + user
-    query_with_id(
-        n1,
-        id_,
-        """
-    SELECT * FROM dist_secure
-    SETTINGS
-        prefer_localhost_replica=0,
-        max_memory_usage_for_user=1e9,
-        max_untracked_memory=0
-    """,
+    n1.query(
+        f"""
+        SELECT *, '{id_}' FROM dist_secure
+        SETTINGS
+            prefer_localhost_replica=0,
+            max_memory_usage_for_user=1e9,
+            max_untracked_memory=0
+        """,
         user=user,
         password=password,
     )
@@ -393,10 +385,8 @@ def test_per_user_inline_settings_secure_cluster(user, password):
 @users
 def test_per_user_protocol_settings_insecure_cluster(user, password):
     id_ = "query-protocol-settings-dist_insecure-" + user
-    query_with_id(
-        n1,
-        id_,
-        "SELECT * FROM dist_insecure",
+    n1.query(
+        f"SELECT *, '{id_}' FROM dist_insecure",
         user=user,
         password=password,
         settings={
@@ -411,10 +401,8 @@ def test_per_user_protocol_settings_insecure_cluster(user, password):
 @users
 def test_per_user_protocol_settings_secure_cluster(user, password):
     id_ = "query-protocol-settings-dist_secure-" + user
-    query_with_id(
-        n1,
-        id_,
-        "SELECT * FROM dist_secure",
+    n1.query(
+        f"SELECT *, '{id_}' FROM dist_secure",
         user=user,
         password=password,
         settings={
@@ -431,8 +419,8 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
 @users
 def test_user_secure_cluster_with_backward(user, password):
     id_ = "with-backward-query-dist_secure-" + user
-    query_with_id(
-        n1, id_, "SELECT * FROM dist_secure_backward", user=user, password=password
+    n1.query(
+        f"SELECT *, '{id_}' FROM dist_secure_backward", user=user, password=password
     )
     assert get_query_user_info(n1, id_) == [user, user]
     assert get_query_user_info(backward, id_) == [user, user]
@@ -441,13 +429,7 @@ def test_user_secure_cluster_with_backward(user, password):
 @users
 def test_user_secure_cluster_from_backward(user, password):
     id_ = "from-backward-query-dist_secure-" + user
-    query_with_id(
-        backward,
-        id_,
-        "SELECT * FROM dist_secure_backward",
-        user=user,
-        password=password,
-    )
+    backward.query(f"SELECT *, '{id_}' FROM dist_secure", user=user, password=password)
     assert get_query_user_info(n1, id_) == [user, user]
     assert get_query_user_info(backward, id_) == [user, user]
 

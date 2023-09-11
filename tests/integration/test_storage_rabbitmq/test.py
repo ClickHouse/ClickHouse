@@ -511,69 +511,6 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     rabbitmq_check_result(result2, True)
 
 
-@pytest.mark.skip(reason="clichouse_path with rabbitmq.proto fails to be exported")
-def test_rabbitmq_protobuf(rabbitmq_cluster):
-    instance.query(
-        """
-        CREATE TABLE test.rabbitmq (key UInt64, value String)
-            ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_exchange_name = 'pb',
-                     rabbitmq_format = 'Protobuf',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size=100,
-                     rabbitmq_schema = 'rabbitmq.proto:KeyValueProto';
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree()
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
-        """
-    )
-
-    credentials = pika.PlainCredentials("root", "clickhouse")
-    parameters = pika.ConnectionParameters(
-        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
-    )
-    connection = pika.BlockingConnection(parameters)
-    channel = connection.channel()
-
-    data = ""
-    for i in range(0, 20):
-        msg = rabbitmq_pb2.KeyValueProto()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    channel.basic_publish(exchange="pb", routing_key="", body=data)
-    data = ""
-    for i in range(20, 21):
-        msg = rabbitmq_pb2.KeyValueProto()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    channel.basic_publish(exchange="pb", routing_key="", body=data)
-    data = ""
-    for i in range(21, 50):
-        msg = rabbitmq_pb2.KeyValueProto()
-        msg.key = i
-        msg.value = str(i)
-        serialized_msg = msg.SerializeToString()
-        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    channel.basic_publish(exchange="pb", routing_key="", body=data)
-
-    connection.close()
-
-    result = ""
-    while True:
-        result = instance.query("SELECT * FROM test.view ORDER BY key")
-        if rabbitmq_check_result(result):
-            break
-
-    rabbitmq_check_result(result, True)
-
-
 def test_rabbitmq_big_message(rabbitmq_cluster):
     # Create batchs of messages of size ~100Kb
     rabbitmq_messages = 1000

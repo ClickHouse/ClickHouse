@@ -83,6 +83,11 @@
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
+#include <Storages/System/StorageSystemScheduler.h>
+
+#if USE_RDKAFKA
+#include <Storages/System/StorageSystemKafkaConsumers.h>
+#endif
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -144,6 +149,10 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
+    attach<StorageSystemScheduler>(context, system_database, "scheduler");
+#if USE_RDKAFKA
+    attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
+#endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
