@@ -78,6 +78,8 @@ class KeeperClient(object):
         self.proc.stdin.flush()
 
         events = self.poller.poll(timeout)
+        if not events:
+            raise TimeoutError(f"Keeper client returned no output")
 
         for fd_num, event in events:
             if event & (select.EPOLLIN | select.EPOLLPRI):
