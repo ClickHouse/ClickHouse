@@ -588,6 +588,7 @@ if (FUZZER)
             endif()
         endif()
     endforeach()
+    add_custom_command(TARGET fuzzers POST_BUILD COMMAND SRC=${CMAKE_SOURCE_DIR} BIN=${CMAKE_BINARY_DIR} OUT=${CMAKE_BINARY_DIR}/programs ${CMAKE_SOURCE_DIR}/tests/fuzz/build.sh VERBATIM)
 endif()
 
 include (cmake/sanitize_targets.cmake)

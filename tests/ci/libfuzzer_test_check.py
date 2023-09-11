@@ -330,25 +330,15 @@ def main():
         image_name, Path("../../docker/test/libfuzzer/")
     )  # get_image_with_version(reports_path, image_name)
 
-    fuzzers_tmp_path = os.path.join(temp_path, "fuzzers_tmp")
-    if not os.path.exists(fuzzers_tmp_path):
-        os.makedirs(fuzzers_tmp_path)
+    fuzzers_path = os.path.join(temp_path, "fuzzers")
+    if not os.path.exists(fuzzers_path):
+        os.makedirs(fuzzers_path)
 
     # if validate_bugfix_check:
     #     download_last_release(packages_path)
     # else:
     #     download_all_deb_packages(check_name, reports_path, packages_path)
-    download_fuzzers(check_name, reports_path, fuzzers_tmp_path)
-
-    fuzzers_path = os.path.join(temp_path, "fuzzers")
-    for fuzzer in os.listdir(fuzzers_tmp_path):
-        fuzzer_path = os.path.join(fuzzers_path, fuzzer)
-        os.makedirs(fuzzer_path)
-        os.rename(
-            os.path.join(fuzzers_tmp_path, fuzzer), os.path.join(fuzzer_path, fuzzer)
-        )
-
-    os.rmdir(fuzzers_tmp_path)
+    download_fuzzers(check_name, reports_path, fuzzers_path)
 
     # server_log_path = os.path.join(temp_path, "server_log")
     # if not os.path.exists(server_log_path):
