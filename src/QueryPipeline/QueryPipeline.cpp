@@ -66,7 +66,8 @@ static void checkPulling(
     Processors & processors,
     OutputPort * output,
     OutputPort * totals,
-    OutputPort * extremes)
+    OutputPort * extremes,
+    OutputPort * partial_result)
 {
     if (!output || output->isConnected())
         throw Exception(
@@ -83,9 +84,15 @@ static void checkPulling(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot create pulling QueryPipeline because its extremes port is connected");
 
+    if (partial_result && partial_result->isConnected())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot create pulling QueryPipeline because its partial_result port is connected");
+
     bool found_output = false;
     bool found_totals = false;
     bool found_extremes = false;
+    bool found_partial_result = false;
     for (const auto & processor : processors)
     {
         for (const auto & in : processor->getInputs())
@@ -99,6 +106,8 @@ static void checkPulling(
                 found_totals = true;
             else if (extremes && &out == extremes)
                 found_extremes = true;
+            else if (partial_result && &out == partial_result)
+                found_partial_result = true;
             else
                 checkOutput(out, processor);
         }
@@ -116,6 +125,10 @@ static void checkPulling(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Cannot create pulling QueryPipeline because its extremes port does not belong to any processor");
+    if (partial_result && !found_partial_result)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot create pulling QueryPipeline because its partial result port does not belong to any processor");
 }
 
 static void checkCompleted(Processors & processors)
@@ -318,17 +331,20 @@ QueryPipeline::QueryPipeline(
     std::shared_ptr<Processors> processors_,
     OutputPort * output_,
     OutputPort * totals_,
-    OutputPort * extremes_)
+    OutputPort * extremes_,
+    OutputPort * partial_result_)
     : resources(std::move(resources_))
     , processors(std::move(processors_))
     , output(output_)
     , totals(totals_)
     , extremes(extremes_)
+    , partial_result(partial_result_)
 {
-    checkPulling(*processors, output, totals, extremes);
+    checkPulling(*processors, output, totals, extremes, partial_result);
 }
 
 QueryPipeline::QueryPipeline(Pipe pipe)
+    : partial_result_duration_ms(pipe.partial_result_duration_ms)
 {
     if (pipe.numOutputPorts() > 0)
     {
@@ -336,9 +352,10 @@ QueryPipeline::QueryPipeline(Pipe pipe)
         output = pipe.getOutputPort(0);
         totals = pipe.getTotalsPort();
         extremes = pipe.getExtremesPort();
+        partial_result = pipe.getPartialResultPort(0);
 
         processors = std::move(pipe.processors);
-        checkPulling(*processors, output, totals, extremes);
+        checkPulling(*processors, output, totals, extremes, partial_result);
     }
     else
     {
@@ -370,6 +387,7 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
     auto & format_totals = format->getPort(IOutputFormat::PortKind::Totals);
     auto & format_extremes = format->getPort(IOutputFormat::PortKind::Extremes);
+    auto & format_partial_result = format->getPort(IOutputFormat::PortKind::PartialResult);
 
     if (!totals)
     {
@@ -385,12 +403,21 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
         processors->emplace_back(std::move(source));
     }
 
+    if (!partial_result)
+    {
+        auto source = std::make_shared<NullSource>(format_partial_result.getHeader());
+        partial_result = &source->getPort();
+        processors->emplace_back(std::move(source));
+    }
+
     connect(*totals, format_totals);
     connect(*extremes, format_extremes);
+    connect(*partial_result, format_partial_result);
 
     input = &format_main;
     totals = nullptr;
     extremes = nullptr;
+    partial_result = nullptr;
 
     output_format = format.get();
 
@@ -418,6 +445,7 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 
     drop(totals, *processors);
     drop(extremes, *processors);
+    drop(partial_result, *processors);
 
     connect(*output, sink->getPort());
     processors->emplace_back(std::move(sink));
@@ -433,6 +461,7 @@ void QueryPipeline::complete(Chain chain)
 
     drop(totals, *processors);
     drop(extremes, *processors);
+    drop(partial_result, *processors);
 
     processors->reserve(processors->size() + chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
@@ -458,6 +487,7 @@ void QueryPipeline::complete(Pipe pipe)
     pipe.resize(1);
     pipe.dropExtremes();
     pipe.dropTotals();
+    pipe.dropPartialResult();
     connect(*pipe.getOutputPort(0), *input);
     input = nullptr;
 
@@ -486,11 +516,13 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
         addMaterializing(output, *processors);
         addMaterializing(totals, *processors);
         addMaterializing(extremes, *processors);
+        addMaterializing(partial_result, *processors);
     }
 
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
     auto & format_totals = format->getPort(IOutputFormat::PortKind::Totals);
     auto & format_extremes = format->getPort(IOutputFormat::PortKind::Extremes);
+    auto & format_partial_result = format->getPort(IOutputFormat::PortKind::PartialResult);
 
     if (!totals)
     {
@@ -506,13 +538,22 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
         processors->emplace_back(std::move(source));
     }
 
+    if (!partial_result)
+    {
+        auto source = std::make_shared<NullSource>(format_partial_result.getHeader());
+        partial_result = &source->getPort();
+        processors->emplace_back(std::move(source));
+    }
+
     connect(*output, format_main);
     connect(*totals, format_totals);
     connect(*extremes, format_extremes);
+    connect(*partial_result, format_partial_result);
 
     output = nullptr;
     totals = nullptr;
     extremes = nullptr;
+    partial_result = nullptr;
 
     initRowsBeforeLimit(format.get());
     output_format = format.get();
@@ -684,6 +725,7 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
     addExpression(output, actions, *processors);
     addExpression(totals, actions, *processors);
     addExpression(extremes, actions, *processors);
+    addExpression(partial_result, actions, *processors);
 }
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
