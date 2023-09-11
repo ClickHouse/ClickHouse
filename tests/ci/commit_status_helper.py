@@ -133,10 +133,10 @@ def post_commit_status(
 STATUS_ICON_MAP = defaultdict(
     str,
     {
-        ERROR: "🔴",
-        FAILURE: "🔴",
-        PENDING: "🟡",
-        SUCCESS: "🟢",
+        ERROR: "❌",
+        FAILURE: "❌",
+        PENDING: "⏳",
+        SUCCESS: "✅",
     },
 )
 
