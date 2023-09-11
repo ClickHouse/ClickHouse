@@ -4634,13 +4634,11 @@ bool Context::canUseParallelReplicas() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    const auto & settings_ref = getSettingsRef();
     return canUseParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings_ref = getSettingsRef();
     return canUseParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
