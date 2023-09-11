@@ -9,6 +9,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -21,6 +22,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int INCORRECT_QUERY;
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -94,6 +96,122 @@ void DatabaseMemory::dropTable(
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
+}
+
+void DatabaseMemory::renameTable(
+    ContextPtr /* local_context */,
+    const String & table_name,
+    IDatabase & to_database,
+    const String & to_table_name,
+    bool exchange,
+    bool dictionary) TSA_NO_THREAD_SAFETY_ANALYSIS /// TSA does not support conditional locking
+{
+    if (typeid(*this) != typeid(to_database))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
+
+    if (dictionary)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Dictionaries can be renamed only in Atomic databases");
+
+    auto & other_db = dynamic_cast<DatabaseMemory &>(to_database);
+    bool inside_database = this == &other_db;
+
+    auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
+    {
+        if (inside_database)
+            return;
+        if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
+            if (mv->hasInnerTable())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
+    };
+
+    if (inside_database && table_name == to_table_name)
+        return;
+
+    std::unique_lock<std::mutex> db_lock;
+    std::unique_lock<std::mutex> other_db_lock;
+    if (inside_database)
+        db_lock = std::unique_lock{mutex};
+    else if (this < &other_db)
+    {
+        db_lock = std::unique_lock{mutex};
+        other_db_lock = std::unique_lock{other_db.mutex};
+    }
+    else
+    {
+        other_db_lock = std::unique_lock{other_db.mutex};
+        db_lock = std::unique_lock{mutex};
+    }
+
+    StoragePtr table = getTableUnlocked(table_name);
+
+    if (dictionary && !table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+
+    StorageID old_table_id = table->getStorageID();
+    StorageID new_table_id = {other_db.database_name, to_table_name};
+    table->checkTableCanBeRenamed({new_table_id});
+    assert_can_move_mat_view(table);
+    StoragePtr other_table;
+    StorageID other_table_new_id = StorageID::createEmpty();
+    if (exchange)
+    {
+        other_table = other_db.getTableUnlocked(to_table_name);
+        if (dictionary && !other_table->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+        other_table_new_id = {database_name, table_name};
+        other_table->checkTableCanBeRenamed(other_table_new_id);
+        assert_can_move_mat_view(other_table);
+    }
+
+    ASTPtr old_create_table_query;
+    ASTPtr new_create_table_query;
+    auto it = create_queries.find(table_name);
+    if (it != create_queries.end())
+    {
+        old_create_table_query = it->second;
+        if (old_create_table_query)
+        {
+            auto & create = old_create_table_query->as<ASTCreateQuery &>();
+            create.setDatabase(other_db.database_name);
+            create.setTable(to_table_name);
+        }
+    }
+
+    if (exchange)
+    {
+        it = other_db.create_queries.find(to_table_name);
+        if (it != other_db.create_queries.end())
+        {
+            new_create_table_query = it->second;
+            if (new_create_table_query)
+            {
+                auto & create = new_create_table_query->as<ASTCreateQuery &>();
+                create.setDatabase(database_name);
+                create.setTable(table_name);
+            }
+        }
+    }
+
+    tables.erase(table_name);
+    create_queries.erase(table_name);
+
+    if (exchange)
+    {
+        other_db.tables.erase(to_table_name);
+        other_db.create_queries.erase(to_table_name);
+    }
+
+    table->renameInMemory(new_table_id);
+    if (exchange)
+        other_table->renameInMemory(other_table_new_id);
+
+    other_db.tables.emplace(to_table_name, table);
+    other_db.create_queries.emplace(to_table_name, old_create_table_query);
+    if (exchange)
+    {
+        tables.emplace(table_name, other_table);
+        create_queries.emplace(table_name, new_create_table_query);
+    }
 }
 
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const

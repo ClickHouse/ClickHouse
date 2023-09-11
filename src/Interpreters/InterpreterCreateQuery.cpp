@@ -1491,9 +1491,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
     {
         auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-        if (database->getUUID() == UUIDHelpers::Nil)
+        if (database->getUUID() == UUIDHelpers::Nil && database->getEngineName() != "Memory")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "{} query is supported only for Atomic databases",
+                            "{} query is supported only for Atomic and Memory databases",
                             create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
 
 

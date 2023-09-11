@@ -34,6 +34,14 @@ public:
         const String & table_name,
         bool sync) override;
 
+    void renameTable(
+        ContextPtr local_context,
+        const String & table_name,
+        IDatabase & to_database,
+        const String & to_table_name,
+        bool exchange,
+        bool dictionary) override;
+
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery() const override;
 
