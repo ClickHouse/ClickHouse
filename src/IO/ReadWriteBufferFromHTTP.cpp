@@ -40,7 +40,12 @@ void UpdatableSession<TSessionFactory>::updateSession(const Poco::URI & uri)
     if (redirects <= max_redirects)
         session = session_factory->buildNewSession(uri);
     else
-        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", initial_uri.toString());
+        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS,
+            "Too many redirects while trying to access {}."
+            " You can {} redirects by changing the setting 'max_http_get_redirects'."
+            " Example: `SET max_http_get_redirects = 10`."
+            " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
+            initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
 }
 
 template <typename TSessionFactory>
@@ -245,7 +250,8 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     bool delay_initialization,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
-    std::optional<HTTPFileInfo> file_info_)
+    std::optional<HTTPFileInfo> file_info_,
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : SeekableReadBuffer(nullptr, 0)
     , uri {uri_}
     , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -260,6 +266,7 @@ ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::ReadWriteBufferFromHTTPBase(
     , http_skip_not_found_url(http_skip_not_found_url_)
     , settings {settings_}
     , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
+    , proxy_config(proxy_config_)
 {
     if (settings.http_max_tries <= 0 || settings.http_retry_initial_backoff_ms <= 0
         || settings.http_retry_initial_backoff_ms >= settings.http_retry_max_backoff_ms)
@@ -305,12 +312,12 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callWithRedirects(Poco::N
         current_session = session;
 
     call(current_session, response, method_, throw_on_all_errors, for_object_info);
-    Poco::URI prev_uri = uri;
+    saved_uri_redirect = uri;
 
     while (isRedirect(response.getStatus()))
     {
-        Poco::URI uri_redirect = getUriAfterRedirect(prev_uri, response);
-        prev_uri = uri_redirect;
+        Poco::URI uri_redirect = getUriAfterRedirect(*saved_uri_redirect, response);
+        saved_uri_redirect = uri_redirect;
         if (remote_host_filter)
             remote_host_filter->checkURL(uri_redirect);
 
@@ -779,9 +786,21 @@ template <typename UpdatableSessionPtr>
 const std::string & ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getCompressionMethod() const { return content_encoding; }
 
 template <typename UpdatableSessionPtr>
-std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getLastModificationTime()
+std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::tryGetLastModificationTime()
 {
-    return getFileInfo().last_modified;
+    if (!file_info)
+    {
+        try
+        {
+            file_info = getFileInfo();
+        }
+        catch (...)
+        {
+            return std::nullopt;
+        }
+    }
+
+    return file_info->last_modified;
 }
 
 template <typename UpdatableSessionPtr>
@@ -843,12 +862,12 @@ HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::parseFileInfo(con
 
 }
 
-SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_)
-    : timeouts(timeouts_) {}
+SessionFactory::SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
+    : timeouts(timeouts_), proxy_config(proxy_config_) {}
 
 SessionFactory::SessionType SessionFactory::buildNewSession(const Poco::URI & uri)
 {
-    return makeHTTPSession(uri, timeouts);
+    return makeHTTPSession(uri, timeouts, proxy_config);
 }
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
@@ -865,9 +884,10 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool delay_initialization_,
     bool use_external_buffer_,
     bool skip_not_found_url_,
-    std::optional<HTTPFileInfo> file_info_)
+    std::optional<HTTPFileInfo> file_info_,
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config_)
     : Parent(
-        std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts)),
+        std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts, proxy_config_)),
         uri_,
         credentials_,
         method_,
@@ -879,7 +899,8 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
         delay_initialization_,
         use_external_buffer_,
         skip_not_found_url_,
-        file_info_) {}
+        file_info_,
+        proxy_config_) {}
 
 
 PooledSessionFactory::PooledSessionFactory(

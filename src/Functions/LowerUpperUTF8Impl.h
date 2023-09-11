@@ -133,8 +133,6 @@ struct LowerUpperUTF8Impl
         }
         else
         {
-            static const Poco::UTF8Encoding utf8;
-
             size_t src_sequence_length = UTF8::seqLength(*src);
             /// In case partial buffer was passed (due to SSE optimization)
             /// we cannot convert it with current src_end, but we may have more

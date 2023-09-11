@@ -9,6 +9,7 @@ from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 from report import TestResult
 import docker_images_check as di
+from docker_images_helper import get_images_dict
 
 from version_helper import get_version_from_string
 import docker_server as ds
@@ -18,7 +19,7 @@ import docker_server as ds
 
 class TestDockerImageCheck(unittest.TestCase):
     docker_images_path = os.path.join(
-        os.path.dirname(__file__), "tests/docker_images.json"
+        os.path.dirname(__file__), "tests/docker_images_for_tests.json"
     )
 
     def test_get_changed_docker_images(self):
@@ -31,7 +32,7 @@ class TestDockerImageCheck(unittest.TestCase):
         images = sorted(
             list(
                 di.get_changed_docker_images(
-                    pr_info, di.get_images_dict("/", self.docker_images_path)
+                    pr_info, get_images_dict("/", self.docker_images_path)
                 )
             )
         )
@@ -40,6 +41,12 @@ class TestDockerImageCheck(unittest.TestCase):
             [
                 di.DockerImage("docker/test/base", "clickhouse/test-base", False),
                 di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
+                di.DockerImage(
+                    "docker/test/sqltest",
+                    "clickhouse/sqltest",
+                    False,
+                    "clickhouse/test-base",  # type: ignore
+                ),
                 di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",

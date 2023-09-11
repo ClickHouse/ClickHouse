@@ -151,6 +151,7 @@ public:
         }
         else if (BitmapKind::Bitmap == kind)
         {
+            roaring_bitmap->runOptimize();
             auto size = roaring_bitmap->getSizeInBytes();
             writeVarUInt(size, out);
             std::unique_ptr<char[]> buf(new char[size]);

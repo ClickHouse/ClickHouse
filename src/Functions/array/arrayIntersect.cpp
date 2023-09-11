@@ -510,11 +510,12 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         map.clear();
 
         bool all_has_nullable = all_nullable;
+        bool current_has_nullable = false;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
             const auto & arg = arrays.args[arg_num];
-            bool current_has_nullable = false;
+            current_has_nullable = false;
 
             size_t off;
             // const array has only one row
@@ -549,44 +550,93 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 }
             }
 
-            prev_off[arg_num] = off;
-            if (arg.is_const)
-                prev_off[arg_num] = 0;
-
+            // We update offsets for all the arrays except the first one. Offsets for the first array would be updated later.
+            // It is needed to iterate the first array again so that the elements in the result would have fixed order.
+            if (arg_num)
+            {
+                prev_off[arg_num] = off;
+                if (arg.is_const)
+                    prev_off[arg_num] = 0;
+            }
             if (!current_has_nullable)
                 all_has_nullable = false;
         }
 
-        if (all_has_nullable)
-        {
-            ++result_offset;
-            result_data.insertDefault();
-            null_map.push_back(1);
-        }
+        // We have NULL in output only once if it should be there
+        bool null_added = false;
+        const auto & arg = arrays.args[0];
+        size_t off;
+        // const array has only one row
+        if (arg.is_const)
+            off = (*arg.offsets)[0];
+        else
+            off = (*arg.offsets)[row];
 
-        for (const auto & pair : map)
+        for (auto i : collections::range(prev_off[0], off))
         {
-            if (pair.getMapped() == args)
+            all_has_nullable = all_nullable;
+            typename Map::LookupResult pair = nullptr;
+
+            if (arg.null_map && (*arg.null_map)[i])
             {
+                current_has_nullable = true;
+                if (all_has_nullable && !null_added)
+                {
+                    ++result_offset;
+                    result_data.insertDefault();
+                    null_map.push_back(1);
+                    null_added = true;
+                }
+                if (null_added)
+                    continue;
+            }
+            else if constexpr (is_numeric_column)
+            {
+                pair = map.find(columns[0]->getElement(i));
+            }
+            else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
+                pair = map.find(columns[0]->getDataAt(i));
+            else
+            {
+                const char * data = nullptr;
+                pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data));
+            }
+            prev_off[0] = off;
+            if (arg.is_const)
+                prev_off[0] = 0;
+
+            if (!current_has_nullable)
+                all_has_nullable = false;
+
+            if (pair && pair->getMapped() == args)
+            {
+                // We increase pair->getMapped() here to not skip duplicate values from the first array.
+                ++pair->getMapped();
                 ++result_offset;
                 if constexpr (is_numeric_column)
-                    result_data.insertValue(pair.getKey());
+                {
+                    result_data.insertValue(pair->getKey());
+                }
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                    result_data.insertData(pair.getKey().data, pair.getKey().size);
+                {
+                    result_data.insertData(pair->getKey().data, pair->getKey().size);
+                }
                 else
-                    result_data.deserializeAndInsertFromArena(pair.getKey().data);
-
+                {
+                    result_data.deserializeAndInsertFromArena(pair->getKey().data);
+                }
                 if (all_nullable)
                     null_map.push_back(0);
             }
         }
         result_offsets.getElement(row) = result_offset;
-    }
 
+    }
     ColumnPtr result_column = std::move(result_data_ptr);
     if (all_nullable)
         result_column = ColumnNullable::create(result_column, std::move(null_map_column));
     return ColumnArray::create(result_column, std::move(result_offsets_ptr));
+
 }
 
 

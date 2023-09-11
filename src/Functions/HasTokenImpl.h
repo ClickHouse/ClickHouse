@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
@@ -46,7 +47,7 @@ struct HasTokenImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        if (!std::none_of(pattern.begin(), pattern.end(), isTokenSeparator))
+        if (const auto has_separator = std::any_of(pattern.cbegin(), pattern.cend(), isTokenSeparator); has_separator || pattern.empty())
         {
             if (res_null)
             {
@@ -54,8 +55,12 @@ struct HasTokenImpl
                 std::ranges::fill(res_null->getData(), true);
                 return;
             }
-            else
+            else if (has_separator)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
+            else if (pattern.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle cannot be empty, because empty string isn't a token");
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
         }
 
         size_t pattern_size = pattern.size();

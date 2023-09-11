@@ -353,6 +353,8 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
     if (replica_state.packet_receiver->isPacketReady())
     {
+        /// Reset the socket timeout after some packet received
+        replica_state.packet_receiver->setTimeout(hedged_connections_factory.getConnectionTimeouts().receive_timeout);
         last_received_packet = replica_state.packet_receiver->getPacket();
         return true;
     }
@@ -386,7 +388,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     bool blocking = !static_cast<bool>(async_callback);
     while (events_count == 0)
     {
-        events_count = epoll.getManyReady(1, &event, blocking);
+        events_count = epoll.getManyReady(1, &event, blocking ? -1 : 0);
         if (!events_count && async_callback)
             async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
     }

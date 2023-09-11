@@ -6,6 +6,7 @@ create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) or
 insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
 
 set max_rows_to_read = 1;
+set optimize_use_implicit_projections = 1;
 -- non-optimized
 select count() from test1 settings max_parallel_replicas = 3;
 -- optimized (toYear is monotonic and we provide the partition expr as is)

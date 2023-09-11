@@ -783,9 +783,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
     assert int(min_key) == 0, min_key
 
-    broken_s3.setup_error_at_object_upload()
+    broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()
-    broken_s3.setup_error_at_part_upload()
+    broken_s3.setup_at_part_upload()
 
     node.query("SYSTEM START MERGES test_merge_canceled_by_s3_errors")
 
@@ -828,7 +828,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
         settings={"materialize_ttl_after_modify": 0},
     )
 
-    broken_s3.setup_error_at_object_upload(count=1, after=1)
+    broken_s3.setup_at_object_upload(count=1, after=1)
 
     node.query("SYSTEM START MERGES merge_canceled_by_s3_errors_when_move")
 
@@ -855,6 +855,11 @@ def test_s3_engine_heavy_write_check_mem(
     memory = in_flight_memory[1]
 
     node = cluster.instances[node_name]
+
+    # it's bad idea to test something related to memory with sanitizers
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test"
@@ -887,7 +892,7 @@ def test_s3_engine_heavy_write_check_mem(
     assert int(memory_usage) < 1.2 * memory
     assert int(memory_usage) > 0.8 * memory
 
-    assert int(wait_inflight) > 10 * 1000 * 1000
+    assert int(wait_inflight) > in_flight * 1000 * 1000
 
     check_no_objects_after_drop(cluster, node_name=node_name)
 
