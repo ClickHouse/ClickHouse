@@ -66,7 +66,6 @@ StatisticsDescriptions StatisticsDescriptions::getStatisticsFromAST(const ASTPtr
         stat.data_type = column.type;
         stats.push_back(stat);
     }
-    /// stats.definition_asts.push_back(definition_ast);
 
     if (stats.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Empty statistic column list");
@@ -96,8 +95,6 @@ ASTPtr StatisticsDescriptions::getAST() const
 {
 
     auto list = std::make_shared<ASTExpressionList>();
-    /// for (const auto & ast : definition_asts)
-    ///    list.children.push_back(ast);
 
     for (const auto & stat : *this)
     {

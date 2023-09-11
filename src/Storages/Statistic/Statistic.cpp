@@ -165,7 +165,7 @@ StatisticPtr MergeTreeStatisticFactory::get(const StatisticDescription & stat) c
     return std::make_shared<TDigestStatistic>(stat);
 }
 
-Statistics MergeTreeStatisticFactory::getMany(const std::vector<StatisticDescription> & stats) const
+Statistics MergeTreeStatisticFactory::getMany(const StatisticsDescriptions & stats) const
 {
     Statistics result;
     for (const auto & stat : stats)

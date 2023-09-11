@@ -58,7 +58,7 @@ public:
 
 protected:
 
-    const StatisticDescription & stat;
+    StatisticDescription stat;
 
 };
 
@@ -116,7 +116,7 @@ public:
 
     StatisticPtr get(const StatisticDescription & stat) const;
 
-    Statistics getMany(const std::vector<StatisticDescription> & stats) const;
+    Statistics getMany(const StatisticsDescriptions & stats) const;
 
     void registerCreator(StatisticType type, Creator creator);
 

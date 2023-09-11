@@ -30,7 +30,6 @@ struct StatisticDescription
 
 struct StatisticsDescriptions : public std::vector<StatisticDescription>
 {
-    std::vector<ASTPtr> definition_asts;
     /// Stat with name exists
     bool has(const String & name) const;
     /// merge with other Statistics
