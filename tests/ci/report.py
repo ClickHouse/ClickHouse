@@ -578,7 +578,7 @@ def create_test_html_report(
                 colspan += 1
 
             row.append("</tr>")
-            rows_part.append("".join(row))
+            rows_part.append("\n".join(row))
             if test_result.raw_logs is not None:
                 raw_logs = escape(test_result.raw_logs)
                 row_raw_logs = (

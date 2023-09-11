@@ -263,12 +263,6 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
     result = [comment_body]
 
-    if visible_table_rows:
-        visible_table_rows.sort()
-        result.append(table_header)
-        result.extend(visible_table_rows)
-        result.append(table_footer)
-
     if hidden_table_rows:
         hidden_table_rows.sort()
         result.append(details_header)
@@ -276,6 +270,12 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         result.extend(hidden_table_rows)
         result.append(table_footer)
         result.append(details_footer)
+
+    if visible_table_rows:
+        visible_table_rows.sort()
+        result.append(table_header)
+        result.extend(visible_table_rows)
+        result.append(table_footer)
 
     return "".join(result)
 
@@ -292,9 +292,7 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         log_urls = None
         if status.target_url is not None:
             log_urls = [status.target_url]
-        raw_logs = None
-        if status.description:
-            raw_logs = status.description
+        raw_logs = status.description or None
         test_results.append(
             TestResult(
                 status.context, status.state, log_urls=log_urls, raw_logs=raw_logs
