@@ -687,9 +687,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     return columns;
 }
 
-bool IStorageURLBase::supportsSubsetOfColumns() const
+bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const
@@ -715,7 +715,7 @@ Pipe IStorageURLBase::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (supportsSubsetOfColumns(local_context))
     {
         columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
@@ -818,7 +818,7 @@ Pipe StorageURLWithFailover::read(
 {
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (supportsSubsetOfColumns(local_context))
     {
         columns_description = storage_snapshot->getDescriptionForColumns(column_names);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
