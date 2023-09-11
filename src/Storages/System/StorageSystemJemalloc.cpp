@@ -25,6 +25,12 @@ UInt64 getJeMallocValue(const char * name)
     UInt64 value{};
     size_t size = sizeof(value);
     mallctl(name, &value, &size, nullptr, 0);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (size == 4)
+    {
+        value >>= 32;
+    }
+#endif
     return value;
 }
 
