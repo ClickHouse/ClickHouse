@@ -529,8 +529,9 @@ try
         include_from_path,
         config().getString("path", ""),
         std::move(unused_cache),
+        nullptr,
         unused_event,
-        [&](ConfigurationPtr config, bool /* initial_loading */)
+        [&](ConfigurationPtr config, XMLDocumentPtr, bool /* initial_loading */)
         {
             if (config->has("keeper_server"))
                 tiny_context->updateKeeperConfiguration(*config);

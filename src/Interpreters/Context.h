@@ -15,6 +15,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
+#include <Poco/Util/XMLConfiguration.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
@@ -500,10 +501,16 @@ public:
     void setTemporaryStoragePath(const String & path, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
+    using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
+
+    /// Configuration settings from local files and fdb/zk.
+    void setXmlConfig(const XMLDocumentPtr & config);
+    const XMLDocumentPtr & getXmlConfigRef() const;
+
 
     AccessControl & getAccessControl();
     const AccessControl & getAccessControl() const;

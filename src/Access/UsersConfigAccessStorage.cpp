@@ -7,6 +7,7 @@
 #include <Access/resolveSetting.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
@@ -659,8 +660,9 @@ void UsersConfigAccessStorage::load(
         include_from_path,
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
+        nullptr,
         std::make_shared<Poco::Event>(),
-        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
+        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, XMLDocumentPtr, bool /*initial_loading*/)
         {
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
             parseFromConfig(*new_config);

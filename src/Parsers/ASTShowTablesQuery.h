@@ -15,6 +15,7 @@ class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
     bool databases = false;
+	bool configs = false;
     bool clusters = false;
     bool cluster = false;
     bool dictionaries = false;

@@ -26,6 +26,10 @@
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Poco/DOM/CDATASection.h>
+#include <Poco/XML/XMLWriter.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
+#include <Common/FoundationDB/protos/MetadataConfigParam.pb.h>
 
 #define PREPROCESSED_SUFFIX "-preprocessed"
 
@@ -156,6 +160,200 @@ static void deleteAttributesRecursive(Node * root)
     {
         root->removeChild(child);
     }
+}
+
+/**
+ * Transform poco::xml::document object to fine-grained kvs.
+ * @param root root node of document object
+ * @param flag mark whether the current node has a sibling node with the same name
+ * @param index if flag = true, the prefix need to include an index number
+ */
+void ConfigProcessor::transformXMLToKV(const Node * root, std::string prefix, ConfigParamKVs & kvs, bool flag, size_t index)
+{
+    if (root->nodeType() == Node::TEXT_NODE || root->nodeType() == Node::CDATA_SECTION_NODE)
+    {
+        /// Current node is a text node, reach the destination
+        if (!allWhitespace(root->getNodeValue()))
+        {
+            std::unique_ptr<ConfigParamKV> temp(new FoundationDB::Proto::MetadataConfigParam());
+            temp->set_name(prefix);
+            temp->set_value(root->getNodeValue());
+            kvs.emplace_back(std::move(temp));
+        }
+    }
+
+    /// 1. Update prefix.
+    std::string root_name = root->nodeName();
+
+    if (root -> hasAttributes())
+        throw Poco::Exception("Configuration \"" + root_name + "\" cannot contain attributes when foundationDB is enabled.");
+
+    /// Ignore config parameters prefixed with users, profiles, quotas, dictionaries, functions, which will be persisted by the corresponding modules.
+    if (root_name == "users" || root_name == "profiles" || root_name == "quotas" || root_name == "dictionaries" || root_name == "functions")
+        return;
+
+    /// Mark whether the current node need to add a prefix
+    bool cur_flag = false;
+    if (root->nodeType() == Node::ELEMENT_NODE && (root_name != "clickhouse" && root_name != "yandex"))
+        cur_flag = true;
+    /// Add current node name to the prefix.
+    if (cur_flag)
+    {
+        if (prefix.empty())
+            prefix += root_name;
+        else
+            prefix = prefix + '.' + root_name;
+    }
+    /// If the current node has a sibling node with the same name, Distinguish it by [$num].
+    if (flag)
+    {
+        prefix = prefix + '[' + std::to_string(index) + ']';
+    }
+    /// 2. Traverse child nodes.
+    const NodeListPtr children = root->childNodes();
+    for (size_t i = 0, size = children->length(), pos = -1; i < size; ++i)
+    {
+        Node * child = children->item(i);
+        bool child_flag = false;
+        if (child->nodeType() == Node::ELEMENT_NODE)
+        {
+            /// Whether the sibling node behind the child node has the same name.
+            if (i + 2 < size)
+            {
+                if (child->nodeName() == child->nextSibling()->nextSibling()->nodeName())
+                {
+                    child_flag = true;
+                    pos++;
+                }
+            }
+            /// Whether the previous sibling node of the child node has the same name.
+            else if (i >= 2)
+            {
+                if (child->nodeName() == child->previousSibling()->previousSibling()->nodeName())
+                {
+                    child_flag = true;
+                    pos++;
+                }
+            }
+        }
+        transformXMLToKV(child, prefix, kvs, child_flag, pos);
+    }
+}
+
+static std::string getNodePathFromName(std::string name)
+{
+    std::string::size_type pos;
+    while ((pos = name.find('.')) != std::string::npos)
+    {
+        name.replace(pos, 1, "/");
+    }
+    return name;
+}
+
+
+/// If the node does not exist, create it, if the node exists, update it's value.
+static Node * createNode(XMLDocumentPtr doc, ConfigurationPtr configuration, ConfigParamKV * item, std::string & name, std::string & path)
+{
+    /// The current node does not exist.
+    if (!configuration->has(name))
+    {
+        std::string::size_type pos = path.find_last_of('/');
+        std::string curr_node_name = path.substr(pos + 1, path.size() - pos - 1);
+        std::string parent_path = path.substr(0, pos);
+        std::string parent_name;
+
+        pos = curr_node_name.find('[');
+        if (pos != std::string::npos)
+            curr_node_name.erase(pos, 3);
+
+        pos = name.find_last_of('.');
+        if (pos != std::string::npos)
+            parent_name = name.substr(0, pos);
+
+        Node * parent;
+        /// 1. If the parent node exists, find it, otherwise recursively create the parent node.
+        if (configuration->has(parent_name))
+        {
+            parent = doc->getNodeByPath(parent_path);
+        }
+        else
+        {
+            ConfigParamKV parent_item;
+            parent_item.set_name(parent_name);
+            parent = createNode(doc, configuration, &parent_item, parent_name, parent_path);
+        }
+        /// 2. Create the child node.
+        Poco::AutoPtr<Poco::XML::Element> temp = doc->createElement(curr_node_name);
+        if (!item->value().empty())
+        {
+            if (item->value().find('<') != std::string::npos)
+            {
+                Poco::AutoPtr<Poco::XML::CDATASection> cdata = doc->createCDATASection(item->value());
+                temp->appendChild(cdata);
+            }
+            else
+            {
+                Poco::AutoPtr<Poco::XML::Text> txt = doc->createTextNode(item->value());
+                temp->appendChild(txt);
+            }
+        }
+        parent->appendChild(temp);
+        return temp;
+    }
+    /// The current node exists, return this node.
+    else
+    {
+        Element * cur = dynamic_cast<Element *>(doc->getNodeByPath(path));
+        ///  If the current node has a value, update the value.
+        if (!item->value().empty())
+        {
+            if (item->value().find('<') != std::string::npos)
+            {
+                Poco::AutoPtr<Poco::XML::CDATASection> cdata = doc->createCDATASection(item->value());
+                if (cur->hasChildNodes())
+                {
+                    Node * old = cur->firstChild();
+                    cur->replaceChild(cdata, old);
+                }
+                else
+                {
+                    cur->appendChild(cdata);
+                }
+            }
+            else
+            {
+                Poco::AutoPtr<Poco::XML::Text> txt = doc->createTextNode(item->value());
+                if (cur->hasChildNodes())
+                {
+                    Node * old = cur->firstChild();
+                    cur->replaceChild(txt, old);
+                }
+                else
+                {
+                    cur->appendChild(txt);
+                }
+            }
+        }
+        return cur;
+    }
+}
+
+static XMLDocumentPtr transformKVToXML(const ConfigParamKVs & kvs)
+{
+    XMLDocumentPtr config = new Poco::XML::Document;
+    Poco::AutoPtr<Poco::XML::Element> root = config->createElement("clickhouse");
+    config->appendChild(root);
+    ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config));
+    std::string path;
+    std::string name;
+    for (const auto & kv : kvs)
+    {
+        ConfigParamKV temp = *kv;
+        path = "clickhouse/" + getNodePathFromName(kv->name());
+        name = kv->name();
+        createNode(config, configuration, &temp, name, path);
+    }
+    return config;
 }
 
 static void mergeAttributes(Element & config_element, Element & with_element)
@@ -500,7 +698,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event)
+    const zkutil::EventPtr & zk_changed_event,
+    bool * has_fdb)
 {
     LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
@@ -631,6 +830,9 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (has_zk_includes)
         *has_zk_includes = !contributing_zk_paths.empty();
 
+    if (has_fdb)
+        *has_fdb = getRootNode(config.get())->getNodeByPath("foundationdb") != nullptr;
+
     WriteBufferFromOwnString comment;
     comment <<     " This file was generated automatically.\n";
     comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
@@ -655,17 +857,33 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     return config;
 }
 
+void ConfigProcessor::pushConfigToFoundationDB(LoadedConfig & loaded_config, std::shared_ptr<MetadataStoreFoundationDB> meta_store)
+{
+    try
+    {
+        ConfigParamKVs kvs;
+        Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+        transformXMLToKV(config_root, "", kvs, false);
+        meta_store->addBunchConfigParamMeta(kvs);
+    }
+    catch (DB::FoundationDBException & e)
+    {
+        throw Poco::Exception("Failed to push config to foundationDB: {}", e.displayText());
+    }
+}
+
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes)
 {
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
+    bool has_fdb;
+    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, &has_fdb);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path};
+    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, has_fdb, /* fdb_loaded_from_preprocessed = */ true, config_xml, path};
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
@@ -675,10 +893,11 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
+    bool has_fdb;
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, &has_fdb);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -697,7 +916,47 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
+    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, has_fdb, /* fdb_loaded_from_preprocessed = */ true, config_xml, path};
+}
+
+ConfigParamKVs ConfigProcessor::config_kv = std::vector<std::unique_ptr<ConfigParamKV>>();
+
+void ConfigProcessor::loadConfigWithFDB(
+        LoadedConfig & loaded_config,
+        std::shared_ptr<MetadataStoreFoundationDB> meta_store,
+        bool fdb_changed, bool fallback_to_preprocessed)
+{
+    if (meta_store == nullptr)
+    {
+        LOG_WARNING(log, "Error MetadataStoreFoundationDB is nullptr while loading configurations from foundationDB.");
+        return;
+    }
+    XMLDocumentPtr config_xml = loaded_config.preprocessed_xml;
+    try
+    {
+        if (fdb_changed)
+            config_kv = meta_store->listAllConfigParamMeta();
+        XMLDocumentPtr fdb_config_xml = transformKVToXML(config_kv);
+        merge(config_xml, fdb_config_xml);
+        loaded_config.fdb_loaded_from_preprocessed = false;
+    }
+    catch (const Poco::Exception & ex)
+    {
+        if (!fallback_to_preprocessed)
+            throw;
+
+        const auto * fdb_exception = dynamic_cast<const DB::FoundationDBException *>(ex.nested());
+        if (!fdb_exception)
+            throw;
+
+        LOG_WARNING(log, "Error while pulling config from foundationDB: {}. Config will be loaded from preprocessed file: {}", ex.displayText(), preprocessed_path);
+
+        /// Fallback to preprocessed.
+        config_xml = dom_parser.parse(preprocessed_path);
+        loaded_config.preprocessed_xml = config_xml;
+        loaded_config.configuration = new Poco::Util::XMLConfiguration(config_xml);
+        loaded_config.fdb_loaded_from_preprocessed = true;
+    }
 }
 
 void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)

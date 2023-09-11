@@ -140,6 +140,7 @@ public:
     void removeConfigParamMeta(const ConfigKey & name);
     MetadataConfigParamPtr getAndWatchConfigParamMeta(const ConfigKey & name, std::shared_ptr<Poco::Event> event);
     std::vector<std::unique_ptr<MetadataConfigParam>> watchAllConfigParamMeta(std::shared_ptr<Poco::Event> event);
+    void clearAllConfigParamMeta();
 
     /// Access
     using AccessEntity = FoundationDB::Proto::AccessEntity;

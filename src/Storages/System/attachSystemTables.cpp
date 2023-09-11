@@ -80,6 +80,7 @@
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemConfigs.h>
 #include <Storages/System/StorageSystemFoundationDB.h>
 
 #ifdef OS_LINUX
@@ -185,6 +186,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
     attach<StorageSystemCertificates>(context, system_database, "certificates");
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
+	attach<StorageSystemConfigs>(context, system_database, "configs");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");

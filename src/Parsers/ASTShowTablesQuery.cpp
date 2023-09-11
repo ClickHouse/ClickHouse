@@ -43,6 +43,12 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
         formatLimit(settings, state, frame);
 
     }
+    else if (configs)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CONFIGS" << (settings.hilite ? hilite_none : "");
+        formatLike(settings);
+        formatLimit(settings, state, frame);
+    }
     else if (clusters)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CLUSTERS" << (settings.hilite ? hilite_none : "");

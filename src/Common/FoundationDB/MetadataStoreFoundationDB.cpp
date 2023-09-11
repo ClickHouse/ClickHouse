@@ -1450,6 +1450,11 @@ void MetadataStoreFoundationDB::removeConfigParamMeta(const ConfigKey & name)
     });
 }
 
+void MetadataStoreFoundationDB::clearAllConfigParamMeta()
+{
+    clearPrefix(keys->config_prefix);
+}
+
 std::string MetadataStoreFoundationDB::getReadableDatabaseKey(const std::string & db_name)
 {
     return fdb_print_key(keys->getDBKeyFromName(db_name));

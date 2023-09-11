@@ -19,7 +19,7 @@
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserDeleteQuery.h>
-
+#include <Parsers/ParserSetConfigQuery.h>
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
@@ -56,6 +56,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
+    ParserSetConfigQuery set_config_p;
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
@@ -65,6 +66,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || insert_p.parse(pos, node, expected)
         || use_p.parse(pos, node, expected)
         || set_role_p.parse(pos, node, expected)
+        || set_config_p.parse(pos, node, expected)
         || set_p.parse(pos, node, expected)
         || system_p.parse(pos, node, expected)
         || create_user_p.parse(pos, node, expected)

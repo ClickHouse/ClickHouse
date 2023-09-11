@@ -30,6 +30,7 @@
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTSetConfigQuery.h>
 
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
@@ -86,6 +87,7 @@
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/InterpreterSetConfigQuery.h>
 
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
@@ -197,6 +199,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTSetRoleQuery>())
     {
         return std::make_unique<InterpreterSetRoleQuery>(query, context);
+    }
+    else if (query->as<ASTSetConfigQuery>())
+    {
+        return std::make_unique<InterpreterSetConfigQuery>(query, context);
     }
     else if (query->as<ASTOptimizeQuery>())
     {
