@@ -12,6 +12,7 @@ drop table rmt1;
 system sync replica rmt2;
 select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
+SYSTEM FLUSH LOGS;
 select count() from system.text_log where logger_name like '%' || currentDatabase() || '%' and message ilike '%table with non-zero lost_part_count equal to%';
 
 
@@ -25,6 +26,7 @@ drop table rmt1;
 system sync replica rmt2;
 select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
+SYSTEM FLUSH LOGS;
 select count() from system.text_log where logger_name like '%' || currentDatabase() || '%' and message ilike '%table with non-zero lost_part_count equal to%';
 
 
