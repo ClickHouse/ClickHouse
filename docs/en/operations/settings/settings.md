@@ -2394,6 +2394,12 @@ Possible values:
 
 Default value: `1`.
 
+## use_cache_for_count_from_files {#use_cache_for_count_from_files}
+
+Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
+
+Enabled by default.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 - Type: seconds
@@ -4636,4 +4642,28 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 ┌─toFloat64('1.7091')─┬─toFloat64('1.5008753E7')─┐
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
+```
+
+## partial_result_update_duration_ms
+
+Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
+
+## max_rows_in_partial_result
+
+Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
+
+## validate_tcp_client_information {#validate-tcp-client-information}
+
+Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
+
+If `true`, an exception will be thrown on invalid client information from the TCP client.
+
+If `false`, the data will not be validated. The server will work with clients of all versions.
+
+The default value is `false`.
+
+**Example**
+
+``` xml
+<validate_tcp_client_information>true</validate_tcp_client_information>
 ```

@@ -105,8 +105,8 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     String currentPayload() const { return current[-1].get_payload(); }
-    void setExceptionInfo(const cppkafka::Error & err);
-    void setExceptionInfo(const String & text);
+    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
+    void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
     void setRDKafkaStat(const std::string & stat_json_string)
     {
         std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
