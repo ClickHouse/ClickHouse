@@ -255,10 +255,17 @@ static void appendAggregateFunctions(
 
         if (node->result_name != aggregate.column_name)
         {
-            /// Always cast to aggregate types specified in query, because input
-            /// columns from projection might have the same state but different
-            /// type, which can generate wrong results during finalization.
-            node = &proj_dag.addCast(*node, type, aggregate.column_name);
+            if (DataTypeAggregateFunction::strictEquals(type, node->result_type))
+            {
+                node = &proj_dag.addAlias(*node, aggregate.column_name);
+            }
+            else
+            {
+                /// Cast to aggregate types specified in query if it's not
+                /// strictly the same as the one specified in projection. This
+                /// is required to generate correct results during finalization.
+                node = &proj_dag.addCast(*node, type, aggregate.column_name);
+            }
         }
 
         proj_dag_outputs.push_back(node);
