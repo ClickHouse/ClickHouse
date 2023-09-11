@@ -255,7 +255,7 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-`system.backups` is by default a persistent [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#mergetree)-based system table (default engine definition is `ENGINE = MergeTree PARTITION BY toYYYYMM(start_time) ORDER BY start_time SETTINGS index_granularity = 8192`) that has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds`. You can also specify the engine and its parameters in the settings file:
+`system.backups` is by default a persistent [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree)-based system table (default engine definition is `ENGINE = MergeTree PARTITION BY toYYYYMM(start_time) ORDER BY start_time SETTINGS index_granularity = 8192`) that has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds`. You can also specify the engine and its parameters in the settings file:
 ```xml
 <clickhouse>
     <backups>
