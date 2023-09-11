@@ -146,9 +146,9 @@ def update_pr_title_icon(pr: PullRequest, status: str) -> None:
     if not new_status_icon:
         return
     new_title = pr.title
-    if new_title and new_title[-1] != new_status_icon:
-        if new_title[-1] in set(STATUS_ICON_MAP.values()):
-            new_title = new_title[:-1] + " " + new_status_icon
+    if new_title and new_title[0] != new_status_icon:
+        if new_title[0] in set(STATUS_ICON_MAP.values()):
+            new_title = new_title[1:] + new_status_icon
         else:
             new_title = new_title + " " + new_status_icon
         pr.edit(title=new_title)
