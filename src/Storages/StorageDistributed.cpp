@@ -437,7 +437,9 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
+            const auto & select = query_info.query->as<const ASTSelectQuery &>();
+            auto syntax_analyzer_result = query_info.syntax_analyzer_result;
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, select, syntax_analyzer_result);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -1303,8 +1305,8 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
-ClusterPtr StorageDistributed::getOptimizedCluster(
-    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+ClusterPtr StorageDistributed::getOptimizedCluster(ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot,
+                                                   const ASTSelectQuery & select, const TreeRewriterResultPtr & syntax_analyzer_result) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1313,7 +1315,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_info, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, select, syntax_analyzer_result, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1362,16 +1364,16 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
-    const SelectQueryInfo & query_info,
+    const ASTSelectQuery & select,
+    const TreeRewriterResultPtr & syntax_analyzer_result,
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
 
     /// FIXME: support analyzer
-    if (!query_info.syntax_analyzer_result)
+    if (!syntax_analyzer_result)
         return nullptr;
 
     ASTPtr condition_ast;
@@ -1380,7 +1382,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     {
         ASTPtr select_without_join_ptr = select.clone();
         ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *query_info.syntax_analyzer_result;
+        TreeRewriterResult analyzer_result_without_join = *syntax_analyzer_result;
 
         removeJoin(select_without_join, analyzer_result_without_join, local_context);
         if (!select_without_join.prewhere() && !select_without_join.where())

@@ -1346,17 +1346,18 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltaLake
-deltaSum
-deltaSumTimestamp
 deltalake
+deltaLake
 deltasum
+deltaSum
 deltasumtimestamp
+deltaSumTimestamp
 demangle
 denormalize
 denormalized
 denormalizing
 denormals
+dequeued
 deserialization
 deserialized
 deserializing
@@ -1441,6 +1442,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fifo
 filesystem
 filesystemAvailable
 filesystemCapacity
@@ -1608,6 +1610,7 @@ incrementing
 indexHint
 indexOf
 infi
+inflight
 initcap
 initcapUTF
 initialQueryID
@@ -2538,6 +2541,7 @@ visitParamExtractRaw
 visitParamExtractString
 visitParamExtractUInt
 visitParamHas
+vruntime
 wchc
 wchs
 webpage
