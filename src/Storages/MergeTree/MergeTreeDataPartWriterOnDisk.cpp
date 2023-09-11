@@ -313,13 +313,13 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
 
-                writeIntBinary(stream.plain_hashing.count(), marks_out);
-                writeIntBinary(stream.compressed_hashing.offset(), marks_out);
+                writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
+                writeBinaryLittleEndian(stream.compressed_hashing.offset(), marks_out);
 
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with the normal .mrk2 file format
                 if (settings.can_use_adaptive_granularity)
-                    writeIntBinary(1UL, marks_out);
+                    writeBinaryLittleEndian(1UL, marks_out);
             }
 
             size_t pos = granule.start_row;

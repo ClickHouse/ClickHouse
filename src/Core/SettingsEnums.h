@@ -5,6 +5,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
+#include <Common/ShellCommandSettings.h>
 
 
 namespace DB
@@ -237,5 +238,7 @@ enum class S3QueueAction
 };
 
 DECLARE_SETTING_ENUM(S3QueueAction)
+
+DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 }

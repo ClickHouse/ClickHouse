@@ -21,5 +21,5 @@ Also, they are replicated, syncing indices metadata via ZooKeeper.
 此外，它们会被复制，会通过ZooKeeper同步索引元数据。
 
 :::note "注意"
-    索引操作仅支持具有以下特征的表 [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md)引擎 (包括[replicated](../../../../engines/table-engines/mergetree-family/replication.md)).
+索引操作仅支持具有以下特征的表 [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md)引擎 (包括[replicated](../../../../engines/table-engines/mergetree-family/replication.md)).
 :::

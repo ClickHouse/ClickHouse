@@ -238,8 +238,15 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
             ++num_copied_chars;
         }
 
-        auto res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
-
+        fast_float::from_chars_result res;
+        if constexpr (std::endian::native == std::endian::little)
+            res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x);
+        else
+        {
+            Float64 x64 = 0.0;
+            res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x64);
+            x = static_cast<T>(x64);
+        }
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
