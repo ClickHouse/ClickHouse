@@ -989,7 +989,7 @@ void StorageReplicatedMergeTree::drop()
         {
             UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
             if (lost_part_count > 0)
-                LOG_DEBUG(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
+                LOG_INFO(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
         }
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings(), &has_metadata_in_zookeeper);
     }
