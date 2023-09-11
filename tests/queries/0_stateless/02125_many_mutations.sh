@@ -43,11 +43,13 @@ job &
 
 wait
 
+# truncate before drop, avoid removing all the mutations (it's slow) in DatabaseCatalog's thread (may affect other tests)
 $CLICKHOUSE_CLIENT --multiquery -q "
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 system start merges many_mutations;
 optimize table many_mutations final SETTINGS optimize_throw_if_noop = 1;
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 select x, y from many_mutations order by x;
+truncate table many_mutations;
 drop table many_mutations;
 "

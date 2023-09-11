@@ -57,7 +57,7 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     Poco::Logger * log;
     UInt32 shard_count;
-    String cluster_name;
+    const String cluster_name;
 
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);

@@ -29,7 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/replacingmergetree.md).
 
-:::warning "Внимание"
+:::warning Внимание
 Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
 :::
 
@@ -95,7 +95,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::warning "Внимание"
+:::warning Внимание
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 

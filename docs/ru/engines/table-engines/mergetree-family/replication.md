@@ -32,9 +32,9 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 Для использовании репликации, установите параметры в секции [zookeeper](../../../operations/server-configuration-parameters/settings.md#server-settings_zookeeper) конфигурации сервера.
 
-    :::note "Внимание"
-    Не пренебрегайте настройками безопасности. ClickHouse поддерживает [ACL схему](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) `digest` подсистемы безопасности ZooKeeper.
-    :::
+:::note Внимание
+Не пренебрегайте настройками безопасности. ClickHouse поддерживает [ACL схему](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) `digest` подсистемы безопасности ZooKeeper.
+:::
 Пример указания адресов кластера ZooKeeper:
 
 ``` xml
