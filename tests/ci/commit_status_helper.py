@@ -141,17 +141,14 @@ STATUS_ICON_MAP = defaultdict(
 )
 
 
-def update_pr_title_icon(pr: PullRequest, status: str) -> None:
-    new_status_icon = STATUS_ICON_MAP[status]
-    if not new_status_icon:
-        return
-    new_title = pr.title
-    if new_title and new_title[0] != new_status_icon:
-        if new_title[0] in set(STATUS_ICON_MAP.values()):
-            new_title = new_status_icon + new_title[1:]
-        else:
-            new_title = new_status_icon + " " + new_title
-        pr.edit(title=new_title)
+def update_pr_status_label(pr: PullRequest, status: str) -> None:
+    new_label = "pr-status-" + STATUS_ICON_MAP[status]
+    for label in pr.get_labels():
+        if label.name == new_label:
+            return
+        if label.name.startswith("pr-status-"):
+            label.delete()
+    pr.add_to_labels(new_label)
 
 
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
@@ -193,7 +190,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
             comment = ic
             break
 
-    update_pr_title_icon(pr, get_worst_state(statuses))
+    update_pr_status_label(pr, get_worst_state(statuses))
 
     if comment is None:
         pr.create_issue_comment(comment_body)
