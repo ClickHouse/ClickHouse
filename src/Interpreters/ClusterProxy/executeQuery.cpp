@@ -217,8 +217,7 @@ void executeQuery(
         if (shard_info.shard_num > 0 && shard_info.shard_num <= cluster->getShardsAddresses().size())
         {
             const auto & addresses = cluster->getShardsAddresses().at(shard_info.shard_num - 1);
-            parallel_replicas_enabled = addresses.size() > 1
-                && context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS && settings.max_parallel_replicas > 1;
+            parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
         }
         else
         {
