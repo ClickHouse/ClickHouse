@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 CREATE TABLE data_02716_1 (v UInt64) ENGINE = MergeTree ORDER BY v;
 CREATE TABLE data_02716_2 (v UInt64) ENGINE = MergeTree ORDER BY v;
 
