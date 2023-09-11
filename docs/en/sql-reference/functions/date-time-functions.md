@@ -1290,6 +1290,8 @@ Rounds the time to the half hour.
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
+This functions is the opposite of function `YYYYMMDDToDate()`.
+
 **Example**
 
 ``` sql
@@ -1312,8 +1314,7 @@ Converts a date or date with time to a UInt32 number containing the year and mon
 **Example**
 
 ```sql
-SELECT
-    toYYYYMMDD(now(), 'US/Eastern')
+SELECT toYYYYMMDD(now(), 'US/Eastern')
 ```
 
 Result:
@@ -1331,8 +1332,7 @@ Converts a date or date with time to a UInt64 number containing the year and mon
 **Example**
 
 ```sql
-SELECT
-    toYYYYMMDDhhmmss(now(), 'US/Eastern')
+SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
 ```
 
 Result:
@@ -1342,6 +1342,93 @@ Result:
 │                        20230302112209 │
 └───────────────────────────────────────┘
 ```
+
+## YYYYMMDDToDate
+
+Converts a number containing the year, month and day number to a [Date](../../sql-reference/data-types/date.md).
+
+This functions is the opposite of function `toYYYYMMDD()`.
+
+The output is undefined if the input does not encode a valid Date value.
+
+**Syntax**
+
+```sql
+YYYYMMDDToDate(yyyymmdd);
+```
+
+**Arguments**
+
+- `yyyymmdd` - A number representing the year, month and day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+**Returned value**
+
+- a date created from the arguments.
+
+Type: [Date](../../sql-reference/data-types/date.md).
+
+**Example**
+
+```sql
+SELECT YYYYMMDDToDate(20230911);
+```
+
+Result:
+
+```response
+┌─toYYYYMMDD(20230911)─┐
+│           2023-09-11 │
+└──────────────────────┘
+```
+
+## YYYYMMDDToDate32
+
+Like function `YYYYMMDDToDate()` but produces a [Date32](../../sql-reference/data-types/date32.md).
+
+## YYYYMMDDhhmmssToDateTime
+
+Converts a number containing the year, month and day number to a [DateTime](../../sql-reference/data-types/datetime.md).
+
+The output is undefined if the input does not encode a valid DateTime value.
+
+This functions is the opposite of function `toYYYYMMDD()`.
+
+**Syntax**
+
+```sql
+YYYYMMDDhhmmssToDateTime(yyyymmddhhmmss[, timezone]);
+```
+
+**Arguments**
+
+- `yyyymmddhhmmss` - A number representing the year, month and day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `timezone` - [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional).
+
+**Returned value**
+
+- a date with time created from the arguments.
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+```sql
+SELECT YYYYMMDDToDateTime(20230911131415);
+```
+
+Result:
+
+```response
+┌────toYYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                           2023-09-11 13:14:15 │
+└───────────────────────────────────────────────┘
+```
+
+## YYYYMMDDhhmmssToDateTime64
+
+Like function `YYYYMMDDhhmmssToDate()` but produces a [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
 
