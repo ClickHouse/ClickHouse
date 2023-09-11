@@ -3193,7 +3193,7 @@ private:
         {
             if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
             {
-                return [agg_type](
+                return [function = agg_type->getFunction()](
                            ColumnsWithTypeAndName & arguments,
                            const DataTypePtr & /* result_type */,
                            const ColumnNullable * /* nullable_source */,
@@ -3204,7 +3204,7 @@ private:
                     if (col_agg)
                     {
                         auto new_col_agg = ColumnAggregateFunction::create(*col_agg);
-                        new_col_agg->set(agg_type->getFunction());
+                        new_col_agg->set(function);
                         return new_col_agg;
                     }
                     else
