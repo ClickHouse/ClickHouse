@@ -32,14 +32,6 @@ Syntax:
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 ```
 
-You can also drop multiple tables at the same time.  
-  
-Syntax:  
-
-```sql
-DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name_1[,[db.]name_2][,[db.]name_3]... [ON CLUSTER cluster] [SYNC]
-```
-
 ## DROP DICTIONARY
 
 Deletes the dictionary.
