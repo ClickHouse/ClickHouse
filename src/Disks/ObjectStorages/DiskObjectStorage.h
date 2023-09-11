@@ -212,6 +212,9 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
+    String getReadResourceName() const;
+    String getWriteResourceName() const;
+
     const String object_storage_root_path;
     Poco::Logger * log;
 
@@ -225,6 +228,10 @@ private:
     bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
+
+    mutable std::mutex resource_mutex;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

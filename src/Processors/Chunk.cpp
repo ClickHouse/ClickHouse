@@ -14,8 +14,7 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
 }
 
-Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_)
-    : columns(std::move(columns_)), num_rows(num_rows_)
+Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns_)), num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
