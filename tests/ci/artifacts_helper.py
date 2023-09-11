@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from os import path as op
 from pathlib import Path
+from shutil import copy2
 from typing import List, Union
 
 from github.Commit import Commit
@@ -13,10 +14,12 @@ from github.Commit import Commit
 from build_download_helper import download_build_with_progress
 from commit_status_helper import post_commit_status
 from compress_files import SUFFIX, compress_fast, decompress_fast
-from env_helper import S3_BUILDS_BUCKET, S3_DOWNLOAD, TEMP_PATH
+from env_helper import RUNNER_TEMP, S3_BUILDS_BUCKET
 from git_helper import SHA_REGEXP
 from report import HEAD_HTML_TEMPLATE, FOOTER_HTML_TEMPLATE
 from s3_helper import S3Helper
+
+ARTIFACTS_PATH = Path(RUNNER_TEMP) / "artifacts"
 
 
 @dataclass
@@ -41,7 +44,8 @@ class ArtifactsHelper:
         given commit will be updated on an uploading"""
         self._commit = commit
         assert SHA_REGEXP.match(self.commit)
-        self.temp_path = Path(TEMP_PATH)
+        self.temp_path = ARTIFACTS_PATH
+        self.temp_path.mkdir(parents=True, exist_ok=True)
         self.s3_helper = s3_helper
         # The s3 prefix is done with trailing slash!
         self._s3_prefix = op.join(s3_prefix, self.commit, "")
@@ -74,24 +78,30 @@ class ArtifactsHelper:
         self._regenerate_index()
 
     def download(
-        self, artifact_name: str, extract_directory: Path, keep_archive: bool = False
-    ) -> bool:
+        self,
+        artifact_name: str,
+        extract_directory: Path = ARTIFACTS_PATH,
+        keep_archive: bool = False,
+    ) -> Path:
         """Downloads artifact, if exists, and extracts it. If not, returns False"""
         assert not any(s in artifact_name for s in self.RESTRICTED_SYMBOLS)
         assert extract_directory.is_dir()
         archive_path = self.temp_path / f"{artifact_name}.tar{SUFFIX}"
         artifact_path = extract_directory / artifact_name
         s3_artifact_key = f"{self.s3_prefix}{archive_path.name}"
-        if not self.s3_helper.exists(s3_artifact_key, S3_BUILDS_BUCKET):
-            return False
+        url = self.s3_helper.url_if_exists(s3_artifact_key, S3_BUILDS_BUCKET)
+        if not url:
+            return artifact_path
 
-        url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{s3_artifact_key}"
-        download_build_with_progress(url, archive_path)
+        if url.startswith("file://"):
+            copy2(Path(url[7:]), archive_path)
+        else:
+            download_build_with_progress(url, archive_path)
         artifact_path.mkdir(parents=True, exist_ok=True)
         decompress_fast(archive_path, artifact_path)
         if not keep_archive:
             archive_path.unlink()
-        return True
+        return artifact_path
 
     def list_artifacts(self, glob: str = "") -> List[str]:
         """return the list of artifacts existing for a commit"""
