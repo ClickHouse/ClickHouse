@@ -331,59 +331,6 @@ namespace
         }
     }
 
-    /// If we have Map and Object(JSON) types, convert all Map types to Object(JSON).
-    /// If we have Map types with different value types, convert all Map types to Object(JSON)
-    void transformMapsAndObjectsToObjects(DataTypes & data_types, TypeIndexesSet & type_indexes)
-    {
-        if (!type_indexes.contains(TypeIndex::Map))
-            return;
-
-        bool have_objects = type_indexes.contains(TypeIndex::Object);
-        bool maps_are_equal = true;
-        DataTypePtr first_map_type = nullptr;
-        for (const auto & type : data_types)
-        {
-            if (isMap(type))
-            {
-                if (!first_map_type)
-                    first_map_type = type;
-                else
-                    maps_are_equal &= type->equals(*first_map_type);
-            }
-        }
-
-        if (!have_objects && maps_are_equal)
-            return;
-
-        for (auto & type : data_types)
-        {
-            if (isMap(type))
-                type = std::make_shared<DataTypeObject>("json", true);
-        }
-
-        type_indexes.erase(TypeIndex::Map);
-    }
-
-    void transformMapsObjectsAndStringsToStrings(DataTypes & data_types, TypeIndexesSet & type_indexes)
-    {
-        bool have_maps = type_indexes.contains(TypeIndex::Map);
-        bool have_objects = type_indexes.contains(TypeIndex::Object);
-        bool have_strings = type_indexes.contains(TypeIndex::String);
-
-        /// Check if we have both String and Map/Object
-        if (!have_strings || (!have_maps && !have_objects))
-            return;
-
-        for (auto & type : data_types)
-        {
-            if (isMap(type) || isObject(type))
-                type = std::make_shared<DataTypeString>();
-        }
-
-        type_indexes.erase(TypeIndex::Map);
-        type_indexes.erase(TypeIndex::Object);
-    }
-
     /// Merge all named Tuples and empty Maps (because empty JSON objects are inferred as empty Maps)
     /// to single Tuple with elements from all tuples. It's used to infer named Tuples from JSON objects.
     void mergeAllNamedTuplesAndEmptyMaps(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings, JSONInferenceInfo * json_info)
@@ -486,13 +433,6 @@ namespace
 
             /// Convert JSON tuples and arrays to arrays if possible.
             transformJSONTuplesAndArraysToArrays(data_types, settings, type_indexes, json_info);
-
-            /// Convert Maps to Objects if needed.
-            if (settings.json.allow_object_type)
-                transformMapsAndObjectsToObjects(data_types, type_indexes);
-
-            if (settings.json.read_objects_as_strings)
-                transformMapsObjectsAndStringsToStrings(data_types, type_indexes);
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeAllNamedTuplesAndEmptyMaps(data_types, type_indexes, settings, json_info);
@@ -893,32 +833,29 @@ namespace
             {
                 if (settings.json.allow_object_type)
                     return std::make_shared<DataTypeObject>("json", true);
+
+                if (settings.json.read_objects_as_strings)
+                    return std::make_shared<DataTypeString>();
             }
+
             /// Empty Map is Map(Nothing, Nothing)
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeNothing>(), std::make_shared<DataTypeNothing>());
         }
 
         if constexpr (is_json)
         {
-            /// If it's JSON field and one of value types is JSON Object, return also JSON Object.
-            for (const auto & value_type : value_types)
-            {
-                if (isObject(value_type))
-                    return std::make_shared<DataTypeObject>("json", true);
-            }
+            if (settings.json.allow_object_type)
+                return std::make_shared<DataTypeObject>("json", true);
 
             if (settings.json.try_infer_objects_as_tuples)
                 return std::make_shared<DataTypeTuple>(value_types, json_keys);
 
+            if (settings.json.read_objects_as_strings)
+                return std::make_shared<DataTypeString>();
+
             transformInferredTypesIfNeededImpl<is_json>(value_types, settings, json_info);
             if (!checkIfTypesAreEqual(value_types))
-            {
-                if (settings.json.allow_object_type)
-                    return std::make_shared<DataTypeObject>("json", true);
-                if (settings.json.read_objects_as_strings)
-                    return std::make_shared<DataTypeString>();
                 return nullptr;
-            }
 
             return std::make_shared<DataTypeMap>(key_types.back(), value_types.back());
         }
@@ -1028,12 +965,15 @@ void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSe
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get()))
     {
-        if (tuple_type->haveExplicitNames())
-            return;
-
         auto nested_types = tuple_type->getElements();
         for (auto & nested_type : nested_types)
             transformJSONTupleToArrayIfPossible(nested_type, settings, json_info);
+
+        if (tuple_type->haveExplicitNames())
+        {
+            data_type = std::make_shared<DataTypeTuple>(nested_types, tuple_type->getElementNames());
+            return;
+        }
 
         auto nested_types_copy = nested_types;
         transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
