@@ -1,0 +1,22 @@
+splitByAlpha
+['ab','cd']
+['ab','cd','ef.gh']
+splitByNonAlpha
+['128','0']
+['128','0','0.1']
+splitByWhitespace
+['Nein,','nein,']
+['Nein,','nein,','nein! Doch!']
+splitByChar
+['a','b']
+['a','b','c=d']
+splitByString
+['a','=']
+['a','=','=b==c==d']
+['a','b']
+['a','b','c==d']
+splitByRegexp
+['a','1']
+['a','1','2bc23de345f']
+['a','bc']
+['a','bc','de345f']

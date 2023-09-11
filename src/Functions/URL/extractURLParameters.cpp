@@ -31,10 +31,9 @@ public:
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
     }
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/, SplitTokenMode /*split_token_mode*/) {}
 
     static constexpr auto strings_argument_position = 0uz;
-    static constexpr auto max_substrings_argument_position = std::make_optional<size_t>();
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)

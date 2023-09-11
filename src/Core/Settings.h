@@ -502,6 +502,7 @@ class IColumn;
     M(Bool, reject_expensive_hyperscan_regexps, true, "Reject patterns which will likely be expensive to evaluate with hyperscan (due to NFA state explosion)", 0) \
     M(Bool, allow_simdjson, true, "Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.", 0) \
     M(Bool, allow_introspection_functions, false, "Allow functions for introspection of ELF and DWARF for query profiling. These functions are slow and may impose security considerations.", 0) \
+    M(Bool, split_tokens_like_python, false, "If true, then functions splitBy*() with given max_substring argument include remaining string in the result (Python semantics) or not (Spark semantics).", 0) \
     \
     M(Bool, allow_execute_multiif_columnar, true, "Allow execute multiIf function columnar", 0) \
     M(Bool, formatdatetime_f_prints_single_zero, false, "Formatter '%f' in function 'formatDateTime()' produces a single zero instead of six zeros if the formatted value has no fractional seconds.", 0) \
