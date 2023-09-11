@@ -161,7 +161,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     const bool keep_all_batch_data;
     const NameSet file_names_remove_metadata_only;
 
-    std::vector<String> removed_files;
+    std::vector<String> paths_removed_with_objects;
     std::vector<ObjectsToRemove> objects_to_remove;
 
     RemoveManyObjectStorageOperation(
@@ -203,7 +203,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                 if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
                 {
                     objects_to_remove.emplace_back(ObjectsToRemove{std::move(objects), std::move(unlink_outcome)});
-                    removed_files.push_back(path);
+                    paths_removed_with_objects.push_back(path);
                 }
             }
             catch (const Exception & e)
@@ -252,7 +252,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                 &Poco::Logger::get("RemoveManyObjectStorageOperation"),
                 "metadata and objects were removed for [{}], "
                 "only metadata were removed for [{}].",
-                boost::algorithm::join(removed_files, ", "),
+                boost::algorithm::join(paths_removed_with_objects, ", "),
                 boost::algorithm::join(file_names_remove_metadata_only, ", "));
         }
     }
