@@ -981,6 +981,16 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Session could expire, get it again
         zookeeper = getZooKeeperIfTableShutDown();
+
+        auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
+        Coordination::Stat lost_part_count_stat;
+        String lost_part_count_str;
+        if (zookeeper->tryGet(lost_part_count_path, lost_part_count_str, &lost_part_count_stat))
+        {
+            UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
+            if (lost_part_count > 0)
+                LOG_INFO(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
+        }
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings(), &has_metadata_in_zookeeper);
     }
 }
