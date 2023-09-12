@@ -3,6 +3,7 @@
 """Manages artifacts similar to GH actions, but in S3"""
 
 from dataclasses import dataclass
+from datetime import datetime
 from fnmatch import fnmatch
 from os import path as op
 from pathlib import Path
@@ -14,7 +15,7 @@ from github.Commit import Commit
 from build_download_helper import download_build_with_progress
 from commit_status_helper import post_commit_status
 from compress_files import SUFFIX, compress_fast, decompress_fast
-from env_helper import RUNNER_TEMP, S3_BUILDS_BUCKET
+from env_helper import CI, RUNNER_TEMP, S3_BUILDS_BUCKET
 from git_helper import SHA_REGEXP
 from report import HEAD_HTML_TEMPLATE, FOOTER_HTML_TEMPLATE
 from s3_helper import S3Helper
@@ -134,25 +135,19 @@ class ArtifactsHelper:
         )
 
     def _regenerate_index(self) -> None:
-        objects = self.s3_helper.client.list_objects_v2(
-            Bucket=S3_BUILDS_BUCKET, Prefix=self.s3_prefix
-        )
-        files = []  # type: List[S3Object]
-        links = []  # type: List[str]
-        if "Contents" in objects:
-            files = [
-                S3Object(
-                    obj["Key"][len(self.s3_prefix) :],
-                    obj["LastModified"].isoformat(),
-                    obj["Size"],
-                )
-                for obj in objects["Contents"]
-            ]
-            links = [
-                f'<tr><td><a href="{f.key}">{f.key}</a></td><td>{f.size}</td>'
-                f"<td>{f.last_modified}</td></tr>"
-                for f in files
-            ]
+        if CI:
+            files = self._get_s3_objects()
+        else:
+            files = self._get_local_s3_objects()
+
+        def name(uri: str) -> str:
+            return Path(uri).name
+
+        links = [
+            f'<tr><td><a href="{f.key}">{name(f.key)}</a></td><td>{f.size}</td>'
+            f"<td>{f.last_modified}</td></tr>"
+            for f in files
+        ]
         index_path = self.temp_path / self.INDEX
         title = f"Artifacts for workflow commit {self.commit}"
         index_content = (
@@ -166,3 +161,32 @@ class ArtifactsHelper:
         url = self.s3_helper.upload_build_file_to_s3(index_path, self.s3_index_key)
         if isinstance(self._commit, Commit):
             self.post_commit_status(self._commit, url)
+
+    def _get_s3_objects(self) -> List[S3Object]:
+        objects = self.s3_helper.client.list_objects_v2(
+            Bucket=S3_BUILDS_BUCKET, Prefix=self.s3_prefix
+        )
+        files = []  # type: List[S3Object]
+        if "Contents" in objects:
+            files = [
+                S3Object(
+                    obj["Key"][len(self.s3_prefix) :],
+                    obj["LastModified"].isoformat(),
+                    obj["Size"],
+                )
+                for obj in objects["Contents"]
+            ]
+        return files
+
+    def _get_local_s3_objects(self) -> List[S3Object]:
+        files = [
+            S3Object(
+                fp.as_uri(),
+                datetime.fromtimestamp(fp.stat().st_mtime).isoformat(),
+                fp.stat().st_size,
+            )
+            for fp in self.s3_helper.local_path(S3_BUILDS_BUCKET, self.s3_prefix)
+            .absolute()
+            .iterdir()
+        ]
+        return files
