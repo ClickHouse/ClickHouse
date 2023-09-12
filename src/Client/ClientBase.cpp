@@ -106,7 +106,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 }
@@ -959,11 +958,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     if (has_partial_result_setting)
     {
-        if (!settings.allow_experimental_partial_result)
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
-                "Partial results are not allowed by default, it's an experimental feature. "
-                "Setting 'allow_experimental_partial_result' must be enabled to use 'partial_result_update_duration_ms'");
-
         partial_result_mode = PartialResultMode::NotInit;
         if (is_interactive)
             std::cout << "Partial result:" << std::endl;
