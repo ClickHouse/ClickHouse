@@ -1588,6 +1588,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
     while (true)
     {
         LOG_DEBUG(log, "Committing part {} to zookeeper", part->name);
+
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
@@ -4890,6 +4891,16 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
             if (from_attach_thread)
             {
                 restarting_thread.shutdown(/* part_of_full_shutdown */false);
+
+                auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+                if (data_parts_exchange_ptr)
+                {
+                    getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
+                    /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+                    data_parts_exchange_ptr->blocker.cancelForever();
+                    /// Wait for all of them
+                    std::lock_guard lock(data_parts_exchange_ptr->rwlock);
+                }
             }
             else
             {
@@ -5180,7 +5191,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
         query_plan, getStorageID(),
         /* table_func_ptr= */ nullptr,
         select_stream_factory, modified_query_ast,
-        local_context, query_info, parallel_replicas_cluster);
+        local_context, query_info.storage_limits, parallel_replicas_cluster);
 }
 
 void StorageReplicatedMergeTree::readLocalImpl(
@@ -8807,6 +8818,14 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
         String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+
+        if (!path_to_set_hardlinked_files.empty() && !hardlinks.empty())
+        {
+            LOG_DEBUG(log, "Locking shared node {} with hardlinks from the other shared node {}, "
+                           "hardlinks: [{}]",
+                      zookeeper_node, path_to_set_hardlinked_files,
+                      boost::algorithm::join(hardlinks, ","));
+        }
 
         getZeroCopyLockNodeCreateOps(
             zookeeper, zookeeper_node, requests, zkutil::CreateMode::Persistent,
