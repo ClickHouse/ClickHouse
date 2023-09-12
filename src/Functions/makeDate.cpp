@@ -22,8 +22,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -218,6 +219,9 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            if (std::isinf(yyyymmdd_data[i]) || std::isnan(yyyymmdd_data[i])) [[unlikely]]
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for function {} must be finite", getName());
+
             const auto yyyymmdd = static_cast<UInt64>(static_cast<Int64>(yyyymmdd_data[i])); /// Float64-to-UInt64 is UB, double-cast avoids it
 
             const auto year = yyyymmdd / 10'000;
@@ -602,6 +606,9 @@ public:
 
         for (size_t i = 0; i < input_rows_count; i++)
         {
+            if (std::isinf(yyyymmddhhmmss_data[i]) || std::isnan(yyyymmddhhmmss_data[i])) [[unlikely]]
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for function {} must be finite", getName());
+
             const auto yyyymmddhhmmss = static_cast<Int64>(yyyymmddhhmmss_data[i]);
 
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
@@ -691,6 +698,9 @@ public:
         for (size_t i = 0; i < input_rows_count; i++)
         {
             const auto float_date = yyyymmddhhmmss_data[i];
+
+            if (std::isinf(float_date) || std::isnan(float_date)) [[unlikely]]
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for function {} must be finite", getName());
 
             const auto yyyymmddhhmmss = static_cast<UInt64>(static_cast<Int64>(float_date)); /// Float64-to-UInt64 is UB, double-cast avoids it
 
