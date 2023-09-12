@@ -278,7 +278,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
     remote_query_executor->setLogger(log);
 
-    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
+    if (execution_context->canUseParallelReplicas())
     {
         // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
         // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
