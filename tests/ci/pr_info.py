@@ -308,7 +308,8 @@ class PRInfo:
             return False
 
         for f in self.changed_files:
-            if (f.startswith("programs")
+            if (
+                f.startswith("programs")
                 or f.startswith("src")
                 or f.startswith("base")
                 or f.startswith("cmake")
@@ -336,8 +337,8 @@ class PRInfo:
 
         # Integration tests can be skipped if only functional/performance tests are changes
         for f in self.changed_files:
-            if (not f.startswith("tests/queries")
-                and not f.startswith("tests/performance")
+            if not f.startswith("tests/queries") and not f.startswith(
+                "tests/performance"
             ):
                 return False
 
@@ -359,8 +360,8 @@ class PRInfo:
 
         # Functional tests can be skipped if only integration/performance tests are changes
         for f in self.changed_files:
-            if (not f.startswith("tests/integration")
-                and not f.startswith("tests/performance")
+            if not f.startswith("tests/integration") and not f.startswith(
+                "tests/performance"
             ):
                 return False
 
