@@ -404,7 +404,7 @@ QUERY id: 0
 SELECT value1
 FROM date_t
 PREWHERE (date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')
-WHERE ((date1 >= \'1993-01-01\') AND (date1 < \'1994-01-01\')) AND ((id >= 1) AND (id <= 3))
+WHERE (id >= 1) AND (id <= 3)
 QUERY id: 0
   PROJECTION COLUMNS
     value1 String

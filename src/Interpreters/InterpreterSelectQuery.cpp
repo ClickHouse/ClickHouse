@@ -671,13 +671,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
 
-        if (query.prewhere() && query.where())
-        {
-            /// Filter block in WHERE instead to get better performance
-            query.setExpression(
-                ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
-        }
-
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
             query_ptr,
             syntax_analyzer_result,
@@ -835,8 +828,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         analyze(/* try_move_to_prewhere = */ false);
     }
 
-    /// If there is no WHERE, filter blocks as usual
-    if (query.prewhere() && !query.where())
+    if (query.prewhere())
         analysis_result.prewhere_info->need_filter = true;
 
     if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
