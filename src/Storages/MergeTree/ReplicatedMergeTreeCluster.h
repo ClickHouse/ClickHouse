@@ -25,7 +25,6 @@ class StorageReplicatedMergeTree;
 ///   this case it is tricky to apply some operations)
 ///
 /// TODO(cluster):
-/// - re sharding
 /// - policy interface
 /// - subscribe to cluster changes? (replicas + is_active)
 /// - versioned map (in conjunction with delayed parts removal it will allow to
@@ -38,12 +37,16 @@ public:
     ~ReplicatedMergeTreeCluster();
 
     void addCreateOps(Coordination::Requests & ops);
+    void addRemoveReplicaOps(const zkutil::ZooKeeperPtr & zookeeper, Coordination::Requests & ops);
+
     static void addDropOps(const fs::path & zookeeper_path, Coordination::Requests & ops);
 
     void initialize();
     void startDistributor();
 
     void sync();
+    void loadFromCoordinator(const zkutil::ZooKeeperPtr & zookeeper);
+    /// TODO: get rid of version without zookeeper client
     void loadFromCoordinator();
     void loadPartitionFromCoordinator(const String & partition_id);
 
@@ -58,6 +61,7 @@ public:
 private:
     friend class ReplicatedMergeTreeClusterBalancer;
     friend class ReplicatedMergeTreeClusterPartitionSelector;
+    friend class ReplicatedMergeTreeClusterPartitionSelectorImpl;
 
     StorageReplicatedMergeTree & storage;
     ReplicatedMergeTreeClusterBalancer balancer;

@@ -3,6 +3,7 @@
 #include <optional>
 #include <base/types.h>
 #include <Core/Types_fwd.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
 
 namespace Poco
 {
@@ -11,15 +12,6 @@ class Logger;
 
 namespace DB
 {
-
-struct ReplicatedClusterMigratePartition
-{
-    String partition;
-    String source_replica;
-    int partition_version = 0;
-
-    explicit operator bool() const;
-};
 
 class ReplicatedMergeTreeCluster;
 class StorageReplicatedMergeTree;
@@ -32,8 +24,7 @@ class ReplicatedMergeTreeClusterPartitionSelector
 public:
     explicit ReplicatedMergeTreeClusterPartitionSelector(ReplicatedMergeTreeCluster & cluster_);
 
-    /// @return partition migration task
-    std::optional<ReplicatedClusterMigratePartition> select();
+    std::optional<ReplicatedMergeTreeClusterPartition> select();
 
     /// @return new replicas on INSERT
     Strings allocatePartition();

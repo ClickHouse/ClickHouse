@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Parsers/SyncReplicaMode.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
@@ -42,9 +43,9 @@ using LogEntryPtr = LogEntry::Ptr;
 ReplicatedMergeTreeClusterBalancer::ReplicatedMergeTreeClusterBalancer(ReplicatedMergeTreeCluster & cluster_)
     : cluster(cluster_)
     , storage(cluster.storage)
-    , log(&Poco::Logger::get(storage.getStorageID().getFullTableName() + " (ClusterDistributor)"))
+    , log(&Poco::Logger::get(storage.getStorageID().getFullTableName() + " (ClusterBalancer)"))
+    , background_task(storage.getContext()->getSchedulePool().createTask(log->name(), [this]{ run(); }))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log->name(), [this]{ run(); });
 }
 ReplicatedMergeTreeClusterBalancer::~ReplicatedMergeTreeClusterBalancer()
 {
@@ -57,18 +58,29 @@ void ReplicatedMergeTreeClusterBalancer::wakeup()
         throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
 
     restoreStateFromCoordinator();
-    task->activateAndSchedule();
+    background_task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreeClusterBalancer::shutdown()
 {
     is_stopped = true;
-    task->deactivate();
+    background_task->deactivate();
 }
 
 void ReplicatedMergeTreeClusterBalancer::waitSynced()
 {
-    auto task_blocker = task->getExecLock();
+    auto task_blocker = background_task->getExecLock();
+
+    /// TODO:
+    /// - check that local partition map matches the cluster partitions map
+    ///   (i.e. that this replica has all parts that it respnonsible for)
+    /// - seems that it is not easy to do the first item, so I guess we should
+    ///   move cluster partitions into the per-replica information? but this is tricky...
+    ///
+    /// Or
+    ///
+    /// - cleanup non is_active replicas (ephemeral node)
+    /// - cleanup when is_lost sets to 1
 
     while (!is_stopped)
     {
@@ -94,14 +106,20 @@ void ReplicatedMergeTreeClusterBalancer::restoreStateFromCoordinator()
         if (partition.getNewReplica() != replica_name)
             continue;
 
-        auto & target = state.migrate_partition.emplace();
-        target.partition = partition.getPartitionId();
-        target.partition_version = partition.getVersion();
-        target.source_replica = partition.getSourceReplica();
+        auto & target = state.target.emplace(partition);
+        switch (target.getState())
+        {
+            case MIGRATING:
+                state.step = MIGRATE_PARTITION;
+                break;
+            case CLONING:
+                state.step = CLONE_PARTITION;
+                break;
+            case UP_TO_DATE:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state for restoring, partition {}", partition.toStringForLog());
+        }
 
-        state.step = MIGRATE_PARTITION;
-
-        LOG_INFO(log, "Restore partition {} migration ({} to {})", target.partition, target.source_replica, replica_name);
+        LOG_INFO(log, "Restore balancer task for partition {}", target.toStringForLog());
         break;
     }
 }
@@ -119,13 +137,13 @@ try
     }
 
     if (!is_stopped)
-        task->scheduleAfter(DISTRIBUTOR_NO_JOB_DELAY_MS);
+        background_task->scheduleAfter(DISTRIBUTOR_NO_JOB_DELAY_MS);
 }
 catch (...)
 {
     tryLogCurrentException(log);
     if (!is_stopped)
-        task->scheduleAfter(DISTRIBUTOR_ERROR_DELAY_MS);
+        background_task->scheduleAfter(DISTRIBUTOR_ERROR_DELAY_MS);
 }
 
 void ReplicatedMergeTreeClusterBalancer::runStep()
@@ -137,18 +155,30 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
             auto partition = selectPartition();
             if (partition.has_value())
             {
-                state.migrate_partition = partition;
-                state.step = MIGRATE_PARTITION;
+                state.target = partition;
+                switch (partition->getState())
+                {
+                    case MIGRATING:
+                        state.step = MIGRATE_PARTITION;
+                        break;
+                    case CLONING:
+                        state.step = CLONE_PARTITION;
+                        break;
+                    case UP_TO_DATE:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Selected incorrect partition {}", partition->toStringForLog());
+                }
             }
             else
                 state.step = NOTHING_TODO;
             break;
         }
         case MIGRATE_PARTITION:
+        case CLONE_PARTITION:
+        {
             try
             {
-                migratePartitionWithClone(*state.migrate_partition);
-                state.migrate_partition.reset();
+                migrateOrClonePartitionWithClone(*state.target);
+                state.target.reset();
                 state.step = SELECT_PARTITION;
             }
             catch (const Exception & e)
@@ -158,12 +188,13 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
                 if (e.code() == ErrorCodes::ABORTED)
                     throw;
 
-                state.step = REVERT_MIGRATE_PARTITION;
-                tryLogCurrentException(log, fmt::format("Cannot migrate partition {}, will revert", state.migrate_partition->partition));
+                state.step = REVERT;
+                tryLogCurrentException(log, fmt::format("Cannot process partition {}, will revert", state.target->toStringForLog()));
             }
             break;
-        case REVERT_MIGRATE_PARTITION:
-            revertMigratePartition(*state.migrate_partition);
+        }
+        case REVERT:
+            revert(*state.target);
             state.step = SELECT_PARTITION;
             break;
         case NOTHING_TODO:
@@ -172,40 +203,44 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
     }
 }
 
-std::optional<ReplicatedClusterMigratePartition> ReplicatedMergeTreeClusterBalancer::selectPartition()
+std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterBalancer::selectPartition()
 {
     auto zookeeper = cluster.getZooKeeper();
-    const auto & replica_name = storage.getReplicaName();
 
     ReplicatedMergeTreeClusterPartitionSelector selector(cluster);
 
     /// Loop to restart from scratch on ZBADVERSION errors.
     for (;;)
     {
+        Coordination::Stat log_stat;
+        zookeeper->get(cluster.zookeeper_path / "log", &log_stat);
+
         Coordination::Stat balancer_stat;
         fs::path balancer_path = cluster.zookeeper_path / "cluster" / "balancer";
         zookeeper->get(balancer_path, &balancer_stat);
 
-        std::optional<ReplicatedClusterMigratePartition> target;
+        std::optional<ReplicatedMergeTreeClusterPartition> target;
         target = selector.select();
         if (!target.has_value())
             return target;
 
-        auto partition = cluster.getClusterPartition(target->partition);
         Coordination::Requests ops;
         Coordination::Responses responses;
 
-        partition.replaceReplica(target->source_replica, replica_name);
-        String partition_path = cluster.zookeeper_path / "block_numbers" / target->partition;
-        ops.emplace_back(zkutil::makeSetRequest(partition_path, partition.toString(), target->partition_version));
+        String partition_path = cluster.zookeeper_path / "block_numbers" / target->getPartitionId();
+        ops.emplace_back(zkutil::makeSetRequest(partition_path, target->toString(), target->getVersion()));
         ops.emplace_back(zkutil::makeSetRequest(balancer_path, "", balancer_stat.version));
+        /// Update version to avoid creating log entries with out dated cluster partitions map.
+        ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", log_stat.version));
         auto error = zookeeper->tryMulti(ops, responses);
         if (error == Coordination::Error::ZBADVERSION)
         {
             if (responses[0]->error == Coordination::Error::ZBADVERSION)
-                LOG_DEBUG(log, "Partition {} is already under migration to another replica. Cannot continue, will restart.", partition.toStringForLog());
+                LOG_DEBUG(log, "Partition {} is already balanced by another replica. Cannot continue, will restart.", target->toStringForLog());
             else if (responses[1]->error == Coordination::Error::ZBADVERSION)
                 LOG_DEBUG(log, "Another part had been assigned for re-sharding. Cannot continue, will restart.");
+            else if (responses[2]->error == Coordination::Error::ZBADVERSION)
+                LOG_DEBUG(log, "Replication log had been updated. Cannot continue, will restart.");
 
             /// We cannot continue since our stats is outdated (i.e parts per replicas).
             continue;
@@ -213,16 +248,16 @@ std::optional<ReplicatedClusterMigratePartition> ReplicatedMergeTreeClusterBalan
         else if (error != Coordination::Error::ZOK)
             throw zkutil::KeeperException::fromPath(error, partition_path);
 
-        cluster.updateClusterPartition(partition);
-        ++target->partition_version;
+        cluster.updateClusterPartition(*target);
+        target->incrementVersion();
         return target;
     }
 }
 
-void ReplicatedMergeTreeClusterBalancer::migratePartitionWithClone(const ReplicatedClusterMigratePartition & target)
+void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const ReplicatedMergeTreeClusterPartition & target)
 {
     auto zookeeper = cluster.getZooKeeper();
-    clonePartition(zookeeper, target.partition, target.source_replica);
+    clonePartition(zookeeper, target.getPartitionId(), target.getSourceReplica());
 
     /// clonePartition() insert entries to the queue (not to the common log),
     /// and those entires need to be loaded to the in memory queue to wait them
@@ -233,23 +268,15 @@ void ReplicatedMergeTreeClusterBalancer::migratePartitionWithClone(const Replica
     /// FIXME: Right now we cannot execute DROP_RANGE before all parts had been
     /// fetched from the source replica, since there is no way to ensure that
     /// those parts had been fetched by us.
+    ///
+    /// NOTE: that this is a problem not because it is bad, but also because it
+    /// may hang the partition clone, if such part does not already exist on
+    /// any replicas, but the fetches had been scheduled (like in 03015_replicated_cluster_mutations).
     storage.waitForProcessingQueue(DISTRIBUTOR_MIGRATION_TIMEOUT_MS, SyncReplicaMode::DEFAULT);
-    LOG_INFO(log, "Partition {} had been replicated. Took {} ms", target.partition, watch.elapsedMilliseconds());
+    LOG_INFO(log, "Partition {} had been replicated. Took {} ms", target.toStringForLog(), watch.elapsedMilliseconds());
 
     /// NOTE: should we introduce some log entry for DROP_RANGE with dependencies?
-    finishPartitionMigration(target);
-}
-
-void ReplicatedMergeTreeClusterBalancer::finishPartitionMigration(const ReplicatedClusterMigratePartition & target)
-{
-    auto zookeeper = cluster.getZooKeeper();
-
-    auto partition = cluster.getClusterPartition(target.partition);
-    partition.finishReplicaMigration();
-    String partition_path = cluster.zookeeper_path / "block_numbers" / target.partition;
-    zookeeper->set(partition_path, partition.toString(), target.partition_version);
-    cluster.updateClusterPartition(partition);
-    LOG_INFO(log, "Partition {} successfully moved from {}", target.partition, target.source_replica);
+    finish(target);
 }
 
 /// Partial copy of StorageReplicatedMergeTree::cloneReplica(),
@@ -578,16 +605,40 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
     LOG_TRACE(log, "Enqueued {} fetches after mimic partition {}: {}", created_get_parts.size(), partition, fmt::join(created_get_parts, ", "));
 }
 
-void ReplicatedMergeTreeClusterBalancer::revertMigratePartition(const ReplicatedClusterMigratePartition & target)
+void ReplicatedMergeTreeClusterBalancer::finish(const ReplicatedMergeTreeClusterPartition & target)
 {
     auto zookeeper = cluster.getZooKeeper();
 
-    auto partition = cluster.getClusterPartition(target.partition);
-    partition.revertReplicaMigration();
-    String partition_path = cluster.zookeeper_path / "block_numbers" / target.partition;
-    zookeeper->set(partition_path, partition.toString(), target.partition_version);
-    cluster.updateClusterPartition(partition);
-    LOG_WARNING(log, "Partition {} migration had been reverted", target.partition);
+    auto new_partition = target;
+    new_partition.finish();
+    String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
+    {
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), new_partition.getVersion()));
+        /// Just update version, because merges and balancer selector relies on it
+        ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
+        zookeeper->multi(ops);
+    }
+    cluster.updateClusterPartition(new_partition);
+    LOG_INFO(log, "Task had been successfully processed for partition {}", target.toStringForLog());
+}
+
+void ReplicatedMergeTreeClusterBalancer::revert(const ReplicatedMergeTreeClusterPartition & target)
+{
+    auto zookeeper = cluster.getZooKeeper();
+
+    auto new_partition = target;
+    new_partition.revert();
+    String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
+    {
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), -1));
+        /// Just update version, because merges and balancer selector relies on it
+        ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
+        zookeeper->multi(ops);
+    }
+    cluster.updateClusterPartition(new_partition);
+    LOG_WARNING(log, "Task had been reverted for partition {}", target.toStringForLog());
 }
 
 void ReplicatedMergeTreeClusterBalancer::enqueueDropPartition(const zkutil::ZooKeeperPtr & zookeeper, const String & source_replica, const String & partition_id)

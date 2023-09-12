@@ -403,6 +403,7 @@ private:
     friend class ReplicatedMergeTreeClusterSink;
     friend class ReplicatedMergeTreeClusterBalancer;
     friend class ReplicatedMergeTreeClusterPartitionSelector;
+    friend class ReplicatedMergeTreeMergePredicate;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
     friend class MergeFromLogEntryTask;

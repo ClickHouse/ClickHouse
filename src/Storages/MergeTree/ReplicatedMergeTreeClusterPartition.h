@@ -14,16 +14,26 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+enum ReplicatedMergeTreeClusterPartitionState
+{
+    /// FIXME: is naming OK?
+    UP_TO_DATE,
+    MIGRATING,
+    CLONING,
+};
+
 /// Representation of /block_numbers/$partition in case of cluster
 ///
 /// Example:
 ///
 ///     cluster partition format version: 1
+///     state: UP_TO_DATE
 ///     all_replicas (2):
 ///     1
 ///     2
 ///     active_replicas (0):
-///     deactivating_replicas (0):
+///     source_replica:
+///     new_replica:
 ///
 ///
 class ReplicatedMergeTreeClusterPartition
@@ -31,13 +41,7 @@ class ReplicatedMergeTreeClusterPartition
 public:
     ReplicatedMergeTreeClusterPartition() = default;
     explicit ReplicatedMergeTreeClusterPartition(const String & partition_id_);
-    ReplicatedMergeTreeClusterPartition(
-        const String & partition_id_,
-        const Strings & all_replicas_,
-        const Strings & active_replicas_,
-        const String & source_replica_,
-        const String & new_replica_,
-        const Coordination::Stat & stat);
+    ReplicatedMergeTreeClusterPartition(const String & partition_id_, const Strings & replicas);
 
     static ReplicatedMergeTreeClusterPartition read(ReadBuffer & in, const Coordination::Stat & stat, const String & partition_id);
     static ReplicatedMergeTreeClusterPartition fromString(const String & str, const Coordination::Stat & stat, const String & partition_id);
@@ -47,6 +51,7 @@ public:
     String toStringForLog() const;
 
     int getVersion() const { return version; }
+    void incrementVersion() { ++version; }
 
     const Strings & getAllReplicas() const { return all_replicas; }
     const Strings & getActiveReplicas() const { return active_replicas; }
@@ -55,19 +60,40 @@ public:
     const String & getNewReplica() const { return new_replica; }
     const String & getSourceReplica() const { return source_replica; }
 
-    bool isUnderReSharding() const { return !new_replica.empty(); }
+    /// FIXME: isUnderMigrationOrCloning()/isUpToDate()/... ?
+    bool isUnderReSharding() const { return state != UP_TO_DATE; }
 
+    bool hasReplica(const String & replica) const;
+    void removeReplica(const String & replica);
+
+    /// MIGRATING
     void replaceReplica(const String & src, const String & dest);
-    void finishReplicaMigration();
-    void revertReplicaMigration();
+    /// CLONING
+    void addReplica(const String & src, const String & dest);
+
+    /// For migration/cloning
+    void finish();
+    void revert();
 
     const String & getPartitionId() const { return partition_id; }
+    ReplicatedMergeTreeClusterPartitionState getState() const { return state; }
 
     Int64 getModificationTimeMs() const { return modification_time_ms; }
 
 private:
+    ReplicatedMergeTreeClusterPartition(
+        const String & partition_id_,
+        ReplicatedMergeTreeClusterPartitionState state_,
+        const Strings & all_replicas_,
+        const Strings & active_replicas_,
+        const String & source_replica_,
+        const String & new_replica_,
+        const Coordination::Stat & stat);
+
     /// NOTE: This are constant values, however, if you will declare them with const CV, you cannot copy the object.
     String partition_id;
+
+    ReplicatedMergeTreeClusterPartitionState state = UP_TO_DATE;
 
     /// List of all replicas -- should be used for filtered replication
     Strings all_replicas;

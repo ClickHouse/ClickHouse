@@ -39,6 +39,32 @@ void ReplicatedMergeTreeCluster::addCreateOps(Coordination::Requests & ops)
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path / "cluster" / "balancer", "", zkutil::CreateMode::Persistent));
 }
 
+void ReplicatedMergeTreeCluster::addRemoveReplicaOps(const zkutil::ZooKeeperPtr & zookeeper, Coordination::Requests & ops)
+{
+    loadFromCoordinator(zookeeper);
+
+    Coordination::Stat balancer_stat;
+    fs::path balancer_path = zookeeper_path / "cluster" / "balancer";
+    zookeeper->get(balancer_path, &balancer_stat);
+
+    {
+        std::lock_guard lock(partitions_mutex);
+        for (auto & [_, partition] : partitions)
+        {
+            if (!partition.hasReplica(replica_name))
+                continue;
+
+            partition.removeReplica(replica_name);
+
+            String partition_path = zookeeper_path / "block_numbers" / partition.getPartitionId();
+            ops.emplace_back(zkutil::makeSetRequest(partition_path, partition.toString(), partition.getVersion()));
+        }
+    }
+    LOG_TRACE(log, "Removing replica from the cluster. {} partitions affected", ops.size());
+
+    ops.emplace_back(zkutil::makeSetRequest(balancer_path, "", balancer_stat.version));
+}
+
 void ReplicatedMergeTreeCluster::addDropOps(const fs::path & zookeeper_path, Coordination::Requests & ops)
 {
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path / "cluster" / "balancer", -1));
@@ -120,9 +146,7 @@ void ReplicatedMergeTreeCluster::cloneReplicaWithReshardingIfNeeded()
     zookeeper->removeChildren(replica_path / "queue");
     storage.queue.clear();
 
-    /// Will do repair from the selected replica.
     cloneReplicaWithResharding(zookeeper);
-    /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
 
     /// If replica is repaired successfully, we remove is_lost flag.
     zookeeper->set(replica_path / "is_lost", "0");
@@ -142,11 +166,15 @@ void ReplicatedMergeTreeCluster::sync()
     balancer.waitSynced();
 }
 
-void ReplicatedMergeTreeCluster::loadFromCoordinator()
+void ReplicatedMergeTreeCluster::loadFromCoordinator(const zkutil::ZooKeeperPtr & zookeeper)
 {
-    auto zookeeper = getZooKeeper();
     Strings partition_ids = zookeeper->getChildren(zookeeper_path / "block_numbers");
     loadFromCoordinatorImpl(zookeeper, partition_ids);
+}
+
+void ReplicatedMergeTreeCluster::loadFromCoordinator()
+{
+    return loadFromCoordinator(getZooKeeper());
 }
 
 void ReplicatedMergeTreeCluster::loadPartitionFromCoordinator(const String & partition_id)
@@ -160,13 +188,7 @@ ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeCluster::getOrCreateClust
     auto replicas_names = ReplicatedMergeTreeClusterPartitionSelector(*this).allocatePartition();
     LOG_TEST(log, "Candidate replicas for {}: {}", partition_id, fmt::join(replicas_names, ", "));
 
-    ReplicatedMergeTreeClusterPartition partition(partition_id,
-        /* all_replicas= */ replicas_names,
-        /* active_replicas= */ replicas_names,
-        /* source_replica_= */ {},
-        /* new_replica_= */ {},
-        /* stat= */ {});
-
+    ReplicatedMergeTreeClusterPartition partition(partition_id, replicas_names);
     updateReplicas(replicas_names);
 
     /// Check in the coordinator

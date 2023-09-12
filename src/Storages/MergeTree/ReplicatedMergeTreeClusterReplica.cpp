@@ -28,10 +28,11 @@ try
     if (zookeeper->tryGet(fs::path(replica_path) / "log_pointer", log_pointer_res) && !log_pointer_res.empty())
         log_pointer = parse<UInt64>(log_pointer_res);
 }
-catch (Exception & e)
+catch (...)
 {
-    e.addMessage("while resolving {}", name_);
-    throw;
+    /// NOTE: The error should be ignored, since some may replicas may be
+    /// removed, and we should not fail updating the map in this case.
+    tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("while resolving {}", name_));
 }
 
 Cluster::ShardInfo ReplicatedMergeTreeClusterReplica::makeShardInfo(const Settings & settings, bool treat_local_port_as_remote) const

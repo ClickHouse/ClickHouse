@@ -1016,11 +1016,18 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
                 "Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
                 zookeeper_path);
 
+        Coordination::Requests ops;
+
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
-        const String is_lost_value = replicas_stat.numChildren ? "1" : "0";
+        String is_lost_value = "0";
+        if (replicas_stat.numChildren)
+        {
+            is_lost_value = "1";
+            if (cluster.has_value())
+                cluster->addRemoveReplicaOps(zookeeper, ops);
+        }
 
-        Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/host", "",
