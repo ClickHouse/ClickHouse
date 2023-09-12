@@ -22,7 +22,7 @@ Float64 CostCalculator::visitDefault(IQueryPlanStep & /*step*/)
 
 Float64 CostCalculator::visit(AggregatingStep & step)
 {
-    if (step.isFinal() || step.withTotalsOrCubeOrRollup())
+    if (!step.isPreliminaryAgg())
     {
         /// TODO get rows, cardinality by statistics
         if (child_prop.front().distribution.type == PhysicalProperties::DistributionType::Hashed)

@@ -108,10 +108,7 @@ AggregatingStep::AggregatingStep(
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool memory_bound_merging_of_aggregation_results_enabled_,
-    bool explicit_sorting_required_for_aggregation_in_order_,
-    bool with_totals_,
-    bool with_rollup_,
-    bool with_cube_)
+    bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
         input_stream_,
         appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
@@ -131,9 +128,6 @@ AggregatingStep::AggregatingStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
-    , with_totals(with_totals_)
-    , with_rollup(with_rollup_)
-    , with_cube(with_cube_)
 {
     if (memoryBoundMergingWillBeUsed())
     {
@@ -559,6 +553,29 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     return aggregating_projection;
 }
 
+std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg() const
+{
+    std::shared_ptr<AggregatingStep> preliminary_agg = std::make_shared<AggregatingStep>(
+        input_streams.front(),
+        params,
+        grouping_sets_params,
+        false,
+        max_block_size,
+        aggregation_in_order_max_block_bytes,
+        merge_threads,
+        temporary_data_merge_threads,
+        storage_has_evenly_distributed_read,
+        group_by_use_nulls,
+        sort_description_for_merging,
+        group_by_sort_description,
+        should_produce_results_in_order_of_bucket_number,
+        memory_bound_merging_of_aggregation_results_enabled,
+        explicit_sorting_required_for_aggregation_in_order);
+
+    preliminary_agg->is_preliminary_agg = true;
+    return preliminary_agg;
+}
+
 std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const
 {
     auto keys = params.keys;
@@ -585,7 +602,7 @@ std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedSte
     std::shared_ptr<MergingAggregatedStep> merging_step = std::make_shared<MergingAggregatedStep>(
         input_stream_,
         params_,
-        !with_totals && !with_rollup && !with_cube,
+        final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
         settings.distributed_aggregation_memory_efficient && grouping_sets_params.empty(),
         settings.max_threads,

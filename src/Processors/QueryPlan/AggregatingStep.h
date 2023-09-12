@@ -44,10 +44,7 @@ public:
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_,
         bool memory_bound_merging_of_aggregation_results_enabled_,
-        bool explicit_sorting_required_for_aggregation_in_order_,
-        bool with_totals_ = false,
-        bool with_rollup_ = false,
-        bool with_cube_ = false);
+        bool explicit_sorting_required_for_aggregation_in_order_);
 
     static Block appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -81,46 +78,13 @@ public:
     /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
-    bool withTotalsOrCubeOrRollup() const
-    {
-        return with_totals || with_rollup || with_cube;
-    }
-
-    std::shared_ptr<AggregatingStep> clone(bool final_) const
-    {
-        std::shared_ptr<AggregatingStep> clone_step = std::make_shared<AggregatingStep>(
-            input_streams.front(),
-            params,
-            grouping_sets_params,
-            final_,
-            max_block_size,
-            aggregation_in_order_max_block_bytes,
-            merge_threads,
-            temporary_data_merge_threads,
-            storage_has_evenly_distributed_read,
-            group_by_use_nulls,
-            sort_description_for_merging,
-            group_by_sort_description,
-            should_produce_results_in_order_of_bucket_number,
-            memory_bound_merging_of_aggregation_results_enabled,
-            explicit_sorting_required_for_aggregation_in_order,
-            with_totals,
-            with_rollup,
-            with_cube);
-
-        return clone_step;
-    }
+    std::shared_ptr<AggregatingStep> makePreliminaryAgg() const;
 
     std::shared_ptr<MergingAggregatedStep> makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const;
 
-    bool isSplit() const
+    bool isPreliminaryAgg() const
     {
-        return is_split;
-    }
-
-    bool setSplit()
-    {
-        return is_split = true;
+        return is_preliminary_agg;
     }
 
 private:
@@ -150,17 +114,13 @@ private:
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
 
-    bool with_totals = false;
-    bool with_rollup = false;
-    bool with_cube = false;
-
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
 
     Processors aggregating;
 
-    bool is_split = false;
+    bool is_preliminary_agg = false; // used to query coordination distribution
 };
 
 class AggregatingProjectionStep : public IQueryPlanStep

@@ -37,7 +37,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(AggregatingStep & step)
 {
     AlternativeChildrenProp res;
 
-    if (step.isFinal() || step.withTotalsOrCubeOrRollup())
+    if (!step.isPreliminaryAgg())
     {
         std::vector<PhysicalProperties> required_singleton_prop;
         required_singleton_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});

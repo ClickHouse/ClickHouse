@@ -148,11 +148,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
 
     if (query->as<ASTSelectQuery>())
     {
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+            return std::make_unique<InterpreterSelectQueryCoordination>(query, context, options);
+
         if (context->getSettingsRef().allow_experimental_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
-
-        if (context->getSettingsRef().allow_experimental_query_coordination)
-            return std::make_unique<InterpreterSelectQueryFragments>(query, context, options);
 
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.

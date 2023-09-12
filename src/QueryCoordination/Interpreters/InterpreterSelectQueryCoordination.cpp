@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -6,7 +7,7 @@
 #include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
-#include <QueryCoordination/Interpreters/ReplaceDistributedTableNameVisitor.h>
+#include <QueryCoordination/Interpreters/RewriteDistributedTableVisitor.h>
 #include <QueryCoordination/Optimizer/Optimizer.h>
 #include <QueryCoordination/Optimizer/StepTree.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -27,7 +28,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
-        ReplaceDistributedTableNameVisitor visitor(context);
+        RewriteDistributedTableVisitor visitor(context);
         visitor.visit(query_ptr);
 
         if (visitor.has_local_table && visitor.has_distributed_table)
@@ -87,6 +88,8 @@ BlockIO InterpreterSelectQueryCoordination::execute()
 
     if (context->getSettingsRef().allow_experimental_analyzer)
         query_plan = InterpreterSelectQueryAnalyzer(query_ptr, context, options).extractQueryPlan();
+    else if (query_ptr->as<ASTSelectQuery>())
+        InterpreterSelectQuery(query_ptr, context, options).buildQueryPlan(query_plan);
     else
         InterpreterSelectWithUnionQuery(query_ptr, context, options).buildQueryPlan(query_plan);
 
