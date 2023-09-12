@@ -150,7 +150,7 @@ def main():
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
-            logging.info(f"Timeout expired for command: {run_cmd}")
+            logging.info("Timeout expired for command: %s", run_cmd)
             timeout_expired = True
         elif retcode == 0:
             logging.info("Run successfully")
