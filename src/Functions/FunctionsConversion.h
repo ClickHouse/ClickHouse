@@ -1255,6 +1255,25 @@ struct ConvertThroughParsing
                 }
             }
         }
+        /// Special case, that allows to parse string like 12.34 as (U)Int8|16|32|64|128|256.
+        else if constexpr (
+            std::is_same_v<ToDataType, DataTypeUInt16> || std::is_same_v<ToDataType, DataTypeUInt32>
+            || std::is_same_v<ToDataType, DataTypeUInt64> || std::is_same_v<ToDataType, DataTypeUInt128>
+            || std::is_same_v<ToDataType, DataTypeUInt256> || std::is_same_v<ToDataType, DataTypeInt8>
+            || std::is_same_v<ToDataType, DataTypeInt16> || std::is_same_v<ToDataType, DataTypeInt32>
+            || std::is_same_v<ToDataType, DataTypeInt64> || std::is_same_v<ToDataType, DataTypeInt128>
+            || std::is_same_v<ToDataType, DataTypeInt256>)
+        {
+            if (!in.eof() && (*in.position() == '.'))
+            {
+                ++in.position();
+                while (!in.eof() && isNumericASCII(*in.position()))
+                    ++in.position();
+
+                if (in.eof())
+                    return true;
+            }
+        }
 
         return false;
     }
