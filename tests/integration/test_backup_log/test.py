@@ -34,6 +34,7 @@ def restore_table(backup_name):
 
 def test_backup_log():
     instance.query("SYSTEM FLUSH LOGS")
+    instance.query("truncate table system.backup_log")
 
     backup_name = "File('/backups/test_backup/')"
     assert instance.query("SELECT * FROM system.tables WHERE name = 'backup_log'") == ""
