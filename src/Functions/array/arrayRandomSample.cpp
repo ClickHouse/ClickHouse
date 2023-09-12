@@ -47,16 +47,14 @@ public:
     {
         const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!column_array)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument must be an array");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument must be an array");
 
         const IColumn * col_num = arguments[1].column.get();
 
         if (!col_num || col_num->empty())
         {
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The second argument column is empty or null, type = {}",
-                arguments[1].type->getName());
+                ErrorCodes::ILLEGAL_COLUMN, "The second argument column is empty or null, type = {}", arguments[1].type->getName());
         }
 
         UInt64 K;
