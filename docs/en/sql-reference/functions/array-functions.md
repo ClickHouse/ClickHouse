@@ -2118,6 +2118,113 @@ Result:
 └─────────────────────┘
 ```
 
+
+## randomSampleFromArray
+
+Returns a random sample from an input array. The number of elements in the sample is determined by the `sampleSize` argument. The function ensures that each element in the input array has an equal chance of being included in the sample.
+
+**Syntax**
+
+```sql
+randomSampleFromArray(arr, sampleSize)
+```
+
+**Arguments**
+
+- `arr` — The input array from which to sample elements, including nested arrays.
+- `sampleSize` — The number of elements to include in the random sample.
+
+**Returned value**
+
+- An array containing a random sample of elements from the input array.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT randomSampleFromArray([1, 2, 3, 4, 5, 6], 3) as res;
+```
+
+Result:
+```
+┌─res─────┐
+│ [2,3,1] │
+└─────────┘
+or
+┌─res─────┐
+│ [5,2,6] │
+└─────────┘
+```
+
+Query:
+
+```sql
+SELECT randomSampleFromArray(['apple', 'banana', 'cherry', 'date'], 2) as res;
+```
+
+Result:
+```
+┌─res────────────────┐
+│ ['apple','banana'] │
+└────────────────────┘
+or
+┌─res────────────────┐
+│ ['banana','apple'] │
+└────────────────────┘
+or
+┌─res───────────────┐
+│ ['cherry','date'] │
+└───────────────────┘
+```
+
+Query:
+
+```sql
+SELECT randomSampleFromArray([[1, 2], [3, 4], [5, 6]], 2) as res;
+```
+
+Result:
+```
+┌─res───────────┐
+│ [[1,2],[5,6]] │
+└───────────────┘
+or
+┌─res───────────┐
+│ [[3,4],[5,6]] │
+└───────────────┘
+```
+
+Query:
+
+```sql
+SELECT randomSampleFromArray([1, 2, 3, 4, 5], 0) as res;
+```
+
+Result:
+```
+TODO: FIX ME
+```
+
+Query:
+
+```sql
+SELECT randomSampleFromArray([1, 2, 3], 5) as res;
+```
+
+Result:
+```
+┌─res─────┐
+│ [3,1,2] │
+└─────────┘
+or
+┌─res─────┐
+│ [3,2,1] │
+└─────────┘
+```
+
+The `randomSampleFromArray` function randomly selects elements from the input array, ensuring that the specified number of elements is included in the sample. If `sampleSize` exceeds the size of the input array, it will be limited to the size of the array. It can handle both flat arrays and arrays containing nested arrays, providing flexibility in sampling from complex data structures.
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
