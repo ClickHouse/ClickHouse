@@ -165,7 +165,7 @@ public:
 
             const auto & argument_type = argument.type;
 
-            if (areTypesEqual(arguments_copy[i].type, argument_type))
+            if (arguments_copy[i].type->equals(*argument_type))
                 continue;
 
             ColumnWithTypeAndName column_to_cast = {column_with_type.column, column_with_type.type, column_with_type.name};
