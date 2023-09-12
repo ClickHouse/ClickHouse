@@ -76,7 +76,6 @@ def create_table(node, table_name, **additional_settings):
         "old_parts_lifetime": 0,
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
-        "allow_experimental_block_number_column": 0,
     }
     settings.update(additional_settings)
 
@@ -252,9 +251,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
         node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
     )
     wait_for_delete_s3_objects(
-        cluster,
-        FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD,
-        timeout=45,
+        cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD, timeout=45
     )
 
     check_no_objects_after_drop(cluster)

@@ -106,7 +106,7 @@ def test_s3_zero_copy_replication(started_cluster, policy):
         CREATE TABLE s3_test ON CLUSTER test_cluster (id UInt32, value String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/s3_test', '{}')
         ORDER BY id
-        SETTINGS storage_policy='{}', allow_experimental_block_number_column=0
+        SETTINGS storage_policy='{}'
         """.format(
             "{replica}", policy
         )
@@ -195,7 +195,7 @@ def test_s3_zero_copy_with_ttl_move(
             ENGINE=ReplicatedMergeTree('/clickhouse/tables/ttl_move_test', '{}')
             ORDER BY d
             TTL d1 + INTERVAL 2 DAY TO VOLUME 'external'
-            SETTINGS storage_policy='{}', allow_experimental_block_number_column=0
+            SETTINGS storage_policy='{}'
             """.format(
                 "{replica}", storage_policy
             )
@@ -260,7 +260,7 @@ def test_s3_zero_copy_with_ttl_delete(started_cluster, large_data, iterations):
             ENGINE=ReplicatedMergeTree('/clickhouse/tables/ttl_delete_test', '{}')
             ORDER BY d
             TTL d1 + INTERVAL 2 DAY
-            SETTINGS storage_policy='tiered', allow_experimental_block_number_column=0
+            SETTINGS storage_policy='tiered'
             """.format(
                 "{replica}"
             )
@@ -356,7 +356,7 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
         CREATE TABLE unfreeze_test ON CLUSTER test_cluster (d UInt64)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/unfreeze_test', '{}')
         ORDER BY d
-        SETTINGS storage_policy='s3', allow_experimental_block_number_column=0
+        SETTINGS storage_policy='s3'
         """.format(
             "{replica}"
         )
@@ -423,7 +423,7 @@ def s3_zero_copy_drop_detached(cluster, unfreeze_query_template):
         CREATE TABLE drop_detached_test ON CLUSTER test_cluster (d UInt64)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/drop_detached_test', '{}')
         ORDER BY d PARTITION BY d
-        SETTINGS storage_policy='s3', allow_experimental_block_number_column=0
+        SETTINGS storage_policy='s3'
         """.format(
             "{replica}"
         )
@@ -519,7 +519,7 @@ def test_s3_zero_copy_concurrent_merge(started_cluster):
         CREATE TABLE concurrent_merge (id UInt64)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/concurrent_merge', '{replica}')
         ORDER BY id
-        SETTINGS index_granularity=2, storage_policy='s3', remote_fs_execute_merges_on_single_replica_time_threshold=1, allow_experimental_block_number_column=0
+        SETTINGS index_granularity=2, storage_policy='s3', remote_fs_execute_merges_on_single_replica_time_threshold=1
         """
         )
 
@@ -566,7 +566,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
         PARTITION BY (id % 4)
-        SETTINGS storage_policy='s3', allow_experimental_block_number_column=0,
+        SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
     )
@@ -577,7 +577,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(started_cluster):
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
         PARTITION BY (id % 4)
-        SETTINGS storage_policy='s3', allow_experimental_block_number_column=0,
+        SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
     )

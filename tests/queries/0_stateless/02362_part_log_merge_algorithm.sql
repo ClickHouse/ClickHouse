@@ -2,8 +2,7 @@ CREATE TABLE data_horizontal (
     key Int
 )
 Engine=MergeTree()
-ORDER BY key
-SETTINGS allow_experimental_block_number_column=false;
+ORDER BY key;
 
 INSERT INTO data_horizontal VALUES (1);
 OPTIMIZE TABLE data_horizontal FINAL;
