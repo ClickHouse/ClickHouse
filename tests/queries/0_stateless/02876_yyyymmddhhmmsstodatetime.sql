@@ -33,6 +33,9 @@ SELECT YYYYMMDDhhmmssToDateTime(20200229111111.1); -- leap day
 SELECT YYYYMMDDhhmmssToDateTime(20230911150505.1);
 SELECT YYYYMMDDhhmmssToDateTime(21060207062815.1);
 SELECT YYYYMMDDhhmmssToDateTime(21060207062816.1);
+SELECT YYYYMMDDhhmmssToDateTime(NaN); -- { serverError BAD_ARGUMENTS }
+SELECT YYYYMMDDhhmmssToDateTime(Inf); -- { serverError BAD_ARGUMENTS }
+SELECT YYYYMMDDhhmmssToDateTime(-Inf); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Check correctness, decimal arguments';
 SELECT YYYYMMDDhhmmssToDateTime(toDecimal64(19691231595959.1, 5));
@@ -93,6 +96,9 @@ SELECT YYYYMMDDhhmmssToDateTime64(20200229111111.1); -- leap day
 SELECT YYYYMMDDhhmmssToDateTime64(20230911150505.1);
 SELECT YYYYMMDDhhmmssToDateTime64(22991231235959.1);
 SELECT YYYYMMDDhhmmssToDateTime64(23000101000000.1);
+SELECT YYYYMMDDhhmmssToDateTime64(NaN); -- { serverError BAD_ARGUMENTS }
+SELECT YYYYMMDDhhmmssToDateTime64(Inf); -- { serverError BAD_ARGUMENTS }
+SELECT YYYYMMDDhhmmssToDateTime64(-Inf); -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Check correctness, decimal arguments';
 SELECT YYYYMMDDhhmmssToDateTime64(toDecimal64(189912315959.1, 5));
