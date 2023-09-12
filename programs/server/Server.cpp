@@ -1495,7 +1495,18 @@ try
     auto & access_control = global_context->getAccessControl();
     try
     {
-        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        /// Executes different logic of adding Storage of acl according to the configuration of fdb.
+        if (global_context->hasMetadataStoreFoundationDB())
+        {
+            access_control.addStoragesRelatedFDB(config(), config_path, [&]() -> std::shared_ptr<MetadataStoreFoundationDB> {
+                return global_context->getMetadataStoreFoundationDB();
+            });
+        }
+        else
+        {
+            /// Everything as usual, metadata of access control in fdb shouldn't be configured in 'user_directories'.
+            access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+        }
     }
     catch (...)
     {
