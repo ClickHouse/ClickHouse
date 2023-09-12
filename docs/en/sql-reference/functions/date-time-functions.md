@@ -139,8 +139,8 @@ makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, t
 
 ## timeZone
 
-Returns the timezone of the server.
-If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
+Returns the timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard, otherwise it produces a constant value.
 
 **Syntax**
 
@@ -155,6 +155,33 @@ Alias: `timezone`.
 - Timezone.
 
 Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [serverTimeZone](#serverTimeZone)
+
+## serverTimeZone
+
+Returns the timezone of the server, i.e. the value of setting [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
+
+**Syntax**
+
+``` sql
+serverTimeZone()
+```
+
+Alias: `serverTimezone`.
+
+**Returned value**
+
+-   Timezone.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**See also**
+
+- [timeZone](#timeZone)
 
 ## toTimeZone
 
@@ -209,6 +236,11 @@ time_samoa: 2018-12-31 13:00:00
 type_samoa: DateTime('US/Samoa')
 int32samoa: 1546300800
 ```
+
+**See Also**
+
+- [formatDateTime](#date_time_functions-formatDateTime) - supports non-constant timezone.
+- [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
 
 ## timeZoneOf
 
@@ -667,9 +699,13 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works exactly like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
+The mode argument works like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
 
 `toISOYear()` is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+
+:::warning
+The week number returned by `toYearWeek()` can be different from what the `toWeek()` returns. `toWeek()` always returns week number in the context of the given year, and in case `toWeek()` returns `0`, `toYearWeek()` returns the value corresponding to the last week of previous year. See `prev_yearWeek` in example below.
+:::
 
 **Syntax**
 
@@ -680,18 +716,54 @@ toYearWeek(t[, mode[, timezone]])
 **Example**
 
 ``` sql
-SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
+SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9, toYearWeek(toDate('2022-01-01')) AS prev_yearWeek;
 ```
 
 ``` text
-┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┐
-│ 2016-12-27 │    201652 │    201652 │    201701 │
-└────────────┴───────────┴───────────┴───────────┘
+┌───────date─┬─yearWeek0─┬─yearWeek1─┬─yearWeek9─┬─prev_yearWeek─┐
+│ 2016-12-27 │    201652 │    201652 │    201701 │        202152 │
+└────────────┴───────────┴───────────┴───────────┴───────────────┘
+```
+
+## toDaysSinceYearZero
+
+Returns for a given date, the number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar). The calculation is the same as in MySQL's [`TO_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_to-days) function.
+
+**Syntax**
+
+``` sql
+toDaysSinceYearZero(date)
+```
+
+Aliases: `TO_DAYS`
+
+**Arguments**
+
+- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md).
+
+**Returned value**
+
+The number of days passed since date 0000-01-01.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT toDaysSinceYearZero(toDate('2023-09-08'));
+```
+
+Result:
+
+``` text
+┌─toDaysSinceYearZero(toDate('2023-09-08')))─┐
+│                                     713569 │
+└────────────────────────────────────────────┘
 ```
 
 ## age
 
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 second.
+Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
 For an alternative to `age`, see function `date\_diff`.
@@ -707,14 +779,16 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `second` (possible abbreviations: `ss`, `s`)
-    - `minute` (possible abbreviations: `mi`, `n`)
-    - `hour` (possible abbreviations: `hh`, `h`)
-    - `day` (possible abbreviations: `dd`, `d`)
-    - `week` (possible abbreviations: `wk`, `ww`)
-    - `month` (possible abbreviations: `mm`, `m`)
-    - `quarter` (possible abbreviations: `qq`, `q`)
-    - `year` (possible abbreviations: `yyyy`, `yy`)
+    - `microsecond` `microseconds` `us` `u`
+    - `millisecond` `milliseconds` `ms`
+    - `second` `seconds` `ss` `s`
+    - `minute` `minutes` `mi` `n`
+    - `hour` `hours` `hh` `h`
+    - `day` `days` `dd` `d`
+    - `week` `weeks` `wk` `ww`
+    - `month` `months` `mm` `m`
+    - `quarter` `quarters` `qq` `q`
+    - `year` `years` `yyyy` `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -782,14 +856,16 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `second` (possible abbreviations: `ss`, `s`)
-    - `minute` (possible abbreviations: `mi`, `n`)
-    - `hour` (possible abbreviations: `hh`, `h`)
-    - `day` (possible abbreviations: `dd`, `d`)
-    - `week` (possible abbreviations: `wk`, `ww`)
-    - `month` (possible abbreviations: `mm`, `m`)
-    - `quarter` (possible abbreviations: `qq`, `q`)
-    - `year` (possible abbreviations: `yyyy`, `yy`)
+    - `microsecond` `microseconds` `us` `u`
+    - `millisecond` `milliseconds` `ms`
+    - `second` `seconds` `ss` `s`
+    - `minute` `minutes` `mi` `n`
+    - `hour` `hours` `hh` `h`
+    - `day` `days` `dd` `d`
+    - `week` `weeks` `wk` `ww`
+    - `month` `months` `mm` `m`
+    - `quarter` `quarters` `qq` `q`
+    - `year` `years` `yyyy` `yy`
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1103,6 +1179,8 @@ Result:
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
+Alias: `current_timestamp`.
+
 **Syntax**
 
 ``` sql
@@ -1232,6 +1310,8 @@ Result:
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
+
+Aliases: `curdate`, `current_date`.
 
 ## yesterday
 
@@ -1410,7 +1490,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%i %p        | 10:30 PM   |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%i                 | 22:33      |
 | %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
@@ -1453,6 +1533,33 @@ Result:
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
 │ 1234560                                                             │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+Additionally, the `formatDateTime` function can take a third String argument containing the name of the time zone. Example: `Asia/Istanbul`. In this case, the time is formatted according to the specified time zone.
+
+**Example**
+
+```sql
+SELECT
+    now() AS ts,
+    time_zone,
+    formatDateTime(ts, '%T', time_zone) AS str_tz_time
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10
+
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_time─┐
+│ 2023-09-08 19:13:40 │ Europe/Amsterdam  │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Andorra    │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Astrakhan  │ 23:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Athens     │ 22:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Belfast    │ 20:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Belgrade   │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Berlin     │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Bratislava │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Brussels   │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Bucharest  │ 22:13:40    │
+└─────────────────────┴───────────────────┴─────────────┘
 ```
 
 **See Also**
@@ -1778,6 +1885,72 @@ Result:
 ┌─fromModifiedJulianDayOrNull(58849)─┐
 │ 2020-01-01                         │
 └────────────────────────────────────┘
+```
+
+## toUTCTimestamp
+
+Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
+
+**Syntax**
+
+``` sql
+toUTCTimestamp(time_val, time_zone)
+```
+
+**Arguments**
+
+- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- DateTime/DateTime64 in text form
+
+**Example**
+
+``` sql
+SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
+```
+
+Result:
+
+``` text
+┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
+│                                     2023-03-15 16:00:00 │
+└─────────────────────────────────────────────────────────┘
+```
+
+## fromUTCTimestamp
+
+Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
+
+**Syntax**
+
+``` sql
+fromUTCTimestamp(time_val, time_zone)
+```
+
+**Arguments**
+
+- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- DateTime/DateTime64 in text form
+
+**Example**
+
+``` sql
+SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai');
+```
+
+Result:
+
+``` text
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
+│                                                 2023-03-16 18:00:00.000 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related content

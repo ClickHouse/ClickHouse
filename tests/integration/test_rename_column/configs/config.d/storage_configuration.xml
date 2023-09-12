@@ -24,9 +24,11 @@
         </default_with_external>
     </policies>
 </storage_configuration>
-    
+
 <merge_tree>
     <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+    <temporary_directories_lifetime>1</temporary_directories_lifetime>
 </merge_tree>
+<allow_remove_stale_moving_parts>true</allow_remove_stale_moving_parts>
 
 </clickhouse>

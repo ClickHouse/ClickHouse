@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS t_uuid;
+CREATE TABLE t_uuid (x UUID) ENGINE=MergeTree ORDER BY x;
+
+INSERT INTO t_uuid VALUES ('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), ('992f6910-42b2-43cd-98bc-c812fbf9b683'), ('417ddc5d-e556-4d27-95dd-a34d84e46a50');
+
+SELECT * FROM t_uuid ORDER BY x LIMIT 1 FORMAT RowBinary;
+SELECT * FROM t_uuid ORDER BY x FORMAT RowBinary;
+
+DROP TABLE IF EXISTS t_uuid;

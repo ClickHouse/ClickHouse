@@ -126,14 +126,14 @@ public:
             const auto lo2 = S2CellId(data_lo2[row]);
             const auto hi2 = S2CellId(data_hi2[row]);
 
-            if (!lo1.is_valid() || !hi1.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First rectangle is not valid");
-
-            if (!lo2.is_valid() || !hi2.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second rectangle is not valid");
-
             S2LatLngRect rect1(lo1.ToLatLng(), hi1.ToLatLng());
             S2LatLngRect rect2(lo2.ToLatLng(), hi2.ToLatLng());
+
+            if (!rect1.is_valid() || !rect2.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed "
+                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value. "
+                    "Also, if either the latitude or longitude bound is empty then both must be. ");
 
             S2LatLngRect rect_union = rect1.Union(rect2);
 

@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -20,15 +21,10 @@ namespace
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -39,7 +35,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     : IMergeTreeReader(
         data_part_info_,
         columns_,
-        metadata_snapshot_,
+        storage_snapshot_,
         uncompressed_cache_,
         mark_cache_,
         mark_ranges_,
@@ -53,7 +49,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -76,15 +73,10 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
         /// of range only once so there is no such problem.
         /// 4. continue_reading == false, as we haven't read anything yet.
     }
-    catch (Exception & e)
-    {
-        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            data_part_info_for_read->reportBroken();
-        throw;
-    }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -182,22 +174,20 @@ size_t MergeTreeReaderWide::readRows(
         /// In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
     }
-    catch (Exception & e)
+    catch (...)
     {
-        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        if (!isRetryableException(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        e.addMessage(
-            fmt::format(
-                "(while reading from part {} from mark {} with max_rows_to_read = {})",
-                data_part_info_for_read->getDataPartStorage()->getFullPath(),
-                toString(from_mark), toString(max_rows_to_read)));
-        throw;
-    }
-    catch (...)
-    {
-        data_part_info_for_read->reportBroken();
+        try
+        {
+            rethrow_exception(std::current_exception());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+        }
 
         throw;
     }

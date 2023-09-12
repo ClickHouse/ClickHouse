@@ -66,6 +66,8 @@ public:
 
     void shutdownAndDropAllData();
 
+    void shutdownWithoutFlush();
+
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
     /// For scheduling via DistributedSink.
@@ -100,7 +102,7 @@ private:
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
     void processFiles();
-    void processFile(const std::string & file_path);
+    void processFile(std::string & file_path);
     void processFilesWithBatching();
 
     void markAsBroken(const std::string & file_path);

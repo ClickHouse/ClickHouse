@@ -38,7 +38,6 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 
 /// This is a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, for all the Filter steps, we collect filter conditions into filter_nodes.
-/// Flag remove_last_filter_node is set in case if the last step is a Filter step and it should remove filter column.
 struct QueryDAG
 {
     ActionsDAGPtr dag;

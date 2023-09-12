@@ -26,8 +26,18 @@
 #include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/StorageS3Settings.h>
+#include <Poco/Util/ServerApplication.h>
 
 #include "TestPocoHTTPServer.h"
+
+/*
+ * When all tests are executed together, `Context::getGlobalContextInstance()` is not null. Global context is used by
+ * ProxyResolvers to get proxy configuration (used by S3 clients). If global context does not have a valid ConfigRef, it relies on
+ * Poco::Util::Application::instance() to grab the config. However, at this point, the application is not yet initialized and
+ * `Poco::Util::Application::instance()` returns nullptr. This causes the test to fail. To fix this, we create a dummy application that takes
+ * care of initialization.
+ * */
+[[maybe_unused]] static Poco::Util::ServerApplication app;
 
 
 class NoRetryStrategy : public Aws::Client::StandardRetryStrategy
@@ -90,6 +100,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
     request_settings.max_unexpected_write_error_retries = max_unexpected_write_error_retries;
     DB::WriteBufferFromS3 write_buffer(
         client,
+        client,
         uri.bucket,
         uri.key,
         DBMS_DEFAULT_BUFFER_SIZE,
@@ -124,7 +135,8 @@ void testServerSideEncryption(
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {}
+        /* put_request_throttler = */ {},
+        uri.uri.getScheme()
     );
 
     client_configuration.endpointOverride = uri.endpoint;

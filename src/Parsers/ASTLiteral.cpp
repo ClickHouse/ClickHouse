@@ -93,7 +93,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
 {
-     /// 100 - just arbitrary value.
+    /// 100 - just arbitrary value.
     constexpr auto min_elements_for_hashing = 100;
 
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
@@ -118,9 +118,31 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
 }
 
+/// Use different rules for escaping backslashes and quotes
+class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
+{
+public:
+    template<typename T>
+    String operator() (const T & x) const { return visitor(x); }
+
+private:
+    FieldVisitorToString visitor;
+};
+
+template<>
+String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
+{
+    WriteBufferFromOwnString wb;
+    writeQuotedStringPostgreSQL(x, wb);
+    return wb.str();
+}
+
 void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    else
+        settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
 }
 
 }

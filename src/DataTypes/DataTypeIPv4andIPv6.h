@@ -19,6 +19,8 @@ public:
     static constexpr auto type_id = TypeToTypeIndex<IPv4>;
 
     const char * getFamilyName() const override { return TypeName<IPv4>.data(); }
+    String getSQLCompatibleName() const override { return "TEXT"; }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override { return IPv4{}; }
@@ -59,6 +61,8 @@ public:
     static constexpr auto type_id = TypeToTypeIndex<IPv6>;
 
     const char * getFamilyName() const override { return TypeName<IPv6>.data(); }
+    String getSQLCompatibleName() const override { return "TEXT"; }
+
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override { return IPv6{}; }

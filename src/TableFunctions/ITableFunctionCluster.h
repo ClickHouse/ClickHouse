@@ -17,7 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_GET;
+    extern const int CLUSTER_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,7 +59,7 @@ protected:
         cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
 
         if (!context->tryGetCluster(cluster_name))
-            throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
+            throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 
         /// Just cut the first arg (cluster_name) and try to parse other table function arguments as is
         args.erase(args.begin());

@@ -1,5 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/iceberg
+sidebar_position: 90
 sidebar_label: Iceberg
 ---
 

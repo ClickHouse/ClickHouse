@@ -32,7 +32,8 @@ struct CompletedPipelineExecutor::Data
     }
 };
 
-static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(
+    CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -45,7 +46,7 @@ static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupPt
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -74,14 +75,18 @@ void CompletedPipelineExecutor::execute()
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.partial_result_duration_ms);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
-        auto func = [data_ptr = data.get(), num_threads = pipeline.getNumThreads(), thread_group = CurrentThread::getGroup()]
+        auto func = [
+            data_ptr = data.get(),
+            num_threads = pipeline.getNumThreads(),
+            thread_group = CurrentThread::getGroup(),
+            concurrency_control = pipeline.getConcurrencyControl()]
         {
-            threadFunction(*data_ptr, thread_group, num_threads);
+            threadFunction(*data_ptr, thread_group, num_threads, concurrency_control);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -100,9 +105,9 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.partial_result_duration_ms);
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads());
+        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     }
 }
 
@@ -115,7 +120,7 @@ CompletedPipelineExecutor::~CompletedPipelineExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("PullingAsyncPipelineExecutor");
+        tryLogCurrentException("CompletedPipelineExecutor");
     }
 }
 

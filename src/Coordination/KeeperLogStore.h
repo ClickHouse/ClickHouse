@@ -4,6 +4,7 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
+#include <Coordination/KeeperContext.h>
 #include <base/defines.h>
 
 namespace DB
@@ -13,7 +14,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(const std::string & changelogs_path, LogFileSettings log_file_settings);
+    KeeperLogStore(LogFileSettings log_file_settings, KeeperContextPtr keeper_context);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);

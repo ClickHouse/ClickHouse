@@ -11,3 +11,8 @@ constexpr double interpolateExponential(double min, double max, double ratio)
     assert(min > 0 && ratio >= 0 && ratio <= 1);
     return min * std::pow(max / min, ratio);
 }
+
+constexpr double interpolateLinear(double min, double max, double ratio)
+{
+    return std::lerp(min, max, ratio);
+}

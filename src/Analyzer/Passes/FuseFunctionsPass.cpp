@@ -14,6 +14,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 
+#include <numeric>
+
+
 namespace DB
 {
 
@@ -37,7 +40,7 @@ public:
         , names_to_collect(names_to_collect_)
     {}
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_syntax_fuse_functions)
             return;
