@@ -7,7 +7,7 @@ from fnmatch import fnmatch
 from os import path as op
 from pathlib import Path
 from shutil import copy2
-from typing import List, Union
+from typing import List, Optional, Union
 
 from github.Commit import Commit
 
@@ -50,6 +50,7 @@ class ArtifactsHelper:
         # The s3 prefix is done with trailing slash!
         self._s3_prefix = op.join(s3_prefix, self.commit, "")
         self._s3_index_key = f"{self.s3_prefix}{self.INDEX}"
+        self._s3_index_url = None  # type: Optional[str]
 
     @property
     def commit(self) -> str:
@@ -67,6 +68,14 @@ class ArtifactsHelper:
     def s3_index_key(self) -> str:
         """Prefix with the trailing slash"""
         return self._s3_index_key
+
+    @property
+    def s3_index_url(self) -> str:
+        if self._s3_index_url is None:
+            self._s3_index_url = self.s3_helper.get_url(
+                S3_BUILDS_BUCKET, self.s3_index_key
+            )
+        return self._s3_index_url
 
     def upload(self, artifact_name: str, artifact_path: Path) -> None:
         """Creates archive 'artifact_name.tar{compress_files.SUFFIX} with directory of"""
@@ -118,6 +127,12 @@ class ArtifactsHelper:
         )
         return list(results)
 
+    @staticmethod
+    def post_commit_status(commit: Commit, url: str) -> None:
+        post_commit_status(
+            commit, "success", url, "Artifacts for workflow", "Artifacts"
+        )
+
     def _regenerate_index(self) -> None:
         objects = self.s3_helper.client.list_objects_v2(
             Bucket=S3_BUILDS_BUCKET, Prefix=self.s3_prefix
@@ -150,6 +165,4 @@ class ArtifactsHelper:
         index_path.write_text(index_content, encoding="utf-8")
         url = self.s3_helper.upload_build_file_to_s3(index_path, self.s3_index_key)
         if isinstance(self._commit, Commit):
-            post_commit_status(
-                self._commit, "success", url, "Artifacts for workflow", "Artifacts"
-            )
+            self.post_commit_status(self._commit, url)
