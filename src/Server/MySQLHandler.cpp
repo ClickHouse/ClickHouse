@@ -318,7 +318,7 @@ void MySQLHandler::comPing()
 
 static bool isFederatedServerSetupSetCommand(const String & query);
 
-void MySQLHandler::comQuery(ReadBuffer & payload, bool use_binary_protocol_result_set)
+void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 {
     String query = String(payload.position(), payload.buffer().end());
 
@@ -364,7 +364,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool use_binary_protocol_resul
         format_settings.mysql_wire.client_capabilities = client_capabilities;
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
-        format_settings.mysql_wire.use_binary_result_set = use_binary_protocol_result_set;
+        format_settings.mysql_wire.binary_protocol = binary_protocol;
 
         auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
@@ -386,44 +386,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool use_binary_protocol_resul
 
 void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 {
-    if (prepared_statements_map.size() > 10000) /// Shouldn't happen in reality as COM_STMT_CLOSE cleans up the elements
-    {
-        LOG_ERROR(log, "Too many prepared statements");
-        current_prepared_statement_id = 0;
-        prepared_statements_map.clear();
-        packet_endpoint->sendPacket(ERRPacket(), true);
-        return;
-    }
-
-    String query;
-    readStringUntilEOF(query, payload);
-
-    uint32_t statement_id = current_prepared_statement_id;
-    if (current_prepared_statement_id == std::numeric_limits<uint32_t>::max())
-    {
-        current_prepared_statement_id = 0;
-    }
+    String statement;
+    readStringUntilEOF(statement, payload);
+    auto [is_success, statement_id] = emplacePreparedStatement(std::move(statement));
+    if (is_success)
+        packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id, 0, 0, 0), true);
     else
-    {
-        current_prepared_statement_id++;
-    }
-
-    // Key collisions should not happen here, as we remove the elements from the map with COM_STMT_CLOSE,
-    // and we have quite a big range of available identifiers with 32-bit unsigned integer
-    if (prepared_statements_map.contains(statement_id))
-    {
-        LOG_ERROR(
-            log,
-            "Failed to store a new statement `{}` with id {}; it is already taken by `{}`",
-            query,
-            statement_id,
-            prepared_statements_map.at(statement_id));
         packet_endpoint->sendPacket(ERRPacket(), true);
-        return;
-    }
-
-    prepared_statements_map.emplace(statement_id, query);
-    packet_endpoint->sendPacket(PrepareStatementResponseOK(statement_id, 0, 0, 0), true);
 }
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
@@ -431,7 +400,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
     uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
-    if (!prepared_statements_map.contains(statement_id))
+    if (!prepared_statements.contains(statement_id))
     {
         LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
         packet_endpoint->sendPacket(ERRPacket(), true);
@@ -439,7 +408,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
     }
 
     // Temporary workaround as we work only with queries that do not bind any parameters atm
-    ReadBufferFromString com_query_payload(prepared_statements_map.at(statement_id));
+    ReadBufferFromString com_query_payload(prepared_statements.at(statement_id));
     MySQLHandler::comQuery(com_query_payload, true);
 };
 
@@ -447,15 +416,48 @@ void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
     uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
-
-    if (prepared_statements_map.contains(statement_id))
-    {
-        prepared_statements_map.erase(statement_id);
-    }
+    erasePreparedStatement(statement_id);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
     // No response packet is sent back to the client.
 };
+
+MySQLHandler::EmplacePreparedStatementResult MySQLHandler::emplacePreparedStatement(String statement)
+{
+    static constexpr size_t MAX_PREPARED_STATEMENTS = 10'000;
+    std::lock_guard<std::mutex> lock(prepared_statements_mutex);
+    if (prepared_statements.size() > MAX_PREPARED_STATEMENTS) /// Shouldn't happen in reality as COM_STMT_CLOSE cleans up the elements
+    {
+        LOG_ERROR(log, "Too many prepared statements");
+        current_prepared_statement_id = 0;
+        prepared_statements.clear();
+        return std::make_pair(false, 0);
+    }
+    uint32_t statement_id = current_prepared_statement_id++;
+
+    // Key collisions should not happen here, as we remove the elements from the map with COM_STMT_CLOSE,
+    // and we have quite a big range of available identifiers with 32-bit unsigned integer
+    if (prepared_statements.contains(statement_id))
+    {
+        LOG_ERROR(
+            log,
+            "Failed to store a new statement `{}` with id {}; it is already taken by `{}`",
+            statement,
+            statement_id,
+            prepared_statements.at(statement_id));
+        return std::make_pair(false, 0);
+    }
+
+    prepared_statements.emplace(statement_id, statement);
+    return std::make_pair(true, statement_id);
+};
+
+void MySQLHandler::erasePreparedStatement(UInt32 statement_id)
+{
+    std::lock_guard<std::mutex> lock(prepared_statements_mutex);
+    if (prepared_statements.contains(statement_id))
+        prepared_statements.erase(statement_id);
+}
 
 void MySQLHandler::authPluginSSL()
 {

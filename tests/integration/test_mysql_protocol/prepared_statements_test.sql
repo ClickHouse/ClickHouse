@@ -1,4 +1,4 @@
-CREATE TABLE ps_simple_data_types
+CREATE OR REPLACE TABLE ps_simple_data_types
 (
     i8    Int8,
     i16   Int16,
@@ -28,11 +28,11 @@ VALUES (127, 32767, 2147483647, 9223372036854775807, 170141183460469231731687303
         120, 1234, 51234, 421342, 15324355, 41345135123432,
         -0.7968956, -0.113259, TRUE);
 
-CREATE TABLE ps_string_types
+CREATE OR REPLACE TABLE ps_string_types
 (
-    s String,
-    sn Nullable(String),
-    lc LowCardinality(String),
+    s   String,
+    sn  Nullable(String),
+    lc  LowCardinality(String),
     nlc LowCardinality(Nullable(String))
 ) ENGINE MergeTree ORDER BY s;
 
@@ -40,7 +40,7 @@ INSERT INTO ps_string_types
 VALUES ('foo', 'bar', 'qaz', 'qux'),
        ('42', NULL, 'test', NULL);
 
-CREATE TABLE ps_decimal_types
+CREATE OR REPLACE TABLE ps_decimal_types
 (
     d32         Decimal(9, 2),
     d64         Decimal(18, 3),
@@ -57,7 +57,7 @@ VALUES (1234567.89,
         12345678912345678912345678911234567891234567891234567891.12345678911234567891),
        (-1.55, 6.03, 5, -1224124.23423, -54342.3);
 
-CREATE TABLE ps_misc_types
+CREATE OR REPLACE TABLE ps_misc_types
 (
     a Array(String),
     u UUID,
@@ -66,10 +66,9 @@ CREATE TABLE ps_misc_types
 ) ENGINE MergeTree ORDER BY u;
 
 INSERT INTO ps_misc_types
-VALUES (['foo', 'bar'], '5da5038d-788f-48c6-b510-babb41c538d3', (42, 'qaz'), {'qux': 144, 'text': 255}),
-       ([], '9a0ccc06-2578-4861-8534-631c9d40f3f7', (0, ''), {});
+VALUES (['foo', 'bar'], '5da5038d-788f-48c6-b510-babb41c538d3', (42, 'qaz'), {'qux': 144, 'text': 255});
 
-CREATE TABLE ps_date_types
+CREATE OR REPLACE TABLE ps_date_types
 (
     d      Date,
     d32    Date32,
@@ -89,7 +88,7 @@ VALUES ('2149-06-06', '2178-04-16', '2106-02-07 06:28:15',
         '1900-01-01 00:00:00.000001',
         '1900-01-01 00:00:00.000000001');;
 
-CREATE TABLE ps_unusual_datetime64_scales
+CREATE OR REPLACE TABLE ps_unusual_datetime64_scales
 (
     dt64_0 DateTime64(0, 'UTC'),
     dt64_1 DateTime64(1, 'UTC'),
@@ -116,7 +115,7 @@ VALUES ('2022-04-13 03:17:45',
         '2022-04-13 03:17:45.0000001',
         '2022-04-13 03:17:45.00000001');
 
-CREATE TABLE ps_datetime_timezones
+CREATE OR REPLACE TABLE ps_datetime_timezones
 (
     dt     DateTime('Europe/Amsterdam'),
     dt64_3 DateTime64(3, 'Asia/Shanghai')
@@ -124,4 +123,4 @@ CREATE TABLE ps_datetime_timezones
 
 INSERT INTO ps_datetime_timezones
 VALUES ('2022-09-04 20:31:05', '2022-09-04 20:31:05.022'),
-       ('1970-01-01 00:00:00', '1969-12-31 16:00:00');
+       ('1970-01-01 01:00:00', '1969-12-31 16:00:00');

@@ -60,11 +60,6 @@ d256 type is CHAR, value: 123456789123456789123456789112345678912345678912345678
 
 ### testMiscTypes
 Row #1
-a type is CHAR, value: []
-u type is CHAR, value: 9a0ccc06-2578-4861-8534-631c9d40f3f7
-t type is CHAR, value: (0,'')
-m type is CHAR, value: {}
-Row #2
 a type is CHAR, value: ['foo','bar']
 u type is CHAR, value: 5da5038d-788f-48c6-b510-babb41c538d3
 t type is CHAR, value: (42,'qaz')

@@ -295,7 +295,7 @@ struct FormatSettings
          * https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_execute_response.html
          * By default, use Text ResultSet.
          */
-        bool use_binary_result_set = false;
+        bool binary_protocol = false;
     } mysql_wire;
 
     struct
