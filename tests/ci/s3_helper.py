@@ -306,6 +306,12 @@ class S3Helper:
             return ""
 
     @staticmethod
+    def get_url(bucket: str, key: str) -> str:
+        if CI:
+            return S3Helper.s3_url(bucket, key)
+        return S3Helper.local_path(bucket, key).as_uri()
+
+    @staticmethod
     def s3_url(bucket: str, key: str) -> str:
         url = f"{S3_DOWNLOAD}/{bucket}/{key}"
         # last two replacements are specifics of AWS urls:
