@@ -810,9 +810,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 LOG_DEBUG(log, "Will check part {} checksums", existing_part_name);
                 try
                 {
-                    NameSet unsued;
+                    NameSet unused;
                     /// if we found part in deduplication hashes part must exists on some replica
-                    storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unsued);
+                    storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unused);
                 }
                 catch (const zkutil::KeeperException &)
                 {
