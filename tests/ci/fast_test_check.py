@@ -146,7 +146,7 @@ def main():
 
     run_log_path = logs_path / "run.log"
     timeout_expired = False
-    timeout = 1 * 60
+    timeout = 90 * 60
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
