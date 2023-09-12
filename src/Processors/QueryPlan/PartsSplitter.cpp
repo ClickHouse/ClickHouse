@@ -226,7 +226,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
 }
 
 
-/// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range [borders[i-1], borders[i]).
+/// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
 ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders)
 {
     auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = (!result) ? foo : makeASTFunction("and", result, foo); };
@@ -250,10 +250,12 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
             auto pk_ast = primary_key.expression_list_ast->children.at(i);
 
             // If PK is nullable, prepend a null mask column for > comparison.
+            // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
             if (type->isNullable())
             {
                 pks_ast.push_back(makeASTFunction("isNull", pk_ast));
                 values_ast.push_back(std::make_shared<ASTLiteral>(0));
+                pk_ast = makeASTFunction("assumeNotNull", pk_ast);
             }
 
             ASTPtr component_ast = std::make_shared<ASTLiteral>(values[i]);
@@ -263,18 +265,13 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
             if (isColumnedAsNumber(decayed_type->getTypeId()) && !isNumber(decayed_type->getTypeId()))
                 component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(decayed_type->getName()));
 
-            // If PK is nullable, null mask is used for comparison.
-            // Transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
-            if (type->isNullable())
-                pk_ast = makeASTFunction("assumeNotNull", pk_ast);
-
             pks_ast.push_back(std::move(pk_ast));
             values_ast.push_back(std::move(component_ast));
         }
 
-        /// Always true.
+        /// It indicates (pk1, ...) > (NULL, ...), which is an always false predicate.
         if (pks_ast.empty())
-            return std::make_shared<ASTLiteral>(1);
+            return std::make_shared<ASTLiteral>(0u);
 
         ASTPtr pk_columns_as_tuple = makeASTFunction("tuple", pks_ast);
         ASTPtr values_as_tuple = makeASTFunction("tuple", values_ast);
