@@ -20,6 +20,6 @@ sidebar_label: PROJECTION
 
 Также команды реплицируются, синхронизируя описания проекций в метаданных с помощью ZooKeeper.
 
-    :::note
-    Манипуляции с проекциями поддерживаются только для таблиц с движком [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) (включая [replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты).
-    :::
+:::note Примечание
+Манипуляции с проекциями поддерживаются только для таблиц с движком [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) (включая [replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты).
+:::

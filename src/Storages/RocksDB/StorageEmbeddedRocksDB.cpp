@@ -304,6 +304,12 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 }
 
+void StorageEmbeddedRocksDB::drop()
+{
+    rocksdb_ptr->Close();
+    rocksdb_ptr = nullptr;
+}
+
 void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
