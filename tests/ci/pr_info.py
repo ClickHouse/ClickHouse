@@ -304,53 +304,63 @@ class PRInfo:
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
-        # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
-            return False
-
         if self.changed_files is None or not self.changed_files:
             return False
 
         for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if (
-                not f.startswith("tests/queries")
-                or not f.startswith("tests/integration")
-                or not f.startswith("tests/performance")
+            if (f.startswith("programs")
+                or f.startswith("src")
+                or f.startswith("base")
+                or f.startswith("cmake")
+                or f.startswith("rust")
+                or f == "CMakeLists.txt"
+                or f == "tests/ci/build_check.py"
             ):
                 return False
 
         return True
 
-    def can_skip_integration_tests(self):
-        # TODO: See a broken loop
+    def can_skip_integration_tests(self, version):
         if FORCE_TESTS_LABEL in self.labels:
+            return False
+
+        # If docker image(s) relevant to integration tests are updated
+        if self.sha not in version:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
+        if not self.can_skip_builds_and_use_version_from_master:
+            return False
+
+        # Integration tests can be skipped if only functional/performance tests are changes
         for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if not f.startswith("tests/queries") or not f.startswith(
-                "tests/performance"
+            if (not f.startswith("tests/queries")
+                and not f.startswith("tests/performance")
             ):
                 return False
 
         return True
 
-    def can_skip_functional_tests(self):
-        # TODO: See a broken loop
+    def can_skip_functional_tests(self, version):
         if FORCE_TESTS_LABEL in self.labels:
+            return False
+
+        # If docker image(s) relevant to functional tests are updated
+        if self.sha not in version:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
+        if not self.can_skip_builds_and_use_version_from_master:
+            return False
+
+        # Functional tests can be skipped if only integration/performance tests are changes
         for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if not f.startswith("tests/integration") or not f.startswith(
-                "tests/performance"
+            if (not f.startswith("tests/integration")
+                and not f.startswith("tests/performance")
             ):
                 return False
 
