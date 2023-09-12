@@ -148,7 +148,7 @@ FOOTER_HTML_TEMPLATE = """<img id="fish" src="https://presentations.clickhouse.c
     const getCellValue = (tr, idx) => {{
         var classes = tr.classList;
         var elem = tr;
-        if (classes.contains("failed-content") || classes.contains("failed-content.open"))
+        if (classes.contains("expandable-content") || classes.contains("expandable-content.open"))
             elem = tr.previousElementSibling;
         return elem.children[idx].innerText || elem.children[idx].textContent;
     }}
