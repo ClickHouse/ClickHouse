@@ -104,10 +104,18 @@ Float64 ConditionEstimator::estimateSelectivity(const RPNBuilderTreeNode & node)
         return default_unknown_cond_factor;
     }
     auto it = column_estimators.find(col.value());
+
+    /// If there the estimator of the column is not found or there are no data at all,
+    /// we use dummy estimation.
+    bool dummy = total_count == 0;
     ColumnEstimator estimator;
     if (it != column_estimators.end())
     {
         estimator = it->second;
+    }
+    else
+    {
+        dummy = true;
     }
     auto [op, val] = extractBinaryOp(node, col.value());
     if (op == "equals")
@@ -119,10 +127,14 @@ Float64 ConditionEstimator::estimateSelectivity(const RPNBuilderTreeNode & node)
     }
     else if (op == "less" || op == "lessThan")
     {
+        if (dummy)
+            return default_normal_cond_factor;
         return estimator.estimateLess(val) / total_count;
     }
     else if (op == "greater" || op == "greaterThan")
     {
+        if (dummy)
+            return default_normal_cond_factor;
         return estimator.estimateGreater(val) / total_count;
     }
     else
@@ -144,8 +156,6 @@ void MergeTreeStatisticFactory::registerCreator(StatisticType stat_type, Creator
 MergeTreeStatisticFactory::MergeTreeStatisticFactory()
 {
     registerCreator(TDigest, TDigestCreator);
-
-    ///registerCreator("cm_sketch", CMSketchCreator);
 }
 
 MergeTreeStatisticFactory & MergeTreeStatisticFactory::instance()
