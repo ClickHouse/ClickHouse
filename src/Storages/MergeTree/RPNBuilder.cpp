@@ -351,64 +351,6 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
     return nullptr;
 }
 
-FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    const DataTypes & data_types) const
-{
-    const auto & prepared_sets = getTreeContext().getPreparedSets();
-
-    /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-    /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-    /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-    /// that the types it was prepared with are compatible with the types of the primary key.
-    auto types_match = [&indexes_mapping, &data_types](const DataTypes & set_types)
-    {
-        assert(indexes_mapping.size() == data_types.size());
-
-        for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        {
-            if (indexes_mapping[i].tuple_index >= set_types.size())
-                return false;
-
-            auto lhs = removeNullable(recursiveRemoveLowCardinality(data_types[i]));
-            auto rhs = removeNullable(recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]));
-
-            if (!lhs->equals(*rhs))
-                return false;
-        }
-
-        return true;
-    };
-
-    if (prepared_sets && ast_node)
-    {
-        if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash());
-
-        auto tree_hash = ast_node->getTreeHash();
-        const auto & sets = prepared_sets->getSetsFromTuple();
-        auto it = sets.find(tree_hash);
-        if (it == sets.end())
-            return nullptr;
-
-        for (const auto & future_set : it->second)
-            if (types_match(future_set->getTypes()))
-                return future_set;
-    }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        if (node_without_alias->column)
-        {
-            auto future_set = tryGetSetFromDAGNode(node_without_alias);
-            if (types_match(future_set->getTypes()))
-                return future_set;
-        }
-    }
-
-    return nullptr;
-}
-
 RPNBuilderFunctionTreeNode RPNBuilderTreeNode::toFunctionNode() const
 {
     if (!isFunction())

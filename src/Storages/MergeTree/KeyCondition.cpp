@@ -1253,9 +1253,20 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto future_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
         return false;
+
+    const auto & set_types = future_set->getTypes();
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
+
+    if (set_types_size != indexes_mapping_size)
+        return false;
+
+    for (auto & index_mapping : indexes_mapping)
+        if (index_mapping.tuple_index >= set_types_size)
+            return false;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
@@ -1265,11 +1276,38 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!prepared_set->hasExplicitSetElements())
         return false;
 
-    prepared_set->checkColumnsNumber(left_args_count);
-    for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
+    /** Try to convert set columns to primary key columns.
+      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
+      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
+      * we need to convert set column to primary key column.
+      */
+    const auto & set_elements = prepared_set->getSetElements();
+    size_t set_elements_size = set_elements.size();
+    assert(set_types_size == set_elements_size);
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+    Columns set_columns;
+    set_columns.reserve(set_elements_size);
+
+    for (size_t i = 0; i < indexes_mapping_size; ++i)
+    {
+        size_t set_element_index = indexes_mapping[i].tuple_index;
+        const auto & set_element = set_elements[set_element_index];
+        const auto & set_element_type = set_types[set_element_index];
+
+        ColumnPtr set_column;
+        try
+        {
+            set_column = castColumnAccurate({set_element, set_element_type, {}}, data_types[i]);
+        }
+        catch (...)
+        {
+            return false;
+        }
+
+        set_columns.push_back(set_column);
+    }
+
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
     return true;
 }
 
