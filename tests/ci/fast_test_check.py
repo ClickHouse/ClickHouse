@@ -146,7 +146,7 @@ def main():
 
     run_log_path = logs_path / "run.log"
     timeout_expired = False
-    timeout = 90 * 60
+    timeout = 1 * 60
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
@@ -186,10 +186,9 @@ def main():
         state, description, test_results, additional_logs = process_results(output_path)
 
     if timeout_expired:
-        test_result_name = "Check timeout expired"
-        test_results.append(TestResult(test_result_name, "FAIL", timeout))
+        test_results.append(TestResult.create_check_timeout_expired(timeout))
         state = "failure"
-        description = format_description(test_result_name)
+        description = format_description(test_results[-1].name)
 
     ch_helper = ClickHouseHelper()
     s3_path_prefix = os.path.join(

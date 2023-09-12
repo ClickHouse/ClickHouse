@@ -175,7 +175,7 @@ def run_stress_test(docker_image_name):
     logging.info("Going to run stress test: %s", run_command)
 
     timeout_expired = False
-    timeout = 60 * 1
+    timeout = 60 * 150
     with TeePopen(run_command, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
