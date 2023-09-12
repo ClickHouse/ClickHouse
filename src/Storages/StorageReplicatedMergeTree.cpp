@@ -1476,8 +1476,12 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
     }
 }
 
-void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper,
-    const DataPartPtr & part, Coordination::Requests & ops, String part_name, NameSet * absent_replicas_paths)
+void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    const DataPartPtr & part,
+    Coordination::Requests & ops,
+    String part_name,
+    NameSet * absent_replicas_paths)
 {
     if (part_name.empty())
         part_name = part->name;
@@ -1596,7 +1600,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         size_t zero_copy_lock_ops_size = ops.size();
 
         /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
-        checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, &absent_part_paths_on_replicas);
+        checkPartChecksumsAndAddCommitOps(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), part, ops, part->name, &absent_part_paths_on_replicas);
 
         /// Do not commit if the part is obsolete, we have just briefly checked its checksums
         if (transaction.isEmpty())
