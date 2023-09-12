@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class DataTypeNumber : public DataTypeNumberBase<T>
+class DataTypeNumber final : public DataTypeNumberBase<T>
 {
 public:
     DataTypeNumber() = default;
