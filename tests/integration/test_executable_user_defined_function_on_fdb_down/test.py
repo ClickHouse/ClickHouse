@@ -36,6 +36,7 @@ config = '''<clickhouse>
 def started_cluster():
     try:
         cluster.start()
+        node = cluster.instances['node']
         node.replace_config(func_xml, config)
         with open(os.path.dirname(__file__) + "/config/foundationdb.xml", "r") as f:
             node.replace_config("/etc/clickhouse-server/config.d/foundationdb.xml", f.read())
@@ -50,13 +51,14 @@ def started_cluster():
         cluster.shutdown()
 
 def test_executable_function_python(started_cluster):
-
+    node = cluster.instances['node']
     node.start_clickhouse()
     assert node.query("SELECT test_function_python(toUInt64(1))") == 'Key 1\n'
     assert node.query("SELECT test_function_python(1)") == 'Key 1\n'
     node.stop_clickhouse()
 
 def test_executable_function_python_fdb_down(started_cluster):
+    node = cluster.instances['node']
     node.start_clickhouse()
     assert node.query("SELECT test_function_python(toUInt64(1))") == 'Key 1\n'
     assert node.query("SELECT test_function_python(1)") == 'Key 1\n'
