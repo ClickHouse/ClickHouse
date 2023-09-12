@@ -55,3 +55,12 @@ def test_system_backups():
         TSV([["RESTORED", ""]]),
         200,
     )
+
+    instance.restart_clickhouse()
+
+    assert instance.query(
+        f"SELECT status, error FROM system.backups WHERE id='{backup_id}'"
+    ) == TSV([["BACKUP_CREATED", ""]])
+    assert instance.query(
+        f"SELECT status, error FROM system.backups WHERE id='{restore_id}'"
+    ) == TSV([["RESTORED", ""]])
