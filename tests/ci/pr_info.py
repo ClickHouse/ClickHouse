@@ -307,13 +307,16 @@ class PRInfo:
         if self.changed_files is None or not self.changed_files:
             return False
 
-        return not any(f.startswith("programs")
-                or f.startswith("src")
-                or f.startswith("base")
-                or f.startswith("cmake")
-                or f.startswith("rust")
-                or f == "CMakeLists.txt"
-                or f == "tests/ci/build_check.py" for f in self.changed_files)
+        return not any(
+            f.startswith("programs")
+            or f.startswith("src")
+            or f.startswith("base")
+            or f.startswith("cmake")
+            or f.startswith("rust")
+            or f == "CMakeLists.txt"
+            or f == "tests/ci/build_check.py"
+            for f in self.changed_files
+        )
 
     def can_skip_integration_tests(self, version):
         if FORCE_TESTS_LABEL in self.labels:
