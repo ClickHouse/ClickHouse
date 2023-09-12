@@ -1,5 +1,9 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionDateOrDateTimeAddInterval.h>
+
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 namespace DB
 {
@@ -97,8 +101,8 @@ using FunctionSubDate = FunctionOpDate<SubDate>;
 
 REGISTER_FUNCTION(AddInterval)
 {
-    factory.registerFunction<FunctionAddDate>();
-    factory.registerFunction<FunctionSubDate>();
+    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

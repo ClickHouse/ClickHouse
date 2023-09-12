@@ -942,6 +942,8 @@ Result:
 
 Adds the time interval or date interval to the provided date or date with time.
 
+If the addition results in a value outside the bounds of the data type, the result is undefined.
+
 **Syntax**
 
 ``` sql
@@ -965,13 +967,13 @@ Aliases: `dateAdd`, `DATE_ADD`.
     - `year`
 
 - `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
-- `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
 Date or date with time obtained by adding `value`, expressed in `unit`, to `date`.
 
-Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -994,6 +996,8 @@ Result:
 ## date\_sub
 
 Subtracts the time interval or date interval from the provided date or date with time.
+
+If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
 **Syntax**
 
@@ -1019,13 +1023,13 @@ Aliases: `dateSub`, `DATE_SUB`.
     - `year`
 
 - `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
-- `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
 Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
 
-Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -1041,9 +1045,14 @@ Result:
 └────────────────────────────────────────────────┘
 ```
 
+**See Also**
+- [subDate](#subDate)
+
 ## timestamp\_add
 
 Adds the specified time value with the provided date or date time value.
+
+If the addition results in a value outside the bounds of the data type, the result is undefined.
 
 **Syntax**
 
@@ -1055,7 +1064,7 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 **Arguments**
 
-- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
 - `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
     Possible values:
@@ -1073,7 +1082,7 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 Date or date with time with the specified `value` expressed in `unit` added to `date`.
 
-Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -1092,6 +1101,8 @@ Result:
 ## timestamp\_sub
 
 Subtracts the time interval from the provided date or date with time.
+
+If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
 **Syntax**
 
@@ -1116,13 +1127,13 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `year`
 
 - `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).
-- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
 Date or date with time obtained by subtracting `value`, expressed in `unit`, from `date`.
 
-Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -1142,6 +1153,8 @@ Result:
 
 Adds the time interval or date interval to the provided date or date with time.
 
+If the addition results in a value outside the bounds of the data type, the result is undefined.
+
 **Syntax**
 
 ``` sql
@@ -1150,14 +1163,14 @@ addDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
 
 Date or date with time obtained by adding `interval` to `date`.
 
-Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -1173,12 +1186,16 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
+Alias: `ADDDATE`
+
 **See Also**
 - [date_add](#date_add)
 
 ## subDate
 
 Subtracts the time interval or date interval from the provided date or date with time.
+
+If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
 **Syntax**
 
@@ -1188,14 +1205,14 @@ subDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `interval` — Interval to subtract. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
 
 Date or date with time obtained by subtracting `interval` from `date`.
 
-Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -1210,6 +1227,8 @@ Result:
 │                                       2015-01-01 │
 └──────────────────────────────────────────────────┘
 ```
+
+Alias: `SUBDATE`
 
 **See Also**
 - [date_sub](#date_sub)
@@ -1683,7 +1702,7 @@ monthName(date)
 
 **Arguments**
 
-- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Returned value**
 
