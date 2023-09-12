@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/MultipleAccessStorage.h>
+#include <Common/FoundationDB/MetadataStoreFoundationDB.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
@@ -42,6 +43,7 @@ class ClientInfo;
 class ExternalAuthenticators;
 class AccessChangesNotifier;
 struct Settings;
+using FoundationDBPtr = std::shared_ptr<MetadataStoreFoundationDB>;
 
 
 /// Manages access control entities.
@@ -122,6 +124,33 @@ public:
     void restoreFromBackup(RestorerFromBackup & restorer) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Adds storages which is related with configuration of fdb.
+    void addStoragesRelatedFDB(
+        const Poco::Util::AbstractConfiguration & config_,
+        const String & config_path,
+        const std::function<FoundationDBPtr()> & get_fdb_function_);
+
+    /// Adds Storage which handle sql-driven metadata in foundationDB.
+    void addConfigFDBStorage(
+        const String & storage_name_,
+        const String & config_path_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::function<FoundationDBPtr()> & get_fdb_function_);
+    void addConfigFDBStorage(
+        const String & config_path_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::function<FoundationDBPtr()> & get_fdb_function_);
+
+
+    /// Adds Storage which handle sql-driven metadata in foundationDB.
+    void addSqlDrivenFDBStorage(
+        const String & local_directory_, const std::function<FoundationDBPtr()> & get_fdb_function_, bool readonly_ = false);
+    void addSqlDrivenFDBStorage(
+        const String & storage_name_,
+        const String & local_directory_,
+        const std::function<FoundationDBPtr()> & get_fdb_function_,
+        bool readonly_);
 
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.

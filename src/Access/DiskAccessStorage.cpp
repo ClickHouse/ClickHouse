@@ -11,12 +11,10 @@
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
-#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
 #include <base/range.h>
 #include <filesystem>
 #include <fstream>
@@ -34,32 +32,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Reads a file containing ATTACH queries and then parses it to build an access entity.
-    AccessEntityPtr readEntityFile(const String & file_path)
-    {
-        /// Read the file.
-        ReadBufferFromFile in{file_path};
-        String file_contents;
-        readStringUntilEOF(file_contents, in);
-
-        /// Parse the file contents.
-        return deserializeAccessEntity(file_contents, file_path);
-    }
-
-
-    AccessEntityPtr tryReadEntityFile(const String & file_path, Poco::Logger & log)
-    {
-        try
-        {
-            return readEntityFile(file_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(&log);
-            return nullptr;
-        }
-    }
-
     /// Writes ATTACH queries for building a specified access entity to a file.
     void writeEntityFile(const String & file_path, const IAccessEntity & entity)
     {
@@ -82,23 +54,6 @@ namespace
         /// Rename.
         std::filesystem::rename(tmp_file_path, file_path);
         succeeded = true;
-    }
-
-
-    /// Converts a path to an absolute path and append it with a separator.
-    String makeDirectoryPathCanonical(const String & directory_path)
-    {
-        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
-        if (canonical_directory_path.has_filename())
-            canonical_directory_path += std::filesystem::path::preferred_separator;
-        return canonical_directory_path;
-    }
-
-
-    /// Calculates the path to a file named <id>.sql for saving an access entity.
-    String getEntityFilePath(const String & directory_path, const UUID & id)
-    {
-        return directory_path + toString(id) + ".sql";
     }
 
 
@@ -146,19 +101,65 @@ namespace
         boost::to_lower(file_name);
         return directory_path + file_name + ".list";
     }
+}
 
+/// Converts a path to an absolute path and append it with a separator.
+String DiskAccessStorage::makeDirectoryPathCanonical(const String & directory_path)
+{
+    auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+    if (canonical_directory_path.has_filename())
+        canonical_directory_path += std::filesystem::path::preferred_separator;
+    return canonical_directory_path;
+}
 
-    /// Calculates the path to a temporary file which existence means that list files are corrupted
-    /// and need to be rebuild.
-    String getNeedRebuildListsMarkFilePath(const String & directory_path)
+/// Calculates the path to a temporary file which existence means that list files are corrupted
+/// and need to be rebuild.
+String DiskAccessStorage::getNeedRebuildListsMarkFilePath(const String & directory_path)
+{
+    return directory_path + "need_rebuild_lists.mark";
+}
+
+bool DiskAccessStorage::tryParseUUID(const String & str, UUID & id)
+{
+    try
     {
-        return directory_path + "need_rebuild_lists.mark";
+        id = parseFromString<UUID>(str);
+        return true;
     }
-
-
-    bool tryParseUUID(const String & str, UUID & id)
+    catch (...)
     {
-        return tryParse(id, str);
+        return false;
+    }
+}
+
+/// Calculates the path to a file named <id>.sql for saving an access entity.
+String DiskAccessStorage::getEntityFilePath(const String & directory_path, const UUID & id)
+{
+    return directory_path + toString(id) + ".sql";
+}
+
+/// Reads a file containing ATTACH queries and then parses it to build an access entity.
+AccessEntityPtr DiskAccessStorage::readEntityFile(const String & file_path)
+{
+    /// Read the file.
+    ReadBufferFromFile in{file_path};
+    String file_contents;
+    readStringUntilEOF(file_contents, in);
+
+    /// Parse the file contents.
+    return deserializeAccessEntity(file_contents, file_path);
+}
+
+AccessEntityPtr DiskAccessStorage::tryReadEntityFile(const String & file_path, Poco::Logger & log)
+{
+    try
+    {
+        return readEntityFile(file_path);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&log);
+        return nullptr;
     }
 }
 

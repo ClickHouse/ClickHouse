@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Access/ConfigFDBAccessStorage.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/ReplicatedAccessStorage.h>
@@ -12,6 +13,7 @@
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
+#include <Access/SqlDrivenFDBAccessStorage.h>
 #include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/AccessChangesNotifier.h>
@@ -24,6 +26,9 @@
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <Poco/AccessExpireCache.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <base/find_symbols.h>
+#include <Poco/ExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <re2/re2.h>
 #include <filesystem>
@@ -498,6 +503,105 @@ void AccessControl::addStoragesFromMainConfig(
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);
+}
+
+void AccessControl::addStoragesRelatedFDB(
+    const Poco::Util::AbstractConfiguration & config_,
+    const String & config_path,
+    const std::function<FoundationDBPtr()> & get_fdb_function_)
+{
+    ConfigurationPtr users_config;
+    String config_dir = std::filesystem::path{config_path}.remove_filename().string();
+
+    /// If path to users' config isn't absolute, try to find it in dir of main config.
+    auto users_config_path = config_.getString("users_config", config_.getString("config-file", "config.xml"));
+    if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+        users_config_path = config_dir + users_config_path;
+
+    const auto disk_storage_dir = config_.getString("access_control_path", "");
+    ConfigProcessor config_processor(users_config_path);
+    const auto loaded_config = config_processor.loadConfig();
+    users_config = loaded_config.configuration;
+
+    addConfigFDBStorage("config in fdb", users_config_path, *users_config, get_fdb_function_);
+    addSqlDrivenFDBStorage("sql_driven in fdb", disk_storage_dir, get_fdb_function_, false);
+}
+
+
+void AccessControl::addConfigFDBStorage(
+    const String & config_path_,
+    const Poco::Util::AbstractConfiguration & config_,
+    const std::function<FoundationDBPtr()> & get_fdb_function_)
+{
+    addConfigFDBStorage(ConfigFDBAccessStorage::STORAGE_TYPE, config_path_, config_, get_fdb_function_);
+}
+
+
+void AccessControl::addConfigFDBStorage(
+    const String & storage_name_,
+    const String & config_path_,
+    const Poco::Util::AbstractConfiguration & config_,
+    const std::function<FoundationDBPtr()> & get_fdb_function)
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto config_storage = typeid_cast<std::shared_ptr<ConfigFDBAccessStorage>>(storage))
+        {
+            if (config_storage->isPathEqual(config_path_))
+                return;
+        }
+    }
+    auto new_storage = std::make_shared<ConfigFDBAccessStorage>(
+        storage_name_,
+        *changes_notifier,
+        *this,
+        config_,
+        config_path_,
+        get_fdb_function);
+    addStorage(new_storage);
+    LOG_DEBUG(
+        getLogger(),
+        "Added {} access storage '{}', path: {}",
+        String(new_storage->getStorageType()),
+        new_storage->getStorageName(),
+        new_storage->getPath());
+}
+
+void AccessControl::addSqlDrivenFDBStorage(
+    const String & local_directory_, const std::function<FoundationDBPtr()> & get_fdb_function_, bool readonly_)
+{
+    addSqlDrivenFDBStorage(SqlDrivenFDBAccessStorage::STORAGE_TYPE, local_directory_, get_fdb_function_, readonly_);
+}
+
+
+void AccessControl::addSqlDrivenFDBStorage(
+    const String & storage_name_,
+    const String & local_directory_,
+    const std::function<FoundationDBPtr()> & get_fdb_function_,
+    bool readonly_)
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto fdb_storage = typeid_cast<std::shared_ptr<SqlDrivenFDBAccessStorage>>(storage))
+        {
+            if (fdb_storage->isPathEqual(local_directory_))
+            {
+                if (readonly_)
+                    fdb_storage->setReadOnly(readonly_);
+                return;
+            }
+        }
+    }
+    auto new_storage = std::make_shared<SqlDrivenFDBAccessStorage>(storage_name_, *changes_notifier, local_directory_, get_fdb_function_, readonly_);
+    addStorage(new_storage);
+    LOG_DEBUG(
+        getLogger(),
+        "Added {} access storage '{}', local_path: {}",
+        String(new_storage->getStorageType()),
+        new_storage->getStorageName(),
+        new_storage->getPath());
 }
 
 
