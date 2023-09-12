@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Interpreters/PartLog.h>
+#include "Common/Exception.h"
 #include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SipHash.h>
@@ -809,7 +810,9 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 LOG_DEBUG(log, "Will check part {} checksums", existing_part_name);
                 try
                 {
-                    storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name);
+                    NameSet unsued;
+                    /// if we found part in deduplication hashes part must exists on some replica
+                    chassert(storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unsued));
                 }
                 catch (const zkutil::KeeperException &)
                 {
