@@ -16,6 +16,7 @@
 #include <Common/typeid_cast.h>
 
 #include <array>
+#include <cmath>
 
 namespace DB
 {
@@ -217,7 +218,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto yyyymmdd = static_cast<UInt64>(yyyymmdd_data[i]);
+            const auto yyyymmdd = static_cast<UInt64>(static_cast<Int64>(yyyymmdd_data[i])); /// Float64-to-UInt64 is UB, double-cast avoids it
 
             const auto year = yyyymmdd / 10'000;
             const auto month = yyyymmdd / 100 % 100;
@@ -691,7 +692,7 @@ public:
         {
             const auto float_date = yyyymmddhhmmss_data[i];
 
-            const auto yyyymmddhhmmss = static_cast<UInt64>(float_date);
+            const auto yyyymmddhhmmss = static_cast<UInt64>(static_cast<Int64>(float_date)); /// Float64-to-UInt64 is UB, double-cast avoids it
 
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
@@ -705,14 +706,11 @@ public:
             const auto minute = hhmmss / 100 % 100;
             const auto second = hhmmss % 100;
 
-            auto fraction = static_cast<Int32>(decimal * fraction_pow);
-
             auto date_time = dateTime(year, month, day, hour, minute, second, date_lut);
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
-                date_time,
-                static_cast<Int64>(fraction),
-                static_cast<UInt32>(precision));
+            auto fraction = std::llround(decimal * fraction_pow);
+
+            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
         }
 
         return res_column;
