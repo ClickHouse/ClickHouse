@@ -229,7 +229,7 @@ static const std::set<String> allowed_engines = {"MergeTree", "Memory"};
 BackupsWorker::BackupsWorker(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
-    , storage(persistent_storage ? std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines), true) : nullptr)
+    , storage(persistent_storage ? std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines)) : nullptr)
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)

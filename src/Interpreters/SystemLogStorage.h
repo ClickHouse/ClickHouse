@@ -12,7 +12,7 @@ class SystemLogStorage: private boost::noncopyable, protected WithContext
 public:
     using LogElements = std::vector<LogElement>;
 
-    SystemLogStorage(ContextPtr context_, const String & database, const String & table, const String & engine, bool prepare = false);
+    SystemLogStorage(ContextPtr context_, const String & database, const String & table, const String & engine);
 
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.

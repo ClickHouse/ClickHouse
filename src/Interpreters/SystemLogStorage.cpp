@@ -105,12 +105,10 @@ protected:
 }
 
 template <typename LogElement>
-SystemLogStorage<LogElement>::SystemLogStorage(ContextPtr context_, const String & database, const String & table, const String & engine, bool prepare)
+SystemLogStorage<LogElement>::SystemLogStorage(ContextPtr context_, const String & database, const String & table, const String & engine)
     : WithContext(context_), log(&Poco::Logger::get("SystemLogStorage (" + database + "." + table + ")"))
     , table_id(database, table), storage_def(engine), create_query(serializeAST(*getCreateTableQuery()))
 {
-    if (prepare)
-        prepareTable();
 }
 
 template <typename LogElement>

@@ -8,9 +8,10 @@
 namespace DB
 {
 
-BackupsStorage::BackupsStorage(ContextPtr context_, const String & database, const String & table, const String & engine, bool prepare)
-    : SystemLogStorage(context_, database, table, engine, prepare)
+BackupsStorage::BackupsStorage(ContextPtr context_, const String & database, const String & table, const String & engine)
+    : SystemLogStorage(context_, database, table, engine)
 {
+    prepareTable();
 }
 
 void BackupsStorage::update(const BackupOperationInfo & info)
