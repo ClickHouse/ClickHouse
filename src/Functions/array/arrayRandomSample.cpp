@@ -88,10 +88,8 @@ public:
         std::random_device rd;
         std::mt19937 gen(rd());
 
-        if (static_cast<UInt64>(num_elements) < K)
-        {
-            K = static_cast<UInt64>(num_elements);
-        }
+        K = std::min(K, static_cast<UInt64>(num_elements));
+
         // Create an empty ColumnArray with the same structure as column_array
         auto nested_column = column_array->getDataPtr()->cloneEmpty();
         auto offsets_column = ColumnUInt64::create(); // Create an empty offsets column
