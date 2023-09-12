@@ -6,7 +6,8 @@
 namespace DB
 {
 
-class IOutputChunkGenerator {
+class IOutputChunkGenerator
+{
 public:
     static std::unique_ptr<IOutputChunkGenerator> createCopyRanges(ContextPtr context);
     static std::unique_ptr<IOutputChunkGenerator> createDefault();
