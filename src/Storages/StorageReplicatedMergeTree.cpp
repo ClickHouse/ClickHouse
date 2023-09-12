@@ -1494,7 +1494,6 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
     bool part_found = false;
     bool part_exists_on_our_replica = false;
 
-    LOG_DEBUG(&Poco::Logger::get("checkPartChecksumsAndAddCommitOps"), "Total replicas to check {}", fmt::join(replicas, ", "));
     for (const String & replica : replicas)
     {
         String current_part_path = fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name;
