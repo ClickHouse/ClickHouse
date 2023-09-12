@@ -312,7 +312,7 @@ void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String 
         return entity_;
     };
 
-    memory_storage.update(id, update_func);
+    memory_storage.updateNoLock(id, update_func, true);
 }
 
 

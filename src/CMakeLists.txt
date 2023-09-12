@@ -582,6 +582,8 @@ if (ENABLE_TESTS)
         file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest*.cpp")
     endmacro()
 
+    add_definitions("-DLDAP_DEPRECATED=0")
+
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
     clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
@@ -589,6 +591,7 @@ if (ENABLE_TESTS)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-sign-compare
+        -Wno-reserved-macro-identifier
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
@@ -603,6 +606,14 @@ if (ENABLE_TESTS)
         clickhouse_common_zookeeper
         string_utils
         hilite_comparator)
+
+    if (TARGET ch_contrib::ldap)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::ldap)
+    endif()
+
+    if (TARGET ch_contrib::krb5)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
+    endif()
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)

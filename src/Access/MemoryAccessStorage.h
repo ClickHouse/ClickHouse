@@ -46,7 +46,9 @@ private:
 
     bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) TSA_REQUIRES(mutex);
     bool removeNoLock(const UUID & id, bool throw_if_not_exists) TSA_REQUIRES(mutex);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) TSA_REQUIRES(mutex);
+
+    friend class LDAPAccessStorage;
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
     void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
