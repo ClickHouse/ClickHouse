@@ -159,6 +159,8 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
+
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 

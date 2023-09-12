@@ -1093,6 +1093,8 @@ public:
         const SelectQueryInfo & query_info,
         const ActionDAGNodes & added_filter_nodes) const;
 
+    bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;

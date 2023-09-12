@@ -1,4 +1,5 @@
 #include <string>
+#include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
@@ -200,11 +201,14 @@ void DatabaseCatalog::createBackgroundTasks()
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
-    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
+    auto drop_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
+
+    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->reloadDisksTask(); });
+    reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
 }
 
-void DatabaseCatalog::startupBackgroundCleanup()
+void DatabaseCatalog::startupBackgroundTasks()
 {
     /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
     if (cleanup_task)
@@ -1576,6 +1580,30 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
     }
 }
 
+void DatabaseCatalog::reloadDisksTask()
+{
+    std::set<String> disks;
+    {
+        std::lock_guard lock{reload_disks_mutex};
+        disks.swap(disks_to_reload);
+    }
+
+    for (auto & database : getDatabases())
+    {
+        auto it = database.second->getTablesIterator(getContext());
+        while (it->isValid())
+        {
+            auto table = it->table();
+            table->initializeDiskOnConfigChange(disks);
+            it->next();
+        }
+    }
+
+    std::lock_guard lock{reload_disks_mutex};
+    if (!disks_to_reload.empty()) /// during reload, another disks configuration change
+        (*reload_disks_task)->scheduleAfter(default_reload_period_sec * 1000);
+}
+
 static void maybeUnlockUUID(UUID uuid)
 {
     if (uuid == UUIDHelpers::Nil)
@@ -1659,4 +1687,10 @@ DDLGuard::~DDLGuard()
     releaseTableLock();
 }
 
+void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
+{
+    std::lock_guard lock{reload_disks_mutex};
+    disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
+    (*reload_disks_task)->schedule();
+}
 }
