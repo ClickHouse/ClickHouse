@@ -40,6 +40,7 @@ def compress_fast(
     else:
         exclude_part = f"--exclude {exclude}"
 
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
     fname = path.name
 
     cmd = (
@@ -76,6 +77,7 @@ def decompress_fast(archive_path: Path, result_path: Optional[Path] = None) -> N
     if result_path is None:
         subprocess.check_call(f"tar {program_part} -xf {archive_path}", shell=True)
     else:
+        result_path.mkdir(parents=True, exist_ok=True)
         subprocess.check_call(
             f"tar {program_part} -xf {archive_path} -C {result_path}",
             shell=True,
