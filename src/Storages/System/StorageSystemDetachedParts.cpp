@@ -233,7 +233,7 @@ private:
             }
             if (columns_mask[src_index++])
             {
-                Poco::Timestamp modification_time;
+                Poco::Timestamp modification_time{};
                 try
                 {
                     modification_time = p.disk->getLastModified(fs::path(current_info.data->getRelativeDataPath()) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name);
