@@ -1,0 +1,12 @@
+<clickhouse>
+    <users>
+        <alice>
+            <password/>
+            <profile>default</profile>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <quota>default</quota>
+        </alice>
+    </users>
+</clickhouse>
