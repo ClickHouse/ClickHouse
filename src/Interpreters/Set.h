@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
@@ -218,12 +219,17 @@ public:
     {
         size_t tuple_index;
         size_t key_index;
-        std::vector<FunctionBasePtr> functions;
+        /// Chain applied to left-hand-side (the key column) of IN operator during evaluation time
+        std::vector<FunctionBasePtr> lhs_chain;
+        /// Chain apply to righ-hand-side (the set) of IN operator when building ordered_set
+        std::vector<const ActionsDAG::Node *> rhs_chain;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(const ContextPtr & context, const Columns & set_elements, const DataTypes & set_types, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
-    size_t size() const { return ordered_set.at(0)->size(); }
+    bool empty() const { return ordered_set.empty(); }
+
+    size_t size() const { return empty() ? 0 : ordered_set.at(0)->size(); }
 
     bool hasMonotonicFunctionsChain() const;
 

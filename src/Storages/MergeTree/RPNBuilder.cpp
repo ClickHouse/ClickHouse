@@ -400,9 +400,11 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         if (node_without_alias->column)
         {
-            auto future_set = tryGetSetFromDAGNode(node_without_alias);
-            if (types_match(future_set->getTypes()))
-                return future_set;
+            /// It's ok to returning a set with type mismatch here as long as types are comparable (e.g. UInt32 vs UInt64)
+            /// If the type is non-comparable, let the caller ignore the set.
+            /// Helpful for index analysis, e.g. query `SELECT count() FROM tst_in WHERE key IN (SELECT number FROM numbers(1000))`
+            /// with `key` is UInt32
+            return tryGetSetFromDAGNode(node_without_alias);
         }
     }
 

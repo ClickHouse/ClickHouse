@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -462,7 +464,7 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(const ContextPtr & context, const Columns & set_elements, const DataTypes & set_types, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
     // std::cerr << "MergeTreeSetIndex::MergeTreeSetIndex "
@@ -470,10 +472,13 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     // for (const auto & vv : indexes_mapping)
     //     std::cerr << vv.key_index << ' ' << vv.tuple_index << std::endl;
 
+    /// We prefer the key condition with shorter function chain. For example,
+    /// if the predicate is (x, f(x)) in ((x1, x2), (x3, x4)) then we prefer the condition
+    /// x in (x1, x3) instead of f(x) IN (x2, x4)
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
-            return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
+            return std::forward_as_tuple(l.key_index, l.rhs_chain.size(), l.lhs_chain.size(), l.tuple_index) < std::forward_as_tuple(r.key_index, r.rhs_chain.size(), r.lhs_chain.size(), r.tuple_index);
         });
 
     indexes_mapping.erase(std::unique(
@@ -484,10 +489,25 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         }), indexes_mapping.end());
 
     size_t tuple_size = indexes_mapping.size();
-    ordered_set.resize(tuple_size);
+    std::vector<KeyTuplePositionMapping> new_indexes_mapping;
+    new_indexes_mapping.reserve(tuple_size);
+    ordered_set.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
+    {
+        auto column = set_elements[indexes_mapping[i].tuple_index];
+        auto column_type = set_types[indexes_mapping[i].tuple_index];
+
+        std::tie(column, column_type) = KeyCondition::applyMonotonicFunctionsChainToColumn(indexes_mapping[i].rhs_chain, column, column_type, context);
+
+        if (column)
+        {
+            new_indexes_mapping.emplace_back(std::move(indexes_mapping[i]));
+            ordered_set.emplace_back(std::move(column));
+        }
+    }
+    indexes_mapping.swap(new_indexes_mapping);
+    tuple_size = ordered_set.size();
 
     Block block_to_sort;
     SortDescription sort_description;
@@ -532,7 +552,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     {
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
-            indexes_mapping[i].functions,
+            indexes_mapping[i].lhs_chain,
             data_types[indexes_mapping[i].key_index],
             single_point);
 
@@ -660,7 +680,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
 bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
 {
     for (const auto & mapping : indexes_mapping)
-        if (!mapping.functions.empty())
+        if (!mapping.lhs_chain.empty())
             return true;
     return false;
 }
