@@ -1,8 +1,10 @@
 #include <Processors/Sinks/IOutputChunkGenerator.h>
 
-namespace DB {
+namespace DB
+{
 
-class ForwardEverythingGenerator : public IOutputChunkGenerator {
+class ForwardEverythingGenerator : public IOutputChunkGenerator
+{
 public:
 
     explicit ForwardEverythingGenerator() = default;
@@ -24,7 +26,8 @@ private:
     Chunk in_chunk;
 };
 
-class CopyRangesGenerator : public IOutputChunkGenerator {
+class CopyRangesGenerator : public IOutputChunkGenerator
+{
 public:
     explicit CopyRangesGenerator() = default;
 
