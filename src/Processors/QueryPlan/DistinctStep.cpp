@@ -12,13 +12,12 @@ namespace DB
 
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
-    const bool preserves_number_of_streams = pre_distinct;
     return ITransformingStep::Traits
     {
         {
             .returns_single_stream = !pre_distinct,
-            .preserves_number_of_streams = preserves_number_of_streams,
-            .preserves_sorting = preserves_number_of_streams,
+            .preserves_number_of_streams = pre_distinct,
+            .preserves_sorting = true, /// Sorting is preserved indeed because of implementation.
         },
         {
             .preserves_number_of_rows = false,

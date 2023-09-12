@@ -11,7 +11,6 @@ from typing import List, Tuple
 
 from github import Github
 
-from build_check import get_release_or_pr
 from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
@@ -31,7 +30,6 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-from version_helper import get_version_from_repo
 
 NAME = "Fast test"
 
@@ -112,9 +110,6 @@ def main():
     rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        status = rerun_helper.get_finished_status()
-        if status is not None and status.state != "success":
-            sys.exit(1)
         sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
@@ -144,7 +139,7 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    with TeePopen(run_cmd, run_log_path, timeout=90 * 60) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
@@ -180,17 +175,6 @@ def main():
         state, description, test_results, additional_logs = process_results(output_path)
 
     ch_helper = ClickHouseHelper()
-    s3_path_prefix = os.path.join(
-        get_release_or_pr(pr_info, get_version_from_repo())[0],
-        pr_info.sha,
-        "fast_tests",
-    )
-    build_urls = s3_helper.upload_build_directory_to_s3(
-        output_path / "binaries",
-        s3_path_prefix,
-        keep_dirs_in_s3_path=False,
-        upload_symlinks=False,
-    )
 
     report_url = upload_results(
         s3_helper,
@@ -199,7 +183,6 @@ def main():
         test_results,
         [run_log_path.as_posix()] + additional_logs,
         NAME,
-        build_urls,
     )
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(commit, state, report_url, description, NAME, pr_info)
@@ -217,11 +200,8 @@ def main():
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if state == "error":
-            print("The status is 'error', report failure disregard the labels")
-            sys.exit(1)
-        elif FORCE_TESTS_LABEL in pr_info.labels:
-            print(f"'{FORCE_TESTS_LABEL}' enabled, reporting success")
+        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
 

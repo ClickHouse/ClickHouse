@@ -2,7 +2,6 @@
 
 #include "Epoll.h"
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <unistd.h>
 
@@ -35,10 +34,10 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
     return *this;
 }
 
-void Epoll::add(int fd, void * ptr, uint32_t events)
+void Epoll::add(int fd, void * ptr)
 {
     epoll_event event;
-    event.events = events | EPOLLPRI;
+    event.events = EPOLLIN | EPOLLPRI;
     if (ptr)
         event.data.ptr = ptr;
     else
@@ -58,35 +57,21 @@ void Epoll::remove(int fd)
         throwFromErrno("Cannot remove descriptor from epoll", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout) const
+size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
 {
     if (events_count == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
-    Stopwatch watch;
     int ready_size;
-    while (true)
+    int timeout = blocking ? -1 : 0;
+    do
     {
         ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);
 
-        /// If `ready_size` = 0, it's timeout.
-        if (ready_size < 0)
-        {
-            if (errno == EINTR)
-            {
-                if (timeout >= 0)
-                {
-                    timeout = std::max(0, static_cast<int>(timeout - watch.elapsedMilliseconds()));
-                    watch.restart();
-                }
-                continue;
-            }
-            else
-                throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
-        }
-        else
-            break;
+        if (ready_size == -1 && errno != EINTR)
+            throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
     }
+    while (ready_size <= 0 && (ready_size != 0 || blocking));
 
     return ready_size;
 }

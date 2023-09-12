@@ -44,7 +44,10 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
             LZMA_VERSION_STRING);
 }
 
-LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer() = default;
+LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
+{
+    finalize();
+}
 
 void LZMADeflatingWriteBuffer::nextImpl()
 {

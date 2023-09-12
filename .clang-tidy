@@ -23,7 +23,7 @@ Checks: '*,
     -bugprone-implicit-widening-of-multiplication-result,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
-    -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
+    -bugprone-reserved-identifier,
     -bugprone-unchecked-optional-access,
 
     -cert-dcl16-c,
@@ -110,8 +110,6 @@ Checks: '*,
     -misc-const-correctness,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
-    -misc-confusable-identifiers, # useful but slooow
-    -misc-use-anonymous-namespace,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
@@ -137,7 +135,7 @@ Checks: '*,
     -readability-function-cognitive-complexity,
     -readability-function-size,
     -readability-identifier-length,
-    -readability-identifier-naming, # useful but too slow
+    -readability-identifier-naming,
     -readability-implicit-bool-conversion,
     -readability-isolate-declaration,
     -readability-magic-numbers,
@@ -149,7 +147,20 @@ Checks: '*,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
 
-    -zircon-*,
+    -zirkon-*,
+
+    -misc-*, # temporarily disabled due to being too slow
+    # also disable checks in other categories which are aliases of checks in misc-*:
+    # https://releases.llvm.org/15.0.0/tools/clang/tools/extra/docs/clang-tidy/checks/list.html
+    -cert-dcl54-cpp,                                            # alias of misc-new-delete-overloads
+    -hicpp-new-delete-operators,                                # alias of misc-new-delete-overloads
+    -cert-fio38-c,                                              # alias of misc-non-copyable-objects
+    -cert-dcl03-c,                                              # alias of misc-static-assert
+    -hicpp-static-assert,                                       # alias of misc-static-assert
+    -cert-err09-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
+    -cert-err61-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
+    -cppcoreguidelines-c-copy-assignment-signature,             # alias of misc-unconventional-assign-operator
+    -cppcoreguidelines-non-private-member-variables-in-classes, # alias of misc-non-private-member-variables-in-classes
 '
 
 WarningsAsErrors: '*'
@@ -169,10 +180,11 @@ CheckOptions:
   readability-identifier-naming.ParameterPackCase: lower_case
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
-  readability-identifier-naming.TemplateParameterCase: lower_case
+  readability-identifier-naming.TemplateUsingCase: lower_case
   readability-identifier-naming.TypeTemplateParameterCase: CamelCase
   readability-identifier-naming.TypedefCase: CamelCase
   readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.UsingCase: CamelCase
   modernize-loop-convert.UseCxx20ReverseRanges: false
   performance-move-const-arg.CheckTriviallyCopyableMove: false
   # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097

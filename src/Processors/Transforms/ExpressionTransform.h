@@ -26,15 +26,10 @@ public:
 
     static Block transformHeader(Block header, const ActionsDAG & expression);
 
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
-
 protected:
     void transform(Chunk & chunk) override;
 
-    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
-
 private:
-
     ExpressionActionsPtr expression;
 };
 

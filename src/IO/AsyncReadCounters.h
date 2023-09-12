@@ -27,6 +27,5 @@ struct AsyncReadCounters
 
     void dumpToMapColumn(IColumn * column) const;
 };
-using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 
 }

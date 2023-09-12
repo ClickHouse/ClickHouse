@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/functions/bit-functions
-sidebar_position: 20
+sidebar_position: 48
 sidebar_label: Bit
 ---
 
@@ -34,12 +34,12 @@ bitShiftLeft(a, b)
 
 **Arguments**
 
-- `a` — A value to shift. [Integer types](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `b` — The number of shift positions. [Unsigned integer types](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
+-   `a` — A value to shift. [Integer types](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `b` — The number of shift positions. [Unsigned integer types](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
 
-- Shifted value.
+-   Shifted value.
 
 The type of the returned value is the same as the type of the input value.
 
@@ -81,12 +81,12 @@ bitShiftRight(a, b)
 
 **Arguments**
 
-- `a` — A value to shift. [Integer types](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-- `b` — The number of shift positions. [Unsigned integer types](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
+-   `a` — A value to shift. [Integer types](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `b` — The number of shift positions. [Unsigned integer types](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
 
-- Shifted value.
+-   Shifted value.
 
 The type of the returned value is the same as the type of the input value.
 
@@ -179,8 +179,8 @@ SELECT bitTest(number, index)
 
 **Arguments**
 
-- `number` – Integer number.
-- `index` – Position of bit.
+-   `number` – Integer number.
+-   `index` – Position of bit.
 
 **Returned values**
 
@@ -226,7 +226,7 @@ Result:
 
 Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_conjunction) (AND operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
-The conjuction for bit-wise operations:
+The conjuction for bitwise operations:
 
 0 AND 0 = 0
 
@@ -244,8 +244,8 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Arguments**
 
-- `number` – Integer number.
-- `index1`, `index2`, `index3`, `index4` – Positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
+-   `number` – Integer number.
+-   `index1`, `index2`, `index3`, `index4` – Positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
 
 **Returned values**
 
@@ -291,7 +291,7 @@ Result:
 
 Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_disjunction) (OR operator) of all bits at given positions. The countdown starts from 0 from the right to the left.
 
-The disjunction for bit-wise operations:
+The disjunction for bitwise operations:
 
 0 OR 0 = 0
 
@@ -309,12 +309,12 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 **Arguments**
 
-- `number` – Integer number.
-- `index1`, `index2`, `index3`, `index4` – Positions of bit.
+-   `number` – Integer number.
+-   `index1`, `index2`, `index3`, `index4` – Positions of bit.
 
 **Returned values**
 
-Returns result of logical disjunction.
+Returns result of logical disjuction.
 
 Type: `UInt8`.
 
@@ -364,11 +364,11 @@ bitCount(x)
 
 **Arguments**
 
-- `x` — [Integer](../../sql-reference/data-types/int-uint.md) or [floating-point](../../sql-reference/data-types/float.md) number. The function uses the value representation in memory. It allows supporting floating-point numbers.
+-   `x` — [Integer](../../sql-reference/data-types/int-uint.md) or [floating-point](../../sql-reference/data-types/float.md) number. The function uses the value representation in memory. It allows supporting floating-point numbers.
 
 **Returned value**
 
-- Number of bits set to one in the input number.
+-   Number of bits set to one in the input number.
 
 The function does not convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
 
@@ -404,12 +404,12 @@ bitHammingDistance(int1, int2)
 
 **Arguments**
 
-- `int1` — First integer value. [Int64](../../sql-reference/data-types/int-uint.md).
-- `int2` — Second integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `int1` — First integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `int2` — Second integer value. [Int64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
-- The Hamming distance.
+-   The Hamming distance.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 

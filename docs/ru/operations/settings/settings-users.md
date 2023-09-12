@@ -8,10 +8,9 @@ sidebar_label: "Настройки пользователей"
 
 Раздел `users` конфигурационного файла `user.xml` содержит настройки для пользователей.
 
-:::note Информация
-Для управления пользователями рекомендуется использовать [SQL-ориентированный воркфлоу](../access-rights.md#access-control), который также поддерживается в ClickHouse.
-:::
-
+    :::note "Информация"
+    Для управления пользователями рекомендуется использовать [SQL-ориентированный воркфлоу](../access-rights.md#access-control), который также поддерживается в ClickHouse.
+    :::
 Структура раздела `users`:
 
 ``` xml
@@ -38,10 +37,6 @@ sidebar_label: "Настройки пользователей"
                 <table_name>
             </database_name>
         </databases>
-        
-        <grants>
-            <query>GRANT SELECT ON system.*</query>
-        </grants>
     </user_name>
     <!-- Other users settings -->
 </users>
@@ -94,27 +89,6 @@ sidebar_label: "Настройки пользователей"
 
 Значение по умолчанию: 0.
 
-### grants {#grants-user-setting}
-
-Настройка позволяет указать набор прав для заданного пользователя.
-Каждый элемент списка должен представлять собой `GRANT` запрос без указания пользователей в самом запросе.
-
-Пример:
-
-```xml
-<user1>
-    <grants>
-        <query>GRANT SHOW ON *.*</query>
-        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
-        <query>GRANT SELECT ON system.*</query>
-    </grants>
-</user1>
-```
-
-Настройка не может быть выставлена одновременно с
-`dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
-или `allow_databases`.
-
 ### user_name/networks {#user-namenetworks}
 
 Список сетей, из которых пользователь может подключиться к серверу ClickHouse.
@@ -147,9 +121,8 @@ sidebar_label: "Настройки пользователей"
 <ip>::/0</ip>
 ```
 
-:::danger Внимание
-Открывать доступ из любой сети небезопасно, если у вас нет правильно настроенного брандмауэра или сервер не отключен от интернета.
-:::
+:::danger "Внимание"
+    Открывать доступ из любой сети небезопасно, если у вас нет правильно настроенного брандмауэра или сервер не отключен от интернета.
 
 Чтобы открыть только локальный доступ, укажите:
 

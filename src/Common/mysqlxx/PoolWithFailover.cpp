@@ -6,10 +6,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int ALL_CONNECTION_TRIES_FAILED;
-}
 
 using namespace mysqlxx;
 
@@ -195,6 +191,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
     }
 
     DB::WriteBufferFromOwnString message;
+    if (replicas_by_priority.size() > 1)
+        message << "Connections to all mysql replicas failed: ";
+    else
+        message << "Connections to mysql failed: ";
 
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
     {
@@ -211,10 +211,5 @@ PoolWithFailover::Entry PoolWithFailover::get()
         }
     }
 
-
-    if (replicas_by_priority.size() > 1)
-        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to all mysql replicas failed: {}", message.str());
-    else
-        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Connections to mysql failed: {}", message.str());
-
+    throw Poco::Exception(message.str());
 }

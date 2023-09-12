@@ -15,8 +15,7 @@ public:
         const StorageID & table_id_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        const String & comment,
-        const bool is_parameterized_view_=false);
+        const String & comment);
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
@@ -45,9 +44,17 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, const bool parameterized_view);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+    static String replaceQueryParameterWithValue (const String & column_name, const NameToNameMap & parameter_values, const NameToNameMap & parameter_types);
+    static String replaceValueWithQueryParameter (const String & column_name, const NameToNameMap & parameter_values);
+
+    const NameToNameMap & getParameterTypes() const
+    {
+        return view_parameter_types;
+    }
 
 protected:
     bool is_parameterized_view;
+    NameToNameMap view_parameter_types;
 };
 
 }

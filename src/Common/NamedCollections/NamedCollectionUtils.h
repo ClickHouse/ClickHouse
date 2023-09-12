@@ -8,7 +8,6 @@ namespace DB
 
 class ASTCreateNamedCollectionQuery;
 class ASTAlterNamedCollectionQuery;
-class ASTDropNamedCollectionQuery;
 
 namespace NamedCollectionUtils
 {
@@ -27,7 +26,8 @@ void reloadFromConfig(const Poco::Util::AbstractConfiguration & config);
 void loadFromSQL(ContextPtr context);
 
 /// Remove collection as well as its metadata from `context->getPath() / named_collections /`.
-void removeFromSQL(const ASTDropNamedCollectionQuery & query, ContextPtr context);
+void removeFromSQL(const std::string & collection_name, ContextPtr context);
+void removeIfExistsFromSQL(const std::string & collection_name, ContextPtr context);
 
 /// Create a new collection from AST and put it to `context->getPath() / named_collections /`.
 void createFromSQL(const ASTCreateNamedCollectionQuery & query, ContextPtr context);

@@ -1,4 +1,5 @@
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -85,7 +86,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;

@@ -57,7 +57,7 @@ LocalFileHolder::~LocalFileHolder()
 {
     if (original_readbuffer)
     {
-        assert_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
+        dynamic_cast<SeekableReadBuffer *>(original_readbuffer.get())->seek(0, SEEK_SET);
         file_cache_controller->value().startBackgroundDownload(std::move(original_readbuffer), *thread_pool);
     }
 }
@@ -122,7 +122,7 @@ off_t RemoteReadBuffer::seek(off_t offset, int whence)
 {
     if (local_file_holder->original_readbuffer)
     {
-        auto ret = assert_cast<SeekableReadBuffer *>(local_file_holder->original_readbuffer.get())->seek(offset, whence);
+        auto ret = dynamic_cast<SeekableReadBuffer *>(local_file_holder->original_readbuffer.get())->seek(offset, whence);
         BufferBase::set(
             local_file_holder->original_readbuffer->buffer().begin(),
             local_file_holder->original_readbuffer->buffer().size(),
@@ -147,7 +147,7 @@ off_t RemoteReadBuffer::getPosition()
 {
     if (local_file_holder->original_readbuffer)
     {
-        return assert_cast<SeekableReadBuffer *>(local_file_holder->original_readbuffer.get())->getPosition();
+        return dynamic_cast<SeekableReadBuffer *>(local_file_holder->original_readbuffer.get())->getPosition();
     }
     return local_file_holder->file_buffer->getPosition();
 }
