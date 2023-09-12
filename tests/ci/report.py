@@ -250,7 +250,7 @@ class TestResult:
             self.log_files.append(file)
 
     @staticmethod
-    def create_check_timeout_expired(timeout : float) -> "TestResult":
+    def create_check_timeout_expired(timeout: float) -> "TestResult":
         return TestResult("Check timeout expired", "FAIL", timeout)
 
 
