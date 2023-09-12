@@ -199,9 +199,6 @@ std::unique_ptr<IInterpreterUnionOrSelectQuery> JoinedTables::makeLeftTableSubqu
     if (!isLeftTableSubquery())
         return {};
 
-    if (context->getSettingsRef().allow_experimental_query_coordination)
-        return std::make_unique<InterpreterSelectWithUnionQueryFragments>(left_table_expression, context, select_options.copy().analyze());
-
     /// Only build dry_run interpreter during analysis. We will reconstruct the subquery interpreter during plan building.
     return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options.copy().analyze());
 }

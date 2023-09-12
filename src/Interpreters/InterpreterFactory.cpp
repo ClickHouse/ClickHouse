@@ -79,6 +79,7 @@
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowEngineQuery.h>
@@ -161,11 +162,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
+        if (context->getSettingsRef().allow_experimental_query_coordination)
+            return std::make_unique<InterpreterSelectQueryCoordination>(query, context, options);
+
         if (context->getSettingsRef().allow_experimental_analyzer)
             return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
-
-        if (context->getSettingsRef().allow_experimental_query_coordination)
-            return std::make_unique<InterpreterSelectWithUnionQueryFragments>(query, context, options);
 
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
