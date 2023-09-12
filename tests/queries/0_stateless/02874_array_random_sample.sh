@@ -11,7 +11,7 @@ passed_tests=0
 
 # Test Function for Integer Arrays
 run_integer_test() {
-    query_result=$(clickhouse-client -q "SELECT randomSampleFromArray([1,2,3], 2)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1,2,3], 2)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d '[]' | tr ',' '\n' | sort -n)
     declare -A expected_outcomes
     expected_outcomes["1 2"]=1
@@ -34,7 +34,7 @@ run_integer_test() {
 
 # Test Function for String Arrays
 run_string_test() {
-    query_result=$(clickhouse-client -q "SELECT randomSampleFromArray(['a','b','c'], 2)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample(['a','b','c'], 2)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d "[]'" | tr ',' '\n' | sort)
     declare -A expected_outcomes
     expected_outcomes["a b"]=1
@@ -57,7 +57,7 @@ run_string_test() {
 
 # Test Function for Nested Arrays
 run_nested_array_test() {
-    query_result=$(clickhouse-client -q "SELECT randomSampleFromArray([[7,2],[3,4],[7,6]], 2)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([[7,2],[3,4],[7,6]], 2)")
     # Convert to a space-separated string for easy sorting.
     converted_result=$(echo "$query_result" | tr -d '[]' | tr ',' ' ')
 
@@ -87,7 +87,7 @@ run_nested_array_test() {
 
 # Test Function for K > array.size
 run_higher_k_test() {
-    query_result=$(clickhouse-client -q "SELECT randomSampleFromArray([1,2,3], 5)")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1,2,3], 5)")
     mapfile -t sorted_result < <(echo "$query_result" | tr -d '[]' | tr ',' '\n' | sort -n)
     sorted_original=("1" "2" "3")
 

@@ -16,13 +16,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/// randomSampleFromArray(arr, k) - Returns k random elements from the input array
-class FunctionRandomSampleFromArray : public IFunction
+/// arrayRandomSample(arr, k) - Returns k random elements from the input array
+class FunctionArrayRandomSample : public IFunction
 {
 public:
-    static constexpr auto name = "randomSampleFromArray";
+    static constexpr auto name = "arrayRandomSample";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomSampleFromArray>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayRandomSample>(); }
 
     String getName() const override { return name; }
 
@@ -120,7 +120,7 @@ public:
 
 REGISTER_FUNCTION(RandomSampleFromArray)
 {
-    factory.registerFunction<FunctionRandomSampleFromArray>();
+    factory.registerFunction<FunctionArrayRandomSample>();
 }
 
 }

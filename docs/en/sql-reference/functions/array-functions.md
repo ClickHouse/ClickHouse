@@ -2119,14 +2119,14 @@ Result:
 ```
 
 
-## randomSampleFromArray
+## arrayRandomSample
 
 Returns a random sample from an input array. The number of elements in the sample is determined by the `sampleSize` argument. The function ensures that each element in the input array has an equal chance of being included in the sample.
 
 **Syntax**
 
 ```sql
-randomSampleFromArray(arr, sampleSize)
+arrayRandomSample(arr, sampleSize)
 ```
 
 **Arguments**
@@ -2143,7 +2143,7 @@ randomSampleFromArray(arr, sampleSize)
 Query:
 
 ```sql
-SELECT randomSampleFromArray([1, 2, 3, 4, 5, 6], 3) as res;
+SELECT arrayRandomSample([1, 2, 3, 4, 5, 6], 3) as res;
 ```
 
 Result:
@@ -2160,7 +2160,7 @@ or
 Query:
 
 ```sql
-SELECT randomSampleFromArray(['apple', 'banana', 'cherry', 'date'], 2) as res;
+SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
 ```
 
 Result:
@@ -2181,7 +2181,7 @@ or
 Query:
 
 ```sql
-SELECT randomSampleFromArray([[1, 2], [3, 4], [5, 6]], 2) as res;
+SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
 ```
 
 Result:
@@ -2198,7 +2198,7 @@ or
 Query:
 
 ```sql
-SELECT randomSampleFromArray([1, 2, 3, 4, 5], 0) as res;
+SELECT arrayRandomSample([1, 2, 3, 4, 5], 0) as res;
 ```
 
 Result:
@@ -2209,7 +2209,7 @@ TODO: FIX ME
 Query:
 
 ```sql
-SELECT randomSampleFromArray([1, 2, 3], 5) as res;
+SELECT arrayRandomSample([1, 2, 3], 5) as res;
 ```
 
 Result:
@@ -2223,7 +2223,7 @@ or
 └─────────┘
 ```
 
-The `randomSampleFromArray` function randomly selects elements from the input array, ensuring that the specified number of elements is included in the sample. If `sampleSize` exceeds the size of the input array, it will be limited to the size of the array. It can handle both flat arrays and arrays containing nested arrays, providing flexibility in sampling from complex data structures.
+The `arrayRandomSample` function randomly selects elements from the input array, ensuring that the specified number of elements is included in the sample. If `sampleSize` exceeds the size of the input array, it will be limited to the size of the array. It can handle both flat arrays and arrays containing nested arrays, providing flexibility in sampling from complex data structures.
 
 ## Distance functions
 
