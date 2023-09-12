@@ -195,10 +195,9 @@ def run_stress_test(docker_image_name):
     )
 
     if timeout_expired:
-        test_result_name = "Check timeout expired"
-        test_results.append(TestResult(test_result_name, "FAIL", timeout))
+        test_results.append(TestResult.create_check_timeout_expired(timeout))
         state = "failure"
-        description = format_description(test_result_name)
+        description = format_description(test_results[-1].name)
 
     ch_helper = ClickHouseHelper()
 
