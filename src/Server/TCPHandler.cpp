@@ -476,12 +476,10 @@ void TCPHandler::runImpl()
 
             if (query_context->getSettingsRef().allow_experimental_query_coordination && query_context->isDistributedForQueryCoord())
             {
-                LOG_DEBUG(log, "Process query with coordination");
                 processOrdinaryQueryWithCoordination(finish_or_cancel);
             }
             else if (state.io.pipeline.pushing())
             {
-                LOG_DEBUG(log, "process pushing");
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
@@ -489,13 +487,11 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.pulling())
             {
-                LOG_DEBUG(log, "processOrdinaryQueryWithProcessors");
                 processOrdinaryQueryWithProcessors();
                 finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
             {
-                LOG_DEBUG(log, "process completed");
                 {
                     CompletedPipelineExecutor executor(state.io.pipeline);
 

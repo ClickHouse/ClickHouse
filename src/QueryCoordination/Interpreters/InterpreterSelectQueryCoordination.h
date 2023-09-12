@@ -10,11 +10,15 @@ namespace DB
 class InterpreterSelectQueryCoordination : public IInterpreter
 {
 public:
-
     InterpreterSelectQueryCoordination(
             const ASTPtr & query_ptr_,
             ContextPtr context_,
             const SelectQueryOptions &);
+
+    InterpreterSelectQueryCoordination(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
+        const SelectQueryOptions &);
 
     BlockIO execute() override;
 

@@ -17,7 +17,13 @@ namespace DB
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(Context::createCopy(context_)), options(options_)
+    : InterpreterSelectQueryCoordination(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
+InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_)
+    : query_ptr(query_ptr_), context(context_), options(options_)
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
