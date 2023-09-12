@@ -981,6 +981,16 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Session could expire, get it again
         zookeeper = getZooKeeperIfTableShutDown();
+
+        auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
+        Coordination::Stat lost_part_count_stat;
+        String lost_part_count_str;
+        if (zookeeper->tryGet(lost_part_count_path, lost_part_count_str, &lost_part_count_stat))
+        {
+            UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
+            if (lost_part_count > 0)
+                LOG_INFO(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
+        }
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings(), &has_metadata_in_zookeeper);
     }
 }
@@ -1588,6 +1598,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
     while (true)
     {
         LOG_DEBUG(log, "Committing part {} to zookeeper", part->name);
+
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
@@ -4890,6 +4901,16 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread)
             if (from_attach_thread)
             {
                 restarting_thread.shutdown(/* part_of_full_shutdown */false);
+
+                auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+                if (data_parts_exchange_ptr)
+                {
+                    getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
+                    /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+                    data_parts_exchange_ptr->blocker.cancelForever();
+                    /// Wait for all of them
+                    std::lock_guard lock(data_parts_exchange_ptr->rwlock);
+                }
             }
             else
             {
@@ -5177,10 +5198,13 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
         processed_stage);
 
     ClusterProxy::executeQueryWithParallelReplicas(
-        query_plan, getStorageID(),
-        /* table_func_ptr= */ nullptr,
-        select_stream_factory, modified_query_ast,
-        local_context, query_info, parallel_replicas_cluster);
+        query_plan,
+        getStorageID(),
+        select_stream_factory,
+        modified_query_ast,
+        local_context,
+        query_info.storage_limits,
+        parallel_replicas_cluster);
 }
 
 void StorageReplicatedMergeTree::readLocalImpl(
@@ -5694,6 +5718,17 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
+    if (commands.isCommentAlter())
+    {
+        StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+        commands.apply(future_metadata, query_context);
+
+        setInMemoryMetadata(future_metadata);
+
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata);
+        return;
+    }
+
     auto ast_to_str = [](ASTPtr query) -> String
     {
         if (!query)
@@ -5763,12 +5798,27 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
-        if (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes))
+        bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
+        bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
+
+        if (settings_are_changed || comment_is_changed)
         {
-            /// Just change settings
             StorageInMemoryMetadata metadata_copy = *current_metadata;
-            metadata_copy.settings_changes = future_metadata.settings_changes;
-            changeSettings(metadata_copy.settings_changes, table_lock_holder);
+
+            if (settings_are_changed)
+            {
+                /// Just change settings
+                metadata_copy.settings_changes = future_metadata.settings_changes;
+                changeSettings(metadata_copy.settings_changes, table_lock_holder);
+            }
+
+            /// The comment is not replicated as of today, but we can implement it later.
+            if (comment_is_changed)
+            {
+                metadata_copy.setComment(future_metadata.comment);
+                setInMemoryMetadata(metadata_copy);
+            }
+
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy);
         }
 
@@ -8781,6 +8831,14 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
         String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+
+        if (!path_to_set_hardlinked_files.empty() && !hardlinks.empty())
+        {
+            LOG_DEBUG(log, "Locking shared node {} with hardlinks from the other shared node {}, "
+                           "hardlinks: [{}]",
+                      zookeeper_node, path_to_set_hardlinked_files,
+                      boost::algorithm::join(hardlinks, ","));
+        }
 
         getZeroCopyLockNodeCreateOps(
             zookeeper, zookeeper_node, requests, zkutil::CreateMode::Persistent,

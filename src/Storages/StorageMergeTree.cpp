@@ -237,9 +237,13 @@ void StorageMergeTree::read(
                 processed_stage);
 
         ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,
-            select_stream_factory, modified_query_ast,
-            local_context, query_info, cluster);
+            query_plan,
+            getStorageID(),
+            select_stream_factory,
+            modified_query_ast,
+            local_context,
+            query_info.storage_limits,
+            cluster);
     }
     else
     {
@@ -330,6 +334,11 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    }
+    else if (commands.isCommentAlter())
+    {
+        setInMemoryMetadata(new_metadata);
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else

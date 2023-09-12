@@ -1,0 +1,88 @@
+Rows 0 Columns 9
+Column median(number) type Float64
+Column stddevSamp(number) type Float64
+Column stddevPop(number) type Float64
+Column max(number) type UInt64
+Column min(number) type UInt64
+Column any(number) type UInt64
+Column count(number) type UInt64
+Column avg(number) type Float64
+Column sum(number) type UInt64
+Rows 1 Columns 9
+Column median(number) type Float64
+Column stddevSamp(number) type Float64
+Column stddevPop(number) type Float64
+Column max(number) type UInt64
+Column min(number) type UInt64
+Column any(number) type UInt64
+Column count(number) type UInt64
+Column avg(number) type Float64
+Column sum(number) type UInt64
+Rows 1 Columns 9
+Column median(number) type Float64
+Column stddevSamp(number) type Float64
+Column stddevPop(number) type Float64
+Column max(number) type UInt64
+Column min(number) type UInt64
+Column any(number) type UInt64
+Column count(number) type UInt64
+Column avg(number) type Float64
+Column sum(number) type UInt64
+max(number) [20000000]
+min(number) [0]
+any(number) [0]
+count(number) [20000001]
+sum(number) [200000010000000]
+Rows 0 Columns 9
+Column median(number) type Float64
+Column stddevSamp(number) type Float64
+Column stddevPop(number) type Float64
+Column max(number) type UInt64
+Column min(number) type UInt64
+Column any(number) type UInt64
+Column count(number) type UInt64
+Column avg(number) type Float64
+Column sum(number) type UInt64
+Rows 1 Columns 9
+Column median(number) type Float64
+Column stddevSamp(number) type Float64
+Column stddevPop(number) type Float64
+Column max(number) type UInt64
+Column min(number) type UInt64
+Column any(number) type UInt64
+Column count(number) type UInt64
+Column avg(number) type Float64
+Column sum(number) type UInt64
+Rows 1 Columns 9
+Column median(number) type Float64
+Column stddevSamp(number) type Float64
+Column stddevPop(number) type Float64
+Column max(number) type UInt64
+Column min(number) type UInt64
+Column any(number) type UInt64
+Column count(number) type UInt64
+Column avg(number) type Float64
+Column sum(number) type UInt64
+max(number) [20000000]
+min(number) [19999998]
+any(number) [20000000]
+count(number) [3]
+sum(number) [59999997]
+Rows 0 Columns 1
+Column sum(number) type UInt64
+Rows 0 Columns 1
+Column sum(number) type UInt64
+Rows 1 Columns 1
+Column sum(number) type UInt64
+sum(number) [200000010000000]
+Rows 0 Columns 2
+Column mod2 type UInt8
+Column sum(number) type UInt64
+Rows 0 Columns 2
+Column mod2 type UInt8
+Column sum(number) type UInt64
+Rows 2 Columns 2
+Column mod2 type UInt8
+Column sum(number) type UInt64
+mod2 [0, 1]
+sum(number) [100000010000000, 100000000000000]
