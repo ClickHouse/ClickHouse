@@ -289,9 +289,9 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     to S3 tests bucket. Then it returns the URL"""
     test_results = []  # type: TestResults
     for status in statuses:
-        log_urls = None
+        log_urls = []
         if status.target_url is not None:
-            log_urls = [status.target_url]
+            log_urls.append(status.target_url)
         raw_logs = status.description or None
         test_results.append(
             TestResult(
