@@ -1150,12 +1150,12 @@ addDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 - `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
 
-Date or date with time obtained by adding `value`, expressed in `unit`, to `date`.
+Date or date with time obtained by adding `interval` to `date`.
 
 Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -1172,6 +1172,47 @@ Result:
 │                                       2021-01-01 │
 └──────────────────────────────────────────────────┘
 ```
+
+**See Also**
+- [date_add](#date_add)
+
+## subDate
+
+Subtracts the time interval or date interval from the provided date or date with time.
+
+**Syntax**
+
+``` sql
+subDate(date, interval)
+```
+
+**Arguments**
+
+- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+- `interval` — Interval to subtract. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
+
+**Returned value**
+
+Date or date with time obtained by subtracting `interval` from `date`.
+
+Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+```sql
+SELECT subDate(toDate('2018-01-01'), INTERVAL 3 YEAR);
+```
+
+Result:
+
+```text
+┌─subDate(toDate('2018-01-01'), toIntervalYear(3))─┐
+│                                       2015-01-01 │
+└──────────────────────────────────────────────────┘
+```
+
+**See Also**
+- [date_sub](#date_sub)
 
 ## now
 

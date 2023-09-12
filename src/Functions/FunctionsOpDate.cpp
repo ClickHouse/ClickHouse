@@ -10,15 +10,16 @@ namespace ErrorCodes
 
 namespace
 {
-
-class FunctionAddDate : public IFunction
+template <typename Op>
+class FunctionOpDate : public IFunction
 {
 public:
-    static constexpr auto name = "addDate";
+    static constexpr auto name = Op::name;
 
-    explicit FunctionAddDate(ContextPtr context_) : context(context_) {}
+    explicit FunctionOpDate(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAddDate>(context); }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOpDate<Op>>(context); }
 
     String getName() const override { return name; }
 
@@ -37,14 +38,14 @@ public:
         if (!isInterval(arguments[1].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Should be an interval",
-                arguments[0].type->getName(),
+                "Illegal type {} of 2nd argument of function {}. Should be an interval",
+                arguments[1].type->getName(),
                 getName());
 
-        auto plus = FunctionFactory::instance().get("plus", context);
-        auto plus_build = plus->build(arguments);
+        auto op = FunctionFactory::instance().get(Op::internal_name, context);
+        auto op_build = op->build(arguments);
 
-        return plus_build->getResultType();
+        return op_build->getResultType();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -62,15 +63,15 @@ public:
         if (!isInterval(arguments[1].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Should be an interval",
-                arguments[0].type->getName(),
+                "Illegal type {} of 2nd argument of function {}. Should be an interval",
+                arguments[1].type->getName(),
                 getName());
 
-        auto plus = FunctionFactory::instance().get("plus", context);
-        auto plus_build = plus->build(arguments);
+        auto op = FunctionFactory::instance().get(Op::internal_name, context);
+        auto op_build = op->build(arguments);
 
-        auto res_type = plus_build->getResultType();
-        return plus_build->execute(arguments, res_type, input_rows_count);
+        auto res_type = op_build->getResultType();
+        return op_build->execute(arguments, res_type, input_rows_count);
     }
 
 private:
@@ -79,10 +80,25 @@ private:
 
 }
 
+struct AddDate
+{
+    static constexpr auto name = "addDate";
+    static constexpr auto internal_name = "plus";
+};
+
+struct SubDate
+{
+    static constexpr auto name = "subDate";
+    static constexpr auto internal_name = "minus";
+};
+
+using FunctionAddDate = FunctionOpDate<AddDate>;
+using FunctionSubDate = FunctionOpDate<SubDate>;
 
 REGISTER_FUNCTION(AddInterval)
 {
     factory.registerFunction<FunctionAddDate>();
+    factory.registerFunction<FunctionSubDate>();
 }
 
 }
