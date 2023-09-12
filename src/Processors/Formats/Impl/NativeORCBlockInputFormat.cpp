@@ -712,8 +712,7 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
 {
     bool skipped = false;
 
-    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable()))
-        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::STRUCT))
+    if (!inside_nullable && (orc_column->hasNulls || (type_hint && type_hint->isNullable())))
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
