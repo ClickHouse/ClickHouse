@@ -105,8 +105,8 @@ echo "Parquet"
 #
 #  parquet::WriterProperties::Builder builder;
 #  builder.compression(arrow::Compression::GZIP);
-#  builder.dictionary_pagesize_limit(10*1024*1024); // Given your string size is roughly 9.2MB
-#  builder.data_pagesize(20*1024*1024); // Given your dataset's repetition, let's try with 20MB
+#  builder.dictionary_pagesize_limit(10*1024*1024);
+#  builder.data_pagesize(20*1024*1024);
 #
 #  std::shared_ptr<parquet::WriterProperties> props = builder.build();
 #
