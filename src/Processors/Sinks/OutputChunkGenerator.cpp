@@ -35,6 +35,8 @@ public:
     {
         out_cols = chunk.cloneEmptyColumns();
         in_chunk = std::move(chunk);
+        row_offset = 0;
+        final_chunk_rows = 0;
     }
 
     void onRowsProcessed(size_t row_count, bool append)  override
