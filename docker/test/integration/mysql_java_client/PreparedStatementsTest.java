@@ -33,8 +33,8 @@ public class PreparedStatementsTest {
             }
         }
 
-        // useServerPrepStmts allows us to send COM_STMT_PREPARE and COM_STMT_EXECUTE
-        // to test the binary protocol implementation
+        // useServerPrepStmts uses COM_STMT_PREPARE and COM_STMT_EXECUTE
+        // instead of COM_QUERY which allows us to test the binary protocol
         String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=true",
                 host, port, database);
 
@@ -174,4 +174,5 @@ public class PreparedStatementsTest {
         return String.format("%s type is %s", columnLabel,
                 MysqlType.getByJdbcType(meta.getColumnType(rs.findColumn(columnLabel))));
     }
+
 }

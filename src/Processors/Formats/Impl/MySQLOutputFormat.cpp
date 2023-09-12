@@ -25,7 +25,7 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, 
     /// There is no `sequence_id` stored in `settings_.mysql_wire` in this case, so we create a dummy one.
     sequence_id = settings_.mysql_wire.sequence_id ? settings_.mysql_wire.sequence_id : &dummy_sequence_id;
     /// Switch between Text (COM_QUERY) and Binary (COM_EXECUTE_STMT) ResultSet
-    use_binary_result_set = settings_.mysql_wire.use_binary_result_set;
+    use_binary_result_set = settings_.mysql_wire.binary_protocol;
 
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();

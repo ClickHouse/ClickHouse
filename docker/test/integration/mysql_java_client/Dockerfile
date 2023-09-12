@@ -1,16 +1,9 @@
 # docker build -t clickhouse/mysql-java-client .
 # MySQL Java client docker container
 
-FROM ubuntu:22.04
+FROM openjdk:8-jdk-alpine
 
-RUN apt-get update && \
-    apt-get install -y software-properties-common build-essential openjdk-8-jdk curl
-
-RUN rm -rf \
-        /var/lib/apt/lists/* \
-        /var/cache/debconf \
-        /tmp/* \
-RUN apt-get clean
+RUN apk --no-cache add curl
 
 ARG ver=8.1.0
 RUN curl -L -o /mysql-connector-j-${ver}.jar https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/${ver}/mysql-connector-j-${ver}.jar

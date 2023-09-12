@@ -198,9 +198,6 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             break;
         case TypeIndex::DateTime:
-            column_type = ColumnType::MYSQL_TYPE_DATETIME;
-            flags = ColumnDefinitionFlags::BINARY_FLAG;
-            break;
         case TypeIndex::DateTime64:
             column_type = ColumnType::MYSQL_TYPE_DATETIME;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
@@ -212,6 +209,8 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             break;
         case TypeIndex::Decimal128: {
             // MySQL Decimal has max 65 precision and 30 scale
+            // Decimal256 (min scale is 39) is higher than the MySQL supported range and handled in the default case
+            // See https://dev.mysql.com/doc/refman/8.0/en/precision-math-decimal-characteristics.html
             const auto & type = assert_cast<const DataTypeDecimal128 &>(*data_type);
             if (type.getPrecision() > 65 || type.getScale() > 30)
             {

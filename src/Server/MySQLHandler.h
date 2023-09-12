@@ -30,6 +30,9 @@ class TCPServer;
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
+    using PreparedStatements = std::unordered_map<UInt32, String>; /// statement_id -> statement
+    using EmplacePreparedStatementResult = std::pair<bool, UInt32>; /// is_success? -> statement_id
+
 public:
     MySQLHandler(
         IServer & server_,
@@ -46,7 +49,7 @@ protected:
     /// Enables SSL, if client requested.
     void finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResponse &);
 
-    void comQuery(ReadBuffer & payload, bool use_binary_protocol_result_set);
+    void comQuery(ReadBuffer & payload, bool binary_protocol);
 
     void comFieldList(ReadBuffer & payload);
 
@@ -61,6 +64,9 @@ protected:
     void comStmtExecute(ReadBuffer & payload);
 
     void comStmtClose(ReadBuffer & payload);
+
+    EmplacePreparedStatementResult emplacePreparedStatement(String statement);
+    void erasePreparedStatement(UInt32 statement_id);
 
     virtual void authPluginSSL();
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
@@ -82,9 +88,9 @@ protected:
     using Replacements = std::unordered_map<std::string, ReplacementFn>;
     Replacements replacements;
 
-    uint32_t current_prepared_statement_id = 0;
-    using PreparedStatementsMap = std::unordered_map<uint32_t, String>;
-    PreparedStatementsMap prepared_statements_map;
+    std::mutex prepared_statements_mutex;
+    UInt32 current_prepared_statement_id = 0;
+    PreparedStatements prepared_statements;
 
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
     std::shared_ptr<ReadBufferFromPocoSocket> in;
