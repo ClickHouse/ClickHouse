@@ -45,8 +45,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        const ColumnArray * input_data = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
-        if (!input_data)
+        const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        if (!column_array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument must be an array");
 
         const IColumn * col_num = arguments[1].column.get();
@@ -74,7 +74,7 @@ public:
 
         Poco::Logger::get("FunctionRandomSampleFromArray").debug("The number of samples K = " + std::to_string(K));
 
-        const auto & offsets = input_data->getOffsets();
+        const auto & offsets = column_array->getOffsets();
         size_t num_elements = offsets[0];
 
         Poco::Logger::get("FunctionRandomSampleFromArray").debug("The number of elements in the array = " + std::to_string(num_elements));
@@ -82,7 +82,7 @@ public:
         if (num_elements == 0 || K == 0)
         {
             // Handle edge cases where input array is empty or K is 0
-            return input_data->cloneEmpty();
+            return column_array->cloneEmpty();
         }
 
         std::random_device rd;
@@ -92,8 +92,8 @@ public:
         {
             K = static_cast<UInt64>(num_elements);
         }
-        // Create an empty ColumnArray with the same structure as input_data
-        auto nested_column = input_data->getDataPtr()->cloneEmpty();
+        // Create an empty ColumnArray with the same structure as column_array
+        auto nested_column = column_array->getDataPtr()->cloneEmpty();
         auto offsets_column = ColumnUInt64::create(); // Create an empty offsets column
 
         auto res_data = ColumnArray::create(std::move(nested_column), std::move(offsets_column));
@@ -107,7 +107,7 @@ public:
             size_t source_index = indices[i];
 
             // Insert the corresponding element from the source array
-            res_data->getData().insertFrom(input_data->getData(), source_index);
+            res_data->getData().insertFrom(column_array->getData(), source_index);
         }
 
         // Update offsets manually for the single row
