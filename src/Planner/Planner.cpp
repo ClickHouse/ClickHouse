@@ -3,11 +3,13 @@
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnSet.h>
 
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/indexHint.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -894,79 +896,72 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
-void addBuildSubqueriesForSetsStepIfNeeded(QueryPlan & query_plan,
+void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
+{
+    for (const auto & node : dag->getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData().get());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
+}
+
+void addBuildSubqueriesForSetsStepIfNeeded(
+    QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     const PlannerContextPtr & planner_context,
     const std::vector<ActionsDAGPtr> & result_actions_to_execute)
 {
-    PreparedSets::SubqueriesForSets subqueries_for_sets;
+    auto subqueries = planner_context->getPreparedSets().getSubqueries();
+    std::unordered_set<const FutureSet *> useful_sets;
 
     for (const auto & actions_to_execute : result_actions_to_execute)
+        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
+
+    auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.get()); };
+    auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
+    subqueries.erase(it, subqueries.end());
+
+    for (auto & subquery : subqueries)
     {
-        for (const auto & node : actions_to_execute->getNodes())
-        {
-            const auto & set_key = node.result_name;
-            auto * planner_set = planner_context->getSetOrNull(set_key);
-            if (!planner_set)
-                continue;
+        auto query_tree = subquery->detachQueryTree();
+        auto subquery_options = select_query_options.subquery();
+        Planner subquery_planner(
+            query_tree,
+            subquery_options,
+            planner_context->getGlobalPlannerContext());
+        subquery_planner.buildQueryPlanIfNeeded();
 
-            auto subquery_to_execute = planner_set->getSubqueryNode();
-
-            if (planner_set->getSet().isCreated() || !subquery_to_execute)
-                continue;
-
-            if (auto * table_node = subquery_to_execute->as<TableNode>())
-            {
-                auto storage_snapshot = table_node->getStorageSnapshot();
-                auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
-
-                size_t columns_to_select_size = columns_to_select.size();
-
-                auto column_nodes_to_select = std::make_shared<ListNode>();
-                column_nodes_to_select->getNodes().reserve(columns_to_select_size);
-
-                NamesAndTypes projection_columns;
-                projection_columns.reserve(columns_to_select_size);
-
-                for (auto & column : columns_to_select)
-                {
-                    column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, subquery_to_execute));
-                    projection_columns.emplace_back(column.name, column.type);
-                }
-
-                auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(planner_context->getQueryContext()));
-                subquery_for_table->setIsSubquery(true);
-                subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
-                subquery_for_table->getJoinTree() = std::move(subquery_to_execute);
-                subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
-
-                subquery_to_execute = std::move(subquery_for_table);
-            }
-
-            auto subquery_options = select_query_options.subquery();
-            Planner subquery_planner(
-                subquery_to_execute,
-                subquery_options,
-                planner_context->getGlobalPlannerContext());
-            subquery_planner.buildQueryPlanIfNeeded();
-
-            const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-            SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-            bool tranform_null_in = settings.transform_null_in;
-            auto set = std::make_shared<Set>(size_limits_for_set, false /*fill_set_elements*/, tranform_null_in);
-
-            SubqueryForSet subquery_for_set;
-            subquery_for_set.key = set_key;
-            subquery_for_set.set_in_progress = set;
-            subquery_for_set.set = planner_set->getSet();
-            subquery_for_set.promise_to_fill_set = planner_set->extractPromiseToBuildSet();
-            subquery_for_set.source = std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan());
-
-            subqueries_for_sets.emplace(set_key, std::move(subquery_for_set));
-        }
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
     }
 
-    addCreatingSetsStep(query_plan, std::move(subqueries_for_sets), planner_context->getQueryContext());
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(subqueries),
+            planner_context->getQueryContext());
+
+        query_plan.addStep(std::move(step));
+    }
 }
 
 /// Support for `additional_result_filter` setting
@@ -1052,7 +1047,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_)
+    SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
@@ -1060,7 +1055,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
+    SelectQueryOptions & select_query_options_,
     GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
@@ -1069,7 +1064,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
+    SelectQueryOptions & select_query_options_,
     PlannerContextPtr planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)

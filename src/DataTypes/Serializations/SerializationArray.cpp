@@ -129,7 +129,7 @@ namespace
         for (size_t i = offset; i < end; ++i)
         {
             ColumnArray::Offset current_offset = offset_values[i];
-            writeIntBinary(current_offset - prev_offset, ostr);
+            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
             prev_offset = current_offset;
         }
     }
@@ -145,7 +145,7 @@ namespace
         while (i < initial_size + limit && !istr.eof())
         {
             ColumnArray::Offset current_size = 0;
-            readIntBinary(current_size, istr);
+            readBinaryLittleEndian(current_size, istr);
 
             if (unlikely(current_size > MAX_ARRAY_SIZE))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size is too large: {}", current_size);
@@ -493,7 +493,10 @@ void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, co
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextQuoted(nested_column, istr, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextQuotedImpl(nested_column, istr, settings, nested);
+            else
+                nested->deserializeTextQuoted(nested_column, istr, settings);
         }, false);
 
     if (whole && !istr.eof())
@@ -604,7 +607,10 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                nested->deserializeTextCSV(nested_column, rb, settings);
+                if (settings.null_as_default)
+                    SerializationNullable::deserializeTextCSVImpl(nested_column, rb, settings, nested);
+                else
+                    nested->deserializeTextCSV(nested_column, rb, settings);
             }, true);
     }
     else
@@ -612,7 +618,10 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                nested->deserializeTextQuoted(nested_column, rb, settings);
+                if (settings.null_as_default)
+                    SerializationNullable::deserializeTextQuotedImpl(nested_column, rb, settings, nested);
+                else
+                    nested->deserializeTextQuoted(nested_column, rb, settings);
             }, true);
     }
 }

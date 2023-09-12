@@ -68,7 +68,7 @@ private:
     struct DiskWithSize
     {
         DiskPtr disk;
-        uint64_t free_size = 0;
+        std::optional<UInt64> free_size = 0;
 
         DiskWithSize(DiskPtr disk_)
             : disk(disk_)
@@ -80,7 +80,7 @@ private:
             return free_size < rhs.free_size;
         }
 
-        ReservationPtr reserve(uint64_t bytes)
+        ReservationPtr reserve(UInt64 bytes)
         {
             ReservationPtr reservation = disk->reserve(bytes);
             if (!reservation)

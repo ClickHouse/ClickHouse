@@ -491,6 +491,10 @@ bool MergeTreeConditionInverted::traverseASTEquals(
                 DataTypePtr const_type;
                 if (argument.tryGetConstant(const_value, const_type))
                 {
+                    auto const_data_type = WhichDataType(const_type);
+                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
+                        return false;
+
                     key_column_num = header.getPositionByName(map_keys_index_column_name);
                     key_exists = true;
                 }
@@ -655,7 +659,11 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

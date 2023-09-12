@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 import os
 import logging
 
@@ -34,7 +34,7 @@ def process_logs(
                 test_result.log_urls.append(processed_logs[path])
             elif path:
                 url = s3_client.upload_test_report_to_s3(
-                    path.as_posix(), s3_path_prefix + "/" + path.name
+                    path, s3_path_prefix + "/" + path.name
                 )
                 test_result.log_urls.append(url)
                 processed_logs[path] = url
@@ -44,7 +44,7 @@ def process_logs(
         if log_path:
             additional_urls.append(
                 s3_client.upload_test_report_to_s3(
-                    log_path, s3_path_prefix + "/" + os.path.basename(log_path)
+                    Path(log_path), s3_path_prefix + "/" + os.path.basename(log_path)
                 )
             )
 
@@ -58,14 +58,19 @@ def upload_results(
     test_results: TestResults,
     additional_files: List[str],
     check_name: str,
+    additional_urls: Optional[List[str]] = None,
 ) -> str:
     normalized_check_name = check_name.lower()
     for r in ((" ", "_"), ("(", "_"), (")", "_"), (",", "_"), ("/", "_")):
         normalized_check_name = normalized_check_name.replace(*r)
+
+    # Preserve additional_urls to not modify the original one
+    original_additional_urls = additional_urls or []
     s3_path_prefix = f"{pr_number}/{commit_sha}/{normalized_check_name}"
     additional_urls = process_logs(
         s3_client, additional_files, s3_path_prefix, test_results
     )
+    additional_urls.extend(original_additional_urls)
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"
@@ -95,9 +100,9 @@ def upload_results(
         additional_urls,
         statuscolors=statuscolors,
     )
-    with open("report.html", "w", encoding="utf-8") as f:
-        f.write(html_report)
+    report_path = Path("report.html")
+    report_path.write_text(html_report, encoding="utf-8")
 
-    url = s3_client.upload_test_report_to_s3("report.html", s3_path_prefix + ".html")
+    url = s3_client.upload_test_report_to_s3(report_path, s3_path_prefix + ".html")
     logging.info("Search result in url %s", url)
     return url

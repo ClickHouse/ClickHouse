@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/mongodb
-sidebar_position: 5
+sidebar_position: 135
 sidebar_label: MongoDB
 ---
 
@@ -32,6 +32,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 - `password` — User password.
 
 - `options` — MongoDB connection string options (optional parameter).
+
+:::tip
+If you are using the MongoDB Atlas cloud offering please add these options:
+
+```
+'connectTimeoutMS=10000&ssl=true&authSource=admin'
+```
+
+:::
 
 ## Usage Example {#usage-example}
 

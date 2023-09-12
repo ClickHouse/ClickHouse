@@ -1,4 +1,3 @@
--- Tags: no-upgrade-check
 
 SET mutations_sync = 2;
 

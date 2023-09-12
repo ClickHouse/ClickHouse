@@ -50,7 +50,7 @@ To manage named collections with DDL a user must have the `named_control_collect
 ```
 
 :::tip
-In the above example the `passowrd_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user. 
+In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user. 
 :::
 
 ## Storing named collections in configuration files
@@ -169,7 +169,6 @@ host = '127.0.0.1',
 port = 3306,
 database = 'test',
 connection_pool_size = 8,
-on_duplicate_clause = 1,
 replace_query = 1
 ```
 
@@ -185,7 +184,6 @@ replace_query = 1
             <port>3306</port>
             <database>test</database>
             <connection_pool_size>8</connection_pool_size>
-            <on_duplicate_clause>1</on_duplicate_clause>
             <replace_query>1</replace_query>
         </mymysql>
     </named_collections>

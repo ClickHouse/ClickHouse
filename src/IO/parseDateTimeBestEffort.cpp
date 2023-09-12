@@ -578,12 +578,16 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
-    if (!year)
-        year = 2000;
-    if (!month)
-        month = 1;
     if (!day_of_month)
         day_of_month = 1;
+    if (!month)
+        month = 1;
+    if (!year)
+    {
+        time_t now = time(nullptr);
+        UInt16 curr_year = local_time_zone.toYear(now);
+        year = now < local_time_zone.makeDateTime(curr_year, month, day_of_month, hour, minute, second) ? curr_year - 1 : curr_year;
+    }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 
