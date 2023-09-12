@@ -7656,7 +7656,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             entry_replace.columns_version = -1;
         }
 
-        if (replace) {
+        if (replace)
+        {
             /// Cancel concurrent inserts in range
             clearLockedBlockNumbersInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
             /// Remove deduplication block_ids of replacing parts
