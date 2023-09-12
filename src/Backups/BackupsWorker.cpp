@@ -17,7 +17,6 @@
 #include <Interpreters/BackupLog.h>
 #include <Interpreters/BackupsStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/getEngineDefinitionFromConfig.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
@@ -42,6 +41,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int UNKNOWN_STORAGE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
@@ -220,20 +220,23 @@ namespace
 }
 
 
-static constexpr const char * DEFAULT_PARTITION_BY = "toYYYYMM(start_time)";
-static constexpr const char * DEFAULT_GROUP_BY = "start_time";
 static constexpr const char * TABLE_NAME = "backups";
-static constexpr const char * CONFIG_SECTION = "backups.system_table";
-static const std::set<String> allowed_engines = {"MergeTree", "Memory"};
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool persistent_storage)
+BackupsWorker::BackupsWorker(ContextPtr global_context, const String & engine, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool special_storage)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
-    , storage(persistent_storage ? std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines)) : nullptr)
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
 {
+    try {
+        storage = std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, engine);
+    }
+    catch (Exception& e)
+    {
+        if (!(e.code() == ErrorCodes::UNKNOWN_STORAGE && special_storage))
+            throw;
+    }
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
 

@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/System/StorageSystemBackups.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
@@ -101,6 +102,7 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/getEngineDefinitionFromConfig.h>
 
 
 namespace fs = std::filesystem;
@@ -3226,16 +3228,29 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
-void Context::initializeBackupsWorker(bool persistent_storage)
+bool Context::initializeBackupsWorker(bool persistent_storage)
 {
+    constexpr const char * DEFAULT_PARTITION_BY = "toYYYYMM(start_time)";
+    constexpr const char * DEFAULT_GROUP_BY = "start_time";
+    constexpr const char * CONFIG_SECTION = "backups.system_table";
+    const std::set<String> allowed_engines = {StorageSystemBackups::ENGINE_NAME, "MergeTree", "Memory"};
+
     const auto & config = getConfigRef();
     const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
     const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
+    const String engine = config.has(CONFIG_SECTION)
+        ? getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines)
+        : String{"ENGINE="} + StorageSystemBackups::ENGINE_NAME;
+    bool special_storage = extractEngineName(engine) == StorageSystemBackups::ENGINE_NAME;
+    bool create_persistent_storage = persistent_storage && !engine.empty() && !special_storage;
+
     const auto & settings_ref = getSettingsRef();
     UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
     UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), getConfigRef(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, persistent_storage);
+    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), engine, backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, special_storage);
+
+    return !create_persistent_storage; /// indication to attach transient system.backups table using StorageSystemBackups class
 }
 
 /// Call after unexpected crash happen.

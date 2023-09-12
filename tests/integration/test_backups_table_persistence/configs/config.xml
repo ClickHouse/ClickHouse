@@ -1,5 +1,8 @@
 <clickhouse>
     <backups>
         <allowed_path>/backups</allowed_path>
+        <system_table>
+            <engine>ENGINE=MergeTree ORDER BY start_time</engine>
+        </system_table>
     </backups>
 </clickhouse>

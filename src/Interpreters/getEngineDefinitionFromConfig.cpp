@@ -78,21 +78,24 @@ String getEngineDefinitionFromConfig(const Poco::Util::AbstractConfiguration & c
         }
     }
 
-    if (!engine_constraints.empty())
+    if (!engine_constraints.empty() && !engine_constraints.contains(extractEngineName(engine)))
     {
-        std::vector<std::string> tokens;
-        splitInto<' ', '\t', '\r', '\n', '='>(tokens, engine, true);
-        if (tokens.size() < 2)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Ill-formed engine definition: {}", engine);
-        const auto& engine_name = tokens[1];
-        if (!engine_constraints.contains(engine_name))
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Invalid table engine: {}", engine_name);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Table engine is not allowed: {}", engine);
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     validateEngineDefinition(engine, validation_query_description);
 
     return engine;
+}
+
+String extractEngineName(const String & engine_definition)
+{
+    std::vector<std::string> tokens;
+    splitInto<' ', '\t', '\r', '\n', '='>(tokens, engine_definition, true);
+    if (tokens.size() < 2)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Ill-formed engine definition: {}", engine_definition);
+    return tokens[1];
 }
 
 }
