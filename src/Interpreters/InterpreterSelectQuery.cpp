@@ -40,6 +40,7 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#include <Interpreters/addBuildSubqueriesForSetsStep.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
