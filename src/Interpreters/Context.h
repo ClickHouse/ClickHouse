@@ -273,6 +273,8 @@ private:
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
+    bool is_distributed_for_query_coordination = false;  /// Whether the current context it used for distributed query
+
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
 
@@ -741,6 +743,9 @@ public:
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
+
+    void setDistributedForQueryCoord(bool is_distributed_for_query_coord) { is_distributed_for_query_coordination = is_distributed_for_query_coord; }
+    bool isDistributedForQueryCoord() const { return is_distributed_for_query_coordination; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);

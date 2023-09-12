@@ -46,17 +46,17 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             }
 
             if (context->addQueryCoordinationMetaInfo(cluster_name, storages, visitor.sharding_keys))
-                context->setDistributed(true);
+                context->setDistributedForQueryCoord(true);
             else
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query"); /// maybe union query
         }
 
         if (visitor.has_local_table)
-            context->setDistributed(false);
+            context->setDistributedForQueryCoord(false);
     }
     else
     {
-        context->setDistributed(true);
+        context->setDistributedForQueryCoord(true);
     }
 }
 
@@ -86,7 +86,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
 
     query_plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
-    if (context->isDistributed())
+    if (context->isDistributedForQueryCoord())
     {
         Optimizer optimizer;
         StepTree step_tree = optimizer.optimize(std::move(query_plan), context);
@@ -134,6 +134,8 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     }
     else
     {
+        LOG_INFO(&Poco::Logger::get("InterpreterSelectQueryCoordination"), "Local query");
+
         auto builder = query_plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context),
             BuildQueryPipelineSettings::fromContext(context));
