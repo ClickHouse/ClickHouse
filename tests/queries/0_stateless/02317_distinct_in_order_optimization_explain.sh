@@ -12,8 +12,8 @@ GREP_DISTINCT="grep 'DistinctSortedChunkTransform\|DistinctSortedStreamTransform
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 REMOVE_NON_LETTERS="sed 's/[^a-zA-Z]//g'"
 FIND_DISTINCT="$GREP_DISTINCT | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
-FIND_READING_IN_ORDER="grep 'MergeTreeInOrder' | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
-FIND_READING_DEFAULT="grep 'MergeTreeThread' | $TRIM_LEADING_SPACES | $REMOVE_NON_LETTERS"
+FIND_READING_IN_ORDER="grep -o 'algorithm: InOrder' | $TRIM_LEADING_SPACES"
+FIND_READING_DEFAULT="grep -o 'algorithm: Thread' | $TRIM_LEADING_SPACES"
 FIND_SORTING_PROPERTIES="grep 'Sorting (Stream)' | $TRIM_LEADING_SPACES"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists distinct_in_order_explain sync"

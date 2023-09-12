@@ -187,7 +187,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, 0, 0, /*coordinator=*/nullptr);
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
             return std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(my_context),
@@ -305,7 +305,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Block header_,
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
-    ASTPtr table_func_ptr_,
     ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
@@ -318,7 +317,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , main_table(std::move(main_table_))
-    , table_func_ptr(table_func_ptr_)
     , context(context_)
     , throttler(throttler_)
     , scalars(scalars_)
