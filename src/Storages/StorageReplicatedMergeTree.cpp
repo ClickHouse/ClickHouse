@@ -5198,10 +5198,13 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
         processed_stage);
 
     ClusterProxy::executeQueryWithParallelReplicas(
-        query_plan, getStorageID(),
-        /* table_func_ptr= */ nullptr,
-        select_stream_factory, modified_query_ast,
-        local_context, query_info.storage_limits, parallel_replicas_cluster);
+        query_plan,
+        getStorageID(),
+        select_stream_factory,
+        modified_query_ast,
+        local_context,
+        query_info.storage_limits,
+        parallel_replicas_cluster);
 }
 
 void StorageReplicatedMergeTree::readLocalImpl(
