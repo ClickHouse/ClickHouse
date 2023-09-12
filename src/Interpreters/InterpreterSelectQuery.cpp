@@ -269,8 +269,8 @@ void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, cons
     CrossToInnerJoinVisitor(cross_to_inner).visit(query);
 
     /// Rewrite only occurs when join_use_nulls is true.
-    bool join_use_nulls = settings.join_use_nulls;
-    if (join_use_nulls) {
+    if (settings.join_use_nulls)
+    {
         OuterToInnerJoinVisitor::Data outer_to_inner{tables, aliases, database};
         outer_to_inner.outer_to_inner_join_rewrite = static_cast<UInt8>(std::min<UInt64>(settings.outer_to_inner_join_rewirte, 1));
         OuterToInnerJoinVisitor(outer_to_inner).visit(query);
