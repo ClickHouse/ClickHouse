@@ -41,7 +41,8 @@ from report import TestResults, read_test_results
 # from s3_helper import S3Helper
 from stopwatch import Stopwatch
 
-# from tee_popen import TeePopen
+from tee_popen import TeePopen
+
 # from upload_result_helper import upload_results
 
 NO_CHANGES_MSG = "Nothing to run"
@@ -121,8 +122,10 @@ def get_run_command(
     # )
 
     return (
-        f"docker run --volume={fuzzers_path}:/fuzzers "
-        f"{ci_logs_args}"
+        f"docker run "
+        f"{ci_logs_args} "
+        f"--workdir=/fuzzers "
+        f"--volume={fuzzers_path}:/fuzzers "
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
         #        f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
@@ -338,11 +341,15 @@ def main():
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
     for file in os.listdir(fuzzers_path):
-        if file.endswith("_seed_corpus.zip"):
+        if file.endswith("_fuzzer"):
+            os.chmod(os.path.join(fuzzers_path, file), 0o777)
+        elif file.endswith("_seed_corpus.zip"):
             corpus_path = os.path.join(
-                temp_path, file.removesuffix("_seed_corpus.zip") + ".in"
+                fuzzers_path, file.removesuffix("_seed_corpus.zip") + ".in"
             )
-            zipfile.ZipFile(os.path.join(temp_path, file), "r").extractall(corpus_path)
+            zipfile.ZipFile(os.path.join(fuzzers_path, file), "r").extractall(
+                corpus_path
+            )
 
     # server_log_path = os.path.join(temp_path, "server_log")
     # if not os.path.exists(server_log_path):
@@ -352,7 +359,7 @@ def main():
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    # run_log_path = os.path.join(result_path, "run.log")
+    run_log_path = os.path.join(result_path, "run.log")
 
     additional_envs = get_additional_envs(
         check_name, run_by_hash_num, run_by_hash_total
@@ -380,14 +387,16 @@ def main():
     )
     logging.info("Going to run libFuzzer tests: %s", run_command)
 
-    sys.exit(0)
+    # sys.exit(0)
 
-    # with TeePopen(run_command, run_log_path) as process:
-    #     retcode = process.wait()
-    #     if retcode == 0:
-    #         logging.info("Run successfully")
-    #     else:
-    #         logging.info("Run failed")
+    with TeePopen(run_command, run_log_path) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+        else:
+            logging.info("Run failed")
+
+    sys.exit(0)
 
     # try:
     #     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
