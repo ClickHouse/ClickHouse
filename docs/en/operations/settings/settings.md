@@ -460,6 +460,17 @@ Possible values:
 
 Default value: 1048576.
 
+## http_make_head_request {#http-make-head-request}
+
+Enables or disables execution of a HEAD request before the actual GET request
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
+
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.

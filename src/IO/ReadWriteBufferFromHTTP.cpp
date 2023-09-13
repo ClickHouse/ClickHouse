@@ -808,6 +808,11 @@ std::optional<time_t> ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::tryGetLa
 template <typename UpdatableSessionPtr>
 HTTPFileInfo ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getFileInfo()
 {
+    if (!settings.http_make_head_request)
+    {
+            return HTTPFileInfo{};
+    }
+
     Poco::Net::HTTPResponse response;
     try
     {
