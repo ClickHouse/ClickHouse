@@ -346,13 +346,13 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
 
             if (const_value.getType() == Field::Types::Int64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
