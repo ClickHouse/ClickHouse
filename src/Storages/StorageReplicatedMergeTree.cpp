@@ -981,6 +981,16 @@ void StorageReplicatedMergeTree::drop()
     {
         /// Session could expire, get it again
         zookeeper = getZooKeeperIfTableShutDown();
+
+        auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
+        Coordination::Stat lost_part_count_stat;
+        String lost_part_count_str;
+        if (zookeeper->tryGet(lost_part_count_path, lost_part_count_str, &lost_part_count_stat))
+        {
+            UInt64 lost_part_count = lost_part_count_str.empty() ? 0 : parse<UInt64>(lost_part_count_str);
+            if (lost_part_count > 0)
+                LOG_INFO(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
+        }
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings(), &has_metadata_in_zookeeper);
     }
 }
@@ -1476,8 +1486,12 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
     }
 }
 
-void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper,
-    const DataPartPtr & part, Coordination::Requests & ops, String part_name, NameSet * absent_replicas_paths)
+bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
+    const ZooKeeperWithFaultInjectionPtr & zookeeper,
+    const DataPartPtr & part,
+    Coordination::Requests & ops,
+    String part_name,
+    NameSet & absent_replicas_paths)
 {
     if (part_name.empty())
         part_name = part->name;
@@ -1487,19 +1501,23 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-    bool has_been_already_added = false;
+    bool part_found = false;
+    bool part_exists_on_our_replica = false;
 
     for (const String & replica : replicas)
     {
         String current_part_path = fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name;
-
         String part_zk_str;
         if (!zookeeper->tryGet(current_part_path, part_zk_str))
         {
-            if (absent_replicas_paths)
-                absent_replicas_paths->emplace(current_part_path);
-
+            absent_replicas_paths.emplace(current_part_path);
             continue;
+        }
+        else
+        {
+            part_found = true;
+            if (replica == replica_name)
+                part_exists_on_our_replica = true;
         }
 
         ReplicatedMergeTreePartHeader replica_part_header;
@@ -1540,20 +1558,13 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         }
 
         replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
-
-        if (replica == replica_name)
-            has_been_already_added = true;
-
-        /// If we verify checksums in "sequential manner" (i.e. recheck absence of checksums on other replicas when commit)
-        /// then it is enough to verify checksums on at least one replica since checksums on other replicas must be the same.
-        if (absent_replicas_paths)
-        {
-            absent_replicas_paths->clear();
-            break;
-        }
+        break;
     }
 
-    if (!has_been_already_added)
+    if (part_found)
+        absent_replicas_paths.clear();
+
+    if (!part_exists_on_our_replica)
     {
         const auto storage_settings_ptr = getSettings();
         String part_path = fs::path(replica_path) / "parts" / part_name;
@@ -1578,6 +1589,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         LOG_WARNING(log, "checkPartAndAddToZooKeeper: node {} already exists. Will not commit any nodes.",
                     (fs::path(replica_path) / "parts" / part_name).string());
     }
+    return part_found;
 }
 
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
@@ -1596,14 +1608,14 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         size_t zero_copy_lock_ops_size = ops.size();
 
         /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
-        checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, &absent_part_paths_on_replicas);
+        bool part_found = checkPartChecksumsAndAddCommitOps(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), part, ops, part->name, absent_part_paths_on_replicas);
 
         /// Do not commit if the part is obsolete, we have just briefly checked its checksums
         if (transaction.isEmpty())
             return {};
 
         /// Will check that the part did not suddenly appear on skipped replicas
-        if (!absent_part_paths_on_replicas.empty())
+        if (!part_found)
         {
             Coordination::Requests new_ops;
             for (const String & part_path : absent_part_paths_on_replicas)
@@ -1616,6 +1628,10 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             /// Add check ops at the beginning
             new_ops.insert(new_ops.end(), ops.begin(), ops.end());
             ops = std::move(new_ops);
+        }
+        else
+        {
+            chassert(absent_part_paths_on_replicas.empty());
         }
 
         Coordination::Responses responses;
@@ -5188,10 +5204,13 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
         processed_stage);
 
     ClusterProxy::executeQueryWithParallelReplicas(
-        query_plan, getStorageID(),
-        /* table_func_ptr= */ nullptr,
-        select_stream_factory, modified_query_ast,
-        local_context, query_info.storage_limits, parallel_replicas_cluster);
+        query_plan,
+        getStorageID(),
+        select_stream_factory,
+        modified_query_ast,
+        local_context,
+        query_info.storage_limits,
+        parallel_replicas_cluster);
 }
 
 void StorageReplicatedMergeTree::readLocalImpl(
