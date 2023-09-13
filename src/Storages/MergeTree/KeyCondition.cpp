@@ -1261,9 +1261,6 @@ bool KeyCondition::tryPrepareSetIndex(
     size_t set_types_size = set_types.size();
     size_t indexes_mapping_size = indexes_mapping.size();
 
-    if (set_types_size != indexes_mapping_size)
-        return false;
-
     for (auto & index_mapping : indexes_mapping)
         if (index_mapping.tuple_index >= set_types_size)
             return false;
@@ -1281,33 +1278,26 @@ bool KeyCondition::tryPrepareSetIndex(
       * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
       * we need to convert set column to primary key column.
       */
-    const auto & set_elements = prepared_set->getSetElements();
-    size_t set_elements_size = set_elements.size();
-    assert(set_types_size == set_elements_size);
-
-    Columns set_columns;
-    set_columns.reserve(set_elements_size);
+    auto set_elements = prepared_set->getSetElements();
+    assert(set_types_size == set_elements.size());
 
     for (size_t i = 0; i < indexes_mapping_size; ++i)
     {
         size_t set_element_index = indexes_mapping[i].tuple_index;
-        const auto & set_element = set_elements[set_element_index];
         const auto & set_element_type = set_types[set_element_index];
+        auto & set_element = set_elements[set_element_index];
 
-        ColumnPtr set_column;
         try
         {
-            set_column = castColumnAccurate({set_element, set_element_type, {}}, data_types[i]);
+            set_element = castColumnAccurate({set_element, set_element_type, {}}, data_types[i]);
         }
         catch (...)
         {
             return false;
         }
-
-        set_columns.push_back(set_column);
     }
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_elements, std::move(indexes_mapping));
     return true;
 }
 
