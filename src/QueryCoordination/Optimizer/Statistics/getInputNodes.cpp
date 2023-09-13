@@ -3,7 +3,7 @@
 namespace DB
 {
 
-ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visit(const ActionsDAGPtr , ContextType & )
+ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visit(const ActionsDAGPtr, ContextType &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented");
 }
@@ -17,13 +17,13 @@ ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visit(const ActionsDAG::Node * no
             nodes = visitInput(node, context);
             break;
         case ActionsDAG::ActionType::COLUMN:
-            visitColumn(node, context);
+            nodes = visitColumn(node, context);
             break;
         case ActionsDAG::ActionType::ALIAS:
             nodes = visitAlias(node, context);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            visitArrayJoin(node, context);
+            nodes = visitArrayJoin(node, context);
             break;
         case ActionsDAG::ActionType::FUNCTION:
             nodes = visitFunction(node, context);
@@ -57,14 +57,20 @@ ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visitAlias(const ActionsDAG::Node
     return visitChildren(node, context);
 }
 
-ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visitArrayJoin(const ActionsDAG::Node * node, ContextType & context)
+ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visitArrayJoin(const ActionsDAG::Node *, ContextType &)
 {
-    return {};
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented");
 }
 
 ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visitFunction(const ActionsDAG::Node * node, ContextType & context)
 {
     return visitChildren(node, context);
+}
+
+ActionsDAG::NodeRawConstPtrs getInputNodes(const ActionsDAG::Node * node)
+{
+    InputNodeVisitor::VisitContext context;
+    return InputNodeVisitor().visit(node, context);
 }
 
 }

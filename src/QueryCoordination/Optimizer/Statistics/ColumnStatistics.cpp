@@ -3,7 +3,30 @@
 namespace DB
 {
 
-ColumnStatistics ColumnStatistics::UNKNOWN = {0.0, 0.0, 0.0, 1.0, nullptr, true, {}};
+ColumnStatisticsPtr ColumnStatistics::unknown()
+{
+    return std::make_shared<ColumnStatistics>();
+}
+
+ColumnStatisticsPtr ColumnStatistics::create(Float64 value)
+{
+    return std::make_shared<ColumnStatistics>(value);
+}
+
+ColumnStatisticsPtr ColumnStatistics::clone()
+{
+    return std::make_shared<ColumnStatistics>(min_value, max_value, ndv, avg_row_size, data_type, is_unknown, histogram);
+}
+
+Float64 ColumnStatistics::calculateSelectivity(OP_TYPE, Float64 /*value*/)
+{
+    return 1.0; /// TODO
+}
+
+void ColumnStatistics::updateValues(OP_TYPE, Float64 /*value*/)
+{
+    /// TODO
+}
 
 void testFload64()
 {

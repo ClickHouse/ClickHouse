@@ -7,6 +7,8 @@ namespace DB
 {
 
 class Statistics;
+
+using StatisticsPtr = std::shared_ptr<Statistics>;
 using StatisticsList = std::vector<Statistics>;
 
 class Statistics
@@ -22,8 +24,10 @@ public:
         return output_row_size;
     }
 
-    void addColumnStatistics(const String & column_name, ColumnStatistics column_stats);
-    ColumnStatistics & getColumnStatistics(const String & column_name);
+    void addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats);
+    ColumnStatisticsPtr getColumnStatistics(const String & column_name) const;
+
+    const ColumnStatisticsMap & getColumnStatisticsMap() const;
 
 private:
     Float64 output_row_size;

@@ -32,10 +32,6 @@ public:
 
 };
 
-ActionsDAG::NodeRawConstPtrs getInputNodes(const ActionsDAG::Node * node)
-{
-    InputNodeVisitor::VisitContext context;
-    return InputNodeVisitor().visit(node, context);
-}
+ActionsDAG::NodeRawConstPtrs getInputNodes(const ActionsDAG::Node * node);
 
 }

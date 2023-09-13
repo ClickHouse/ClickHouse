@@ -1,14 +1,15 @@
-//
-// Created by wujianchao on 9/11/23.
-//
+#pragma once
 
-#ifndef CLICKHOUSE_UTILS_H
-#define CLICKHOUSE_UTILS_H
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Interpreters/ActionsDAG.h>
+#include <QueryCoordination/Optimizer/Statistics/ColumnStatistics.h>
 
-
-class Utils
+namespace DB
 {
-};
 
+bool isNumeric(DataTypePtr data_type);
+bool isConstColumn(const ActionsDAG::Node * node_);
+void adjustActionNodeStats(Float64 row_count, ColumnStatisticsPtr column_stats);
 
-#endif //CLICKHOUSE_UTILS_H
+}

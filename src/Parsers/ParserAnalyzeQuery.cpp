@@ -1,4 +1,4 @@
-#include #include <Parsers/ParserAnalyzeQuery.h>
+#include <Parsers/ParserAnalyzeQuery.h>
 
 namespace DB
 {
