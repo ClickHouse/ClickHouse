@@ -15,6 +15,7 @@
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
+#include <Core/ServerSettings.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -324,8 +325,20 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
-            waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), loader.loadTablesAsync());
-            waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), loader.startupTablesAsync());
+            auto load_tasks = loader.loadTablesAsync();
+            auto startup_tasks = loader.startupTablesAsync();
+            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
+            {
+                scheduleLoad(load_tasks);
+                scheduleLoad(startup_tasks);
+            }
+            else
+            {
+                /// First prioritize, schedule and wait all the load table tasks
+                waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), load_tasks);
+                /// Only then prioritize, schedule and wait all the startup tasks
+                waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_tasks);
+            }
         }
     }
     catch (...)
