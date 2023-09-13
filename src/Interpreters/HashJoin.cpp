@@ -776,6 +776,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
     ColumnPtrMap all_key_columns = JoinCommon::materializeColumnsInplaceMap(source_block, table_join->getAllNames(JoinTableSide::Right));
 
     Block block_to_save = prepareRightBlock(source_block);
+    if (shrink_blocks)
+        block_to_save = block_to_save.shrinkToFit();
+
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
@@ -877,6 +880,28 @@ bool HashJoin::addBlockToJoin(const Block & source_block_, bool check_limits)
             total_rows = getTotalRowCount();
             total_bytes = getTotalByteCount();
         }
+    }
+
+    auto max_total_bytes = table_join->sizeLimits().max_bytes;
+    if (!shrink_blocks && max_total_bytes && total_bytes > max_total_bytes / 2)
+    {
+        shrink_blocks = true;
+        LOG_DEBUG(log, "Shrinking stored blocks table after {} of {} consumed",
+            ReadableSize(total_bytes), ReadableSize(max_total_bytes));
+        for (auto & stored_block : data->blocks)
+        {
+            size_t old_size = stored_block.allocatedBytes();
+            stored_block = stored_block.shrinkToFit();
+            size_t new_size = stored_block.allocatedBytes();
+            chassert(old_size >= new_size);
+            data->blocks_allocated_size -= old_size - new_size;
+        }
+        auto new_total_bytes = getTotalByteCount();
+        size_t total_bytes_delta = total_bytes - new_total_bytes;
+        chassert(new_total_bytes <= total_bytes);
+        LOG_DEBUG(log, "Shrunk stored blocks {} freed, new memory consumption is {}",
+            ReadableSize(total_bytes_delta), ReadableSize(new_total_bytes));
+        total_bytes = new_total_bytes;
     }
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -1765,21 +1790,25 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
+    {
         materializeBlockInplace(block);
+    }
 
     {
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
 
-        if (!joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
             joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
         }))
+        {
+            /// Joined
+        }
+        else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
     }
-
-    block = block.shrinkToFit();
 }
 
 HashJoin::~HashJoin()
