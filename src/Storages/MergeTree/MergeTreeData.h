@@ -669,7 +669,7 @@ public:
     void outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part);
 
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
-    void tryRemovePartImmediately(DataPartPtr && part);
+    bool tryRemovePartImmediately(DataPartPtr && part);
 
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
     /// If 'force' - don't wait for old_parts_lifetime.
