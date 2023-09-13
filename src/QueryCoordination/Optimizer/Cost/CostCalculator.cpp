@@ -12,12 +12,12 @@ Float64 CostCalculator::visit(QueryPlanStepPtr step)
 Float64 CostCalculator::visit(ReadFromMergeTree & /*step*/)
 {
     /// TODO get rows by statistics
-    return std::max(size_t(1), 3 * statistics.getOutputRowSize());
+    return std::max(1.0, 3 * statistics.getOutputRowSize());
 }
 
 Float64 CostCalculator::visitDefault()
 {
-    return std::max(size_t(1), 3 * input_statistics.front().getOutputRowSize());
+    return std::max(1.0, 3 * input_statistics.front().getOutputRowSize());
 }
 
 Float64 CostCalculator::visit(AggregatingStep & step)
@@ -55,9 +55,9 @@ Float64 CostCalculator::visit(ExchangeDataStep & step)
     /// TODO by type
     if (step.getDistributionType() == PhysicalProperties::DistributionType::Replicated)
     {
-        return std::max(size_t(1), 2 * (statistics.getOutputRowSize() * 3/*shard_num*/));
+        return std::max(1.0, 2 * (statistics.getOutputRowSize() * 3/*shard_num*/));
     }
-    return std::max(size_t(1), 2 * statistics.getOutputRowSize());
+    return std::max(1.0, 2 * statistics.getOutputRowSize());
 }
 
 Float64 CostCalculator::visit(SortingStep & /*step*/)

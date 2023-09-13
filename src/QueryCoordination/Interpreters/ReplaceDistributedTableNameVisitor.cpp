@@ -142,7 +142,18 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
             storages.emplace_back(local_table);
             clusters.emplace_back(distributed_table->getCluster());
 
-            /// TODO sharding_key_columns.emplace_back(distributed_table->sharding_key);
+            if (auto sharding_key = distributed_table->getShardingKey())
+            {
+                WriteBufferFromOwnString write_buffer;
+                IAST::FormatSettings settings(write_buffer, true, false, true);
+                sharding_key->format(settings);
+                sharding_keys.emplace_back(write_buffer.str());
+            }
+            else
+            {
+                sharding_keys.emplace_back();
+            }
+
             has_distributed_table = true;
         }
     }

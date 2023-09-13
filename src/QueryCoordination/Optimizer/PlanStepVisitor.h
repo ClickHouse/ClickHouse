@@ -32,6 +32,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 template <class R>
 class PlanStepVisitor
 {
@@ -78,6 +83,10 @@ public:
         {
             return visit(*expression_step);
         }
+        else if (auto * filter_step = typeid_cast<FilterStep *>(step.get()))
+        {
+            return visit(*filter_step);
+        }
         else if (auto * creating_set_step = typeid_cast<CreatingSetStep *>(step.get()))
         {
             return visit(*creating_set_step);
@@ -107,7 +116,7 @@ public:
     /// default implement
     virtual R visitDefault()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: not implement");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method not implemented.");
     }
 
     virtual R visit(ReadFromMergeTree & /*step*/) { return visitDefault(); }
@@ -117,6 +126,8 @@ public:
     virtual R visit(MergingAggregatedStep & /*step*/) { return visitDefault(); }
 
     virtual R visit(ExpressionStep & /*step*/) { return visitDefault(); }
+
+    virtual R visit(FilterStep & /*step*/) { return visitDefault(); }
 
     virtual R visit(SortingStep & /*step*/) { return visitDefault(); }
 

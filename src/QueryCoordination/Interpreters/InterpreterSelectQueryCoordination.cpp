@@ -6,7 +6,7 @@
 #include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
-#include <QueryCoordination/Interpreters/RewriteDistributedTableVisitor.h>
+#include <QueryCoordination/Interpreters/ReplaceDistributedTableNameVisitor.h>
 #include <QueryCoordination/Optimizer/Optimizer.h>
 #include <QueryCoordination/Optimizer/StepTree.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -27,7 +27,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
-        RewriteDistributedTableVisitor visitor(context);
+        ReplaceDistributedTableNameVisitor visitor(context);
         visitor.visit(query_ptr);
 
         if (visitor.has_local_table && visitor.has_distributed_table)

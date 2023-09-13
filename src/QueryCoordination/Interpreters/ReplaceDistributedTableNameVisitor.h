@@ -76,7 +76,7 @@ public:
     /// Cluster list for storages
     std::vector<ClusterPtr> clusters;
     /// Sharding key columns for storages
-    std::vector<String> sharding_key_columns;
+    std::vector<String> sharding_keys;
 
     bool has_distributed_table = false;
     bool has_local_table = false;
