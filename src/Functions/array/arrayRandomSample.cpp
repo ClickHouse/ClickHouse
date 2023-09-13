@@ -32,9 +32,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument must be an array");
+        const DataTypePtr & first_arg = arguments[0];
+        if (!isArray(first_arg))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}, expected Array",
+                arguments[0]->getName(),
+                getName());
+
+        const DataTypeArray * array_type = checkAndGetDataType<const DataTypeArray>(first_arg.get());
 
         if (!isUnsignedInteger(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument must be a unsigned integer");
@@ -77,12 +83,6 @@ public:
 
         Poco::Logger::get("FunctionRandomSampleFromArray").debug("The number of elements in the array = " + std::to_string(num_elements));
 
-        if (num_elements == 0 || K == 0)
-        {
-            // Handle edge cases where input array is empty or K is 0
-            return column_array->cloneEmpty();
-        }
-
         std::random_device rd;
         std::mt19937 gen(rd());
 
@@ -93,6 +93,13 @@ public:
         auto offsets_column = ColumnUInt64::create(); // Create an empty offsets column
 
         auto res_data = ColumnArray::create(std::move(nested_column), std::move(offsets_column));
+
+        if (K == 0)
+        {
+            // Handle edge cases where input array is empty or K is 0
+            res_data->getOffsets().push_back(0);
+            return res_data;
+        }
 
         std::vector<size_t> indices(num_elements);
         std::iota(indices.begin(), indices.end(), 0);
@@ -114,7 +121,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(RandomSampleFromArray)
+REGISTER_FUNCTION(ArrayRandomSample)
 {
     factory.registerFunction<FunctionArrayRandomSample>();
 }
