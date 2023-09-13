@@ -404,7 +404,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
     auto statement_opt = getPreparedStatement(statement_id);
     if (statement_opt.has_value())
-        MySQLHandler::comQuery(statement_opt.value().get(), true);
+        MySQLHandler::comQuery(statement_opt.value(), true);
     else
         packet_endpoint->sendPacket(ERRPacket(), true);
 };
@@ -428,7 +428,7 @@ std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
         LOG_ERROR(log, "Too many prepared statements");
         current_prepared_statement_id = 0;
         prepared_statements.clear();
-        return std::nullopt;
+        return {};
     }
 
     uint32_t statement_id = current_prepared_statement_id;
@@ -444,24 +444,23 @@ std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
             statement,
             statement_id,
             prepared_statements.at(statement_id));
-        return std::nullopt;
+        return {};
     }
 
     prepared_statements.emplace(statement_id, statement);
     return std::make_optional(statement_id);
 };
 
-std::optional<std::reference_wrapper<ReadBufferFromString>> MySQLHandler::getPreparedStatement(UInt32 statement_id)
+std::optional<ReadBufferFromString> MySQLHandler::getPreparedStatement(UInt32 statement_id)
 {
     std::lock_guard<std::mutex> lock(prepared_statements_mutex);
     if (!prepared_statements.contains(statement_id))
     {
         LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
-        return std::nullopt;
+        return {};
     }
     // Temporary workaround as we work only with queries that do not bind any parameters atm
-    ReadBufferFromString statement(prepared_statements.at(statement_id));
-    return std::make_optional(std::reference_wrapper(statement));
+    return std::make_optional<ReadBufferFromString>(prepared_statements.at(statement_id));
 }
 
 void MySQLHandler::erasePreparedStatement(UInt32 statement_id)

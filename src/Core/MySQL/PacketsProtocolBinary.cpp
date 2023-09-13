@@ -5,6 +5,7 @@
 #include "Common/LocalDate.h"
 #include "Common/LocalDateTime.h"
 #include "Columns/ColumnLowCardinality.h"
+#include "Columns/ColumnNullable.h"
 #include "Columns/ColumnVector.h"
 #include "Columns/ColumnsDateTime.h"
 #include "Core/DecimalFunctions.h"
@@ -31,7 +32,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTyp
     FormatSettings format_settings;
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = columns[i];
+        ColumnPtr col = getColumn(i);
         if (col->isNullAt(row_num))
         {
             // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
@@ -152,7 +153,7 @@ void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(null_bitmap.data(), null_bitmap_size);
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = columns[i];
+        ColumnPtr col = getColumn(i);
         if (col->isNullAt(row_num))
             continue;
 
@@ -350,6 +351,14 @@ ResultSetRow::DateTime64ComponentsWithScale ResultSetRow::getDateTime64Component
     }
 
     return {components, scale};
+}
+
+ColumnPtr ResultSetRow::getColumn(size_t i) const
+{
+    ColumnPtr col = columns[i]->convertToFullIfNeeded();
+    if (col->isNullable())
+        return assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
+    return col;
 }
 }
 }

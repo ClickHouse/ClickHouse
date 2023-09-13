@@ -71,7 +71,7 @@ protected:
     /// Contains statement_id if the statement was emplaced successfully
     std::optional<UInt32> emplacePreparedStatement(String statement);
     /// Contains statement as a buffer if we could find previously stored statement using provided statement_id
-    std::optional<std::reference_wrapper<ReadBufferFromString>> getPreparedStatement(UInt32 statement_id);
+    std::optional<ReadBufferFromString> getPreparedStatement(UInt32 statement_id);
     void erasePreparedStatement(UInt32 statement_id);
 
     virtual void authPluginSSL();

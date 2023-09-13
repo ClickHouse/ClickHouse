@@ -818,7 +818,10 @@ def test_prepared_statements(started_cluster, java_container):
         )
 
     for statement in statements:
-        node.query(statement, settings={"password": "123"})
+        node.query(
+            statement,
+            settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
+        )
 
     code, (stdout, stderr) = java_container.exec_run(
         "java PreparedStatementsTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database "
