@@ -189,6 +189,49 @@ run_non_unsigned_integer_k_test() {
     ((total_tests++))
 }
 
+# Function to run a multi-row test with scalar 'k'
+run_multi_row_scalar_k_test() {
+    # Create a table
+    clickhouse-client -q "CREATE TABLE array_test (arr Array(Int32)) ENGINE = Memory;"
+
+    # Insert multi-row data into the table
+    clickhouse-client -q "INSERT INTO array_test VALUES ([1, 2, 3]), ([4, 5, 6]), ([7, 8, 9]);"
+
+    # Query using arrayRandomSample function and store the result, k is scalar here (for example, 2)
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample(arr, 2) FROM array_test")
+
+    # Drop the table
+    clickhouse-client -q "DROP TABLE array_test;"
+
+    # Validate the output here
+    is_test_passed=1  # flag to indicate if the test passed; 1 means passed, 0 means failed
+
+    # Iterate over each line (each array) in the output
+    echo "$query_result" | while read -r line; do
+        # Remove brackets from the array string
+        line=$(echo "$line" | tr -d '[]')
+
+        # Convert the string to an array
+        IFS=", " read -ra nums <<< "$line"
+
+        # Check if the array contains exactly 2 unique elements
+        if [[ ${#nums[@]} -ne 2 ]] || [[ ${nums[0]} -eq ${nums[1]} ]]; then
+            is_test_passed=0
+        fi
+    done
+
+    # Print test result
+    if [[ $is_test_passed -eq 1 ]]; then
+        echo "Multi-row Test with scalar k: Passed"
+        ((passed_tests++))
+    else
+        echo "Multi-row Test with scalar k: Failed"
+        echo "Output: $query_result"
+    fi
+
+    ((total_tests++))
+}
+
 
 
 # Run test multiple times
@@ -198,6 +241,7 @@ for i in {1..5}; do
     run_string_test
     run_nested_array_test
     run_higher_k_test
+    run_multi_row_scalar_k_test
 done
 
 run_integer_with_samples_0_test
