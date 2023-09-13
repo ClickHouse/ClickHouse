@@ -84,6 +84,7 @@ private:
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
+    IBlocksStreamPtr blocks;
 
     Block readExecute(Chunk & chunk);
 };

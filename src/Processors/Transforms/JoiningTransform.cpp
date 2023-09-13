@@ -122,10 +122,21 @@ void JoiningTransform::work()
 {
     if (has_input)
     {
-        transform(input_chunk);
-        output_chunk.swap(input_chunk);
-        has_input = not_processed != nullptr;
-        has_output = !output_chunk.empty();
+        if (!join->supportStreamJoin() || !blocks || blocks->isFinished())
+            transform(input_chunk);
+        if (join->supportStreamJoin())
+        {
+            auto block = blocks->next();
+            output_chunk.setColumns(block.getColumns(), block.rows());
+            has_input = not_processed != nullptr || !blocks->isFinished();
+            has_output = !output_chunk.empty();
+        }
+        else
+        {
+            output_chunk.swap(input_chunk);
+            has_input = not_processed != nullptr;
+            has_output = !output_chunk.empty();
+        }
     }
     else
     {
@@ -190,7 +201,14 @@ void JoiningTransform::transform(Chunk & chunk)
     else
         block = readExecute(chunk);
     auto num_rows = block.rows();
-    chunk.setColumns(block.getColumns(), num_rows);
+    if (!join->supportStreamJoin())
+    {
+        chunk.setColumns(block.getColumns(), num_rows);
+    }
+    else
+    {
+        blocks = join->getStreamBlocks();
+    }
 }
 
 Block JoiningTransform::readExecute(Chunk & chunk)

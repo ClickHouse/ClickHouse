@@ -1604,7 +1604,7 @@ void HashJoin::joinBlockImpl(
     Block & block,
     const Block & block_with_columns_to_add,
     const std::vector<const Maps *> & maps_,
-    bool is_join_get) const
+    bool is_join_get)
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
@@ -1700,18 +1700,19 @@ void HashJoin::joinBlockImpl(
     if constexpr (join_features.need_replication)
     {
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
-
-        /// If ALL ... JOIN - we replicate all the columns except the new ones.
+        std::vector<size_t> need_replicate_columns;
         for (size_t i = 0; i < existing_columns; ++i)
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
-
-        /// Replicate additional right keys
-        for (size_t pos : right_keys_to_replicate)
-            block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
+            need_replicate_columns.emplace_back(i);
+        need_replicate_columns.insert(need_replicate_columns.end(), right_keys_to_replicate.begin(), right_keys_to_replicate.end());
+        current_result = std::make_shared<StreamReplicateBlocks>(block, std::move(offsets_to_replicate), need_replicate_columns);
+    }
+    else
+    {
+        current_result = std::make_shared<StreamReplicateBlocks>(block);
     }
 }
 
-void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const
+void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed)
 {
     size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
     size_t start_left_row = 0;
@@ -1787,6 +1788,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
         block.insert(src_column);
 
     block = block.cloneWithColumns(std::move(dst_columns));
+    current_result = std::make_shared<StreamReplicateBlocks>(block);
 }
 
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -1819,7 +1821,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 
 /// TODO: return multiple columns as named tuple
 /// TODO: return array of values when strictness == JoinStrictness::All
-ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
+ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add)
 {
     bool is_valid = (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
         && kind == JoinKind::Left;
@@ -1843,6 +1845,7 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
     maps_vector.push_back(&std::get<MapsOne>(data->maps[0]));
     joinBlockImpl<JoinKind::Left, JoinStrictness::Any>(
         keys, block_with_columns_to_add, maps_vector, /* is_join_get = */ true);
+    keys = current_result->next();
     return keys.getByPosition(keys.columns() - 1);
 }
 
@@ -2231,6 +2234,16 @@ const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 {
     /// It should be nullable when right side is nullable
     return savedBlockSample().getByName(table_join->getOnlyClause().key_names_right.back());
+}
+
+bool HashJoin::supportStreamJoin() const
+{
+    return true;
+}
+
+IBlocksStreamPtr HashJoin::getStreamBlocks()
+{
+    return std::move(current_result);
 }
 
 }

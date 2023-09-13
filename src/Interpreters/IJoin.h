@@ -97,6 +97,9 @@ public:
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
+    virtual bool supportStreamJoin() const { return false; }
+    virtual IBlocksStreamPtr getStreamBlocks() { return nullptr; }
+
 private:
     Block totals;
 };

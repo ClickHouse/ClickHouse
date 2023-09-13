@@ -10,6 +10,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
+#include <Interpreters/JoinUtils.h>
 
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
@@ -170,7 +171,7 @@ public:
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
     /// Used by joinGet function that turns StorageJoin into a dictionary.
-    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add);
 
     bool isFilled() const override { return from_storage_join; }
 
@@ -395,6 +396,9 @@ public:
 
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
+    bool supportStreamJoin() const override;
+    IBlocksStreamPtr getStreamBlocks() override;
+
 private:
     template<bool> friend class NotJoinedHash;
 
@@ -436,6 +440,8 @@ private:
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
 
+    std::shared_ptr<StreamReplicateBlocks> current_result;
+
     Poco::Logger * log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
@@ -451,9 +457,9 @@ private:
         Block & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,
-        bool is_join_get = false) const;
+        bool is_join_get = false);
 
-    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
+    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed);
 
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
