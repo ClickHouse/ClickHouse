@@ -1,0 +1,182 @@
+#include "ReplaceDistributedTableNameVisitor.h"
+
+namespace ErrorCodes
+{
+extern const int SYNTAX_ERROR;
+}
+
+namespace DB
+{
+
+std::optional<StorageID> ReplaceDistributedTableNameVisitor::Scope::getLocalTable(const StorageID & table_name)
+{
+    if (tables_map.contains(table_name))
+        return tables_map.at(table_name);
+    return {};
+}
+
+std::optional<String> ReplaceDistributedTableNameVisitor::Scope::getDBName(const String & table_name)
+{
+    auto match_table_name = [&table_name](const StorageID & table)
+    {
+        return table_name == table.table_name;
+    };
+
+    auto find_in_current_scope = [&](const Tables & tables_)
+    {
+        size_t count = std::count_if(tables_.begin(), tables_.end(), match_table_name);
+        if (count > 1)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "duplicated table name {}, maybe you should use 'db.table' style identifier.", table_name);
+
+        return std::find_if(tables_.begin(), tables_.end(), match_table_name);
+    };
+
+    auto find_table = find_in_current_scope(tables);
+    if (find_table != tables.end())
+        return find_table->database_name;
+
+    /// Find in parent query scope.
+    /// For correlated subqueries.
+    find_table = find_in_current_scope(parent_scope->tables);
+    if (find_table != parent_scope->tables.end())
+        return find_table->database_name;
+
+    /// For local table, table alias or something else like 'xx.yy'
+    return {};
+}
+
+void ReplaceDistributedTableNameVisitor::Scope::clear()
+{
+    tables.clear();
+    parent_scope = nullptr;
+}
+
+void ReplaceDistributedTableNameVisitor::visit(ASTPtr & ast)
+{
+    ScopePtr scope = std::make_shared<Scope>(Tables(), TablesMap(), nullptr);
+    visitImpl(ast, scope);
+}
+
+void ReplaceDistributedTableNameVisitor::visitImpl(ASTPtr & ast, ScopePtr & scope)
+{
+    enter(ast, scope);
+    visitChildren(ast, scope);
+    leave(ast, scope);
+}
+
+void ReplaceDistributedTableNameVisitor::enter(ASTPtr & ast, ScopePtr & scope)
+{
+    if (auto select_query = ast->as<ASTSelectQuery>())
+    {
+        enter(*select_query, scope);
+    }
+    else if (auto ident = ast->as<ASTIdentifier>())
+    {
+        enter(*ident, scope);
+    }
+}
+
+void ReplaceDistributedTableNameVisitor::leave(ASTPtr & ast, ScopePtr & scope)
+{
+    if (auto select_query = ast->as<ASTSelectQuery>())
+    {
+        leave(*select_query, scope);
+    }
+}
+
+void ReplaceDistributedTableNameVisitor::enter(ASTSelectQuery & select_query, ScopePtr & scope)
+{
+    scope = std::make_shared<Scope>(Tables(), TablesMap(), scope);
+
+    if (auto tables = select_query.tables())
+    {
+        auto tables_in_select = tables->as<ASTTablesInSelectQuery>();
+        for (auto & table_ele_ast : tables_in_select->children)
+        {
+            if (auto table_ele = table_ele_ast->as<ASTTablesInSelectQueryElement>())
+            {
+                if (table_ele->table_expression)
+                {
+                    auto table_expr = table_ele->table_expression->as<ASTTableExpression>();
+                    enter(*table_expr->database_and_table_name->as<ASTTableIdentifier>(), scope);
+                }
+            }
+        }
+    }
+}
+
+void ReplaceDistributedTableNameVisitor::leave(ASTSelectQuery &, ScopePtr & scope)
+{
+    /// Finish select query, reset scope.
+    scope = scope->parent_scope;
+}
+
+void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident, ScopePtr & scope)
+{
+    if (!table_ident.getDatabase())
+        table_ident.resetTable(context->getCurrentDatabase(), table_ident.shortName());
+
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_ident.getTableId(), context);
+
+    if (auto * distributed_table = dynamic_cast<StorageDistributed *>(table.get()))
+    {
+        /// 1. Initialize scope
+        if (std::find(scope->tables.begin(), scope->tables.end(), table_ident.getTableId()) != scope->tables.end())
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "duplicated table {}", table_ident.shortName());
+
+        scope->tables.push_back(table_ident.getTableId());
+        auto database_name = distributed_table->getRemoteDatabaseName();
+        auto table_name = distributed_table->getRemoteTableName();
+
+        auto local_table_ident = std::make_shared<ASTTableIdentifier>(database_name, table_name);
+        scope->tables_map.emplace(table_ident.getTableId(), local_table_ident->getTableId());
+
+        /// 2. Replace distributed table to local table.
+        auto local_table = DatabaseCatalog::instance().getTable(local_table_ident->getTableId(), context);
+
+        table_ident.resetTable(database_name, table_name);
+
+        /// 3. Collect useful info.
+        if (std::find(storages.begin(), storages.end(), local_table) == storages.end())
+        {
+            storages.emplace_back(local_table);
+            clusters.emplace_back(distributed_table->getCluster());
+
+            /// TODO sharding_key_columns.emplace_back(distributed_table->sharding_key);
+            has_distributed_table = true;
+        }
+    }
+    else
+    {
+        has_local_table = true;
+    }
+}
+
+/// Replacing distributed table name for identifier.
+void ReplaceDistributedTableNameVisitor::enter(ASTIdentifier & ident, ScopePtr & scope)
+{
+    /// ASTTableIdentifier is a special ASTIdentifier.
+    if (ident.as<ASTTableIdentifier>())
+        return;
+
+    if (ident.compound())
+    {
+        auto part_num = ident.name_parts.size();
+
+        String & table_name = ident.name_parts[part_num - 2];
+        std::optional<String> db_name;
+
+        if (part_num == 3)             /// ident: db.tbl.col
+            db_name = ident.name_parts[part_num - 3];
+        else  if (part_num == 2)       /// ident: tbl.col
+            db_name = scope->getDBName(table_name);
+
+        if (db_name)
+        {
+            if (auto local_table = scope->getLocalTable({*db_name, table_name}))
+                ident = ASTIdentifier({local_table->database_name, local_table->table_name, ident.shortName()});
+        }
+    }
+}
+
+}

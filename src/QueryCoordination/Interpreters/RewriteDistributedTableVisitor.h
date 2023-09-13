@@ -130,6 +130,8 @@ private:
     {
         if (tables_element.table_expression)
             tryVisit<ASTTableExpression>(tables_element.table_expression);
+//        if (tables_element.table_join)
+//            tryVisit<ASTTableJoin>(tables_element.table_join);
     }
 
     void visit(ASTTableExpression & table_expression, ASTPtr &)
@@ -139,6 +141,14 @@ private:
 //        else if (table_expression.subquery)
 //            tryVisit<ASTSubquery>(table_expression.subquery);
     }
+
+//    void visit(ASTTableJoin & table_join, ASTPtr &)
+//    {
+//        if (table_join.using_expression_list)
+//            tryVisit<ASTExpressionList>(table_join.using_expression_list);
+//        if (table_join.on_expression)
+//            tryVisit<ASTTableIdentifier>(table_join.on_expression);
+//    }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast)
     {
