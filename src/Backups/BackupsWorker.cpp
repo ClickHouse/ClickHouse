@@ -222,20 +222,23 @@ namespace
 
 static constexpr const char * TABLE_NAME = "backups";
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, const String & engine, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool special_storage)
+BackupsWorker::BackupsWorker(ContextPtr global_context, const String & engine, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool create_storage, bool is_special_storage)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
 {
-    try {
-        storage = std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, engine);
-    }
-    catch (Exception& e)
+    if (create_storage)
     {
-        if (!(e.code() == ErrorCodes::UNKNOWN_STORAGE && special_storage))
-            throw;
+        try {
+            storage = std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, engine);
+        }
+        catch (Exception& e)
+        {
+            if (!(e.code() == ErrorCodes::UNKNOWN_STORAGE && is_special_storage))
+                throw;
+        }
     }
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }

@@ -3241,16 +3241,17 @@ bool Context::initializeBackupsWorker(bool persistent_storage)
     const String engine = config.has(CONFIG_SECTION)
         ? getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines)
         : String{"ENGINE="} + StorageSystemBackups::ENGINE_NAME;
-    bool special_storage = extractEngineName(engine) == StorageSystemBackups::ENGINE_NAME;
-    bool create_persistent_storage = persistent_storage && !engine.empty() && !special_storage;
+    bool is_special_storage = extractEngineName(engine) == StorageSystemBackups::ENGINE_NAME;
+    bool create_storage = persistent_storage && !engine.empty() && !is_special_storage;
 
     const auto & settings_ref = getSettingsRef();
     UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
     UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), engine, backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, special_storage);
+    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), engine, backup_threads, restore_threads, 
+        allow_concurrent_backups, allow_concurrent_restores, create_storage, is_special_storage);
 
-    return !create_persistent_storage; /// indication to attach transient system.backups table using StorageSystemBackups class
+    return !create_storage; /// indication to attach transient system.backups table using StorageSystemBackups class
 }
 
 /// Call after unexpected crash happen.
