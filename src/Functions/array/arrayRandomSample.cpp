@@ -30,23 +30,22 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const DataTypePtr & first_arg = arguments[0];
-        if (!isArray(first_arg))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected Array",
-                arguments[0]->getName(),
-                getName());
-
-        const DataTypeArray * array_type = checkAndGetDataType<const DataTypeArray>(first_arg.get());
-
-        if (!isUnsignedInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument must be a unsigned integer");
+        FunctionArgumentDescriptors args{
+            {"array", &isArray<IDataType>, nullptr, "Array"},
+            {"samples", &isUnsignedInteger<IDataType>, nullptr, "Unsigned integer"},
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         // Return an array with the same nested type as the input array
-        return std::make_shared<DataTypeArray>(array_type->getNestedType());
+        const DataTypePtr & array_type = arguments[0].type;
+        const DataTypeArray * array_data_type = checkAndGetDataType<DataTypeArray>(array_type.get());
+
+        // Get the nested data type of the array
+        const DataTypePtr & nested_type = array_data_type->getNestedType();
+
+        return std::make_shared<DataTypeArray>(nested_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
