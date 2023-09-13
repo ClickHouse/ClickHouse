@@ -2752,7 +2752,7 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
     commit_initial_data(storage1);
 
     for (int64_t zxid = initial_zxid + 1; zxid < initial_zxid + 50; ++zxid)
-        storage1.preprocessRequest(create_request, 1, 0, zxid);
+        storage1.preprocessRequest(create_request, 1, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/zxid);
 
     /// create identical new storage
     KeeperStorage storage2{500, "", keeper_context};
