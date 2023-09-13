@@ -4,7 +4,6 @@
 #include <Columns/IColumn.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include "Common/LocalDateTime.h"
 #include "Core/DecimalFunctions.h"
 #include "DataTypes/IDataType.h"
 #include "DataTypes/Serializations/ISerialization.h"
