@@ -56,13 +56,14 @@ namespace ErrorCodes
 
 using Pos = const char *;
 
-std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position);
-
-enum class SplitTokenMode
+enum class MaxSubstringBehavior
 {
+    LikeClickHouse,
     LikeSpark,
     LikePython
 };
+
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position, MaxSubstringBehavior max_substring_behavior);
 
 /// Substring generators. All of them have a common interface.
 
@@ -73,7 +74,7 @@ private:
     Pos end;
     std::optional<size_t> max_splits;
     size_t splits;
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     static constexpr auto name = "alphaTokens";
@@ -98,10 +99,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
     {
-        split_token_mode = split_token_mode_;
-        max_splits = extractMaxSplits(arguments, 1);
+        max_substring_behavior = max_substring_behavior_;
+        max_splits = extractMaxSplits(arguments, 1, max_substring_behavior);
     }
 
     /// Called for each next string.
@@ -124,18 +125,36 @@ public:
 
         token_begin = pos;
 
-        if (max_splits && splits >= max_splits)
+        if (max_splits)
         {
-            switch (split_token_mode)
+            switch (max_substring_behavior)
             {
-            case SplitTokenMode::LikeSpark:
-                return false;
-            case SplitTokenMode::LikePython:
-            {
-                token_end = end;
-                pos = end;
-                return true;
-            }
+                case MaxSubstringBehavior::LikeClickHouse:
+                {
+                    if (splits == *max_splits)
+                        return false;
+                    break;
+                }
+                case MaxSubstringBehavior::LikeSpark:
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                    break;
+                }
+                case MaxSubstringBehavior::LikePython:
+                {
+                    if (splits == *max_splits)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                    break;
+                }
             }
         }
 
@@ -156,7 +175,7 @@ private:
     Pos end;
     std::optional<size_t> max_splits;
     size_t splits;
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     /// Get the name of the function.
@@ -173,10 +192,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
     {
-        split_token_mode = split_token_mode_;
-        max_splits = extractMaxSplits(arguments, 1);
+        max_substring_behavior = max_substring_behavior_;
+        max_splits = extractMaxSplits(arguments, 1, max_substring_behavior);
     }
 
     /// Called for each next string.
@@ -199,20 +218,39 @@ public:
 
         token_begin = pos;
 
-        if (max_splits && splits >= max_splits)
+        if (max_splits)
         {
-            switch (split_token_mode)
+            switch (max_substring_behavior)
             {
-            case SplitTokenMode::LikeSpark:
-                return false;
-            case SplitTokenMode::LikePython:
-            {
-                token_end = end;
-                pos = end;
-                return true;
-            }
+                case MaxSubstringBehavior::LikeClickHouse:
+                {
+                    if (splits == *max_splits)
+                        return false;
+                    break;
+                }
+                case MaxSubstringBehavior::LikeSpark:
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                    break;
+                }
+                case MaxSubstringBehavior::LikePython:
+                {
+                    if (splits == *max_splits)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                    break;
+                }
             }
         }
+
         while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
             ++pos;
 
@@ -230,7 +268,7 @@ private:
     Pos end;
     std::optional<size_t> max_splits;
     size_t splits;
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     static constexpr auto name = "splitByWhitespace";
@@ -246,10 +284,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
     {
-        split_token_mode = split_token_mode_;
-        max_splits = extractMaxSplits(arguments, 1);
+        max_substring_behavior = max_substring_behavior_;
+        max_splits = extractMaxSplits(arguments, 1, max_substring_behavior);
     }
 
     /// Called for each next string.
@@ -272,18 +310,36 @@ public:
 
         token_begin = pos;
 
-        if (max_splits && splits >= max_splits)
+        if (max_splits)
         {
-            switch (split_token_mode)
+            switch (max_substring_behavior)
             {
-            case SplitTokenMode::LikeSpark:
-                return false;
-            case SplitTokenMode::LikePython:
-            {
-                token_end = end;
-                pos = end;
-                return true;
-            }
+                case MaxSubstringBehavior::LikeClickHouse:
+                {
+                    if (splits == *max_splits)
+                        return false;
+                    break;
+                }
+                case MaxSubstringBehavior::LikeSpark:
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                    break;
+                }
+                case MaxSubstringBehavior::LikePython:
+                {
+                    if (splits == *max_splits)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                    break;
+                }
             }
         }
 
@@ -305,7 +361,7 @@ private:
     char separator;
     std::optional<size_t> max_splits;
     size_t splits;
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -329,7 +385,7 @@ public:
 
     static constexpr auto strings_argument_position = 1uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -344,8 +400,8 @@ public:
 
         separator = sep_str[0];
 
-        split_token_mode = split_token_mode_;
-        max_splits = extractMaxSplits(arguments, 2);
+        max_substring_behavior = max_substring_behavior_;
+        max_splits = extractMaxSplits(arguments, 2, max_substring_behavior);
     }
 
     void set(Pos pos_, Pos end_)
@@ -362,18 +418,36 @@ public:
 
         token_begin = pos;
 
-        if (max_splits && splits >= max_splits)
+        if (max_splits)
         {
-            switch (split_token_mode)
+            switch (max_substring_behavior)
             {
-            case SplitTokenMode::LikeSpark:
-                return false;
-            case SplitTokenMode::LikePython:
-            {
-                token_end = end;
-                pos = nullptr;
-                return true;
-            }
+                case MaxSubstringBehavior::LikeClickHouse:
+                {
+                    if (splits == *max_splits)
+                        return false;
+                    break;
+                }
+                case MaxSubstringBehavior::LikeSpark:
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = nullptr;
+                        return true;
+                    }
+                    break;
+                }
+                case MaxSubstringBehavior::LikePython:
+                {
+                    if (splits == *max_splits)
+                    {
+                        token_end = end;
+                        pos = nullptr;
+                        return true;
+                    }
+                    break;
+                }
             }
         }
 
@@ -400,7 +474,7 @@ private:
     String separator;
     std::optional<size_t> max_splits;
     size_t splits;
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     static constexpr auto name = "splitByString";
@@ -415,7 +489,7 @@ public:
 
     static constexpr auto strings_argument_position = 1uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -425,8 +499,8 @@ public:
 
         separator = col->getValue<String>();
 
-        split_token_mode = split_token_mode_;
-        max_splits = extractMaxSplits(arguments, 2);
+        max_substring_behavior = max_substring_behavior_;
+        max_splits = extractMaxSplits(arguments, 2, max_substring_behavior);
     }
 
     /// Called for each next string.
@@ -447,18 +521,36 @@ public:
 
             token_begin = pos;
 
-            if (max_splits && splits >= max_splits)
+            if (max_splits)
             {
-                switch (split_token_mode)
+                switch (max_substring_behavior)
                 {
-                case SplitTokenMode::LikeSpark:
-                    return false;
-                case SplitTokenMode::LikePython:
-                {
-                    token_end = end;
-                    pos = end;
-                    return true;
-                }
+                    case MaxSubstringBehavior::LikeClickHouse:
+                    {
+                        if (splits == *max_splits)
+                            return false;
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikeSpark:
+                    {
+                        if (splits == *max_splits - 1)
+                        {
+                            token_end = end;
+                            pos = end;
+                            return true;
+                        }
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikePython:
+                    {
+                        if (splits == *max_splits)
+                        {
+                            token_end = end;
+                            pos = end;
+                            return true;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -473,18 +565,36 @@ public:
 
             token_begin = pos;
 
-            if (max_splits && splits >= max_splits)
+            if (max_splits)
             {
-                switch (split_token_mode)
+                switch (max_substring_behavior)
                 {
-                case SplitTokenMode::LikeSpark:
-                    return false;
-                case SplitTokenMode::LikePython:
-                {
-                    token_end = end;
-                    pos = nullptr;
-                    return true;
-                }
+                    case MaxSubstringBehavior::LikeClickHouse:
+                    {
+                        if (splits == *max_splits)
+                            return false;
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikeSpark:
+                    {
+                        if (splits == *max_splits - 1)
+                        {
+                            token_end = end;
+                            pos = nullptr;
+                            return true;
+                        }
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikePython:
+                    {
+                        if (splits == *max_splits)
+                        {
+                            token_end = end;
+                            pos = nullptr;
+                            return true;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -493,10 +603,10 @@ public:
             {
                 token_end = pos;
                 pos += separator.size();
+                ++splits;
             }
             else
                 token_end = end;
-            ++splits;
         }
 
         return true;
@@ -514,7 +624,7 @@ private:
 
     std::optional<size_t> max_splits;
     size_t splits;
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     static constexpr auto name = "splitByRegexp";
@@ -530,7 +640,7 @@ public:
 
     static constexpr auto strings_argument_position = 1uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode split_token_mode_)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -541,8 +651,8 @@ public:
         if (!col->getValue<String>().empty())
             re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
 
-        split_token_mode = split_token_mode_;
-        max_splits = extractMaxSplits(arguments, 2);
+        max_substring_behavior = max_substring_behavior_;
+        max_splits = extractMaxSplits(arguments, 2, max_substring_behavior);
     }
 
     /// Called for each next string.
@@ -563,18 +673,36 @@ public:
 
             token_begin = pos;
 
-            if (max_splits && splits >= max_splits)
+            if (max_splits)
             {
-                switch (split_token_mode)
+                switch (max_substring_behavior)
                 {
-                case SplitTokenMode::LikeSpark:
-                    return false;
-                case SplitTokenMode::LikePython:
-                {
-                    token_end = end;
-                    pos = end;
-                    return true;
-                }
+                    case MaxSubstringBehavior::LikeClickHouse:
+                    {
+                        if (splits == *max_splits)
+                            return false;
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikeSpark:
+                    {
+                        if (splits == *max_splits - 1)
+                        {
+                            token_end = end;
+                            pos = end;
+                            return true;
+                        }
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikePython:
+                    {
+                        if (splits == *max_splits)
+                        {
+                            token_end = end;
+                            pos = end;
+                            return true;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -589,18 +717,36 @@ public:
 
             token_begin = pos;
 
-            if (max_splits && splits >= max_splits)
+            if (max_splits)
             {
-                switch (split_token_mode)
+                switch (max_substring_behavior)
                 {
-                case SplitTokenMode::LikeSpark:
-                    return false;
-                case SplitTokenMode::LikePython:
-                {
-                    token_end = end;
-                    pos = nullptr;
-                    return true;
-                }
+                    case MaxSubstringBehavior::LikeClickHouse:
+                    {
+                        if (splits == *max_splits)
+                            return false;
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikeSpark:
+                    {
+                        if (splits == *max_splits - 1)
+                        {
+                            token_end = end;
+                            pos = nullptr;
+                            return true;
+                        }
+                        break;
+                    }
+                    case MaxSubstringBehavior::LikePython:
+                    {
+                        if (splits == *max_splits)
+                        {
+                            token_end = end;
+                            pos = nullptr;
+                            return true;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -613,8 +759,8 @@ public:
             {
                 token_end = pos + matches[0].offset;
                 pos = token_end + matches[0].length;
+                ++splits;
             }
-            ++splits;
         }
 
         return true;
@@ -648,7 +794,7 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, SplitTokenMode /*split_token_mode*/)
+    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior /*max_substring_behavior*/)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
 
@@ -701,7 +847,7 @@ template <typename Generator>
 class FunctionTokens : public IFunction
 {
 private:
-    SplitTokenMode split_token_mode;
+    MaxSubstringBehavior max_substring_behavior;
 
 public:
     static constexpr auto name = Generator::name;
@@ -710,7 +856,17 @@ public:
     explicit FunctionTokens<Generator>(ContextPtr context)
     {
         const Settings & settings = context->getSettingsRef();
-        split_token_mode = settings.split_tokens_like_python ? SplitTokenMode::LikePython : SplitTokenMode::LikeSpark;
+        if (settings.splitby_max_substring_behavior.value == "")
+            max_substring_behavior = MaxSubstringBehavior::LikeClickHouse;
+        else if (settings.splitby_max_substring_behavior.value == "python")
+            max_substring_behavior = MaxSubstringBehavior::LikePython;
+        else if (settings.splitby_max_substring_behavior.value == "spark")
+            max_substring_behavior = MaxSubstringBehavior::LikeSpark;
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal value {} for setting splitby_max_substring_behavior in function {}, must be '', 'python' or 'spark'",
+                settings.splitby_max_substring_behavior.value, getName());
     }
 
     String getName() const override { return name; }
@@ -731,7 +887,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         Generator generator;
-        generator.init(arguments, split_token_mode);
+        generator.init(arguments, max_substring_behavior);
 
         const auto & array_argument = arguments[generator.strings_argument_position];
 

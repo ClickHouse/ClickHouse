@@ -20,7 +20,7 @@ std::optional<Int64> extractMaxSplitsImpl(const ColumnWithTypeAndName & argument
     return static_cast<Int64>(value);
 }
 
-std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position)
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position, MaxSubstringBehavior max_substring_behavior)
 {
     if (max_substrings_argument_position >= arguments.size())
         return std::nullopt;
@@ -32,13 +32,28 @@ std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments,
           || (max_splits = extractMaxSplitsImpl<UInt64>(arguments[max_substrings_argument_position])) || (max_splits = extractMaxSplitsImpl<Int64>(arguments[max_substrings_argument_position]))))
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {}, which is {}-th argument",// of function {}",
+            "Illegal column {}, which is {}-th argument",
             arguments[max_substrings_argument_position].column->getName(),
-            max_substrings_argument_position + 1);//,
-            /// getName());
+            max_substrings_argument_position + 1);
 
-    if (max_splits && *max_splits <= 0)
-        return std::nullopt;
+    if (max_splits)
+        switch (max_substring_behavior)
+        {
+            case MaxSubstringBehavior::LikeClickHouse:
+            case MaxSubstringBehavior::LikeSpark:
+            {
+                if (*max_splits <= 0)
+                    return std::nullopt;
+                break;
+            }
+            case MaxSubstringBehavior::LikePython:
+            {
+                if (*max_splits < 0)
+                    return std::nullopt;
+                break;
+            }
+        }
+
 
     return max_splits;
 }
