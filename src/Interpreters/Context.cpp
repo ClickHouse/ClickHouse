@@ -2092,21 +2092,21 @@ AsyncLoader & Context::getAsyncLoader() const
                     "FgLoad",
                     CurrentMetrics::AsyncLoaderForegroundThreads,
                     CurrentMetrics::AsyncLoaderForegroundThreadsActive,
-                    shared->server_settings.async_loader_foreground_pool_size,
+                    shared->server_settings.tables_loader_foreground_pool_size,
                     Priority{0}
                 },
                 { // AsyncLoaderPoolId::BackgroundLoad
                     "BgLoad",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
-                    shared->server_settings.async_loader_background_pool_size,
+                    shared->server_settings.tables_loader_background_pool_size,
                     Priority{1}
                 },
                 { // AsyncLoaderPoolId::BackgroundStartup
                     "BgStartup",
                     CurrentMetrics::AsyncLoaderBackgroundThreads,
                     CurrentMetrics::AsyncLoaderBackgroundThreadsActive,
-                    shared->server_settings.async_loader_background_pool_size,
+                    shared->server_settings.tables_loader_background_pool_size,
                     Priority{2}
                 }
             },
