@@ -25,7 +25,11 @@ bool PartitionActionBlocker::isCancelledForPartition(const std::string & partiti
     if (isCancelled())
         return true;
 
-    std::shared_lock lock(mutex);
+    return isCancelledForPartitionOnlyLocked(partition_id);
+}
+
+bool PartitionActionBlocker::isCancelledForPartitionOnlyLocked(const std::string & partition_id) const
+{
     auto p = partition_blockers.find(partition_id);
     return p != partition_blockers.end() && p->second.isCancelled();
 }

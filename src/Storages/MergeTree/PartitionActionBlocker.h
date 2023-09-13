@@ -45,6 +45,8 @@ public:
     /// Cancel the actions forever.
     void cancelForever() { global_blocker.cancelForever(); }
 
+    const std::atomic<int> & getCounter() const { return global_blocker.getCounter(); }
+
     size_t countPartitionBlockers() const;
     void compactPartitionBlockers();
 
@@ -52,6 +54,7 @@ public:
 
 private:
     void compactPartitionBlockersLocked();
+    bool isCancelledForPartitionOnlyLocked(const std::string & partition_id) const;
 
 private:
     ActionBlocker global_blocker;
