@@ -139,7 +139,7 @@ struct ConvertImpl
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
-        Additions additions [[maybe_unused]] = Additions())
+        Additions additions [[maybe_unused]] = Additions(), [[maybe_unused]] bool allow_parse_float_string_as_int = false)
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
 
@@ -1224,7 +1224,7 @@ struct ConvertThroughParsing
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    static bool isAllRead(ReadBuffer & in)
+    static bool isAllRead(ReadBuffer & in, bool allow_parse_float_string_as_int)
     {
         /// In case of FixedString, skip zero bytes at end.
         if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
@@ -1256,22 +1256,25 @@ struct ConvertThroughParsing
             }
         }
         /// Special case, that allows to parse string like 12.34 as (U)Int8|16|32|64|128|256.
-        else if constexpr (
-            std::is_same_v<ToDataType, DataTypeUInt16> || std::is_same_v<ToDataType, DataTypeUInt32>
-            || std::is_same_v<ToDataType, DataTypeUInt64> || std::is_same_v<ToDataType, DataTypeUInt128>
-            || std::is_same_v<ToDataType, DataTypeUInt256> || std::is_same_v<ToDataType, DataTypeInt8>
-            || std::is_same_v<ToDataType, DataTypeInt16> || std::is_same_v<ToDataType, DataTypeInt32>
-            || std::is_same_v<ToDataType, DataTypeInt64> || std::is_same_v<ToDataType, DataTypeInt128>
-            || std::is_same_v<ToDataType, DataTypeInt256>)
+        if (allow_parse_float_string_as_int)
         {
-            if (!in.eof() && (*in.position() == '.'))
+            if constexpr (
+                std::is_same_v<ToDataType, DataTypeUInt16> || std::is_same_v<ToDataType, DataTypeUInt32>
+                || std::is_same_v<ToDataType, DataTypeUInt64> || std::is_same_v<ToDataType, DataTypeUInt128>
+                || std::is_same_v<ToDataType, DataTypeUInt256> || std::is_same_v<ToDataType, DataTypeInt8>
+                || std::is_same_v<ToDataType, DataTypeInt16> || std::is_same_v<ToDataType, DataTypeInt32>
+                || std::is_same_v<ToDataType, DataTypeInt64> || std::is_same_v<ToDataType, DataTypeInt128>
+                || std::is_same_v<ToDataType, DataTypeInt256>)
             {
-                ++in.position();
-                while (!in.eof() && isNumericASCII(*in.position()))
+                if (!in.eof() && (*in.position() == '.'))
+                {
                     ++in.position();
+                    while (!in.eof() && isNumericASCII(*in.position()))
+                        ++in.position();
 
-                if (in.eof())
-                    return true;
+                    if (in.eof())
+                        return true;
+                }
             }
         }
 
@@ -1279,8 +1282,12 @@ struct ConvertThroughParsing
     }
 
     template <typename Additions = void *>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
-                        Additions additions [[maybe_unused]] = Additions())
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & res_type,
+        size_t input_rows_count,
+        Additions additions [[maybe_unused]] = Additions(),
+        bool allow_parse_float_string_as_int = false)
     {
         using ColVecTo = typename ToDataType::ColumnType;
 
@@ -1446,7 +1453,7 @@ struct ConvertThroughParsing
                     }
                 }
 
-                if (!isAllRead(read_buffer))
+                if (!isAllRead(read_buffer, allow_parse_float_string_as_int))
                     throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
             }
             else
@@ -1516,7 +1523,7 @@ struct ConvertThroughParsing
                     }
                 }
 
-                if (!isAllRead(read_buffer))
+                if (!isAllRead(read_buffer, allow_parse_float_string_as_int))
                     parsed = false;
 
                 if (!parsed)
@@ -2005,6 +2012,9 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
+        /// allow_parse_float_string_as_int setting is only used when parse integers from strings.
+        bool allow_parse_float_string_as_int = context->getSettingsRef().allow_parse_float_string_as_int;
+
         auto call = [&](const auto & types, const auto & tag) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
@@ -2028,12 +2038,14 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(
+                    arguments, result_type, input_rows_count, scale);
             }
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(
+                    arguments, result_type, input_rows_count, dt64->getScale());
             }
             else if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
@@ -2053,13 +2065,14 @@ private:
                 }
                 else
                 {
-                    result_column
-                        = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
+                    result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(
+                        arguments, result_type, input_rows_count);
                 }
             }
             else
             {
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(
+                    arguments, result_type, input_rows_count, {}, allow_parse_float_string_as_int);
             }
 
             return true;
@@ -2148,8 +2161,10 @@ public:
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConvertFromString>(context_); }
+    // static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
+
+    explicit FunctionConvertFromString(ContextPtr context_) : context(context_) { }
 
     String getName() const override
     {
@@ -2257,15 +2272,16 @@ public:
     {
         const IDataType * from_type = arguments[0].type.get();
 
+        bool allow_parse_float_string_as_int = context->getSettingsRef().allow_parse_float_string_as_int;
         if (checkAndGetDataType<DataTypeString>(from_type))
         {
             return ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, scale);
+                arguments, result_type, input_rows_count, scale, allow_parse_float_string_as_int);
         }
         else if (checkAndGetDataType<DataTypeFixedString>(from_type))
         {
             return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, scale);
+                arguments, result_type, input_rows_count, scale, allow_parse_float_string_as_int);
         }
 
         return nullptr;
@@ -2306,6 +2322,9 @@ public:
 
         return result_column;
     }
+
+private:
+    ContextPtr context;
 };
 
 
@@ -2961,7 +2980,7 @@ private:
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
 
-            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
+            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create(context);
             return createFunctionAdaptor(function, from_type);
         }
         else if (!can_apply_accurate_cast)
