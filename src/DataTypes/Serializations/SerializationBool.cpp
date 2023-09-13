@@ -166,13 +166,13 @@ void deserializeImpl(
     buf.rollbackToCheckpoint();
     if (checkString(settings.bool_false_representation, buf) && check_end_of_value(buf))
     {
-        col->insert(false);
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_BOOL,
                 "Cannot continue parsing after parsed bool value because it will result in the loss of some data. It may happen if "
                 "bool_true_representation or bool_false_representation contains some delimiters of input format");
+        col->insert(false);
         return;
     }
 
@@ -181,15 +181,19 @@ void deserializeImpl(
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
+        {
+            col->popBack(1);
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_BOOL,
                 "Cannot continue parsing after parsed bool value because it will result in the loss of some data. It may happen if "
                 "bool_true_representation or bool_false_representation contains some delimiters of input format");
+        }
         return;
     }
 
     buf.makeContinuousMemoryFromCheckpointToPos();
     buf.rollbackToCheckpoint();
+    col->popBack(1);
     throw Exception(
         ErrorCodes::CANNOT_PARSE_BOOL,
         "Cannot parse boolean value here: '{}', should be '{}' or '{}' controlled by setting bool_true_representation and "
