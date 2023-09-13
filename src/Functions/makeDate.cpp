@@ -222,7 +222,7 @@ public:
             if (std::isinf(yyyymmdd_data[i]) || std::isnan(yyyymmdd_data[i])) [[unlikely]]
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for function {} must be finite", getName());
 
-            const auto yyyymmdd = static_cast<UInt64>(static_cast<Int64>(yyyymmdd_data[i])); /// Float64-to-UInt64 is UB, double-cast avoids it
+            const auto yyyymmdd = std::llround(yyyymmdd_data[i]);
 
             const auto year = yyyymmdd / 10'000;
             const auto month = yyyymmdd / 100 % 100;
@@ -609,7 +609,7 @@ public:
             if (std::isinf(yyyymmddhhmmss_data[i]) || std::isnan(yyyymmddhhmmss_data[i])) [[unlikely]]
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for function {} must be finite", getName());
 
-            const auto yyyymmddhhmmss = static_cast<Int64>(yyyymmddhhmmss_data[i]);
+            const auto yyyymmddhhmmss = std::llround(yyyymmddhhmmss_data[i]);
 
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
@@ -702,7 +702,7 @@ public:
             if (std::isinf(float_date) || std::isnan(float_date)) [[unlikely]]
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for function {} must be finite", getName());
 
-            const auto yyyymmddhhmmss = static_cast<UInt64>(static_cast<Int64>(float_date)); /// Float64-to-UInt64 is UB, double-cast avoids it
+            const auto yyyymmddhhmmss = std::llround(float_date);
 
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
