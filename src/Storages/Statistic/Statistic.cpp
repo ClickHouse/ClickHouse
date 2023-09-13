@@ -93,6 +93,8 @@ std::pair<std::string, Float64> ConditionEstimator::extractBinaryOp(const RPNBui
         value = output_value.get<UInt64>();
     else if (type == Field::Types::Float64)
         value = output_value.get<Float64>();
+    else
+        return {};
     return std::make_pair(function_name, value);
 }
 

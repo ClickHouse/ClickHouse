@@ -5,11 +5,12 @@ SET allow_statistic_optimize = 1;
 
 CREATE TABLE t1 
 (
-    a Int64,
-    b Float64,
+    a Float64,
+    b Int64,
     pk String,
     STATISTIC a, b TYPE tdigest,
-) Engine = MergeTree() ORDER BY pk;
+) Engine = MergeTree() ORDER BY pk
+SETTINGS min_bytes_for_wide_part = 0;
 
 SHOW CREATE TABLE t1;
 
@@ -18,6 +19,7 @@ INSERT INTO t1 select number, -number, generateUUIDv4() FROM system.numbers LIMI
 SELECT 'After insert';
 EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
+SELECT count(*) FROM t1 WHERE b < NULL and a < '10';
 
 ALTER TABLE t1 DROP STATISTIC a, b TYPE tdigest;
 
