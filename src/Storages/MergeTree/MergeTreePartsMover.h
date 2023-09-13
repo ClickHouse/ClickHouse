@@ -7,7 +7,7 @@
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MovesList.h>
-#include <Storages/MergeTree/PartitionActionBlocker.h>
+#include <Common/ActionBlocker.h>
 
 namespace DB
 {
@@ -75,7 +75,7 @@ public:
     void swapClonedPart(TemporaryClonedPart & cloned_part) const;
 
     /// Can stop background moves and moves from queries
-    PartitionActionBlocker moves_blocker;
+    ActionBlocker moves_blocker;
 
 private:
 

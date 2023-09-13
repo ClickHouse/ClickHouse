@@ -8,6 +8,7 @@
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
+#include <Common/ActionBlocker.h>
 
 
 namespace zkutil
@@ -86,7 +87,7 @@ public:
         DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.
-    PartitionActionBlocker blocker;
+    ActionBlocker blocker;
 
 private:
     using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;
