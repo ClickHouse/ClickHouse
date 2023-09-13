@@ -181,10 +181,9 @@ private:
 
         scope_guard temporary_directory_lock;
 
-        bool isCancelledMerges() const
-        {
-            return merges_blocker->isCancelledForPartition(future_part->part_info.partition_id);
-        }
+        // will thow an exception if merge was cancelled in any way.
+        void checkOperationIsNotCanceled() const;
+        bool isCancelled() const;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
