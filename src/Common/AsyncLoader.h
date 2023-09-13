@@ -403,7 +403,30 @@ private:
     std::chrono::system_clock::time_point busy_period_start_time;
 };
 
+// === HELPER FUNCTIONS ===
+// There are three types of helper functions:
+//  schedulerLoad([loader], {jobs|task|tasks}):
+//      Just schedule jobs for async loading.
+//      Note that normally function `doSomethingAsync()` returns you a task which is NOT scheduled.
+//      This is done to allow you:
+//          (1) construct complex dependency graph offline.
+//          (2) schedule tasks simultaneously to respect their relative priorities.
+//          (3) do prioritization independently, before scheduling.
+//  prioritizeLoad([loader], pool_id, {jobs|task|tasks}):
+//      Prioritize jobs w/o waiting for it.
+//      Note that prioritization may be done
+//          (1) before scheduling (to ensure all jobs are started in the correct pools)
+//          (2) after scheduling (for dynamic prioritization, e.g. when new query arrives)
+//  waitLoad([loader], pool_id, {jobs|task|tasks}):
+//      Prioritize and wait for jobs.
+//      Note that to avoid deadlocks it implicitly schedules all the jobs before waiting for them.
+//      Also to avoid priority inversion you should never wait for a job that has lower priority.
+//      So it prioritizes all jobs, then schedules all jobs and waits every job.
+//      Common usage pattern is:
+//          waitLoad(currentPoolOr(foreground_pool_id), tasks);
 
+// Returns current execution pool if it is called from load job, or `pool` otherwise
+// It should be used for waiting other load jobs in places that can be executed from load jobs
 size_t currentPoolOr(size_t pool);
 
 inline void scheduleLoad(AsyncLoader & loader, const LoadJobSet & jobs)
