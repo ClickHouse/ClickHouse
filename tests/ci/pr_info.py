@@ -306,7 +306,7 @@ class PRInfo:
     def can_skip_builds_and_use_version_from_master(self):
         if FORCE_TESTS_LABEL in self.labels:
             return False
-        
+
         if self.changed_files is None or not self.changed_files:
             return False
 
