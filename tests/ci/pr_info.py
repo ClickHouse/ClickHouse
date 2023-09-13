@@ -304,6 +304,9 @@ class PRInfo:
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
+        if FORCE_TESTS_LABEL in self.labels:
+            return False
+        
         if self.changed_files is None or not self.changed_files:
             return False
 
@@ -329,7 +332,7 @@ class PRInfo:
         if self.changed_files is None or not self.changed_files:
             return False
 
-        if not self.can_skip_builds_and_use_version_from_master:
+        if not self.can_skip_builds_and_use_version_from_master():
             return False
 
         # Integration tests can be skipped if only functional/performance tests are changes
@@ -352,7 +355,7 @@ class PRInfo:
         if self.changed_files is None or not self.changed_files:
             return False
 
-        if not self.can_skip_builds_and_use_version_from_master:
+        if not self.can_skip_builds_and_use_version_from_master():
             return False
 
         # Functional tests can be skipped if only integration/performance tests are changes
