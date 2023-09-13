@@ -49,7 +49,7 @@ public:
         return std::make_shared<DataTypeArray>(array_type->getNestedType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         if (!column_array)
@@ -78,15 +78,9 @@ public:
 
         Poco::Logger::get("FunctionRandomSampleFromArray").debug("The number of samples K = " + std::to_string(K));
 
-        const auto & offsets = column_array->getOffsets();
-        size_t num_elements = offsets[0];
-
-        Poco::Logger::get("FunctionRandomSampleFromArray").debug("The number of elements in the array = " + std::to_string(num_elements));
-
         std::random_device rd;
         std::mt19937 gen(rd());
 
-        K = std::min(K, static_cast<UInt64>(num_elements));
 
         // Create an empty ColumnArray with the same structure as column_array
         auto nested_column = column_array->getDataPtr()->cloneEmpty();
@@ -94,28 +88,39 @@ public:
 
         auto res_data = ColumnArray::create(std::move(nested_column), std::move(offsets_column));
 
-        if (K == 0)
-        {
-            // Handle edge cases where input array is empty or K is 0
-            res_data->getOffsets().push_back(0);
-            return res_data;
-        }
-
-        std::vector<size_t> indices(num_elements);
-        std::iota(indices.begin(), indices.end(), 0);
-        std::shuffle(indices.begin(), indices.end(), gen);
-
-        for (size_t i = 0; i < K; ++i)
-        {
-            size_t source_index = indices[i];
-
-            // Insert the corresponding element from the source array
-            res_data->getData().insertFrom(column_array->getData(), source_index);
-        }
-
-        // Update offsets manually for the single row
+        const auto & offsets = column_array->getOffsets();
         auto & res_offsets = res_data->getOffsets();
-        res_offsets.push_back(K);
+        res_offsets.resize(input_rows_count);
+
+        UInt64 curr_k;
+        size_t current_offset = 0;
+
+        for (size_t row = 0; row < input_rows_count; row++)
+        {
+            size_t row_size = offsets[row] - current_offset;
+            Poco::Logger::get("FunctionRandomSampleFromArray")
+                .debug(
+                    "The number of elements in the current row is = " + std::to_string(row_size)
+                    + " the row number = " + std::to_string(row));
+
+
+            std::vector<size_t> indices(row_size);
+            std::iota(indices.begin(), indices.end(), 0);
+            std::shuffle(indices.begin(), indices.end(), gen);
+
+            curr_k = std::min(K, static_cast<UInt64>(row_size));
+
+            for (UInt64 j = 0; j < curr_k; j++)
+            {
+                size_t source_index = indices[j];
+
+                // Insert the corresponding element from the source array
+                res_data->getData().insertFrom(column_array->getData(), source_index);
+            }
+
+            res_offsets[row] = current_offset + curr_k;
+            current_offset += curr_k;
+        }
 
         return res_data;
     }
