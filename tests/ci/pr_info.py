@@ -321,6 +321,7 @@ class PRInfo:
             for f in self.changed_files
         )
 
+
 def can_skip_integration_tests(self, versions: List[str]):
     if FORCE_TESTS_LABEL in self.labels:
         return False
@@ -337,10 +338,10 @@ def can_skip_integration_tests(self, versions: List[str]):
 
     # Integration tests can be skipped if integration tests are not changed
     return not any(
-        f.startswith("tests/integration/")
-        or f == "tests/ci/integration_test_check.py"
+        f.startswith("tests/integration/") or f == "tests/ci/integration_test_check.py"
         for f in self.changed_files
     )
+
 
 def can_skip_functional_tests(self, version):
     if FORCE_TESTS_LABEL in self.labels:
@@ -363,6 +364,7 @@ def can_skip_functional_tests(self, version):
         or f == "tests/ci/functional_test_check.py"
         for f in self.changed_files
     )
+
 
 class FakePRInfo:
     def __init__(self):
