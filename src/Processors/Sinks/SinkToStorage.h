@@ -14,7 +14,7 @@ friend class PartitionedSink;
 
 public:
     explicit SinkToStorage(const Block & header);
-    explicit SinkToStorage(const Block & header, std::unique_ptr<IOutputChunkGenerator> output_chunk_generator);
+    explicit SinkToStorage(const Block & header, std::unique_ptr<IOutputChunkGenerator> output_generator_);
 
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
