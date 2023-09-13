@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config.d/backups.xml"],
     stay_alive=True,
 )
 
