@@ -996,7 +996,7 @@ public:
     void initializeTraceCollector();
 
     /// Call after initialization before carrying out backup/restore operations. Call for global context.
-    bool initializeBackupsWorker(bool persistent_storage);
+    bool initializeBackupsWorker(bool create_storage);
 
     /// Call after unexpected crash happen.
     void handleCrash() const;
