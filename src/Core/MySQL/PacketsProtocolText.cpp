@@ -4,6 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include "Common/assert_cast.h"
 #include "Core/MySQL/IMySQLWritePacket.h"
+#include "DataTypes/DataTypeLowCardinality.h"
+#include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesDecimal.h"
 
 namespace DB
@@ -140,7 +142,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;
-    TypeIndex type_index = data_type->getTypeId();
+    TypeIndex type_index = removeLowCardinality(removeNullable(data_type))->getTypeId();
     switch (type_index)
     {
         case TypeIndex::UInt8:

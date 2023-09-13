@@ -43,6 +43,7 @@ public class PreparedStatementsTest {
             Connection conn = DriverManager.getConnection(jdbcUrl, user, password);
             testSimpleDataTypes(conn);
             testStringTypes(conn);
+            testLowCardinalityAndNullableTypes(conn);
             testDecimalTypes(conn);
             testMiscTypes(conn);
             testDateTypes(conn);
@@ -90,6 +91,20 @@ public class PreparedStatementsTest {
             System.out.printf("%s, value: %s\n", getMysqlType(rs, "sn"), rs.getString("sn"));
             System.out.printf("%s, value: %s\n", getMysqlType(rs, "lc"), rs.getString("lc"));
             System.out.printf("%s, value: %s\n", getMysqlType(rs, "nlc"), rs.getString("nlc"));
+        }
+        System.out.println();
+    }
+
+    private static void testLowCardinalityAndNullableTypes(Connection conn) throws SQLException {
+        System.out.println("### testLowCardinalityAndNullableTypes");
+        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_low_cardinality_and_nullable_types").executeQuery();
+        int rowNum = 1;
+        while (rs.next()) {
+            System.out.printf("Row #%d\n", rowNum++);
+            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ilc"), rs.getInt("ilc"));
+            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dlc"), rs.getDate("dlc"));
+            // NULL int is represented as zero
+            System.out.printf("%s, value: %s\n", getMysqlType(rs, "ni"), rs.getInt("ni"));
         }
         System.out.println();
     }

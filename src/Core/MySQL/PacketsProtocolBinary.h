@@ -20,6 +20,7 @@ class ResultSetRow : public IMySQLWritePacket
 
 private:
     DateTime64ComponentsWithScale getDateTime64ComponentsWithScale(DataTypePtr data_type, ColumnPtr col) const;
+    ColumnPtr getColumn(size_t i) const;
 
 protected:
     int row_num;

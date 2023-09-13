@@ -40,6 +40,17 @@ INSERT INTO ps_string_types
 VALUES ('foo', 'bar', 'qaz', 'qux'),
        ('42', NULL, 'test', NULL);
 
+CREATE OR REPLACE TABLE ps_low_cardinality_and_nullable_types
+(
+    ilc LowCardinality(Int32),
+    dlc LowCardinality(Date),
+    ni  Nullable(Int32)
+) ENGINE MergeTree ORDER BY ilc;
+
+INSERT INTO ps_low_cardinality_and_nullable_types
+VALUES (42, '2011-02-05', NULL),
+       (-54, '1970-01-01', 144);
+
 CREATE OR REPLACE TABLE ps_decimal_types
 (
     d32         Decimal(9, 2),

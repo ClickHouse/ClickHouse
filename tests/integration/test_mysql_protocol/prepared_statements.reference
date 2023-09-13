@@ -35,14 +35,24 @@ b type is BIT, value: false
 ### testStringTypes
 Row #1
 s type is CHAR, value: 42
-sn type is CHAR, value: null
+sn type is CHAR, value: ᴺᵁᴸᴸ
 lc type is CHAR, value: test
-nlc type is CHAR, value: null
+nlc type is CHAR, value: ᴺᵁᴸᴸ
 Row #2
 s type is CHAR, value: foo
 sn type is CHAR, value: bar
 lc type is CHAR, value: qaz
 nlc type is CHAR, value: qux
+
+### testLowCardinalityAndNullableTypes
+Row #1
+ilc type is INT, value: -54
+dlc type is DATE, value: 1970-01-01
+ni type is INT, value: 144
+Row #2
+ilc type is INT, value: 42
+dlc type is DATE, value: 2011-02-05
+ni type is INT, value: 0
 
 ### testDecimalTypes
 Row #1
