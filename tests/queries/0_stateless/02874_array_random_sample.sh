@@ -109,6 +109,86 @@ run_higher_k_test() {
     ((total_tests++))
 }
 
+# Test Function for Integer Arrays with samples = 0
+run_integer_with_samples_0_test() {
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1,2,3], 0)")
+    mapfile -t sorted_result < <(echo "$query_result" | tr -d '[]' | tr ',' '\n' | sort -n)
+
+    # An empty array should produce an empty string after transformations
+    declare -A expected_outcomes
+    expected_outcomes["EMPTY_ARRAY"]=1
+
+    # Prepare the result string for comparison
+    sorted_result_str=$(echo "${sorted_result[*]}" | tr ' ' '\n' | sort -n | tr '\n' ' ' | sed 's/ $//')
+
+    # Use "EMPTY_ARRAY" as a placeholder for an empty array
+    [[ -z "$sorted_result_str" ]] && sorted_result_str="EMPTY_ARRAY"
+
+    # Compare
+    if [[ -n "${expected_outcomes[$sorted_result_str]}" ]]; then
+        echo "Integer Test with K=0: Passed"
+        ((passed_tests++))
+    else
+        echo "Integer Test with K=0: Failed"
+        echo "Output: $query_result"
+    fi
+    ((total_tests++))
+}
+
+# Test Function for Empty Array with K > 0
+run_empty_array_with_k_test() {
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([], 5)")
+
+    if [[ "$query_result" == "[]" ]]; then
+        echo "Empty Array with K > 0 Test: Passed"
+        ((passed_tests++))
+    else {
+        echo "Empty Array with K > 0 Test: Failed"
+        echo "Output: $query_result"
+    }
+    fi
+    ((total_tests++))
+}
+
+# Test Function for Non-Unsigned-Integer K
+run_non_unsigned_integer_k_test() {
+    # Test with negative integer
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1, 2, 3], -5)" 2>&1)
+    if [[ "$query_result" == *"ILLEGAL_TYPE_OF_ARGUMENT"* ]]; then
+        echo "Non-Unsigned-Integer K Test (Negative Integer): Passed"
+        ((passed_tests++))
+    else {
+        echo "Non-Unsigned-Integer K Test (Negative Integer): Failed"
+        echo "Output: $query_result"
+    }
+    fi
+    ((total_tests++))
+
+    # Test with string
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1, 2, 3], 'a')" 2>&1)
+    if [[ "$query_result" == *"ILLEGAL_TYPE_OF_ARGUMENT"* ]]; then
+        echo "Non-Unsigned-Integer K Test (String): Passed"
+        ((passed_tests++))
+    else {
+        echo "Non-Unsigned-Integer K Test (String): Failed"
+        echo "Output: $query_result"
+    }
+    fi
+    ((total_tests++))
+
+    # Test with floating-point number
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample([1, 2, 3], 1.5)" 2>&1)
+    if [[ "$query_result" == *"ILLEGAL_TYPE_OF_ARGUMENT"* ]]; then
+        echo "Non-Unsigned-Integer K Test (Floating-Point): Passed"
+        ((passed_tests++))
+    else {
+        echo "Non-Unsigned-Integer K Test (Floating-Point): Failed"
+        echo "Output: $query_result"
+    }
+    fi
+    ((total_tests++))
+}
+
 
 
 # Run test multiple times
@@ -119,6 +199,10 @@ for i in {1..5}; do
     run_nested_array_test
     run_higher_k_test
 done
+
+run_integer_with_samples_0_test
+run_empty_array_with_k_test
+run_non_unsigned_integer_k_test
 
 # Print overall test results
 echo "Total tests: $total_tests"
