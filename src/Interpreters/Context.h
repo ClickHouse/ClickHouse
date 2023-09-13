@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
@@ -104,6 +104,7 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class BackupLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -195,11 +196,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
-
-#if USE_ROCKSDB
-class MergeTreeMetadataCache;
-using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
-#endif
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -417,6 +413,10 @@ private:
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 
+    /// Resource classifier for a query, holds smart pointers required for ResourceLink
+    /// NOTE: all resource links became invalid after `classifier` destruction
+    mutable ClassifierPtr classifier;
+
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
@@ -582,7 +582,7 @@ public:
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
-    ClassifierPtr getClassifier() const;
+    ClassifierPtr getWorkloadClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -895,10 +895,6 @@ public:
     UInt64 getClientProtocolVersion() const;
     void setClientProtocolVersion(UInt64 version);
 
-#if USE_ROCKSDB
-    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
-#endif
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
@@ -1003,10 +999,6 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
-#if USE_ROCKSDB
-    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
-#endif
-
     /// Call after unexpected crash happen.
     void handleCrash() const;
 
@@ -1028,6 +1020,7 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
+    std::shared_ptr<BackupLog> getBackupLog() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 
