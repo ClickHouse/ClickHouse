@@ -39,7 +39,7 @@ For example,
 - in v22.10: `SELECT splitByChar('=', 'a=b=c=d', 2); -- ['a','b','c=d']`
 - in v22.11: `SELECT splitByChar('=', 'a=b=c=d', 2); -- ['a','b']`
 
-The previous behavior can be restored by setting [split_tokens_like_python](../../operations/settings/settings.md#split-tokens-like-python) = 1.
+The previous behavior can be restored by setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) = 'python'.
 :::
 
 **Example**
@@ -82,7 +82,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 - There are multiple consecutive non-empty separators;
 - The original string `s` is empty while the separator is not empty.
 
-Setting [split_tokens_like_python](../../operations/settings/settings.md#split-tokens-like-python) (default: 0) controls whether with `max_substrings` > 0, the remaining string (if any) is included in the result array or not.
+Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
 
 **Example**
 
@@ -137,7 +137,7 @@ Returns an array of selected substrings. Empty substrings may be selected when:
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [split_tokens_like_python](../../operations/settings/settings.md#split-tokens-like-python) (default: 0) controls whether with `max_substrings` > 0, the remaining string (if any) is included in the result array or not.
+Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
 
 **Example**
 
@@ -188,7 +188,7 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [split_tokens_like_python](../../operations/settings/settings.md#split-tokens-like-python) (default: 0) controls whether with `max_substrings` > 0, the remaining string (if any) is included in the result array or not.
+Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
 
 **Example**
 
@@ -227,7 +227,7 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [split_tokens_like_python](../../operations/settings/settings.md#split-tokens-like-python) (default: 0) controls whether with `max_substrings` > 0, the remaining string (if any) is included in the result array or not.
+Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
 
 **Example**
 
@@ -289,7 +289,7 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [split_tokens_like_python](../../operations/settings/settings.md#split-tokens-like-python) (default: 0) controls whether with `max_substrings` > 0, the remaining string (if any) is included in the result array or not.
+Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
 
 **Example**
 

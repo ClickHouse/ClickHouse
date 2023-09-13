@@ -31,7 +31,7 @@ public:
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
     }
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/, SplitTokenMode /*split_token_mode*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/, MaxSubstringBehavior /*max_substring_behavior*/) {}
 
     static constexpr auto strings_argument_position = 0uz;
 
