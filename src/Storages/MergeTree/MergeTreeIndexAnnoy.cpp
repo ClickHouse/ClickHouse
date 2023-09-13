@@ -157,17 +157,24 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         const auto & column_array_data = column_array->getData();
         const auto & column_arary_data_float_data = typeid_cast<const ColumnFloat32 &>(column_array_data).getData();
 
-        if (column_arary_data_float_data.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
-
         const auto & column_array_offsets = column_array->getOffsets();
         const size_t num_rows = column_array_offsets.size();
+
+        /// The index dimension is inferred from the inserted arrays (array cardinality). If no value was specified in the INSERT statement
+        /// for the annoy-indexed column (i.e. default value), we have a problem. Reject such values.
+        if (column_array_offsets.empty() || column_array_offsets[0] == 0)
+            /// (The if condition is a bit weird but I have seen either with default values)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Tried to insert {} rows into Annoy index but there were no values to insert. Likely, the INSERT used default values - these are not supported for Annoy.", rows_read);
 
         /// Check all sizes are the same
         size_t dimension = column_array_offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
             if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
+
+        /// Also check that previously inserted blocks have the same size as this block
+        if (index && index->getDimensions() != dimension)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
         if (!index)
             index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(dimension);
@@ -363,7 +370,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32)");
+            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32[, Float32[, ...]])");
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];
