@@ -122,8 +122,8 @@ echo "Parquet"
 
 DATA_FILE=$CUR_DIR/data_parquet/string_int_list_inconsistent_offset_multiple_batches.parquet
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load (ints Array(Int64), strings Nullable(String)) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE parquet_load (ints Array(Int64), strings Nullable(String)) ENGINE = Memory"
 cat "$DATA_FILE" | ${CLICKHOUSE_CLIENT} -q "INSERT INTO parquet_load FORMAT Parquet"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load SETTINGS max_threads=1" | md5sum
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load" | md5sum
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM parquet_load"
 ${CLICKHOUSE_CLIENT} --query="drop table parquet_load"
