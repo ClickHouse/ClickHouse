@@ -165,7 +165,7 @@ ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technica
 
 ## VALID UNTIL Clause
 
-Allows you to specify the expiration date and, optionally, the time for a user. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime.
+Allows you to specify the expiration date and, optionally, the time for user credentials. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
 
 Examples:
 

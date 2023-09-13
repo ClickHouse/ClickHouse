@@ -1,4 +1,6 @@
 import pytest
+from datetime import datetime, timedelta
+from time import sleep
 
 from helpers.cluster import ClickHouseCluster
 
@@ -32,7 +34,7 @@ def test_basic(started_cluster):
     )
     assert node.query("SELECT 1", user="user_basic") == "1\n"
 
-    # 3. With invalid VALID UNTIL
+    # 3. With expired VALID UNTIL
     node.query("ALTER USER user_basic VALID UNTIL '06/11/2010 08:03:20 Z+3'")
 
     assert (
@@ -48,6 +50,20 @@ def test_basic(started_cluster):
 
     assert node.query("SHOW CREATE USER user_basic") == "CREATE USER user_basic\n"
     assert node.query("SELECT 1", user="user_basic") == "1\n"
+    node.query("DROP USER user_basic")
+
+    # 5. Make VALID UNTIL expire
+    until_datetime = datetime.today() + timedelta(0, 10)
+    until_string = until_datetime.strftime("%Y-%m-%d %H:%M:%S")
+
+    node.query(f"CREATE USER user_basic VALID UNTIL '{until_string}'")
+
+    assert node.query("SELECT 1", user="user_basic") == "1\n"
+
+    sleep(12)
+
+    error = "Authentication failed"
+    assert error in node.query_and_get_error("SELECT 1", user="user_basic")
 
 
 def test_details(started_cluster):
@@ -64,5 +80,5 @@ def test_details(started_cluster):
 
     assert (
         node.query("SHOW CREATE USER user_details_time_only")
-        == "CREATE USER user_details_time_only VALID UNTIL \\'2000-01-01 22:03:40\\'\n"
+        == "CREATE USER user_details_time_only VALID UNTIL \\'2023-01-01 22:03:40\\'\n"
     )
