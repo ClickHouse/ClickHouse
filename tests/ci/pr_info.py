@@ -321,52 +321,48 @@ class PRInfo:
             for f in self.changed_files
         )
 
-    def can_skip_integration_tests(self, version):
-        if FORCE_TESTS_LABEL in self.labels:
-            return False
+def can_skip_integration_tests(self, versions: List[str]):
+    if FORCE_TESTS_LABEL in self.labels:
+        return False
 
-        # If docker image(s) relevant to integration tests are updated
-        if self.sha not in version:
-            return False
+    # If docker image(s) relevant to integration tests are updated
+    if self.sha not in versions:
+        return False
 
-        if self.changed_files is None or not self.changed_files:
-            return False
+    if self.changed_files is None or not self.changed_files:
+        return False
 
-        if not self.can_skip_builds_and_use_version_from_master():
-            return False
+    if not self.can_skip_builds_and_use_version_from_master():
+        return False
 
-        # Integration tests can be skipped if only functional/performance tests are changes
-        for f in self.changed_files:
-            if not f.startswith("tests/queries") and not f.startswith(
-                "tests/performance"
-            ):
-                return False
+    # Integration tests can be skipped if integration tests are not changed
+    return not any(
+        f.startswith("tests/integration/")
+        or f == "tests/ci/integration_test_check.py"
+        for f in self.changed_files
+    )
 
-        return True
+def can_skip_functional_tests(self, version):
+    if FORCE_TESTS_LABEL in self.labels:
+        return False
 
-    def can_skip_functional_tests(self, version):
-        if FORCE_TESTS_LABEL in self.labels:
-            return False
+    # If docker image(s) relevant to functional tests are updated
+    if self.sha not in version:
+        return False
 
-        # If docker image(s) relevant to functional tests are updated
-        if self.sha not in version:
-            return False
+    if self.changed_files is None or not self.changed_files:
+        return False
 
-        if self.changed_files is None or not self.changed_files:
-            return False
+    if not self.can_skip_builds_and_use_version_from_master():
+        return False
 
-        if not self.can_skip_builds_and_use_version_from_master():
-            return False
-
-        # Functional tests can be skipped if only integration/performance tests are changes
-        for f in self.changed_files:
-            if not f.startswith("tests/integration") and not f.startswith(
-                "tests/performance"
-            ):
-                return False
-
-        return True
-
+    # Functional tests can be skipped if queries tests are not changed
+    return not any(
+        f.startswith("tests/queries/0_stateless")
+        or f.startswith("tests/queries/1_stateful")
+        or f == "tests/ci/functional_test_check.py"
+        for f in self.changed_files
+    )
 
 class FakePRInfo:
     def __init__(self):
