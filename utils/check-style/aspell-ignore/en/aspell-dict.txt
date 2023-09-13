@@ -987,6 +987,7 @@ acos
 acosh
 activecube
 activerecord
+addDate
 addDays
 addHours
 addMinutes
@@ -2255,6 +2256,7 @@ structureToProtobufSchema
 studentTTest
 studentttest
 subBitmap
+subDate
 subarray
 subarrays
 subcolumn

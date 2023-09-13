@@ -16,6 +16,8 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `--session-timeout=TIMEOUT` — Set session timeout in seconds. Default value: 10s.
 -   `--operation-timeout=TIMEOUT` — Set operation timeout in seconds. Default value: 10s.
 -   `--history-file=FILE_PATH` — Set path of history file. Default value: `~/.keeper-client-history`.
+-   `--log-level=LEVEL` — Set log level. Default value: `information`.
+-   `--no-confirmation` — If set, will not require a confirmation on several commands. Default value `false` for interactive and `true` for query
 -   `--help` — Shows the help message.
 
 ## Example {#clickhouse-keeper-client-example}
@@ -44,6 +46,7 @@ keeper foo bar
 
 -   `ls [path]` -- Lists the nodes for the given path (default: cwd)
 -   `cd [path]` -- Change the working path (default `.`)
+-   `exists <path>` -- Returns `1` if node exists, `0` otherwise
 -   `set <path> <value> [version]` -- Updates the node's value. Only update if version matches (default: -1)
 -   `create <path> <value> [mode]` -- Creates new node with the set value
 -   `touch <path>` -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists
@@ -56,3 +59,5 @@ keeper foo bar
 -   `find_super_nodes <threshold> [path]` -- Finds nodes with number of children larger than some threshold for the given path (default `.`)
 -   `delete_stale_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
 -   `find_big_family [path] [n]` -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)
+-   `sync <path>` -- Synchronizes node between processes and leader
+-   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration
