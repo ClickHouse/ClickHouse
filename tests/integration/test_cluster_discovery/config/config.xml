@@ -20,4 +20,8 @@
             </shard>
         </two_shards>
     </remote_servers>
+
+    <fail_points_active>
+        <cluster_discovery_faults/>
+    </fail_points_active>
 </clickhouse>

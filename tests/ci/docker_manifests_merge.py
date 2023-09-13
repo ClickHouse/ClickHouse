@@ -9,10 +9,16 @@ import subprocess
 from typing import List, Dict, Tuple
 from github import Github
 
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+    CHException,
+)
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP
+from docker_images_helper import IMAGES_FILE_PATH, get_image_names
+from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from git_helper import Runner
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
@@ -167,6 +173,74 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     return manifest, "OK"
 
 
+def enrich_images(changed_images: Dict[str, str]) -> None:
+    all_image_names = get_image_names(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
+
+    images_to_find_tags_for = [
+        image for image in all_image_names if image not in changed_images
+    ]
+    images_to_find_tags_for.sort()
+
+    logging.info(
+        "Trying to find versions for images:\n %s", "\n ".join(images_to_find_tags_for)
+    )
+
+    COMMIT_SHA_BATCH_SIZE = 100
+    MAX_COMMIT_BATCHES_TO_CHECK = 10
+    # Gets the sha of the last COMMIT_SHA_BATCH_SIZE commits after skipping some commits (see below)
+    LAST_N_ANCESTOR_SHA_COMMAND = f"git log --format=format:'%H' --max-count={COMMIT_SHA_BATCH_SIZE} --skip={{}} --merges"
+    git_runner = Runner()
+
+    GET_COMMIT_SHAS_QUERY = """
+        WITH {commit_shas:Array(String)} AS commit_shas,
+             {images:Array(String)} AS images
+        SELECT
+            substring(test_name, 1, position(test_name, ':') -1) AS image_name,
+            argMax(commit_sha, check_start_time) AS commit_sha
+        FROM checks
+            WHERE
+                check_name == 'Push multi-arch images to Dockerhub'
+                AND position(test_name, checks.commit_sha)
+                AND checks.commit_sha IN commit_shas
+                AND image_name IN images
+        GROUP BY image_name
+        """
+
+    batch_count = 0
+    ch_helper = ClickHouseHelper()
+
+    while (
+        batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
+    ):
+        commit_shas = git_runner(
+            LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
+        ).split("\n")
+
+        result = ch_helper.select_json_each_row(
+            "default",
+            GET_COMMIT_SHAS_QUERY,
+            {"commit_shas": commit_shas, "images": images_to_find_tags_for},
+        )
+        result.sort(key=lambda x: x["image_name"])
+
+        logging.info(
+            "Found images for commits %s..%s:\n %s",
+            commit_shas[0],
+            commit_shas[-1],
+            "\n ".join(f"{im['image_name']}:{im['commit_sha']}" for im in result),
+        )
+
+        for row in result:
+            image_name = row["image_name"]
+            commit_sha = row["commit_sha"]
+            # As we only get the SHAs of merge commits from master, the PR number will be always 0
+            tag = f"0-{commit_sha}"
+            changed_images[image_name] = tag
+            images_to_find_tags_for.remove(image_name)
+
+        batch_count += 1
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
@@ -197,6 +271,12 @@ def main():
             test_results.append(TestResult(manifest, test_result))
             if test_result != "OK":
                 status = "failure"
+
+    try:
+        # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
+        enrich_images(changed_images)
+    except CHException as ex:
+        logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 
     with open(
         os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"

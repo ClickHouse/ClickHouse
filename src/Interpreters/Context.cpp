@@ -64,8 +64,6 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/SessionLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
@@ -92,7 +90,6 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -351,11 +348,6 @@ struct ContextSharedPart : boost::noncopyable
 
     bool is_server_completely_started = false;
 
-#if USE_ROCKSDB
-    /// Global merge tree metadata cache, stored in rocksdb.
-    MergeTreeMetadataCachePtr merge_tree_metadata_cache;
-#endif
-
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -585,15 +577,6 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
             /// Stop zookeeper connection
             zookeeper.reset();
-
-#if USE_ROCKSDB
-            /// Shutdown merge tree metadata cache
-            if (merge_tree_metadata_cache)
-            {
-                merge_tree_metadata_cache->shutdown();
-                merge_tree_metadata_cache.reset();
-            }
-#endif
         }
 
         /// Can be removed without context lock
@@ -999,7 +982,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", disk_ptr->getCacheName());
 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
@@ -1309,10 +1292,12 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
-ClassifierPtr Context::getClassifier() const
+ClassifierPtr Context::getWorkloadClassifier() const
 {
     auto lock = getLock();
-    return getResourceManager()->acquire(getSettingsRef().workload);
+    if (!classifier)
+        classifier = getResourceManager()->acquire(getSettingsRef().workload);
+    return classifier;
 }
 
 
@@ -1699,9 +1684,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 /// For input function we should check if input format supports reading subset of columns.
                 if (table_function_ptr->getName() == "input")
-                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat(), shared_from_this());
                 else
-                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(shared_from_this());
             }
 
             if (use_columns_from_insert_query)
@@ -2758,6 +2743,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         Stopwatch watch;
         LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
         shared->zookeeper = shared->zookeeper->startNewSession();
+        if (isServerCompletelyStarted())
+            shared->zookeeper->setServerCompletelyStarted();
         LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
     }
 
@@ -2959,13 +2946,6 @@ std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
     return shared->auxiliary_zookeepers;
 }
-
-#if USE_ROCKSDB
-MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
-{
-    return shared->merge_tree_metadata_cache;
-}
-#endif
 
 void Context::resetZooKeeper() const
 {
@@ -3256,13 +3236,6 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
-#if USE_ROCKSDB
-void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
-{
-    shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
-}
-#endif
-
 /// Call after unexpected crash happen.
 void Context::handleCrash() const
 {
@@ -3446,6 +3419,16 @@ std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
         return {};
 
     return shared->system_logs->asynchronous_insert_log;
+}
+
+std::shared_ptr<BackupLog> Context::getBackupLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->backup_log;
 }
 
 std::vector<ISystemLog *> Context::getSystemLogs() const
