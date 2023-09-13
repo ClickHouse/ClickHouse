@@ -82,10 +82,18 @@ ActionNodeStatistics PredicateNodeVisitor::visitChildren(const ActionsDAG::Node 
     return visit(node->children.front(), context); /// TODO clone
 }
 
-ActionNodeStatistics PredicateNodeVisitor::visitDefault(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
+ActionNodeStatistics PredicateNodeVisitor::visitDefault(const ActionsDAG::Node * node, ContextType & context)
 {
-    ActionNodeStatistics r;
-    return r;
+    ActionNodeStatistics node_stats;
+    auto input_nodes = getInputNodes(node);
+    node_stats.selectivity = 0.8; /// TODO add to settings
+
+    /// collect input node statistics
+    for (auto input_node : input_nodes)
+    {
+        node_stats.set(input_node, context[input_node].get(input_node)->clone());
+    }
+    return node_stats;
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitInput(const ActionsDAG::Node * node, ContextType & context)

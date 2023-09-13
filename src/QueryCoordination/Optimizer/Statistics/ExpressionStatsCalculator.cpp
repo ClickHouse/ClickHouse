@@ -82,7 +82,7 @@ ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node 
 
 ActionNodeStatistics ExpressionNodeVisitor::visitInput(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "should never reach here.");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Should never reach here, for we can get input node stats from context.");
 }
 
 ActionNodeStatistics ExpressionNodeVisitor::visitColumn(const ActionsDAG::Node * node, ContextType & /*context*/)
@@ -124,6 +124,7 @@ ActionNodeStatistics ExpressionNodeVisitor::visitFunction(const ActionsDAG::Node
 {
     switch (node->children.size())
     {
+        /// TODO open
 //        case 1:
 //            return visitUnaryFunction(node, context);
 //        case 2:
@@ -135,14 +136,14 @@ ActionNodeStatistics ExpressionNodeVisitor::visitFunction(const ActionsDAG::Node
 
 ActionNodeStatistics ExpressionNodeVisitor::visitUnaryFunction(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
 {
-    ActionNodeStatistics r;
-    return r;
+    ActionNodeStatistics node_stats;
+    return node_stats;
 }
 
 ActionNodeStatistics ExpressionNodeVisitor::visitBinaryFunction(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
 {
-    ActionNodeStatistics r;
-    return r;
+    ActionNodeStatistics node_stats;
+    return node_stats;
 }
 
 

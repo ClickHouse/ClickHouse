@@ -23,9 +23,23 @@ Float64 ColumnStatistics::calculateSelectivity(OP_TYPE, Float64 /*value*/)
     return 1.0; /// TODO
 }
 
-void ColumnStatistics::updateValues(OP_TYPE, Float64 /*value*/)
+void ColumnStatistics::updateValues(OP_TYPE op_type, Float64 value)
 {
-    /// TODO
+    switch (op_type) /// TODO
+    {
+        case OP_TYPE::EQUAL:
+            min_value = value;
+            max_value = value;
+            ndv = 1.0;
+            break;
+        default:
+            break;
+    }
+}
+
+bool ColumnStatistics::isUnKnow() const
+{
+    return is_unknown;
 }
 
 void testFload64()

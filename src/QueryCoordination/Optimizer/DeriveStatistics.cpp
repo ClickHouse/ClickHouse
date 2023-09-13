@@ -23,33 +23,37 @@ Statistics DeriveStatistics::visitDefault()
 
 Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
 {
-    Statistics scan_stats;
-    scan_stats.setOutputRowSize(step.getAnalysisResult().selected_rows);
-    /// TODO add column statistics
-    /// step.getRealColumnNames()
-    if (step.getStorageID().table_name == "student")
-    {
-        scan_stats.addColumnStatistics("id", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
-        scan_stats.addColumnStatistics("name", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 5.0, std::make_shared<DataTypeString>()));
-        scan_stats.addColumnStatistics("event_time", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 8.0, std::make_shared<DataTypeDateTime>()));
-        scan_stats.addColumnStatistics("city", std::make_shared<ColumnStatistics>(0.0, 0.0, 3.0, 14.0, std::make_shared<DataTypeString>()));
-        scan_stats.addColumnStatistics("city_code", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
-
-    }
-    else
-    {
-        scan_stats.addColumnStatistics("id", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
-        scan_stats.addColumnStatistics("event_time", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 8.0, std::make_shared<DataTypeDateTime>()));
-        scan_stats.addColumnStatistics("score", std::make_shared<ColumnStatistics>(50.0, 96.0, 8.0, 8.0, std::make_shared<DataTypeInt32>()));
-    }
-
-
     Statistics statistics;
-    if (!step.getFilters().empty())
+    statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
+
+//    if (step.getStorageID().table_name == "student")
+//    {
+//        statistics.addColumnStatistics("id", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
+//        statistics.addColumnStatistics("name", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 5.0, std::make_shared<DataTypeString>()));
+//        statistics.addColumnStatistics("event_time", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 8.0, std::make_shared<DataTypeDateTime>()));
+//        statistics.addColumnStatistics("city", std::make_shared<ColumnStatistics>(0.0, 0.0, 3.0, 14.0, std::make_shared<DataTypeString>()));
+//        statistics.addColumnStatistics("city_code", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
+//
+//    }
+//    else
+//    {
+//        statistics.addColumnStatistics("id", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
+//        statistics.addColumnStatistics("event_time", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 8.0, std::make_shared<DataTypeDateTime>()));
+//        statistics.addColumnStatistics("score", std::make_shared<ColumnStatistics>(50.0, 96.0, 8.0, 8.0, std::make_shared<DataTypeInt32>()));
+//    }
+
+    /// add column statistics
+    for (auto & column : step.getRealColumnNames())
     {
-        for (auto & filter : step.getFilters()) /// TODO and
-            statistics = PredicateStatsCalculator::calculateStatistics(filter, scan_stats);
+        statistics.addColumnStatistics(column, ColumnStatistics::unknown());
     }
+
+    /// calculate for filters
+    for (auto & filter : step.getFilters())
+    {
+        statistics = PredicateStatsCalculator::calculateStatistics(filter, statistics);
+    }
+
     return statistics;
 }
 

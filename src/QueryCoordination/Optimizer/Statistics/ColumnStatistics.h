@@ -72,6 +72,8 @@ public:
 
     /// Adjust min_value or max_value by value.
     void updateValues(OP_TYPE, Float64 value);
+
+    bool isUnKnow() const;
 private:
     Float64 min_value;
     Float64 max_value;
