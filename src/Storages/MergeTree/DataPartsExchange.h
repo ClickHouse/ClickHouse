@@ -86,7 +86,7 @@ public:
         DiskPtr dest_disk = nullptr);
 
     /// You need to stop the data transfer.
-    ActionBlocker blocker;
+    PartitionActionBlocker blocker;
 
 private:
     using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;

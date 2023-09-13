@@ -42,15 +42,6 @@ namespace ErrorCodes
 namespace MutationHelpers
 {
 
-static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry * mutate_entry)
-{
-    if (merges_blocker.isCancelled() || (*mutate_entry)->is_cancelled)
-        throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-
-    return true;
-}
-
-
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -820,7 +811,7 @@ struct MutationContext
 {
     MergeTreeData * data;
     MergeTreeDataMergerMutator * mutator;
-    ActionBlocker * merges_blocker;
+    PartitionActionBlocker * merges_blocker;
     TableLockHolder * holder;
     MergeListEntry * mutate_entry;
 
@@ -881,10 +872,21 @@ struct MutationContext
     bool need_prefix = true;
 
     scope_guard temporary_directory_lock;
+
+    bool checkOperationIsNotCanceled() const
+    {
+        if (merges_blocker->isCancelledForPartition(new_data_part->info.partition_id)
+            || (*mutate_entry)->is_cancelled)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        }
+
+        return true;
+    }
+
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
-
 
 class MergeProjectionPartsTask : public IExecutableTask
 {
@@ -1134,7 +1136,7 @@ void PartMergerWriter::prepare()
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
     Block cur_block;
-    if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
+    if (ctx->checkOperationIsNotCanceled() && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
@@ -1693,7 +1695,7 @@ MutateTask::MutateTask(
     const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
-    ActionBlocker & merges_blocker_,
+    PartitionActionBlocker & merges_blocker_,
     bool need_prefix_)
     : ctx(std::make_shared<MutationContext>())
 {
@@ -1732,7 +1734,7 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
-            MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
+            ctx->checkOperationIsNotCanceled();
 
             if (task->executeStep())
                 return true;
@@ -1795,7 +1797,7 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
 
 bool MutateTask::prepare()
 {
-    MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry);
+    ctx->checkOperationIsNotCanceled();
 
     if (ctx->future_part->parts.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to mutate {} parts, not one. "

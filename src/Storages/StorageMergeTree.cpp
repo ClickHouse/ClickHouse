@@ -1065,7 +1065,7 @@ bool StorageMergeTree::merge(
 
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
-        if (merger_mutator.merges_blocker.isCancelled())
+        if (merger_mutator.merges_blocker.isCancelledForPartition(partition_id))
             throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
 
         merge_mutate_entry = selectPartsToMerge(
@@ -1329,6 +1329,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
+        if (merger_mutator.merges_blocker.isCancelledForPartition(merge_entry->future_part->part_info.partition_id))
+            return false;
+
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
@@ -1340,6 +1343,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
+        if (merger_mutator.merges_blocker.isCancelledForPartition(mutate_entry->future_part->part_info.partition_id))
+            return false;
+
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
@@ -1601,7 +1607,7 @@ ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
 
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger_mutator.merges_blocker.cancel();
+    auto merge_blocker = merger_mutator.merges_blocker.cancelForPartition(partition_id);
 
     const DataPartsVector parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id);
     LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {} ({} items)",

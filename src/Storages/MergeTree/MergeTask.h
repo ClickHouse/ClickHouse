@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -66,7 +67,7 @@ public:
         MergeTreeTransactionPtr txn,
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
-        ActionBlocker * merges_blocker_,
+        PartitionActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
@@ -132,7 +133,7 @@ private:
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
         MergeTreeDataMergerMutator * mutator{nullptr};
-        ActionBlocker * merges_blocker{nullptr};
+        PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
@@ -179,6 +180,11 @@ private:
         bool need_prefix;
 
         scope_guard temporary_directory_lock;
+
+        bool isCancelledMerges() const
+        {
+            return merges_blocker->isCancelledForPartition(future_part->part_info.partition_id);
+        }
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;
