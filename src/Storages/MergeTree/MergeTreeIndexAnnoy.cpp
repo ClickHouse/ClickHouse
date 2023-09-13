@@ -154,36 +154,36 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
-        const auto & data = column_array->getData();
-        const auto & array = typeid_cast<const ColumnFloat32 &>(data).getData();
+        const auto & column_array_data = column_array->getData();
+        const auto & column_arary_data_float_data = typeid_cast<const ColumnFloat32 &>(column_array_data).getData();
 
-        if (array.empty())
+        if (column_arary_data_float_data.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
 
-        const auto & offsets = column_array->getOffsets();
-        const size_t num_rows = offsets.size();
+        const auto & column_array_offsets = column_array->getOffsets();
+        const size_t num_rows = column_array_offsets.size();
 
         /// Check all sizes are the same
-        size_t size = offsets[0];
+        size_t dimension = column_array_offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
-            if (offsets[i + 1] - offsets[i] != size)
+            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
         if (!index)
-            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(dimension);
 
         /// Add all rows of block
-        index->add_item(index->get_n_items(), array.data());
+        index->add_item(index->get_n_items(), column_arary_data_float_data.data());
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
-            index->add_item(index->get_n_items(), &array[offsets[current_row - 1]]);
+            index->add_item(index->get_n_items(), &column_arary_data_float_data[column_array_offsets[current_row - 1]]);
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
-        const auto & columns = column_tuple->getColumns();
+        const auto & column_tuple_columns = column_tuple->getColumns();
 
         /// TODO check if calling index->add_item() directly on the block's tuples is faster than materializing everything
-        std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-        for (const auto & column : columns)
+        std::vector<std::vector<Float32>> data(column_tuple->size(), std::vector<Float32>());
+        for (const auto & column : column_tuple_columns)
         {
             const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
             for (size_t i = 0; i < pod_array.size(); ++i)
