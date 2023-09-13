@@ -2174,7 +2174,9 @@ SELECT arrayRandomSample([1, 2, 3, 4, 5], 0) as res;
 
 Result:
 ```
-TODO: FIX ME
+┌─res─┐
+│ []  │
+└─────┘
 ```
 
 Query:
