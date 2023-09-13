@@ -151,6 +151,7 @@ public:
 
     ~HashJoin() override;
 
+    std::string getName() const override { return "HashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /** Add block of data from right hand of JOIN to the map.

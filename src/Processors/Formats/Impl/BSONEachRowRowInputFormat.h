@@ -64,6 +64,9 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
     size_t columnIndex(const StringRef & name, size_t key_index);
 
     using ColumnReader = std::function<void(StringRef name, BSONType type)>;

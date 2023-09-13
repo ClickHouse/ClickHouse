@@ -56,11 +56,11 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 300.
+Default value: 3000.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to minimize the number of parts processed, see [Merge Tree](../../development/architecture.md#merge-tree).
 
-You can set a larger value to 600 (1200), this will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
+Prior to 23.6 this setting was set to 300. You can set a higher different value, it will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
 
 
 ## parts_to_delay_insert {#parts-to-delay-insert}
@@ -71,7 +71,7 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 150.
+Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
@@ -622,6 +622,19 @@ Possible values:
 - true, false
 
 Default value: false
+
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+
+When there is less than specified number of free entries in pool, do not execute optimizing entire partition in the background (this task generated when set `min_age_to_force_merge_seconds` and enable `min_age_to_force_merge_on_partition_only`). This is to leave free threads for regular merges and avoid "Too many parts".
+
+Possible values:
+
+- Positive integer.
+
+Default value: 25
+
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
