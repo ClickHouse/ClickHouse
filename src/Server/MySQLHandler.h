@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -7,8 +8,10 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
+#include "IO/ReadBufferFromString.h"
 #include "IServer.h"
 
+#include "base/types.h"
 #include "config.h"
 
 #if USE_SSL
@@ -30,8 +33,8 @@ class TCPServer;
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
-    using PreparedStatements = std::unordered_map<UInt32, String>; /// statement_id -> statement
-    using EmplacePreparedStatementResult = std::pair<bool, UInt32>; /// is_success? -> statement_id
+    /// statement_id -> statement
+    using PreparedStatements = std::unordered_map<UInt32, String>;
 
 public:
     MySQLHandler(
@@ -65,7 +68,10 @@ protected:
 
     void comStmtClose(ReadBuffer & payload);
 
-    EmplacePreparedStatementResult emplacePreparedStatement(String statement);
+    /// Contains statement_id if the statement was emplaced successfully
+    std::optional<UInt32> emplacePreparedStatement(String statement);
+    /// Contains statement as a buffer if we could find previously stored statement using provided statement_id
+    std::optional<std::reference_wrapper<ReadBufferFromString>> getPreparedStatement(UInt32 statement_id);
     void erasePreparedStatement(UInt32 statement_id);
 
     virtual void authPluginSSL();
@@ -89,8 +95,8 @@ protected:
     Replacements replacements;
 
     std::mutex prepared_statements_mutex;
-    UInt32 current_prepared_statement_id = 0;
-    PreparedStatements prepared_statements;
+    UInt32 current_prepared_statement_id TSA_GUARDED_BY(prepared_statements_mutex) = 0;
+    PreparedStatements prepared_statements TSA_GUARDED_BY(prepared_statements_mutex);
 
     std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
     std::shared_ptr<ReadBufferFromPocoSocket> in;

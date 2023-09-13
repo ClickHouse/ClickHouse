@@ -1,6 +1,7 @@
 #include "MySQLHandler.h"
 
 #include <limits>
+#include <optional>
 #include <regex>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
@@ -388,9 +389,10 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 {
     String statement;
     readStringUntilEOF(statement, payload);
-    auto [is_success, statement_id] = emplacePreparedStatement(std::move(statement));
-    if (is_success)
-        packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id, 0, 0, 0), true);
+
+    auto statement_id_opt = emplacePreparedStatement(std::move(statement));
+    if (statement_id_opt.has_value())
+        packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id_opt.value(), 0, 0, 0), true);
     else
         packet_endpoint->sendPacket(ERRPacket(), true);
 }
@@ -400,29 +402,24 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
     uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
-    if (!prepared_statements.contains(statement_id))
-    {
-        LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
+    auto statement_opt = getPreparedStatement(statement_id);
+    if (statement_opt.has_value())
+        MySQLHandler::comQuery(statement_opt.value().get(), true);
+    else
         packet_endpoint->sendPacket(ERRPacket(), true);
-        return;
-    }
-
-    // Temporary workaround as we work only with queries that do not bind any parameters atm
-    ReadBufferFromString com_query_payload(prepared_statements.at(statement_id));
-    MySQLHandler::comQuery(com_query_payload, true);
 };
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
     uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
-    erasePreparedStatement(statement_id);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
     // No response packet is sent back to the client.
+    erasePreparedStatement(statement_id);
 };
 
-MySQLHandler::EmplacePreparedStatementResult MySQLHandler::emplacePreparedStatement(String statement)
+std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
 {
     static constexpr size_t MAX_PREPARED_STATEMENTS = 10'000;
     std::lock_guard<std::mutex> lock(prepared_statements_mutex);
@@ -431,9 +428,11 @@ MySQLHandler::EmplacePreparedStatementResult MySQLHandler::emplacePreparedStatem
         LOG_ERROR(log, "Too many prepared statements");
         current_prepared_statement_id = 0;
         prepared_statements.clear();
-        return std::make_pair(false, 0);
+        return std::nullopt;
     }
-    uint32_t statement_id = current_prepared_statement_id++;
+
+    uint32_t statement_id = current_prepared_statement_id;
+    ++current_prepared_statement_id;
 
     // Key collisions should not happen here, as we remove the elements from the map with COM_STMT_CLOSE,
     // and we have quite a big range of available identifiers with 32-bit unsigned integer
@@ -445,18 +444,30 @@ MySQLHandler::EmplacePreparedStatementResult MySQLHandler::emplacePreparedStatem
             statement,
             statement_id,
             prepared_statements.at(statement_id));
-        return std::make_pair(false, 0);
+        return std::nullopt;
     }
 
     prepared_statements.emplace(statement_id, statement);
-    return std::make_pair(true, statement_id);
+    return std::make_optional(statement_id);
 };
+
+std::optional<std::reference_wrapper<ReadBufferFromString>> MySQLHandler::getPreparedStatement(UInt32 statement_id)
+{
+    std::lock_guard<std::mutex> lock(prepared_statements_mutex);
+    if (!prepared_statements.contains(statement_id))
+    {
+        LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
+        return std::nullopt;
+    }
+    // Temporary workaround as we work only with queries that do not bind any parameters atm
+    ReadBufferFromString statement(prepared_statements.at(statement_id));
+    return std::make_optional(std::reference_wrapper(statement));
+}
 
 void MySQLHandler::erasePreparedStatement(UInt32 statement_id)
 {
     std::lock_guard<std::mutex> lock(prepared_statements_mutex);
-    if (prepared_statements.contains(statement_id))
-        prepared_statements.erase(statement_id);
+    prepared_statements.erase(statement_id);
 }
 
 void MySQLHandler::authPluginSSL()

@@ -349,7 +349,7 @@ ResultSetRow::DateTime64ComponentsWithScale ResultSetRow::getDateTime64Component
         --components.whole;
     }
 
-    return std::make_pair(components, scale);
+    return {components, scale};
 }
 }
 }
