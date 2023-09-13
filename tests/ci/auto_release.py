@@ -32,10 +32,14 @@ def parse_args():
     return parser.parse_args()
 
 
-def paginated_list_to_list(paginated_list: github.PaginatedList.PaginatedList[T]) -> List[T]:
+def paginated_list_to_list(
+    paginated_list: github.PaginatedList.PaginatedList[T],
+) -> List[T]:
     return [item for item in paginated_list]
 
+
 READY_FOR_RELEASE_CHECK_NAME = "Ready for release"
+
 
 def main():
     args = parse_args()
@@ -69,7 +73,9 @@ def main():
         unreleased_commits = paginated_list_to_list(
             repo.get_commits(sha=pr.head.ref, since=latest_release_tag.tagger.date)
         )
-        unreleased_commits.sort(key=lambda commit: commit.commit.committer.date, reverse=True)
+        unreleased_commits.sort(
+            key=lambda commit: commit.commit.committer.date, reverse=True
+        )
 
         released = False
         for commit in unreleased_commits:
@@ -89,7 +95,6 @@ def main():
 
             if released:
                 break
-
 
 
 if __name__ == "__main__":
