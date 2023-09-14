@@ -6247,7 +6247,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                                               .getTable(insertion_table, scope_context)
                                               ->getInMemoryMetadataPtr()
                                               ->getColumns();
-            const auto & insert_column_names = insert_columns.getInsertable().getNames();
+            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getInsertable().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;

@@ -723,11 +723,7 @@ public:
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
     void setInsertionTable(StorageID db_and_table, const std::optional<Names> & column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), column_names}; }
     const StorageID & getInsertionTable() const { return insertion_table_info.table; }
-    const Names & getInsertionTableColumnNames() const
-    {
-        assert(insertion_table_info.column_names.has_value());
-        return *insertion_table_info.column_names;
-    }
+    const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
