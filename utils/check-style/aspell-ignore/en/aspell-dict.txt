@@ -1358,6 +1358,7 @@ denormalize
 denormalized
 denormalizing
 denormals
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1414,6 +1415,7 @@ encryptions
 endian
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums
