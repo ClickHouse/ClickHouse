@@ -64,27 +64,29 @@ def run_query_without_errors(query, support_partial_result):
 
 
 def main():
+    rows_number = 2e7 + 1
+
     # Request with partial result limit less then full limit
     run_query_without_errors(
-        "SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 5 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 3",
+        f"SELECT number FROM numbers_mt({rows_number}) ORDER BY -number LIMIT 5 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 3",
         support_partial_result=True,
     )
 
     # Request with partial result limit greater then full limit
     run_query_without_errors(
-        "SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 3 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5",
+        f"SELECT number FROM numbers_mt({rows_number}) ORDER BY -number LIMIT 3 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5",
         support_partial_result=True,
     )
 
     # Request with OFFSET
     run_query_without_errors(
-        "SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 3 OFFSET 1 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5",
+        f"SELECT number FROM numbers_mt({rows_number}) ORDER BY -number LIMIT 3 OFFSET 1 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5",
         support_partial_result=True,
     )
 
     # Request with OFFSET greater then partial result limit (partial result pipeline use blocks with less then OFFSET, so there will be no elements in block after LimitPartialResultTransform)
     run_query_without_errors(
-        "SELECT number FROM numbers_mt(5e6+1) ORDER BY -number LIMIT 3 OFFSET 15 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5",
+        f"SELECT number FROM numbers_mt({rows_number}) ORDER BY -number LIMIT 3 OFFSET 15 SETTINGS max_threads = 1, partial_result_update_duration_ms = 1, max_rows_in_partial_result = 5",
         support_partial_result=False,
     )
 

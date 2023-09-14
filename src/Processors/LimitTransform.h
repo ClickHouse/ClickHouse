@@ -76,7 +76,13 @@ public:
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
     void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }
 
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override
+    {
+        /// Currently LimitPartialResultTransform support only single-thread work.
+        bool is_partial_result_supported = inputs.size() == 1 && outputs.size() == 1;
+
+        return is_partial_result_supported ? PartialResultStatus::FullSupported : PartialResultStatus::NotSupported;
+    }
 };
 
 }

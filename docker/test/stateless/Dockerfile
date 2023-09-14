@@ -40,6 +40,7 @@ RUN apt-get update -y \
             cargo \
             zstd \
             file \
+            jq \
             pv \
             zip \
             p7zip-full \
