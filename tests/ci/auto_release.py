@@ -38,6 +38,14 @@ def parse_args():
         action="store_true",
         help="Add debug logging for this script and github_helper",
     )
+    parser.add_argument(
+        "--remote-protocol",
+        "-p",
+        default="ssh",
+        choices=ReleaseRepo.VALID,
+        help="repo protocol for git commands remote, 'origin' is a special case and "
+        "uses 'origin' as a remote",
+    )
 
     return parser.parse_args()
 
@@ -108,7 +116,11 @@ def main():
             logger.info("Commit is ready for release, let's release!")
 
             release = Release(
-                ReleaseRepo(args.repo, "ssh"), commit.sha, "patch", args.dry_run, True
+                ReleaseRepo(args.repo, args.remote_protocol),
+                commit.sha,
+                "patch",
+                args.dry_run,
+                True,
             )
             try:
                 release.do(True, True, True)
