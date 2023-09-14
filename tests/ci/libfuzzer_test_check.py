@@ -30,7 +30,7 @@ from commit_status_helper import (
     # post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_pull_helper import DockerImage  # , get_image_with_version
+from docker_pull_helper import DockerImage, get_image_with_version
 
 # from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
@@ -329,10 +329,11 @@ def main():
     #             )
     #         sys.exit(0)
 
-    image_name = "clickhouse/libfuzzer-test"  # get_image_name(check_name)
-    docker_image = docker_build_image(
-        image_name, Path("../../docker/test/libfuzzer/")
-    )  # get_image_with_version(reports_path, image_name)
+    # image_name = "clickhouse/libfuzzer-test"  # get_image_name(check_name)
+    # docker_image = docker_build_image(
+    #     image_name, Path("../../docker/test/libfuzzer/")
+    # )
+    docker_image = get_image_with_version(reports_path, "clickhouse/libfuzzer")
 
     fuzzers_path = os.path.join(temp_path, "fuzzers")
     if not os.path.exists(fuzzers_path):

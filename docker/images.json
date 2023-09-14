@@ -21,6 +21,10 @@
         "name": "clickhouse/fuzzer",
         "dependent": []
     },
+    "docker/test/libfuzzer": {
+        "name": "clickhouse/libfuzzer",
+        "dependent": []
+    },
     "docker/test/performance-comparison": {
         "name": "clickhouse/performance-comparison",
         "dependent": []
