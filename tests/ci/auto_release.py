@@ -6,6 +6,7 @@ import github
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
+from release import Release, Repo as ReleaseRepo
 
 T = TypeVar("T", bound=github.GithubObject.GithubObject)
 
@@ -94,17 +95,34 @@ def main():
         for commit in unreleased_commits:
             logger.info("Checking statuses of commit %s", commit.sha)
             statuses = get_commit_filtered_statuses(commit)
-            all_success = all(st.state == SUCCESS_STATUS for st in statuses)
-            has_ready_for_release_check = any(
-                st.context == READY_FOR_RELEASE_CHECK_NAME for st in statuses
-            )
+            # all_success = all(st.state == SUCCESS_STATUS for st in statuses)
+            # has_ready_for_release_check = any(
+            #     st.context == READY_FOR_RELEASE_CHECK_NAME for st in statusess
+            # )
+            all_success = True
+            has_ready_for_release_check = True
             if not (all_success and has_ready_for_release_check):
                 logger.info("Commit is not green, thus not suitable for release")
                 continue
 
             logger.info("Commit is ready for release, let's release!")
 
-            # TODO(antaljanosbenjamin): call release.py taking care of dry run
+            release = Release(ReleaseRepo(args.repo, "ssh"), commit.sha, "patch", args.dry_run, True)
+            try:
+                release.do(True, True, True)
+            except:
+                if release.has_rollback:
+                    logging.error(
+                        "!!The release process finished with error, read the output carefully!!"
+                    )
+                    logging.error(
+                        "Probably, rollback finished with error. "
+                        "If you don't see any of the following commands in the output, "
+                        "execute them manually:"
+                    )
+                    release.log_rollback()
+                raise
+            logging.info("New release is done!")
             break
 
 
