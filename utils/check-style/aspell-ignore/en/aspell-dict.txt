@@ -2215,6 +2215,7 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
+splitBy
 splitby
 splitByChar
 splitByNonAlpha
