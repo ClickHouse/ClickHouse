@@ -180,3 +180,55 @@ TEST(PartitionActionBlocker, TestCancelForPartitionAndThenCancel)
     EXPECT_FALSE(blocker.isCancelledForPartition(partition_id));
     EXPECT_FALSE(blocker.isCancelledForPartition(partition_id2));
 }
+
+TEST(PartitionActionBlocker, TestAutomaticCompactPartitionBlockers)
+{
+    const size_t partitions_count = 100;
+    const std::string partition_id = "some partition id";
+    PartitionActionBlocker blocker;
+
+    for (size_t i = 0; i < partitions_count; ++i)
+    {
+        blocker.cancelForPartition(partition_id + "_" + std::to_string(i));
+    }
+
+    // Automatic cleanup happens once in a while, 100 stale locks should trigger it.
+    EXPECT_LT(blocker.countPartitionBlockers(), partitions_count);
+}
+
+TEST(PartitionActionBlocker, TestCompactPartitionBlockers)
+{
+    const size_t partitions_count = 100;
+    const std::string partition_id = "some partition id";
+    PartitionActionBlocker blocker;
+
+    for (size_t i = 0; i < partitions_count; ++i)
+    {
+        blocker.cancelForPartition(partition_id + "_" + std::to_string(i));
+    }
+    // Manually cleanup all stale blockers (all blockers in this case).
+    blocker.compactPartitionBlockers();
+
+    EXPECT_EQ(0, blocker.countPartitionBlockers());
+}
+
+TEST(PartitionActionBlocker, TestCompactPartitionBlockersDoesntRemoveActiveBlockers)
+{
+    const size_t partitions_count = 100;
+    const std::string partition_id = "some partition id";
+    PartitionActionBlocker blocker;
+
+    auto lock_foo = blocker.cancelForPartition("FOO");
+    for (size_t i = 0; i < partitions_count; ++i)
+    {
+        blocker.cancelForPartition(partition_id + "_" + std::to_string(i));
+    }
+    auto lock_bar = blocker.cancelForPartition("BAR");
+
+    EXPECT_LT(2, blocker.countPartitionBlockers());
+
+    // Manually cleanup all stale blockers (all except held by lock_foo and lock_bar).
+    blocker.compactPartitionBlockers();
+
+    EXPECT_EQ(2, blocker.countPartitionBlockers());
+}
