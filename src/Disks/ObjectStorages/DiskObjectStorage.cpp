@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/S3Common.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
@@ -181,6 +182,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     IDisk & to_disk,
     const String & to_file_path,
     const WriteSettings & settings)
+try
 {
     if (this == &to_disk)
     {
@@ -194,6 +196,11 @@ void DiskObjectStorage::copyFile( /// NOLINT
         /// Copy through buffers
         IDisk::copyFile(from_file_path, to_disk, to_file_path, settings);
     }
+}
+catch (S3Exception & e)
+{
+    e.addMessage("on file copy operation in DiskObjectStorage");
+    throw;
 }
 
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
@@ -514,6 +521,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
+try
 {
     auto storage_objects = metadata_storage->getStorageObjects(path);
 
@@ -527,6 +535,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
         read_hint,
         file_size);
+}
+catch (S3Exception & e)
+{
+    e.addMessage("on file read operation in DiskObjectStorage");
+    throw;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
