@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <array>
 
 #include <boost/core/noncopyable.hpp>
 
@@ -19,6 +20,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
 
@@ -227,7 +229,13 @@ private:
 class MergeJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
+    MergeJoinAlgorithm(JoinKind kind_,
+                       JoinStrictness strictness_,
+                       const TableJoin::JoinOnClause & on_clause_,
+                       const Blocks & input_headers,
+                       size_t max_block_size_);
+
+    MergeJoinAlgorithm(JoinPtr join_ptr, const Blocks & input_headers, size_t max_block_size_);
 
     const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -238,10 +246,10 @@ public:
 
 private:
     std::optional<Status> handleAnyJoinState();
-    Status anyJoin(JoinKind kind);
+    Status anyJoin();
 
     std::optional<Status> handleAllJoinState();
-    Status allJoin(JoinKind kind);
+    Status allJoin();
 
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
@@ -251,11 +259,12 @@ private:
 
     std::array<FullMergeJoinCursorPtr, 2> cursors;
 
-    /// Keep some state to make connection between data in different blocks
+    /// Keep some state to make handle data from different blocks
     AnyJoinState any_join_state;
     std::unique_ptr<AllJoinState> all_join_state;
 
-    JoinPtr table_join;
+    JoinKind kind;
+    JoinStrictness strictness;
 
     size_t max_block_size;
     int null_direction_hint = 1;
@@ -285,12 +294,19 @@ public:
         size_t max_block_size,
         UInt64 limit_hint = 0);
 
+    MergeJoinTransform(
+        JoinKind kind_,
+        JoinStrictness strictness_,
+        const TableJoin::JoinOnClause & on_clause_,
+        const Blocks & input_headers,
+        const Block & output_header,
+        size_t max_block_size,
+        UInt64 limit_hint_ = 0);
+
     String getName() const override { return "MergeJoinTransform"; }
 
 protected:
     void onFinish() override;
-
-    LoggerPtr log;
 };
 
 }
