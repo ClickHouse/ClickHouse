@@ -430,7 +430,7 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    /// When trackaed memory consumption is more than a threshold, we will shrink to fit stored blocks.
+    /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
 
     Poco::Logger * log;
