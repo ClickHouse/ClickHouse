@@ -921,32 +921,34 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
       * is bigger than half of all memory available for query,
       * then shrink stored blocks to fit.
       */
-    if ((max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
-        (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2))
-    {
-        shrink_blocks = true;
-        LOG_DEBUG(log, "Shrinking stored blocks, memory consumption is {} / {} caclulated by join, {} / {} by memory tracker",
-            ReadableSize(total_bytes_in_join), ReadableSize(max_total_bytes_in_join),
-            ReadableSize(query_memory_usage_delta), ReadableSize(max_total_bytes_for_query));
-        for (auto & stored_block : data->blocks)
-        {
-            size_t old_size = stored_block.allocatedBytes();
-            stored_block = stored_block.shrinkToFit();
-            size_t new_size = stored_block.allocatedBytes();
-            chassert(old_size >= new_size);
-            data->blocks_allocated_size -= old_size - new_size;
-        }
-        auto new_total_bytes_in_join = getTotalByteCount();
-        Int64 new_current_memory_usage = getCurrentQueryMemoryUsage();
+    shrink_blocks = (max_total_bytes_in_join && total_bytes_in_join > max_total_bytes_in_join / 2) ||
+                    (max_total_bytes_for_query && query_memory_usage_delta > max_total_bytes_for_query / 2);
+    if (!shrink_blocks)
+        return;
 
-        size_t total_bytes_delta = total_bytes_in_join - new_total_bytes_in_join;
-        chassert(new_total_bytes_in_join <= total_bytes_in_join);
-        LOG_DEBUG(log, "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
-            ReadableSize(total_bytes_delta), ReadableSize(new_current_memory_usage - current_memory_usage),
-            ReadableSize(new_total_bytes_in_join), ReadableSize(new_current_memory_usage));
-        total_bytes_in_join = new_total_bytes_in_join;
+    LOG_DEBUG(log, "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
+        ReadableSize(total_bytes_in_join), max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
+        ReadableSize(query_memory_usage_delta), max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
+
+    for (auto & stored_block : data->blocks)
+    {
+        size_t old_size = stored_block.allocatedBytes();
+        stored_block = stored_block.shrinkToFit();
+        size_t new_size = stored_block.allocatedBytes();
+        chassert(old_size >= new_size);
+        data->blocks_allocated_size -= old_size - new_size;
     }
 
+    auto new_total_bytes_in_join = getTotalByteCount();
+    chassert(new_total_bytes_in_join <= total_bytes_in_join);
+
+    Int64 new_current_memory_usage = getCurrentQueryMemoryUsage();
+
+    LOG_DEBUG(log, "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
+        ReadableSize(total_bytes_in_join - new_total_bytes_in_join), ReadableSize(current_memory_usage - new_current_memory_usage),
+        ReadableSize(new_total_bytes_in_join), ReadableSize(new_current_memory_usage));
+
+    total_bytes_in_join = new_total_bytes_in_join;
 }
 
 
