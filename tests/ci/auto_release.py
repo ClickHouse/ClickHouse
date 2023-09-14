@@ -1,28 +1,23 @@
 import argparse
 from datetime import timedelta, datetime
 import logging
-from typing import List, TypeVar
 import os
-import github
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
-from release import Release, Repo as ReleaseRepo
+from release import Release, Repo as ReleaseRepo, RELEASE_READY_STATUS
+from report import SUCCESS
 from ssh import SSHKey
 
-T = TypeVar("T", bound=github.GithubObject.GithubObject)
-
-
-READY_FOR_RELEASE_CHECK_NAME = "Ready for release"
-SUCCESS_STATUS = "success"
-LOGGER_NAME = "auto_release"
+LOGGER_NAME = __name__
 HELPER_LOGGERS = ["github_helper", LOGGER_NAME]
 logger = logging.getLogger(LOGGER_NAME)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        "Checks if enough days elapsed since the last release on each release branches and do a release in case for green builds."
+        "Checks if enough days elapsed since the last release on each release "
+        "branches and do a release in case for green builds."
     )
     parser.add_argument("--token", help="GitHub token, if not set, used from smm")
     parser.add_argument(
@@ -33,7 +28,8 @@ def parse_args():
         "--release-after-days",
         type=int,
         default=3,
-        help="Do automatic release on the latest green commit after the latest release if the newest release is older than the specified days",
+        help="Do automatic release on the latest green commit after the latest "
+        "release if the newest release is older than the specified days",
     )
     parser.add_argument(
         "--debug-helpers",
@@ -54,8 +50,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+    logging.basicConfig(level=logging.INFO)
     if args.debug_helpers:
-        logging.basicConfig()
         for logger_name in HELPER_LOGGERS:
             logging.getLogger(logger_name).setLevel(logging.DEBUG)
 
@@ -70,7 +66,8 @@ def main():
     logger.info("Found release branches: %s\n ", " \n".join(branch_names))
     repo = gh.get_repo(args.repo)
 
-    # In general there is no guarantee on which order the refs/commits are returned from the API, so we have to order them.
+    # In general there is no guarantee on which order the refs/commits are
+    # returned from the API, so we have to order them.
     for pr in prs:
         logger.info("Checking PR %s", pr.head.ref)
 
@@ -83,7 +80,9 @@ def main():
 
         if latest_release_tag.tagger.date + days_as_timedelta > now:
             logger.info(
-                "Not enough days since the last release, no automatic release can be done"
+                "Not enough days since the last release %s,"
+                " no automatic release can be done",
+                latest_release_tag.tag,
             )
             continue
 
@@ -97,11 +96,12 @@ def main():
         for commit in unreleased_commits:
             logger.info("Checking statuses of commit %s", commit.sha)
             statuses = get_commit_filtered_statuses(commit)
-            all_success = all(st.state == SUCCESS_STATUS for st in statuses)
-            has_ready_for_release_check = any(
-                st.context == READY_FOR_RELEASE_CHECK_NAME for st in statuses
+            all_success = all(st.state == SUCCESS for st in statuses)
+            passed_ready_for_release_check = any(
+                st.context == RELEASE_READY_STATUS and st.state == SUCCESS
+                for st in statuses
             )
-            if not (all_success and has_ready_for_release_check):
+            if not (all_success and passed_ready_for_release_check):
                 logger.info("Commit is not green, thus not suitable for release")
                 continue
 
