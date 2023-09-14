@@ -641,7 +641,7 @@ Pipe StorageAzureBlob::read(
 
     ColumnsDescription columns_description;
     Block block_for_format;
-    if (supportsSubsetOfColumns())
+    if (supportsSubsetOfColumns(local_context))
     {
         auto fetch_columns = column_names;
         const auto & virtuals = getVirtuals();
@@ -767,9 +767,9 @@ bool StorageAzureBlob::supportsSubcolumns() const
     return FormatFactory::instance().checkIfFormatSupportsSubcolumns(configuration.format);
 }
 
-bool StorageAzureBlob::supportsSubsetOfColumns() const
+bool StorageAzureBlob::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
 }
 
 bool StorageAzureBlob::prefersLargeBlocks() const
