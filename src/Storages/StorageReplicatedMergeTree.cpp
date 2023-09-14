@@ -1466,6 +1466,8 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
     while (true)
     {
+        LOG_DEBUG(log, "Committing part {} to zookeeper", part->name);
+
         Coordination::Requests ops;
         NameSet absent_part_paths_on_replicas;
 
@@ -8175,6 +8177,14 @@ void StorageReplicatedMergeTree::lockSharedData(
 
         LOG_TRACE(log, "Set zookeeper persistent lock {}", zookeeper_node);
 
+        if (!path_to_set_hardlinked_files.empty() && !hardlinks.empty())
+        {
+            LOG_DEBUG(log, "Locking shared node {} with hardlinks from the other shared node {}, "
+                           "hardlinks: [{}]",
+                      zookeeper_node, path_to_set_hardlinked_files,
+                      boost::algorithm::join(hardlinks, ","));
+        }
+      
         createZeroCopyLockNode(
             zookeeper, zookeeper_node, zkutil::CreateMode::Persistent,
             replace_existing_lock, path_to_set_hardlinked_files, hardlinks);
