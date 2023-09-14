@@ -37,7 +37,7 @@ ENV FUZZER_ARGS="-max_total_time=60"
 
 SHELL ["/bin/bash", "-c"]
 CMD set -o pipefail \
-    && timeout -s 9 1h /run_libfuzzer.sh 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
+    && timeout -s 9 1h /run_libfuzzer.py 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
 
 # docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/libfuzzer
 
