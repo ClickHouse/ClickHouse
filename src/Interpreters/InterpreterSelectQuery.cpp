@@ -463,12 +463,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Set skip_unavailable_shards to true only if it wasn't disabled explicitly
-    if (settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.skip_unavailable_shards && !settings.isChanged("skip_unavailable_shards"))
-    {
-        context->setSetting("skip_unavailable_shards", true);
-    }
-
     /// Check support for JOIN for parallel replicas with custom key
     if (joined_tables.tablesCount() > 1 && !settings.parallel_replicas_custom_key.value.empty())
     {
