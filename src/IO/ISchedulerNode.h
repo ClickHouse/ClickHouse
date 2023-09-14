@@ -161,7 +161,8 @@ public:
     bool forceProcess()
     {
         std::unique_lock lock{mutex};
-        if (!queue.empty()) {
+        if (!queue.empty())
+        {
             processQueue(lock);
             return true;
         }
@@ -178,7 +179,8 @@ public:
     bool tryProcess()
     {
         std::unique_lock lock{mutex};
-        if (!queue.empty()) {
+        if (!queue.empty())
+        {
             processQueue(lock);
             return true;
         }
@@ -199,10 +201,10 @@ public:
     void process()
     {
         std::unique_lock lock{mutex};
-        while (true) {
-            if (!queue.empty()) {
+        while (true)
+        {
+            if (!queue.empty())
                 return processQueue(lock);
-            }
             if (postponed.empty())
                 pending.wait(lock);
             else
