@@ -111,8 +111,6 @@ set(S2_SRCS
 add_library(_s2 ${S2_SRCS})
 add_library(ch_contrib::s2 ALIAS _s2)
 
-# set_property(TARGET _s2 PROPERTY CXX_STANDARD 17)
-
 if (TARGET OpenSSL::SSL)
     target_link_libraries(_s2 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
