@@ -9033,7 +9033,7 @@ namespace
 /// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
 /// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
 /// still need parent part.
-std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
 {
     NameSet files_not_to_remove;
 
@@ -9078,8 +9078,9 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
             zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
             if (code != Coordination::Error::ZOK)
             {
-                LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), code);
-                return {true, std::nullopt};
+                LOG_INFO(log, "Cannot get parent files from ZooKeeper on path ({}), error {}, assuming the parent was removed concurrently",
+                            (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), code);
+                continue;
             }
 
             if (!files_not_to_remove_str.empty())
@@ -9093,8 +9094,9 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
                 code = zookeeper_ptr->tryGetChildren(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, children);
                 if (code != Coordination::Error::ZOK)
                 {
-                    LOG_TRACE(log, "Cannot get parent locks in ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
-                    return {true, std::nullopt};
+                    LOG_INFO(log, "Cannot get parent locks in ZooKeeper on path ({}), error {}, assuming the parent was removed concurrently",
+                              (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+                    continue;
                 }
 
                 if (children.size() > 1 || (children.size() == 1 && children[0] != ZeroCopyLock::ZERO_COPY_LOCK_NAME))
@@ -9150,15 +9152,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         auto [has_parent, parent_not_to_remove] = getParentLockedBlobs(
             zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_info, data_format_version, logger);
 
-        // parent_not_to_remove == std::nullopt means that we were unable to retrieve parts set
-        if (has_parent && parent_not_to_remove == std::nullopt)
-        {
-            LOG_TRACE(logger, "Failed to get mutation parent on {} for part {}, refusing to remove blobs", zookeeper_part_replica_node, part_name);
-            return {false, {}};
-        }
-
-        files_not_to_remove.insert(parent_not_to_remove->begin(), parent_not_to_remove->end());
-
+        files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
         LOG_TRACE(logger, "Remove zookeeper lock {} for part {}", zookeeper_part_replica_node, part_name);
 
