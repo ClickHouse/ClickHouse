@@ -149,6 +149,24 @@ Block InterpreterInsertQuery::getSampleBlock(
     return getSampleBlock(names, table, metadata_snapshot);
 }
 
+std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
+{
+    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
+    if (!insert_query || !insert_query->columns)
+        return std::nullopt;
+
+    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
+    Names names;
+    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
+    for (const auto & identifier : columns_ast->children)
+    {
+        std::string current_name = identifier->getColumnName();
+        names.emplace_back(std::move(current_name));
+    }
+
+    return names;
+}
+
 Block InterpreterInsertQuery::getSampleBlock(
     const Names & names,
     const StoragePtr & table,
