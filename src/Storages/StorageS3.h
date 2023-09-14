@@ -372,6 +372,8 @@ private:
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
+};
+
 }
 
 #endif
