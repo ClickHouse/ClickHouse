@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ISchedulerConstraint.h>
-#include <IO/SchedulerRoot.h>
 
 #include <mutex>
 #include <limits>
@@ -154,14 +153,15 @@ private:
     }
 
 private:
+    const Int64 max_requests = default_max_requests;
+    const Int64 max_cost = default_max_cost;
+
     std::mutex mutex;
     Int64 requests = 0;
     Int64 cost = 0;
     bool child_active = false;
 
     SchedulerNodePtr child;
-    Int64 max_requests = default_max_requests;
-    Int64 max_cost = default_max_cost;
 };
 
 }
