@@ -79,7 +79,7 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Do the same cycle as schedulerThread() but never block or wait postponed events, just proces
+                // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
                 {
