@@ -181,7 +181,7 @@ private:
 
         scope_guard temporary_directory_lock;
 
-        // will thow an exception if merge was cancelled in any way.
+        // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
         bool isCancelled() const;
     };

@@ -1,7 +1,8 @@
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 
-#include <iostream>
-#include <sstream>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -60,16 +61,24 @@ std::string PartitionActionBlocker::formatDebug() const
 {
     std::shared_lock lock(mutex);
 
-    std::stringstream sstr;
-    sstr << "Global locks: " << global_blocker.getCounter().load()
-            << "\n\t and " << partition_blockers.size() << " partition locks";
+    WriteBufferFromOwnString out;
+    out << "Global lock: " << global_blocker.getCounter().load()
+            << "\n"
+            << partition_blockers.size() << " live partition locks: {";
 
+    size_t i = 0;
     for (const auto & p : partition_blockers)
     {
-        sstr << "\n\t'" << p.first << "' == " << p.second.getCounter().load();
-    }
+        out << "\n\t" << DB::quote << p.first << " : " << p.second.getCounter().load();
 
-    return sstr.str();
+        if ( ++i < partition_blockers.size() )
+            out << ",";
+        else
+            out << "\n";
+    }
+    out << "}";
+
+    return out.str();
 }
 
 }

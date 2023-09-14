@@ -232,3 +232,23 @@ TEST(PartitionActionBlocker, TestCompactPartitionBlockersDoesntRemoveActiveBlock
 
     EXPECT_EQ(2, blocker.countPartitionBlockers());
 }
+
+TEST(PartitionActionBlocker, TestFormatDebug)
+{
+    // Do not validate contents, just make sure that something is printed out
+
+    const size_t partitions_count = 100;
+    const std::string partition_id = "some partition id";
+    PartitionActionBlocker blocker;
+
+    auto global_lock = blocker.cancel();
+    auto lock_foo = blocker.cancelForPartition("FOO");
+    auto lock_foo2 = blocker.cancelForPartition("FOO");
+    for (size_t i = 0; i < partitions_count; ++i)
+    {
+        blocker.cancelForPartition(partition_id + "_" + std::to_string(i));
+    }
+    auto lock_bar = blocker.cancelForPartition("BAR");
+
+    EXPECT_EQ("", blocker.formatDebug());
+}
