@@ -191,6 +191,7 @@ def create_table(
     files_path,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     additional_settings={},
+    file_format="CSV",
 ):
     settings = {
         "s3queue_loading_retries": 0,
@@ -204,7 +205,7 @@ def create_table(
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
         CREATE TABLE {table_name} ({format})
-        ENGINE = S3Queue('{url}', {AUTH}'CSV')
+        ENGINE = S3Queue('{url}', {AUTH}'{file_format}')
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
     node.query(create_query)
@@ -527,50 +528,52 @@ def test_streaming_to_many_views(started_cluster, mode):
 
 
 def test_multiple_tables_meta_mismatch(started_cluster):
-    files_path = f"test_meta"
-    bucket = started_cluster.minio_restricted_bucket
-    instance = started_cluster.instances["instance"]
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    node = started_cluster.instances["instance"]
+    table_name = f"multiple_tables_meta_mismatch"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS test.s3_queue;
-
-        CREATE TABLE test.s3_queue ({table_format})
-            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-            SETTINGS
-                mode = 'ordered',
-                keeper_path = '/clickhouse/test_meta';
-        """
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
     )
     # check mode
     failed = False
     try:
-        instance.query(
-            f"""
-            CREATE TABLE test.s3_queue_copy ({table_format})
-                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-                SETTINGS
-                    mode = 'unordered',
-                    keeper_path = '/clickhouse/test_meta';
-            """
+        create_table(
+            started_cluster,
+            node,
+            f"{table_name}_copy",
+            "unordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+            },
         )
     except QueryRuntimeException as e:
         assert "Existing table metadata in ZooKeeper differs in engine mode" in str(e)
         failed = True
+
     assert failed is True
 
     # check columns
-    table_format_copy = table_format + ", column4 UInt32"
     try:
-        instance.query(
-            f"""
-            CREATE TABLE test.s3_queue_copy ({table_format_copy})
-                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-                SETTINGS
-                    mode = 'ordered',
-                    keeper_path = '/clickhouse/test_meta';
-            """
+        create_table(
+            started_cluster,
+            node,
+            f"{table_name}_copy",
+            "ordered",
+            files_path,
+            format="column1 UInt32, column2 UInt32, column3 UInt32, column4 UInt32",
+            additional_settings={
+                "keeper_path": keeper_path,
+            },
         )
     except QueryRuntimeException as e:
         assert (
@@ -583,172 +586,96 @@ def test_multiple_tables_meta_mismatch(started_cluster):
 
     # check format
     try:
-        instance.query(
-            f"""
-            CREATE TABLE test.s3_queue_copy ({table_format})
-                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'TSV')
-                SETTINGS
-                    mode = 'ordered',
-                    keeper_path = '/clickhouse/test_meta';
-            """
+        create_table(
+            started_cluster,
+            node,
+            f"{table_name}_copy",
+            "ordered",
+            files_path,
+            format="column1 UInt32, column2 UInt32, column3 UInt32, column4 UInt32",
+            additional_settings={
+                "keeper_path": keeper_path,
+            },
+            file_format="TSV",
         )
     except QueryRuntimeException as e:
         assert "Existing table metadata in ZooKeeper differs in format name" in str(e)
         failed = True
+
     assert failed is True
 
     # create working engine
-    instance.query(
-        f"""
-            CREATE TABLE test.s3_queue_copy ({table_format})
-                ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-                SETTINGS
-                    mode = 'ordered',
-                    keeper_path = '/clickhouse/test_meta';
-            """
+    create_table(
+        started_cluster,
+        node,
+        f"{table_name}_copy",
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
     )
-
-
-def test_max_set_age(started_cluster):
-    files_to_generate = 10
-    max_age = 1
-    files_path = f"test_multiple"
-    bucket = started_cluster.minio_restricted_bucket
-    instance = started_cluster.instances["instance"]
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
-
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS test.s3_queue;
-
-        CREATE TABLE test.s3_queue ({table_format})
-            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-            SETTINGS
-                mode = 'unordered',
-                keeper_path = '/clickhouse/test_set_age',
-                s3queue_tracked_files_limit = 10,
-                s3queue_tracked_file_ttl_sec = {max_age};
-        """
-    )
-
-    total_values = generate_random_files(
-        files_to_generate, files_path, started_cluster, bucket, row_num=1
-    )
-    get_query = f"SELECT * FROM test.s3_queue"
-    res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ]
-    assert res1 == total_values
-    time.sleep(max_age + 1)
-
-    get_query = f"SELECT * FROM test.s3_queue"
-    res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ]
-    assert res1 == total_values
 
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_multiple_tables_streaming_sync(started_cluster, mode):
+    node = started_cluster.instances["instance"]
+    table_name = f"multiple_tables_streaming_sync_{mode}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
     files_to_generate = 300
     poll_size = 30
-    files_path = f"test_multiple_{mode}"
-    bucket = started_cluster.minio_restricted_bucket
-    instance = started_cluster.instances["instance"]
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS test.s3_queue;
-        DROP TABLE IF EXISTS test.s3_queue_copy;
-        DROP TABLE IF EXISTS test.s3_queue_copy_2;
+    for i in range(3):
+        table = f"{table_name}_{i + 1}"
+        dst_table = f"{dst_table_name}_{i + 1}"
+        create_table(
+            started_cluster,
+            node,
+            table,
+            mode,
+            files_path,
+            additional_settings={
+                "s3queue_polling_size": poll_size,
+                "keeper_path": keeper_path,
+            },
+        )
+        create_mv(node, table, dst_table)
 
-        DROP TABLE IF EXISTS test.s3_queue_persistent;
-        DROP TABLE IF EXISTS test.s3_queue_persistent_copy;
-        DROP TABLE IF EXISTS test.s3_queue_persistent_copy_2;
-
-        DROP TABLE IF EXISTS test.persistent_s3_queue_mv;
-        DROP TABLE IF EXISTS test.persistent_s3_queue_mv_copy;
-        DROP TABLE IF EXISTS test.persistent_s3_queue_mv_copy_2;
-
-        CREATE TABLE test.s3_queue ({table_format})
-            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-            SETTINGS
-                mode = '{mode}',
-                keeper_path = '/clickhouse/test_multiple_consumers_sync_{mode}',
-                s3queue_polling_size = {poll_size};
-
-        CREATE TABLE test.s3_queue_copy ({table_format})
-            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-            SETTINGS
-                mode = '{mode}',
-                keeper_path = '/clickhouse/test_multiple_consumers_sync_{mode}',
-                s3queue_polling_size = {poll_size};
-
-        CREATE TABLE test.s3_queue_copy_2 ({table_format})
-        ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-        SETTINGS
-            mode = '{mode}',
-            keeper_path = '/clickhouse/test_multiple_consumers_sync_{mode}',
-            s3queue_polling_size = {poll_size};
-
-        CREATE TABLE test.s3_queue_persistent ({table_format})
-        ENGINE = MergeTree()
-        ORDER BY column1;
-
-        CREATE TABLE test.s3_queue_persistent_copy ({table_format})
-        ENGINE = MergeTree()
-        ORDER BY column1;
-
-        CREATE TABLE test.s3_queue_persistent_copy_2 ({table_format})
-        ENGINE = MergeTree()
-        ORDER BY column1;
-
-        CREATE MATERIALIZED VIEW test.persistent_s3_queue_mv TO test.s3_queue_persistent AS
-        SELECT
-            *
-        FROM test.s3_queue;
-
-        CREATE MATERIALIZED VIEW test.persistent_s3_queue_mv_copy TO test.s3_queue_persistent_copy AS
-        SELECT
-            *
-        FROM test.s3_queue_copy;
-
-        CREATE MATERIALIZED VIEW test.persistent_s3_queue_mv_copy_2 TO test.s3_queue_persistent_copy_2 AS
-        SELECT
-            *
-        FROM test.s3_queue_copy_2;
-        """
-    )
     total_values = generate_random_files(
-        files_to_generate, files_path, started_cluster, bucket, row_num=1
+        started_cluster, files_path, files_to_generate, row_num=1
     )
 
     def get_count(table_name):
-        return int(run_query(instance, f"SELECT count() FROM {table_name}"))
+        return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
     for _ in range(100):
         if (
-            get_count("test.s3_queue_persistent")
-            + get_count("test.s3_queue_persistent_copy")
-            + get_count("test.s3_queue_persistent_copy_2")
+            get_count(f"{dst_table_name}_1")
+            + get_count(f"{dst_table_name}_2")
+            + get_count(f"{dst_table_name}_3")
         ) == files_to_generate:
             break
         time.sleep(1)
 
-    get_query = f"SELECT * FROM test.s3_queue_persistent"
     res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
+        list(map(int, l.split()))
+        for l in node.query(
+            f"SELECT column1, column2, column3 FROM {dst_table_name}_1"
+        ).splitlines()
     ]
-    get_query_copy = f"SELECT * FROM test.s3_queue_persistent_copy"
     res2 = [
         list(map(int, l.split()))
-        for l in run_query(instance, get_query_copy).splitlines()
+        for l in node.query(
+            f"SELECT column1, column2, column3 FROM {dst_table_name}_2"
+        ).splitlines()
     ]
-    get_query_copy_2 = f"SELECT * FROM test.s3_queue_persistent_copy_2"
     res3 = [
         list(map(int, l.split()))
-        for l in run_query(instance, get_query_copy_2).splitlines()
+        for l in node.query(
+            f"SELECT column1, column2, column3 FROM {dst_table_name}_3"
+        ).splitlines()
     ]
     assert {tuple(v) for v in res1 + res2 + res3} == set(
         [tuple(i) for i in total_values]
@@ -757,54 +684,41 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
     # Checking that all files were processed only once
     time.sleep(10)
     assert (
-        get_count("test.s3_queue_persistent")
-        + get_count("test.s3_queue_persistent_copy")
-        + get_count("test.s3_queue_persistent_copy_2")
+        get_count(f"{dst_table_name}_1")
+        + get_count(f"{dst_table_name}_2")
+        + get_count(f"{dst_table_name}_3")
     ) == files_to_generate
 
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
-    files_to_generate = 100
+    node = started_cluster.instances["instance"]
+    node_2 = started_cluster.instances["instance2"]
+    table_name = f"multiple_tables_streaming_sync_distributed_{mode}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 300
     poll_size = 2
-    files_path = f"test_multiple_{mode}"
-    bucket = started_cluster.minio_restricted_bucket
-    instance = started_cluster.instances["instance"]
-    instance_2 = started_cluster.instances["instance2"]
 
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
-    for inst in [instance, instance_2]:
-        inst.query(
-            f"""
-        DROP TABLE IF EXISTS test.s3_queue;
-        DROP TABLE IF EXISTS test.s3_queue_persistent;
-        DROP TABLE IF EXISTS test.persistent_s3_queue_mv;
-
-        CREATE TABLE test.s3_queue ({table_format})
-            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-            SETTINGS
-                mode = '{mode}',
-                keeper_path = '/clickhouse/test_multiple_consumers_{mode}',
-                s3queue_polling_size = {poll_size};
-
-        CREATE TABLE test.s3_queue_persistent ({table_format})
-        ENGINE = MergeTree()
-        ORDER BY column1;
-        """
+    for instance in [node, node_2]:
+        create_table(
+            started_cluster,
+            instance,
+            table_name,
+            mode,
+            files_path,
+            additional_settings={
+                "s3queue_polling_size": poll_size,
+                "keeper_path": keeper_path,
+            },
         )
 
-    for inst in [instance, instance_2]:
-        inst.query(
-            f"""
-        CREATE MATERIALIZED VIEW test.persistent_s3_queue_mv TO test.s3_queue_persistent AS
-        SELECT
-            *
-        FROM test.s3_queue;
-        """
-        )
+    for instance in [node, node_2]:
+        create_mv(instance, table_name, dst_table_name)
 
     total_values = generate_random_files(
-        files_to_generate, files_path, started_cluster, bucket, row_num=1
+        started_cluster, files_path, files_to_generate, row_num=1
     )
 
     def get_count(node, table_name):
@@ -812,18 +726,15 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
     for _ in range(150):
         if (
-            get_count(instance, "test.s3_queue_persistent")
-            + get_count(instance_2, "test.s3_queue_persistent")
+            get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
         ) == files_to_generate:
             break
         time.sleep(1)
 
-    get_query = f"SELECT * FROM test.s3_queue_persistent"
-    res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ]
+    get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
+    res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
     res2 = [
-        list(map(int, l.split())) for l in run_query(instance_2, get_query).splitlines()
+        list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
 
     assert len(res1) + len(res2) == files_to_generate
@@ -837,9 +748,49 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     # Checking that all files were processed only once
     time.sleep(10)
     assert (
-        get_count(instance, "test.s3_queue_persistent")
-        + get_count(instance_2, "test.s3_queue_persistent")
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) == files_to_generate
+
+
+def test_max_set_age(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"max_set_age"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    max_age = 1
+    files_to_generate = 10
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_tracked_files_limit": 10,
+            "s3queue_tracked_file_ttl_sec": max_age,
+        },
+    )
+
+    node.wait_for_log_line("Checking node limits")
+    node.wait_for_log_line("Node limits check finished")
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, row_num=1
+    )
+    res1 = [
+        list(map(int, l.split()))
+        for l in run_query(node, f"SELECT * FROM {table_name}").splitlines()
+    ]
+    assert res1 == total_values
+    time.sleep(max_age + 1)
+
+    res1 = [
+        list(map(int, l.split()))
+        for l in run_query(node, f"SELECT * FROM {table_name}").splitlines()
+    ]
+    assert res1 == total_values
 
 
 def test_max_set_size(started_cluster):

@@ -1,8 +1,13 @@
+#include "Common/Exception.h"
+#include "Common/ZooKeeper/Types.h"
+#include "Interpreters/Context_fwd.h"
+#include "Storages/S3Queue/S3QueueSettings.h"
 #include "config.h"
 
 #if USE_AWS_S3
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/randomSeed.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -28,11 +33,22 @@ namespace
     {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     }
+
+    size_t generateRescheduleInterval()
+    {
+        /// Use more or less random interval for unordered mode cleanup task.
+        /// So that distributed processing cleanup tasks would not schedule cleanup at the same time.
+        /// TODO: make lower and upper boundary configurable by settings
+        pcg64 rng(randomSeed());
+        //return 5000 + rng() % 30000;
+        return rng() % 100;
+    }
 }
 
 S3QueueFilesMetadata::S3QueueFilesMetadata(
     const StorageS3Queue * storage_,
-    const S3QueueSettings & settings_)
+    const S3QueueSettings & settings_,
+    ContextPtr context)
     : storage(storage_)
     , mode(settings_.mode)
     , max_set_size(settings_.s3queue_tracked_files_limit.value)
@@ -43,6 +59,27 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(
     , zookeeper_failed_path(storage->getZooKeeperPath() / "failed")
     , log(&Poco::Logger::get("S3QueueFilesMetadata"))
 {
+    if (mode == S3QueueMode::UNORDERED && (max_set_size || max_set_age_sec))
+    {
+        task = context->getSchedulePool().createTask("S3QueueCleanupFunc", [this] { cleanupThreadFunc(); });
+        task->activate();
+
+        auto schedule_ms = generateRescheduleInterval();
+        LOG_TEST(log, "Scheduling a cleanup task in {} ms", schedule_ms);
+        task->scheduleAfter(schedule_ms);
+    }
+}
+
+S3QueueFilesMetadata::~S3QueueFilesMetadata()
+{
+    deactivateCleanupTask();
+}
+
+void S3QueueFilesMetadata::deactivateCleanupTask()
+{
+    shutdown = true;
+    if (task)
+        task->deactivate();
 }
 
 std::string S3QueueFilesMetadata::NodeMetadata::toString() const
@@ -109,6 +146,10 @@ bool S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
 
 bool S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path)
 {
+    /// Create an ephemenral node in /processing
+    /// if corresponding node does not exist in failed/, processed/ and processing/.
+    /// Return false otherwise.
+
     const auto node_name = getNodeName(path);
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = storage->getZooKeeper();
@@ -125,6 +166,10 @@ bool S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::str
 
 bool S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path)
 {
+    /// Create an ephemenral node in /processing
+    /// if corresponding it does not exist in failed/, processing/ and satisfied max processed file check.
+    /// Return false otherwise.
+
     const auto node_name = getNodeName(path);
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = storage->getZooKeeper();
@@ -195,8 +240,7 @@ void S3QueueFilesMetadata::setFileProcessed(const String & path)
 
 void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(const String & path)
 {
-    /// List results in s3 are always returned in UTF-8 binary order.
-    /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
+    /// Create a persistent node in /processed and remove ephemeral node from /processing.
 
     const auto node_name = getNodeName(path);
     const auto node_metadata = createNodeMetadata(path).toString();
@@ -335,6 +379,129 @@ void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exc
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
     }
+}
+
+void S3QueueFilesMetadata::cleanupThreadFunc()
+{
+    /// A background task is responsible for maintaining
+    /// max_set_size and max_set_age settings for `unordered` processing mode.
+
+    if (shutdown)
+        return;
+
+    try
+    {
+        cleanupThreadFuncImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    if (shutdown)
+        return;
+
+    task->scheduleAfter(generateRescheduleInterval());
+}
+
+void S3QueueFilesMetadata::cleanupThreadFuncImpl()
+{
+    chassert(max_set_size || max_set_age_sec);
+
+    const bool check_nodes_limit = max_set_size > 0;
+    const bool check_nodes_ttl = max_set_age_sec > 0;
+
+    const auto zk_client = storage->getZooKeeper();
+    auto nodes = zk_client->getChildren(zookeeper_processed_path);
+    if (nodes.empty())
+    {
+        LOG_TEST(log, "A set of nodes is empty");
+        return;
+    }
+
+    const bool nodes_limit_exceeded = nodes.size() > max_set_size;
+    if (!nodes_limit_exceeded && check_nodes_limit && !check_nodes_ttl)
+    {
+        LOG_TEST(log, "No limit exceeded");
+        return;
+    }
+
+    struct Node
+    {
+        std::string name;
+        NodeMetadata metadata;
+    };
+    auto node_cmp = [](const Node & a, const Node & b)
+    {
+        return a.metadata.last_processed_timestamp < b.metadata.last_processed_timestamp;
+    };
+
+    /// Ordered in ascending order of timestamps.
+    std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
+
+    for (const auto & node : nodes)
+    {
+        try
+        {
+            std::string metadata_str;
+            if (zk_client->tryGet(zookeeper_processed_path / node, metadata_str))
+            {
+                bool inserted = sorted_nodes.emplace(node, NodeMetadata::fromString(metadata_str)).second;
+                chassert(inserted);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    /// TODO add a zookeeper lock for cleanup
+
+    LOG_TRACE(log, "Checking node limits");
+
+    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes.size() - max_set_size : 0;
+    for  (const auto & node : sorted_nodes)
+    {
+        if (nodes_to_remove)
+        {
+            auto path = zookeeper_processed_path / node.name;
+            LOG_TEST(log, "Removing node at path `{}` because max files limit is reached", path.string());
+
+            auto code = zk_client->tryRemove(path);
+            if (code == Coordination::Error::ZOK)
+                --nodes_to_remove;
+            else
+                LOG_ERROR(log, "Failed to remove a node `{}`", path.string());
+        }
+        else if (check_nodes_ttl)
+        {
+            UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
+            if (node_age >= max_set_age_sec)
+            {
+                auto path = zookeeper_processed_path / node.name;
+                LOG_TEST(log, "Removing node at path `{}` because file ttl is reached", path.string());
+
+                auto code = zk_client->tryRemove(path);
+                if (code != Coordination::Error::ZOK)
+                    LOG_ERROR(log, "Failed to remove a node `{}`", path.string());
+            }
+            else if (!nodes_to_remove)
+            {
+                /// Nodes limit satisfied.
+                /// Nodes ttl satisfied as well as if current node is under tll, then all remaining as well
+                /// (because we are iterating in timestamp ascending order).
+                break;
+            }
+        }
+        else
+        {
+            /// Nodes limit and ttl are satisfied.
+            break;
+        }
+    }
+
+    LOG_TRACE(log, "Node limits check finished");
 }
 
 }

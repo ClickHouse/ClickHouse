@@ -88,7 +88,7 @@ StorageS3Queue::StorageS3Queue(
     , s3queue_settings(std::move(s3queue_settings_))
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *s3queue_settings))
     , after_processing(s3queue_settings->after_processing)
-    , files_metadata(std::make_shared<S3QueueFilesMetadata>(this, *s3queue_settings))
+    , files_metadata(std::make_shared<S3QueueFilesMetadata>(this, *s3queue_settings, context_))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)
@@ -138,8 +138,17 @@ void StorageS3Queue::startup()
 void StorageS3Queue::shutdown()
 {
     shutdown_called = true;
+
     if (task)
+    {
         task->deactivate();
+    }
+
+    if (files_metadata)
+    {
+        files_metadata->deactivateCleanupTask();
+        files_metadata.reset();
+    }
 }
 
 bool StorageS3Queue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -182,7 +191,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
 {
     auto configuration_snapshot = updateConfigurationAndGetCopy(local_context);
     auto file_iterator = createFileIterator(local_context, query);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     auto internal_source = std::make_unique<StorageS3Source>(
         read_from_format_info, configuration.format, getName(), local_context, format_settings,

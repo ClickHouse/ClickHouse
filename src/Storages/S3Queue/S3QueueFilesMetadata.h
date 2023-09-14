@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <Core/Types.h>
 #include <Core/SettingsEnums.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
@@ -17,13 +18,17 @@ class StorageS3Queue;
 class S3QueueFilesMetadata
 {
 public:
-    S3QueueFilesMetadata(const StorageS3Queue * storage_, const S3QueueSettings & settings_);
+    S3QueueFilesMetadata(const StorageS3Queue * storage_, const S3QueueSettings & settings_, ContextPtr context);
+
+    ~S3QueueFilesMetadata();
 
     bool trySetFileAsProcessing(const std::string & path);
 
     void setFileProcessed(const std::string & path);
 
     void setFileFailed(const std::string & path, const std::string & exception_message);
+
+    void deactivateCleanupTask();
 
 private:
     const StorageS3Queue * storage;
@@ -38,6 +43,9 @@ private:
 
     mutable std::mutex mutex;
     Poco::Logger * log;
+
+    std::atomic_bool shutdown = false;
+    BackgroundSchedulePool::TaskHolder task;
 
     bool trySetFileAsProcessingForOrderedMode(const std::string & path);
     bool trySetFileAsProcessingForUnorderedMode(const std::string & path);
@@ -59,6 +67,9 @@ private:
     };
 
     NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = "", size_t retries = 0);
+
+    void cleanupThreadFunc();
+    void cleanupThreadFuncImpl();
 };
 
 }
