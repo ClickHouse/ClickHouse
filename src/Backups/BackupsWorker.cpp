@@ -41,7 +41,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_STORAGE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
@@ -220,26 +219,14 @@ namespace
 }
 
 
-static constexpr const char * TABLE_NAME = "backups";
-
-BackupsWorker::BackupsWorker(ContextPtr global_context, const String & engine, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool create_storage, bool storage_is_special)
+BackupsWorker::BackupsWorker(std::unique_ptr<BackupsStorage> storage_, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
+    , storage(std::move(storage_))
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
 {
-    if (create_storage)
-    {
-        try {
-            storage = std::make_unique<BackupsStorage>(global_context, DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, engine);
-        }
-        catch (Exception& e)
-        {
-            if (!(e.code() == ErrorCodes::UNKNOWN_STORAGE && storage_is_special))
-                throw;
-        }
-    }
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
 

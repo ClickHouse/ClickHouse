@@ -1668,7 +1668,7 @@ try
         /// attach available in system.text_log
         buildLoggers(config(), logger());
         /// Initialize backups worker and persistent system.backups table
-        bool attach_system_backups = global_context->initializeBackupsWorker(true);
+        bool attach_system_backups = global_context->initializeSystemBackupsStorage();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, attach_system_backups);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));

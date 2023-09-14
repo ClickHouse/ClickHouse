@@ -103,6 +103,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/getEngineDefinitionFromConfig.h>
+#include <Interpreters/BackupsStorage.h>
 
 
 namespace fs = std::filesystem;
@@ -161,6 +162,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int UNKNOWN_STORAGE;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -243,7 +245,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::optional<Lemmatizers> lemmatizers;
 #endif
 
-    std::shared_ptr<BackupsWorker> backups_worker;
+    std::unique_ptr<BackupsStorage> backups_storage;
+    std::optional<BackupsWorker> backups_worker;
 
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
@@ -2212,8 +2215,15 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
+    const auto & config = getConfigRef();
+    const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
+    const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
+    const auto & settings_ref = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
+
     if (!shared->backups_worker)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "backups_worker must have already been created at this point");
+        shared->backups_worker.emplace(std::move(shared->backups_storage), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -3228,27 +3238,28 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
-bool Context::initializeBackupsWorker(bool create_storage)
+bool Context::initializeSystemBackupsStorage()
 {
     constexpr const char * DEFAULT_PARTITION_BY = "toYYYYMM(start_time)";
     constexpr const char * DEFAULT_GROUP_BY = "start_time";
+    constexpr const char * TABLE_NAME = "backups";
     constexpr const char * CONFIG_SECTION = "backups.system_table";
     const std::set<String> allowed_engines = {StorageSystemBackups::ENGINE_NAME, "MergeTree", "Memory"};
 
     const auto & config = getConfigRef();
-    const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
-    const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
     const String engine = config.has(CONFIG_SECTION)
         ? getEngineDefinitionFromConfig(config, CONFIG_SECTION, DEFAULT_PARTITION_BY, DEFAULT_GROUP_BY, allowed_engines)
         : String{"ENGINE="} + StorageSystemBackups::ENGINE_NAME;
     bool storage_is_special = extractEngineName(engine) == StorageSystemBackups::ENGINE_NAME;
 
-    const auto & settings_ref = getSettingsRef();
-    UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
-    UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
-
-    shared->backups_worker = std::make_shared<BackupsWorker>(getGlobalContext(), engine, backup_threads, restore_threads,
-        allow_concurrent_backups, allow_concurrent_restores, create_storage, storage_is_special);
+    try {
+        shared->backups_storage = std::make_unique<BackupsStorage>(getGlobalContext(), DatabaseCatalog::SYSTEM_DATABASE, TABLE_NAME, engine);
+    }
+    catch (Exception& e)
+    {
+        if (!(e.code() == ErrorCodes::UNKNOWN_STORAGE && storage_is_special))
+            throw;
+    }
 
     return engine.empty() || storage_is_special; /// indication to attach transient system.backups table using StorageSystemBackups class
 }
