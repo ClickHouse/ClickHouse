@@ -393,6 +393,8 @@ public:
 
     void debugKeys() const;
 
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
+
 private:
     template<bool> friend class NotJoinedHash;
 
@@ -432,6 +434,7 @@ private:
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
+    Int64 memory_usage_before_adding_blocks = 0;
 
     Poco::Logger * log;
 
