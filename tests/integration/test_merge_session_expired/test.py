@@ -34,7 +34,7 @@ def test_merge_session_expired(started_cluster):
         #logging.info(pm.dump_rules())
         pm.drop_instance_zk_connections(node1)
         node1.query("system start merges")
-        node1.query("system sync replica tab")
+        node1.query("select sleep(1)")
         node1.restart_clickhouse()
 
     node1.query("system sync replica tab")
