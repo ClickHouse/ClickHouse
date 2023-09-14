@@ -181,9 +181,9 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionS3::supportsReadingSubsetOfColumns()
+bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const

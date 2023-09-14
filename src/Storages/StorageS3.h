@@ -356,7 +356,7 @@ private:
 
     bool supportsSubcolumns() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings::const_iterator & begin,
