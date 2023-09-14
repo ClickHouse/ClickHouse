@@ -6,9 +6,8 @@
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, KeeperContextPtr keeper_context)
-    : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(log, log_file_settings, keeper_context)
+KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context)
+    : log(&Poco::Logger::get("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, keeper_context)
 {
     if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
