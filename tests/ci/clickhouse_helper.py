@@ -168,9 +168,8 @@ class ClickHouseHelper:
         return result
 
 
-# Obtain the machine type from IMDS:
-def get_instance_type():
-    url = "http://169.254.169.254/latest/meta-data/instance-type"
+def _query_imds(path):
+    url = f"http://169.254.169.254/{path}"
     for i in range(5):
         try:
             response = requests.get(url, timeout=1)
@@ -183,6 +182,16 @@ def get_instance_type():
             logging.warning(error)
             continue
     return ""
+
+
+# Obtain the machine type from IMDS:
+def get_instance_type():
+    return _query_imds("latest/meta-data/instance-type")
+
+
+# Obtain the instance id from IMDS:
+def get_instance_id():
+    return _query_imds("latest/meta-data/instance-id")
 
 
 def prepare_tests_results_for_clickhouse(
@@ -222,6 +231,7 @@ def prepare_tests_results_for_clickhouse(
         head_repo=head_repo,
         task_url=pr_info.task_url,
         instance_type=get_instance_type(),
+        instance_id=get_instance_id(),
     )
 
     # Always publish a total record for all checks. For checks with individual
@@ -288,7 +298,7 @@ class CiLogsCredentials:
         extra_columns = (
             f"{pr_info.number} AS pull_request_number, '{pr_info.sha}' AS commit_sha, "
             f"toDateTime('{check_start_time}', 'UTC') AS check_start_time, '{check_name}' AS check_name, "
-            f"'{get_instance_type()}' AS instance_type"
+            f"'{get_instance_type()}' AS instance_type, '{get_instance_id()}' AS instance_id"
         )
         return (
             f'-e EXTRA_COLUMNS_EXPRESSION="{extra_columns}" '
