@@ -1214,8 +1214,7 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName arguments = args;
-        if (isNumber(args[0].type)) /// We should have scalar as a second argument
-            std::swap(arguments[0], arguments[1]);
+        bool is_swapped = isNumber(args[0].type); /// Defines the order of agruments (If array is first argument - is_swapped = false)
 
         const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
         if (!return_type_array)
@@ -1230,32 +1229,49 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
 
-        /// Unpacking arrays if both are constants.
-        if (left_const)
+        if (left_const && right_const) 
         {
             new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
-            new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
+            new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
             auto col = executeImpl(new_arguments, result_type, 1);
             return ColumnConst::create(std::move(col), input_rows_count);
         }
 
+        if (right_const && is_swapped)
+        {
+            new_arguments[0] = {arguments[0].column.get()->getPtr(), arguments[0].type, arguments[0].name};
+            new_arguments[1] = {right_const->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
+            return executeImpl(new_arguments, result_type, input_rows_count);
+        }
+        else if (left_const && !is_swapped)
+        {
+            new_arguments[0] = {left_const->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
+            new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
+            return executeImpl(new_arguments, result_type, input_rows_count);
+        }
+
+        if (is_swapped)
+            std::swap(arguments[1], arguments[0]);
+
         const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto & left_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        const auto & right_array_col = arguments[1].column.get()->cloneResized(left_array_col->size());
+        const auto & left_array_elements_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        const auto & right_col = arguments[1].column.get()->cloneResized(left_array_col->size());
 
-        new_arguments[0] = {left_array_col->getDataPtr(), left_array_type, arguments[0].name};
-        if (right_const)
-            new_arguments[1] = {right_array_col->getPtr(), arguments[1].type.get()->getPtr(), arguments[1].name};
-        else
-            new_arguments[1] = {right_array_col->replicate(left_array_col->getOffsets()), arguments[1].type.get()->getPtr(), arguments[1].name};
-
-        result_array_type = left_array_type;
         size_t rows_count = 0;
-
         const auto & left_offsets = left_array_col->getOffsets();
         if (!left_offsets.empty())
             rows_count = left_offsets.back();
 
+        new_arguments[0] = {left_array_col->getDataPtr(), left_array_elements_type, arguments[0].name};
+        if (right_const)
+            new_arguments[1] = {right_col->cloneResized(rows_count), arguments[1].type, arguments[1].name};
+        else
+            new_arguments[1] = {right_col->replicate(left_array_col->getOffsets()), arguments[1].type, arguments[1].name};
+
+        result_array_type = left_array_elements_type;
+
+        if (is_swapped)
+            std::swap(new_arguments[1], new_arguments[0]);
         auto res = executeImpl(new_arguments, result_array_type, rows_count);
 
         return ColumnArray::create(res, left_array_col->getOffsetsPtr());
@@ -1481,14 +1497,14 @@ public:
             {
                 DataTypes new_arguments {
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
-                        arguments[1]->getPtr(),
+                        arguments[1],
                 };
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
             if (isNumber(arguments[0]) && isArray(arguments[1]))
             {
                 DataTypes new_arguments {
-                        arguments[0]->getPtr(),
+                        arguments[0],
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
                 return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
