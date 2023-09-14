@@ -2,11 +2,13 @@ import argparse
 from datetime import timedelta, datetime
 import logging
 from typing import List, TypeVar
+import os
 import github
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from release import Release, Repo as ReleaseRepo
+from ssh import SSHKey
 
 T = TypeVar("T", bound=github.GithubObject.GithubObject)
 
@@ -141,4 +143,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+            main()
+    else:
+        main()
