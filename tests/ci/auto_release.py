@@ -52,12 +52,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def paginated_list_to_list(
-    paginated_list: github.PaginatedList.PaginatedList[T],
-) -> List[T]:
-    return [item for item in paginated_list]
-
-
 def main():
     args = parse_args()
     if args.debug_helpers:
@@ -80,9 +74,7 @@ def main():
     for pr in prs:
         logger.info("Checking PR %s", pr.head.ref)
 
-        refs = paginated_list_to_list(
-            repo.get_git_matching_refs(f"tags/v{pr.head.ref}")
-        )
+        refs = list(repo.get_git_matching_refs(f"tags/v{pr.head.ref}"))
         refs.sort(key=lambda ref: ref.ref)
 
         latest_release_tag_ref = refs[-1]
@@ -95,7 +87,7 @@ def main():
             )
             continue
 
-        unreleased_commits = paginated_list_to_list(
+        unreleased_commits = list(
             repo.get_commits(sha=pr.head.ref, since=latest_release_tag.tagger.date)
         )
         unreleased_commits.sort(
@@ -107,7 +99,7 @@ def main():
             statuses = get_commit_filtered_statuses(commit)
             all_success = all(st.state == SUCCESS_STATUS for st in statuses)
             has_ready_for_release_check = any(
-                st.context == READY_FOR_RELEASE_CHECK_NAME for st in statusess
+                st.context == READY_FOR_RELEASE_CHECK_NAME for st in statuses
             )
             if not (all_success and has_ready_for_release_check):
                 logger.info("Commit is not green, thus not suitable for release")
