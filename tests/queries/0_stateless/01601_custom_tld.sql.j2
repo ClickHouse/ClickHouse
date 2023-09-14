@@ -18,9 +18,9 @@ select firstSignificantSubdomainCustom{{ suffix }}('foo.kernel.biz.ss', 'public_
 select cutToFirstSignificantSubdomainCustom{{ suffix }}('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel.biz.ss
 
 select '-- difference';
--- biz.ss is not in the default TLD list, hence:
-select cutToFirstSignificantSubdomain{{ suffix }}('foo.kernel.biz.ss'); -- biz.ss
-select cutToFirstSignificantSubdomainCustom{{ suffix }}('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel.biz.ss
+-- dev.ss is not in the default TLD list, hence:
+select cutToFirstSignificantSubdomain{{ suffix }}('foo.kernel.dev.ss'); -- dev.ss
+select cutToFirstSignificantSubdomainCustom{{ suffix }}('foo.kernel.dev.ss', 'public_suffix_list'); -- kernel.dev.ss
 
 select '-- 3+level';
 select cutToFirstSignificantSubdomainCustom{{ suffix }}('xx.blogspot.co.at', 'public_suffix_list'); -- xx.blogspot.co.at

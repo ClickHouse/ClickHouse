@@ -101,6 +101,17 @@ class GetCommand : public IKeeperClientCommand
     String getHelpMessage() const override { return "{} <path> -- Returns the node's value"; }
 };
 
+class ExistsCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "exists"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <path> -- Returns `1` if node exists, `0` otherwise"; }
+};
+
 class GetStatCommand : public IKeeperClientCommand
 {
     String getName() const override { return "get_stat"; }
@@ -175,6 +186,35 @@ class RMRCommand : public IKeeperClientCommand
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
     String getHelpMessage() const override { return "{} <path> -- Recursively deletes path. Confirmation required"; }
+};
+
+class ReconfigCommand : public IKeeperClientCommand
+{
+    enum class Operation : UInt8
+    {
+        ADD = 0,
+        REMOVE = 1,
+        SET = 2,
+    };
+
+    String getName() const override { return "reconfig"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <add|remove|set> \"<arg>\" [version] -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration"; }
+};
+
+class SyncCommand: public IKeeperClientCommand
+{
+    String getName() const override { return "sync"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override { return "{} <path> -- Synchronizes node between processes and leader"; }
 };
 
 class HelpCommand : public IKeeperClientCommand

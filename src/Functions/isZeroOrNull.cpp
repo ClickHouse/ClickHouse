@@ -44,14 +44,18 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
-        if (!isNumber(removeNullable(types.at(0))))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+        if (!isNumber(removeNullable(types.at(0))) && !isNothing(removeNullable(types.at(0))))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must have simple numeric type, possibly Nullable or Null", name);
 
         return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (isNothing(removeNullable(arguments[0].type)))
+            return DataTypeUInt8{}.createColumnConst(input_rows_count, 1);
+
         const ColumnPtr & input_column = arguments[0].column;
 
         ColumnPtr res;
@@ -72,7 +76,10 @@ public:
                     return true;
                 }))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "The argument of function {} must have simple numeric type, possibly Nullable or Null",
+                    name);
             }
         }
         else
@@ -89,7 +96,10 @@ public:
                     return true;
                 }))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must have simple numeric type, possibly Nullable", name);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "The argument of function {} must have simple numeric type, possibly Nullable or Null",
+                    name);
             }
         }
 

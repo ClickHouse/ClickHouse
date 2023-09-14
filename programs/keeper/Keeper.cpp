@@ -67,7 +67,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     }
 }
 
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 // Weak symbols don't work correctly on Darwin
 // so we have a stub implementation to avoid linker errors
@@ -555,11 +555,13 @@ catch (...)
 
 void Keeper::logRevision() const
 {
-    Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid()));
+    LOG_INFO(&Poco::Logger::get("Application"),
+        "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
+        VERSION_STRING,
+        ClickHouseRevision::getVersionRevision(),
+        git_hash.empty() ? "<unknown>" : git_hash,
+        build_id.empty() ? "<unknown>" : build_id,
+        getpid());
 }
 
 
