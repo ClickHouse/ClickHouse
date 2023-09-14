@@ -270,35 +270,45 @@ bool FullMergeJoinCursor::fullyCompleted() const
 }
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
-    JoinPtr table_join_,
+    JoinKind kind_,
+    JoinStrictness strictness_,
+    const TableJoin::JoinOnClause & on_clause_,
     const Blocks & input_headers,
     size_t max_block_size_)
-    : table_join(table_join_)
+    : kind(kind_)
+    , strictness(strictness_)
     , max_block_size(max_block_size_)
     , log(getLogger("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
 
-    auto strictness = table_join->getTableJoin().strictness();
     if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
 
-    auto kind = table_join->getTableJoin().kind();
     if (!isInner(kind) && !isLeft(kind) && !isRight(kind) && !isFull(kind))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for kind {}", kind);
 
-    const auto & join_on = table_join->getTableJoin().getOnlyClause();
-
-    if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
+    if (on_clause_.on_filter_condition_left || on_clause_.on_filter_condition_right)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
     cursors = {
-        createCursor(input_headers[0], join_on.key_names_left),
-        createCursor(input_headers[1], join_on.key_names_right)
+        createCursor(input_headers[0], on_clause_.key_names_left),
+        createCursor(input_headers[1], on_clause_.key_names_right)
     };
 
-    for (const auto & [left_key, right_key] : table_join->getTableJoin().leftToRightKeyRemap())
+MergeJoinAlgorithm::MergeJoinAlgorithm(
+    JoinPtr join_ptr,
+    const Blocks & input_headers,
+    size_t max_block_size_)
+    : MergeJoinAlgorithm(
+        join_ptr->getTableJoin().kind(),
+        join_ptr->getTableJoin().strictness(),
+        join_ptr->getTableJoin().getOnlyClause(),
+        input_headers,
+        max_block_size_)
+{
+    for (const auto & [left_key, right_key] : join_ptr->getTableJoin().leftToRightKeyRemap())
     {
         size_t left_idx = input_headers[0].getPositionByName(left_key);
         size_t right_idx = input_headers[1].getPositionByName(right_key);
@@ -402,7 +412,7 @@ struct AllJoinImpl
                 size_t lnum = nextDistinct(left_cursor.cursor);
                 size_t rnum = nextDistinct(right_cursor.cursor);
 
-                bool all_fit_in_block = std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
+                bool all_fit_in_block = !max_block_size || std::max(left_map.size(), right_map.size()) + lnum * rnum <= max_block_size;
                 bool have_all_ranges = left_cursor.cursor.isValid() && right_cursor.cursor.isValid();
                 if (all_fit_in_block && have_all_ranges)
                 {
@@ -502,7 +512,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
         }
 
         size_t total_rows = 0;
-        while (total_rows < max_block_size)
+        while (!max_block_size || total_rows < max_block_size)
         {
             const auto & left_range = all_join_state->getLeft();
             const auto & right_range = all_join_state->getRight();
@@ -527,7 +537,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
     return {};
 }
 
-MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
+MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
 {
     PaddedPODArray<UInt64> idx_map[2];
 
@@ -675,8 +685,6 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
     if (any_join_state.empty())
         return {};
 
-    auto kind = table_join->getTableJoin().kind();
-
     Chunk result;
 
     for (size_t source_num = 0; source_num < 2; ++source_num)
@@ -721,7 +729,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
     return {};
 }
 
-MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin(JoinKind kind)
+MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
 {
     if (auto result = handleAnyJoinState())
         return std::move(*result);
@@ -808,8 +816,6 @@ Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num)
 
 IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 {
-    auto kind = table_join->getTableJoin().kind();
-
     if (!cursors[0]->cursor.isValid() && !cursors[0]->fullyCompleted())
         return Status(0);
 
@@ -859,13 +865,11 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         }
     }
 
-    auto strictness = table_join->getTableJoin().strictness();
-
     if (strictness == JoinStrictness::Any)
-        return anyJoin(kind);
+        return anyJoin();
 
     if (strictness == JoinStrictness::All)
-        return allJoin(kind);
+        return allJoin();
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);
 }
@@ -884,9 +888,30 @@ MergeJoinTransform::MergeJoinTransform(
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
+<<<<<<< HEAD
     , log(getLogger("MergeJoinTransform"))
+=======
+>>>>>>> b4a16f38320 (Add simple unit test for full sorting join)
 {
-    LOG_TRACE(log, "Use MergeJoinTransform");
+}
+
+MergeJoinTransform::MergeJoinTransform(
+        JoinKind kind_,
+        JoinStrictness strictness_,
+        const TableJoin::JoinOnClause & on_clause_,
+        const Blocks & input_headers,
+        const Block & output_header,
+        size_t max_block_size,
+        UInt64 limit_hint_)
+    : IMergingTransform<MergeJoinAlgorithm>(
+        input_headers,
+        output_header,
+        /* have_all_inputs_= */ true,
+        limit_hint_,
+        /* always_read_till_end_= */ false,
+        /* empty_chunk_on_finish_= */ true,
+        kind_, strictness_, on_clause_, input_headers, max_block_size)
+{
 }
 
 void MergeJoinTransform::onFinish()
