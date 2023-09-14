@@ -1214,7 +1214,7 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName arguments = args;
-        bool is_swapped = isNumber(args[0].type); /// Defines the order of agruments (If array is first argument - is_swapped = false)
+        bool is_swapped = isNumber(args[0].type); /// Defines the order of arguments (If array is first argument - is_swapped = false)
 
         const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
         if (!return_type_array)
@@ -1229,7 +1229,7 @@ class FunctionBinaryArithmetic : public IFunction
         const auto * left_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * right_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
 
-        if (left_const && right_const) 
+        if (left_const && right_const)
         {
             new_arguments[0] = {left_const->getDataColumnPtr(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {right_const->getDataColumnPtr(), arguments[1].type, arguments[1].name};
