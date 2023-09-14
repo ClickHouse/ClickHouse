@@ -1592,7 +1592,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                               ->getInMemoryMetadataPtr()
                                               ->getColumns();
 
-            const auto & insert_column_names = hasInsertionTableColumnNames() ? getInsertionTableColumnNames() : insert_columns.getInsertable().getNames();
+            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getInsertable().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
