@@ -2361,6 +2361,12 @@ Result:
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### Matching Modes
+
+Pattern matching behavior can be modified with certain dictionary settings:
+- `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
+- `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
+
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 
 Above used `YAMLRegExpTree` source works in ClickHouse Open Source but not in ClickHouse Cloud. To use regexp tree dictionaries in ClickHouse could, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../statements/select/into-outfile.md) clause.

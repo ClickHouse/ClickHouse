@@ -3,4 +3,4 @@ services:
   java1:
     image: clickhouse/mysql-java-client:${DOCKER_MYSQL_JAVA_CLIENT_TAG:-latest}
     # to keep container running
-    command: sleep infinity
+    command: sleep 1d

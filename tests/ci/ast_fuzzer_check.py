@@ -160,7 +160,7 @@ def main():
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(Path(paths[f]), s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""

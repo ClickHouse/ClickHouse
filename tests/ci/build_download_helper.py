@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Union
 
 import requests  # type: ignore
 
@@ -98,7 +98,7 @@ def get_build_name_for_check(check_name: str) -> str:
     return CI_CONFIG.test_configs[check_name].required_build
 
 
-def read_build_urls(build_name: str, reports_path: str) -> List[str]:
+def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:

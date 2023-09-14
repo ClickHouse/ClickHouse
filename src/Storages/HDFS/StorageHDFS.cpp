@@ -838,9 +838,9 @@ private:
 };
 
 
-bool StorageHDFS::supportsSubsetOfColumns() const
+bool StorageHDFS::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context_);
 }
 
 Pipe StorageHDFS::read(
@@ -878,7 +878,7 @@ Pipe StorageHDFS::read(
         });
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context_->getSettingsRef().optimize_count_from_files;
 
