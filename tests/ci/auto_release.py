@@ -1,15 +1,13 @@
 import argparse
-import logging
-
-
-from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit_filtered_statuses
 from datetime import timedelta, datetime
+import logging
+from typing import List, TypeVar
 import github
-from typing import List, Any, TypeVar
+from commit_status_helper import get_commit_filtered_statuses
+from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 
-T = TypeVar("T")
+T = TypeVar("T", bound=github.GithubObject.GithubObject)
 
 
 READY_FOR_RELEASE_CHECK_NAME = "Ready for release"
