@@ -8800,7 +8800,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_info, data_format_version, logger);
 
         // parent_not_to_remove == std::nullopt means that we were unable to retrieve parts set
-        if (has_parent || parent_not_to_remove == std::nullopt)
+        if (has_parent && parent_not_to_remove == std::nullopt)
         {
             LOG_TRACE(logger, "Failed to get mutation parent on {} for part {}, refusing to remove blobs", zookeeper_part_replica_node, part_name);
             return {false, {}};
