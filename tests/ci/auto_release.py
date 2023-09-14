@@ -105,12 +105,10 @@ def main():
         for commit in unreleased_commits:
             logger.info("Checking statuses of commit %s", commit.sha)
             statuses = get_commit_filtered_statuses(commit)
-            # all_success = all(st.state == SUCCESS_STATUS for st in statuses)
-            # has_ready_for_release_check = any(
-            #     st.context == READY_FOR_RELEASE_CHECK_NAME for st in statusess
-            # )
-            all_success = True
-            has_ready_for_release_check = True
+            all_success = all(st.state == SUCCESS_STATUS for st in statuses)
+            has_ready_for_release_check = any(
+                st.context == READY_FOR_RELEASE_CHECK_NAME for st in statusess
+            )
             if not (all_success and has_ready_for_release_check):
                 logger.info("Commit is not green, thus not suitable for release")
                 continue
