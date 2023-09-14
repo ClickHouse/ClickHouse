@@ -89,7 +89,7 @@ String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesLi
     {
         if (!std::exchange(first, false))
             ss << ", ";
-        ss << name_and_type.name << ' ' << name_and_type.type->getName();
+        ss << '`' << name_and_type.name << "` " << name_and_type.type->getName();
     }
     return ss.str();
 }
