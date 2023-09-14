@@ -151,7 +151,8 @@ private:
     void updateBucket(ResourceCost use = 0)
     {
         auto now = std::chrono::system_clock::now();
-        if (max_speed > 0.0) {
+        if (max_speed > 0.0)
+        {
             double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
             tokens = std::min(tokens + max_speed * elapsed - use, max_burst);
 
@@ -161,7 +162,8 @@ private:
                 auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
                 if (postponed == EventQueue::not_postponed)
                 {
-                    postponed = event_queue->postpone(std::chrono::time_point_cast<std::chrono::microseconds>(now + delay_ns), [this] { onPostponed(); });
+                    postponed = event_queue->postpone(std::chrono::time_point_cast<std::chrono::system_clock::duration>(now + delay_ns),
+                        [this] { onPostponed(); });
                     throttling_duration += delay_ns;
                 }
             }
