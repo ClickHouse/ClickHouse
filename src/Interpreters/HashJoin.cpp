@@ -1704,7 +1704,7 @@ void HashJoin::joinBlockImpl(
         for (size_t i = 0; i < existing_columns; ++i)
             need_replicate_columns.emplace_back(i);
         need_replicate_columns.insert(need_replicate_columns.end(), right_keys_to_replicate.begin(), right_keys_to_replicate.end());
-        current_result = std::make_shared<StreamReplicateBlocks>(block, std::move(offsets_to_replicate), need_replicate_columns);
+        current_result = std::make_shared<StreamReplicateBlocks>(block, std::move(offsets_to_replicate), need_replicate_columns, table_join->maxJoinedBlockRows());
     }
     else
     {
@@ -2243,7 +2243,7 @@ bool HashJoin::supportStreamJoin() const
 
 IBlocksStreamPtr HashJoin::getStreamBlocks()
 {
-    return std::move(current_result);
+    return current_result;
 }
 
 }

@@ -122,12 +122,14 @@ void JoiningTransform::work()
 {
     if (has_input)
     {
+        // Process the next chunk after all the current result set is output.
         if (!join->supportStreamJoin() || !blocks || blocks->isFinished())
             transform(input_chunk);
         if (join->supportStreamJoin())
         {
             auto block = blocks->next();
             output_chunk.setColumns(block.getColumns(), block.rows());
+            // Get the next chunk after all the current result set is output.
             has_input = not_processed != nullptr || !blocks->isFinished();
             has_output = !output_chunk.empty();
         }

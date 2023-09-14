@@ -174,7 +174,7 @@ class StreamReplicateBlocks final: public IBlocksStream
 {
 public:
     explicit StreamReplicateBlocks(const Block & block);
-    StreamReplicateBlocks(const Block & block, std::unique_ptr<IColumn::Offsets> offsetsToReplicate,  const std::vector<size_t> & need_replicate_pos);
+    StreamReplicateBlocks(const Block & block, std::unique_ptr<IColumn::Offsets> offsets_to_replicate,  const std::vector<size_t> & need_replicate_pos, size_t max_block_size);
 
 protected:
     Block nextImpl() override;
@@ -186,7 +186,7 @@ private:
     size_t offset_index = 0;
     size_t offset_remain_rows = 0;
     size_t output_rows = 0;
-    size_t block_size = 8192;
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
 }
