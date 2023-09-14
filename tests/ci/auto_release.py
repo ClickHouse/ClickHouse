@@ -107,7 +107,9 @@ def main():
 
             logger.info("Commit is ready for release, let's release!")
 
-            release = Release(ReleaseRepo(args.repo, "ssh"), commit.sha, "patch", args.dry_run, True)
+            release = Release(
+                ReleaseRepo(args.repo, "ssh"), commit.sha, "patch", args.dry_run, True
+            )
             try:
                 release.do(True, True, True)
             except:
