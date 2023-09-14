@@ -1466,7 +1466,7 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 
 bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true));
+    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server.raft_configuration") && config.getBool("keeper_server.use_cluster", true));
 }
 
 String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
@@ -1477,7 +1477,7 @@ String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
     if (config.has("keeper"))
         return "keeper";
 
-    if (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true))
+    if (config.has("keeper_server.raft_configuration") && config.getBool("keeper_server.use_cluster", true))
         return "keeper_server";
 
     throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
