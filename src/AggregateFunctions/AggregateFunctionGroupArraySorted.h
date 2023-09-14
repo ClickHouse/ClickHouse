@@ -71,6 +71,11 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        const auto & row_values = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+
+         if (limit_num_elems && row_values.size() < max_elems)
+             throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
+        
         const auto & row_value = row_values[row_num];
         auto & cur_elems = this->data(place);
 
@@ -144,11 +149,7 @@ public:
 
         RadixSort<RadixSortNumTraits<T>>::executeLSD(value.data(), value.size());
         if (limit_num_elems)
-        {
-            if (value.size() < max_elems)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
             value.resize(max_elems, a);
-        }
         size_t size = value.size();
 
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
