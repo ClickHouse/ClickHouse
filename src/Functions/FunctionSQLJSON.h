@@ -35,10 +35,13 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int BAD_ARGUMENTS;
 }
 
+class EmptyJSONStringSerializer
+{};
+
 class FunctionSQLJSONHelpers
 {
 public:
-    template <typename Name, template <typename> typename Impl, class JSONParser>
+    template <typename Name, typename Impl, class JSONParser>
     class Executor
     {
     public:
@@ -116,7 +119,7 @@ public:
             bool document_ok = false;
 
             /// Parse JSON for every row
-            Impl<JSONParser> impl;
+            Impl impl;
             for (const auto i : collections::range(0, input_rows_count))
             {
                 std::string_view json{
@@ -138,7 +141,7 @@ public:
     };
 };
 
-template <typename Name, template <typename> typename Impl>
+template <typename Name, template <typename, typename> typename Impl>
 class FunctionSQLJSON : public IFunction, WithConstContext
 {
 public:
@@ -155,7 +158,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext());
+        return Impl<DummyJSONParser, EmptyJSONStringSerializer>::getReturnType(Name::name, arguments, getContext());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -168,9 +171,9 @@ public:
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
+            return FunctionSQLJSONHelpers::Executor<Name, Impl<SimdJSONParser, SimdJSONStringSerializer>, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
 #endif
-        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
+        return FunctionSQLJSONHelpers::Executor<Name, Impl<DummyJSONParser, EmptyJSONStringSerializer>, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth, getContext());
     }
 };
 
@@ -189,7 +192,7 @@ struct NameJSONQuery
     static constexpr auto name{"JSON_QUERY"};
 };
 
-template <typename JSONParser>
+template <typename JSONParser, typename JSONStringSerializer = EmptyJSONStringSerializer>
 class JSONExistsImpl
 {
 public:
@@ -228,7 +231,7 @@ public:
     }
 };
 
-template <typename JSONParser>
+template <typename JSONParser, typename JSONStringSerializer = EmptyJSONStringSerializer>
 class JSONValueImpl
 {
 public:
@@ -280,33 +283,63 @@ public:
         if (status == VisitorStatus::Exhausted)
             return false;
 
-        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        out << current_element.getElement();
-        auto output_str = out.str();
-        ColumnString * col_str;
-        if (isColumnNullable(dest))
+        if constexpr (!std::is_same<JSONStringSerializer, EmptyJSONStringSerializer>())
         {
-            ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-            col_null.getNullMapData().push_back(0);
-            col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
-        }
-        else
-        {
-            col_str = assert_cast<ColumnString *>(&dest);
-        }
-        ColumnString::Chars & data = col_str->getChars();
-        ColumnString::Offsets & offsets = col_str->getOffsets();
+            ColumnString * col_str = nullptr;
+            if (isColumnNullable(dest))
+            {
+                ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
+                col_null.getNullMapData().push_back(0);
+                col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
+            }
+            else
+            {
+                col_str = assert_cast<ColumnString *>(&dest);
 
-        if (current_element.isString())
-        {
-            ReadBufferFromString buf(output_str);
-            readJSONStringInto(data, buf);
-            data.push_back(0);
-            offsets.push_back(data.size());
+            }
+            auto & chars = col_str->getChars();
+            auto & offsets = col_str->getOffsets();
+            JSONStringSerializer json_serializer(chars);
+            if (current_element.isString())
+            {
+                auto str = current_element.getString();
+                chars.insert(str.data(), str.data() + str.size());
+            }
+            else
+                json_serializer.append(current_element.getElement());
+            chars.push_back(0);
+            offsets.push_back(chars.size());
         }
         else
         {
-            col_str->insertData(output_str.data(), output_str.size());
+            std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            out << current_element.getElement();
+            auto output_str = out.str();
+            ColumnString * col_str;
+            if (isColumnNullable(dest))
+            {
+                ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
+                col_null.getNullMapData().push_back(0);
+                col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
+            }
+            else
+            {
+                col_str = assert_cast<ColumnString *>(&dest);
+            }
+            ColumnString::Chars & data = col_str->getChars();
+            ColumnString::Offsets & offsets = col_str->getOffsets();
+
+            if (current_element.isString())
+            {
+                ReadBufferFromString buf(output_str);
+                readJSONStringInto(data, buf);
+                data.push_back(0);
+                offsets.push_back(data.size());
+            }
+            else
+            {
+                col_str->insertData(output_str.data(), output_str.size());
+            }
         }
         return true;
     }
@@ -316,7 +349,7 @@ public:
  * Function to test jsonpath member access, will be removed in final PR
  * @tparam JSONParser parser
  */
-template <typename JSONParser>
+template <typename JSONParser, typename JSONStringSerializer = EmptyJSONStringSerializer>
 class JSONQueryImpl
 {
 public:
@@ -328,40 +361,87 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const ContextPtr &)
     {
-        GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
-        Element current_element = root;
-        VisitorStatus status;
-        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        /// Create json array of results: [res1, res2, ...]
-        out << "[";
-        bool success = false;
-        while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
+        /// stringstream has bad performance. Use specified serializer to put data into ColumnString
+        /// directly.
+        if constexpr (!std::is_same_v<JSONStringSerializer, EmptyJSONStringSerializer>)
         {
-            if (status == VisitorStatus::Ok)
+            ColumnString & col_str = assert_cast<ColumnString &>(dest);
+            auto & chars = col_str.getChars();
+            auto & offsets = col_str.getOffsets();
+            size_t prev_offset = offsets.empty() ? 0 : offsets.back();
+
+            GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
+            Element current_element = root;
+            VisitorStatus status;
+            bool success = false;
+            JSONStringSerializer json_serializer(chars);
+            chars.push_back('[');
+            while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
             {
-                if (success)
+                if (status == VisitorStatus::Ok)
                 {
-                    out << ", ";
+                    if (success)
+                    {
+                        const char * comma = ", ";
+                        chars.insert(comma, comma + 2);
+                    }
+                    success = true;
+                    json_serializer.append(current_element.getElement());
                 }
-                success = true;
-                out << current_element.getElement();
+                else if (status == VisitorStatus::Error)
+                {
+                    /// ON ERROR
+                    /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
+                    ///  however this functionality is not implemented yet
+                }
+                current_element = root;
             }
-            else if (status == VisitorStatus::Error)
+            chars.push_back(']');
+            chars.push_back(0);
+            if (!success)
             {
-                /// ON ERROR
-                /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
-                ///  however this functionality is not implemented yet
+                chars.resize(prev_offset);
+                return false;
             }
-            current_element = root;
+            offsets.push_back(chars.size());
         }
-        out << "]";
-        if (!success)
+        else
         {
-            return false;
+            GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
+            Element current_element = root;
+            VisitorStatus status;
+            std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            /// Create json array of results: [res1, res2, ...]
+            out << "[";
+            bool success = false;
+            while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
+            {
+                if (status == VisitorStatus::Ok)
+                {
+                    if (success)
+                    {
+                        out << ", ";
+                    }
+                    success = true;
+                    out << current_element.getElement();
+                }
+                else if (status == VisitorStatus::Error)
+                {
+                    /// ON ERROR
+                    /// Here it is possible to handle errors with ON ERROR (as described in ISO/IEC TR 19075-6),
+                    ///  however this functionality is not implemented yet
+                }
+                current_element = root;
+            }
+            out << "]";
+            if (!success)
+            {
+                return false;
+            }
+            ColumnString & col_str = assert_cast<ColumnString &>(dest);
+            auto output_str = out.str();
+            col_str.insertData(output_str.data(), output_str.size());
         }
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        auto output_str = out.str();
-        col_str.insertData(output_str.data(), output_str.size());
         return true;
     }
 };
