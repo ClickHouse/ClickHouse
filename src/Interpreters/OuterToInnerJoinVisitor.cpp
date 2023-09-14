@@ -230,7 +230,7 @@ void OuterToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 void OuterToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
     std::vector<JoinedElement> joined_tables = getTables(select);
-    if (joined_tables.size() == 0)
+    if (joined_tables.empty())
         return;
 
     {
