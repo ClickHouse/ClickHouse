@@ -149,7 +149,10 @@ def parse_env_variables(
     result = []
     result.append("OUTPUT_DIR=/output")
     cmake_flags = ["$CMAKE_FLAGS"]
-    build_target = "clickhouse-bundle"
+    if package_type == "fuzzers":
+        build_target = "fuzzers"
+    else:
+        build_target = "clickhouse-bundle"
 
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
@@ -258,6 +261,17 @@ def parse_env_variables(
                 cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
             else:
                 result.append("BUILD_MUSL_KEEPER=1")
+    elif package_type == "fuzzers":
+        cmake_flags.append("-DENABLE_FUZZING=1")
+        cmake_flags.append("-DENABLE_PROTOBUF=1")
+        cmake_flags.append("-DUSE_INTERNAL_PROTOBUF_LIBRARY=1")
+        cmake_flags.append("-DWITH_COVERAGE=1")
+        cmake_flags.append("-DCMAKE_AUTOGEN_VERBOSE=ON")
+        # cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
+        # cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
+        # cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
+        # Reduce linking and building time by avoid *install/all dependencies
+        cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
 
     result.append(f"CC={cc}")
     result.append(f"CXX={cxx}")
@@ -365,7 +379,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary"],
+        choices=["deb", "binary", "fuzzers"],
         required=True,
     )
     parser.add_argument(

@@ -28,6 +28,9 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
   *
@@ -182,10 +185,18 @@ private:
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(ContextPtr, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
+    ClusterPtr getOptimizedCluster(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ASTSelectQuery & select,
+        const TreeRewriterResultPtr & syntax_analyzer_result) const;
 
     ClusterPtr skipUnusedShards(
-        ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
+        ClusterPtr cluster,
+        const ASTSelectQuery & select,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///

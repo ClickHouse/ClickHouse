@@ -142,9 +142,9 @@ void StorageS3Queue::shutdown()
         task->deactivate();
 }
 
-bool StorageS3Queue::supportsSubsetOfColumns() const
+bool StorageS3Queue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
 }
 
 Pipe StorageS3Queue::read(
@@ -308,7 +308,6 @@ void StorageS3Queue::streamToViews()
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
     auto block_io = interpreter.execute();
-
     auto pipe = Pipe(createSource(block_io.pipeline.getHeader().getNames(), storage_snapshot, nullptr, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context));
 
     std::atomic_size_t rows = 0;
