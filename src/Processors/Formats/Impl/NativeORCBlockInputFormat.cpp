@@ -157,6 +157,12 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             if (skipped)
                 return {};
 
+            if (!DataTypeMap::checkKeyType(key_type) && skip_columns_with_unsupported_types)
+            {
+                skipped = true;
+                return {};
+            }
+
             DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, skipped);
             if (skipped)
                 return {};
