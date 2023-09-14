@@ -17,9 +17,16 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <unordered_set>
+#include <Formats/SchemaInferenceUtils.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNothing.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -28,6 +35,49 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int MONGODB_ERROR;
+    extern const int EMPTY_DATA_PASSED;
+}
+
+namespace
+{
+    using MongoArray = Poco::MongoDB::Array;
+
+    DataTypePtr getDataTypeMongoDB(const Poco::MongoDB::Element & value)
+    {
+        switch (value.type())
+        {
+            case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
+                return std::make_shared<DataTypeNothing>();
+            case Poco::MongoDB::ElementTraits<bool>::TypeId:
+                return std::make_shared<DataTypeUInt8>();
+            case Poco::MongoDB::ElementTraits<Int32>::TypeId:
+                return std::make_shared<DataTypeInt32>();
+            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
+                return std::make_shared<DataTypeInt64>();
+            case Poco::MongoDB::ElementTraits<Float64>::TypeId:
+                return std::make_shared<DataTypeFloat64>();
+            case Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId:
+                return std::make_shared<DataTypeDateTime>();
+            case Poco::MongoDB::ElementTraits<MongoArray::Ptr>::TypeId:
+            {
+                auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(value).value();
+
+                DataTypes types;
+                types.reserve(parent->size());
+
+                for (size_t idx = 0, size = parent->size(); idx < size; ++idx)
+                {
+                    Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(idx));
+                    types.push_back(getDataTypeMongoDB(*child));
+                }
+                return std::make_shared<DataTypeTuple>(types);
+            }
+            default:
+                return std::make_shared<DataTypeString>();
+        }
+    }
+
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -50,7 +100,15 @@ StorageMongoDB::StorageMongoDB(
     , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+
+    if (columns_.empty())
+    {
+        auto columns =  StorageMongoDB::getTableStructureFromData();
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -85,6 +143,72 @@ void StorageMongoDB::connectIfNotConnected()
 
         authenticated = true;
     }
+}
+
+ColumnsDescription StorageMongoDB::getTableStructureFromData()
+{
+    connectIfNotConnected();
+
+    MongoDBCursor cursor(database_name, collection_name, {}, {}, *connection, false);
+    FormatSettings format_settings;
+
+    std::unordered_map<std::string, DataTypePtr> types;
+    std::vector<std::string> current_keys;
+    std::vector<std::string> final_keys;
+
+    size_t num_rows = 0;
+    while (num_rows < format_settings.max_rows_to_read_for_schema_inference)
+    {
+        auto documents = cursor.nextDocuments(*connection);
+
+        for (auto & document : documents)
+        {
+            if (document->exists("ok") && document->exists("$err")
+                && document->exists("code") && document->getInteger("ok") == 0)
+            {
+                auto code = document->getInteger("code");
+                const Poco::MongoDB::Element::Ptr value = document->get("$err");
+                auto message = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(*value).value();
+                throw Exception(ErrorCodes::MONGODB_ERROR, "Got error from MongoDB: {}, code: {}", message, code);
+            }
+
+            ++num_rows;
+
+            document->elementNames(current_keys);
+
+            for (auto & key : current_keys)
+            {
+                const Poco::MongoDB::Element::Ptr value = document->get(key);
+                auto new_type = getDataTypeMongoDB(*value);
+
+                if (!types.contains(key))
+                {
+                    types[key] = std::move(new_type);
+                    final_keys.push_back(std::move(key));
+                    continue;
+                }
+
+                auto & type = types[key];
+                transformInferredTypesIfNeeded(type, new_type, format_settings);
+            }
+
+            current_keys.clear();
+        }
+
+        if (cursor.cursorID() == 0)
+            break;
+    }
+
+    if (num_rows == 0)
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
+
+    NamesAndTypesList result;
+    for (auto & key : final_keys)
+    {
+        result.push_back({std::move(key), std::move(types[key])});
+    }
+
+    return ColumnsDescription(result);
 }
 
 
@@ -312,6 +436,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
+        .supports_schema_inference = true,
         .source_access_type = AccessType::MONGO,
     });
 }

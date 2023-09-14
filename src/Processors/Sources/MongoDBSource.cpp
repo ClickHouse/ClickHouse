@@ -1,4 +1,4 @@
-#include "MongoDBSource.h"
+#include <Processors/Sources/MongoDBSource.h>
 
 #include <string>
 #include <vector>
@@ -301,8 +301,6 @@ namespace
                 const auto parse_value = array_info[idx].parser;
                 std::vector<Row> dimensions(expected_dimensions + 1);
 
-                auto array = static_cast<const Poco::MongoDB::ConcreteElement<MongoArray::Ptr> &>(value).value();
-
                 std::vector<std::pair<const Poco::MongoDB::Element *, size_t>> arrays;
                 arrays.emplace_back(&value, 0);
 
@@ -381,8 +379,9 @@ MongoDBCursor::MongoDBCursor(
     const std::string & collection,
     const Block & sample_block_to_select,
     const Poco::MongoDB::Document & query,
-    Poco::MongoDB::Connection & connection)
-    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection))
+    Poco::MongoDB::Connection & connection,
+    bool projections_)
+    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection)), projections(projections_)
 {
     Poco::MongoDB::Document projection;
 
@@ -397,14 +396,16 @@ MongoDBCursor::MongoDBCursor(
     {
         old_cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
         old_cursor->query().selector() = query;
-        old_cursor->query().returnFieldSelector() = projection;
+        if (projections)
+            old_cursor->query().returnFieldSelector() = projection;
     }
     else
     {
         new_cursor = std::make_unique<Poco::MongoDB::OpMsgCursor>(database, collection);
         new_cursor->query().setCommandName(Poco::MongoDB::OpMsgMessage::CMD_FIND);
         new_cursor->query().body().addNewDocument("filter") = query;
-        new_cursor->query().body().addNewDocument("projection") = projection;
+        if (projections)
+            new_cursor->query().body().addNewDocument("projection") = projection;
     }
 }
 

@@ -43,7 +43,8 @@ public:
         const std::string & collection,
         const Block & sample_block_to_select,
         const Poco::MongoDB::Document & query,
-        Poco::MongoDB::Connection & connection);
+        Poco::MongoDB::Connection & connection,
+        bool projections_ = true);
 
     Poco::MongoDB::Document::Vector nextDocuments(Poco::MongoDB::Connection & connection);
 
@@ -51,6 +52,7 @@ public:
 
 private:
     const bool is_wire_protocol_old;
+    const bool projections;
     std::unique_ptr<Poco::MongoDB::Cursor> old_cursor;
     std::unique_ptr<Poco::MongoDB::OpMsgCursor> new_cursor;
     Int64 cursor_id = 0;

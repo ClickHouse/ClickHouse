@@ -468,3 +468,48 @@ def test_simple_insert_select(started_cluster):
 
     node.query("DROP TABLE simple_mongo_table")
     simple_mongo_table.drop()
+
+
+@pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
+def test_schema_inference(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.add_user("root", "clickhouse")
+    inference_mongo_table = db["inference_table"]
+    data = []
+    for i in range(0, 100):
+        data.append(
+            {
+                "key": i,
+                "int64": -(i + 1),
+                "int32": -(i + 1),
+                "int16": -(i + 1),
+                "int8": -(i + 1),
+                "uint64": i + 1,
+                "uint32": i + 1,
+                "uint16": i + 1,
+                "uint8": i + 1,
+                "float32": i + 3.750,
+                "float64": i + 3.750,
+                "date": datetime.datetime(2002, 10, 27),
+                "datetime": datetime.datetime(2023, 3, 31, 6, 3, 12),
+                "string": str(i + 1),
+                "uuid": "f0e77736-91d1-48ce-8f01-15123ca1c7ed",
+                "bool": True,
+                "nullable": None,
+            }
+        )
+
+    inference_mongo_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+
+    node.query(
+        "CREATE TABLE inference_mongo_table ENGINE = MongoDB('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
+    )
+
+    expected = "CREATE TABLE default.inference_mongo_table (`_id` String, `key` Int32, `int64` Int32, `int32` Int32, `int16` Int32, `int8` Int32, `uint64` Int32, `uint32` Int32, `uint16` Int32, `uint8` Int32, `float32` Float64, `float64` Float64, `date` DateTime, `datetime` DateTime, `string` String, `uuid` String, `bool` UInt8, `nullable` Nothing) ENGINE = MongoDB(\\'mongo1:27017\\', \\'test\\', \\'inference_table\\', \\'root\\', \\'[HIDDEN]\\')\n"
+
+    assert expected == node.query(
+        "select create_table_query from system.tables where name = 'inference_mongo_table'"
+    )

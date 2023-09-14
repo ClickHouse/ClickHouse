@@ -59,6 +59,7 @@ public:
 
 private:
     void connectIfNotConnected();
+    ColumnsDescription getTableStructureFromData();
 
     const std::string database_name;
     const std::string collection_name;
