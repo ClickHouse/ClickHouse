@@ -1278,26 +1278,52 @@ bool KeyCondition::tryPrepareSetIndex(
       * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
       * we need to convert set column to primary key column.
       */
-    auto set_elements = prepared_set->getSetElements();
-    assert(set_types_size == set_elements.size());
+    auto set_columns = prepared_set->getSetElements();
+    assert(set_types_size == set_columns.size());
 
-    for (size_t i = 0; i < indexes_mapping_size; ++i)
+    for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
     {
-        size_t set_element_index = indexes_mapping[i].tuple_index;
+        size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         const auto & set_element_type = set_types[set_element_index];
-        auto & set_element = set_elements[set_element_index];
+        auto & set_column = set_columns[set_element_index];
 
-        try
+        bool is_set_column_nullable = set_element_type->isNullable();
+        bool is_set_column_low_cardinality_nullable = set_element_type->isLowCardinalityNullable();
+
+        const NullMap * set_column_null_map = nullptr;
+
+        if (is_set_column_nullable || is_set_column_low_cardinality_nullable)
         {
-            set_element = castColumnAccurate({set_element, set_element_type, {}}, data_types[i]);
+            if (is_set_column_low_cardinality_nullable)
+                set_column = set_column->convertToFullColumnIfLowCardinality();
+
+            set_column_null_map = &assert_cast<const ColumnNullable &>(*set_column).getNullMapData();
         }
-        catch (...)
+
+        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, data_types[indexes_mapping_index]);
+        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
+        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
+        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
+
+        IColumn::Filter filter(nullable_set_column_null_map_size);
+
+        if (set_column_null_map)
         {
-            return false;
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed.filter(filter, 0);
+        }
+        else
+        {
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] = !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
         }
     }
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_elements, std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
     return true;
 }
 
