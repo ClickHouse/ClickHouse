@@ -37,6 +37,9 @@ StorageS3QueueSource::FileIterator::FileIterator(
 
 StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::FileIterator::next()
 {
+    /// List results in s3 are always returned in UTF-8 binary order.
+    /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
+
     while (true)
     {
         KeyWithInfo val = glob_iterator->next();
