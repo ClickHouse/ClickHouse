@@ -74,13 +74,23 @@ void ReplicatedMergeTreeClusterSink::consume(Chunk chunk)
         /// FIXME: this should be done with cluster partition version check to
         /// ensure that nothing will goes to outdated replicas.
         const auto & cluster_partition = storage.cluster->getOrCreateClusterPartition(partition_id);
+        ReplicatedMergeTreeClusterReplicas cluster_replicas = storage.cluster->getClusterReplicas();
         auto replicas = cluster_partition.getAllNonMigrationReplicas();
+        /// Remove replicas for which we don't have enough information
+        std::erase_if(replicas, [&](const auto & replica)
+        {
+            const auto it = cluster_replicas.find(replica);
+            if (it == cluster_replicas.end())
+                return true;
+            if (it->second.host.empty())
+                return true;
+            return false;
+        });
         if (replicas.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No replicas had been assigned for partition {}", partition_id);
 
         /// Other replicas will catch up from this replica.
         const auto & replica_name = replicas[thread_local_rng() % replicas.size()];
-        ReplicatedMergeTreeClusterReplicas cluster_replicas = storage.cluster->getClusterReplicas();
         const auto & replica = cluster_replicas[replica_name];
 
         LOG_TRACE(log, "Sending block (partition: {}, rows: {}) to replica {}",

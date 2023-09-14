@@ -471,8 +471,21 @@ void executeQueryForReplicatedMergeTreeCluster(
 
     for (const auto & cluster_partition : cluster_partitions)
     {
+        auto active_replicas = cluster_partition.getActiveReplicas();
+        /// Remove replicas for which we don't have enough information
+        std::erase_if(active_replicas, [&](const auto & replica)
+        {
+            const auto it = cluster_replicas.find(replica);
+            if (it == cluster_replicas.end())
+                return true;
+            if (it->second.host.empty())
+                return true;
+            return false;
+        });
+        if (active_replicas.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No nodes in the cluster for partition {}", cluster_partition.toStringForLog());
         /// TODO(cluster): support other replicas
-        const auto & partition_replica_name = cluster_partition.getActiveReplicas().front();
+        const auto & partition_replica_name = active_replicas.front();
         const auto & partition_replica = cluster_replicas[partition_replica_name];
         Cluster::ShardInfo shard_info = partition_replica.makeShardInfo(context);
         LOG_TRACE(log, "Querying partition {} from replica {}",
