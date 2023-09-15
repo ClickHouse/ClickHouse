@@ -71,4 +71,6 @@ using DataTypeInt128 = DataTypeNumber<Int128>;
 using DataTypeUInt256 = DataTypeNumber<UInt256>;
 using DataTypeInt256 = DataTypeNumber<Int256>;
 
+bool isUInt64ThatCanBeInt64(const DataTypePtr & type);
+
 }
