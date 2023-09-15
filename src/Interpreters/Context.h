@@ -718,6 +718,7 @@ public:
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;
+    bool isCurrentQueryKilled() const;
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
