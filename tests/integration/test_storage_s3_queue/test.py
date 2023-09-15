@@ -159,6 +159,7 @@ def generate_random_files(
         values_csv = (
             "\n".join((",".join(map(str, row)) for row in rand_values)) + "\n"
         ).encode()
+        print(f"File {filename}, content: {total_values}")
         put_s3_file_content(started_cluster, filename, values_csv)
     return total_values
 
@@ -755,9 +756,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 def test_max_set_age(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"max_set_age"
+    dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    max_age = 1
+    max_age = 10
     files_to_generate = 10
 
     create_table(
@@ -768,68 +770,92 @@ def test_max_set_age(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "s3queue_tracked_files_limit": 10,
             "s3queue_tracked_file_ttl_sec": max_age,
         },
     )
-
-    node.wait_for_log_line("Checking node limits")
-    node.wait_for_log_line("Node limits check finished")
+    create_mv(node, table_name, dst_table_name)
 
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, row_num=1
     )
-    res1 = [
-        list(map(int, l.split()))
-        for l in run_query(node, f"SELECT * FROM {table_name}").splitlines()
-    ]
-    assert res1 == total_values
+
+    expected_rows = 10
+
+    node.wait_for_log_line("Checking node limits")
+    node.wait_for_log_line("Node limits check finished")
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+    assert 10 == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
+
     time.sleep(max_age + 1)
 
-    res1 = [
-        list(map(int, l.split()))
-        for l in run_query(node, f"SELECT * FROM {table_name}").splitlines()
+    expected_rows = 20
+
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+
+    assert expected_rows == get_count()
+    assert 10 == int(node.query(f"SELECT uniq(_path) from {dst_table_name}"))
+
+    paths_count = [
+        int(x)
+        for x in node.query(
+            f"SELECT count() from {dst_table_name} GROUP BY _path"
+        ).splitlines()
     ]
-    assert res1 == total_values
+    assert 10 == len(paths_count)
+    for path_count in paths_count:
+        assert 2 == path_count
 
 
 def test_max_set_size(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"max_set_size"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    max_age = 10
     files_to_generate = 10
-    files_path = f"test_multiple"
-    bucket = started_cluster.minio_restricted_bucket
-    instance = started_cluster.instances["instance"]
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS test.s3_queue;
-
-        CREATE TABLE test.s3_queue ({table_format})
-            ENGINE=S3Queue('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/*', {AUTH}'CSV')
-            SETTINGS
-                mode = 'unordered',
-                keeper_path = '/clickhouse/test_set_size',
-                s3queue_tracked_files_limit = {files_to_generate - 1};
-        """
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_tracked_files_limit": 9,
+        },
     )
-
     total_values = generate_random_files(
-        files_to_generate, files_path, started_cluster, bucket, start_ind=0, row_num=1
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
-    get_query = f"SELECT * FROM test.s3_queue"
-    res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ]
-    assert res1 == total_values
 
-    get_query = f"SELECT * FROM test.s3_queue"
-    res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ]
+    get_query = f"SELECT * FROM {table_name}"
+    res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
+    assert res1 == total_values
+    print(total_values)
+
+    time.sleep(10)
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    processed_nodes = zk.get_children(f"{keeper_path}/processed/")
+    assert len(processed_nodes) == 9
+
+    res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
     assert res1 == [total_values[0]]
 
-    get_query = f"SELECT * FROM test.s3_queue"
-    res1 = [
-        list(map(int, l.split())) for l in run_query(instance, get_query).splitlines()
-    ]
+    time.sleep(10)
+    res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
     assert res1 == [total_values[1]]

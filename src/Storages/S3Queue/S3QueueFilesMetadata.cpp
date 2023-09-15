@@ -1,3 +1,4 @@
+#include <set>
 #include "Common/Exception.h"
 #include "Common/ZooKeeper/Types.h"
 #include "Interpreters/Context_fwd.h"
@@ -253,7 +254,10 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(const String & path)
     Coordination::Responses responses;
     auto code = zk_client->tryMulti(requests, responses);
     if (code == Coordination::Error::ZOK)
+    {
+        LOG_TEST(log, "Moved file `{}` to processed", path);
         return;
+    }
 
     /// TODO this could be because of the expired session.
     if (responses[0]->error != Coordination::Error::ZOK)
@@ -433,11 +437,16 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     };
     auto node_cmp = [](const Node & a, const Node & b)
     {
-        return a.metadata.last_processed_timestamp < b.metadata.last_processed_timestamp;
+        if (a.metadata.last_processed_timestamp == b.metadata.last_processed_timestamp)
+            return a.metadata.file_path < b.metadata.file_path;
+        else
+            return a.metadata.last_processed_timestamp < b.metadata.last_processed_timestamp;
     };
 
     /// Ordered in ascending order of timestamps.
-    std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
+    std::multiset<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
+
+    LOG_TRACE(log, "Found {} nodes", nodes.size());
 
     for (const auto & node : nodes)
     {
@@ -446,9 +455,11 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             std::string metadata_str;
             if (zk_client->tryGet(zookeeper_processed_path / node, metadata_str))
             {
-                bool inserted = sorted_nodes.emplace(node, NodeMetadata::fromString(metadata_str)).second;
-                chassert(inserted);
+                sorted_nodes.emplace(node, NodeMetadata::fromString(metadata_str));
+                LOG_TEST(log, "Fetched metadata for node {}", node);
             }
+            else
+                LOG_TEST(log, "Failed to fetch node metadata {}", node);
         }
         catch (...)
         {
@@ -458,7 +469,14 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
     /// TODO add a zookeeper lock for cleanup
 
-    LOG_TRACE(log, "Checking node limits");
+    auto get_nodes_str = [&]()
+    {
+        WriteBufferFromOwnString wb;
+        for (const auto & [node, metadata] : sorted_nodes)
+            wb << fmt::format("Node: {}, path: {}, timestamp: {};\n", node, metadata.file_path, metadata.last_processed_timestamp);
+        return wb.str();
+    };
+    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", max_set_size, max_set_age_sec, get_nodes_str());
 
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes.size() - max_set_size : 0;
     for  (const auto & node : sorted_nodes)
@@ -466,7 +484,8 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
         if (nodes_to_remove)
         {
             auto path = zookeeper_processed_path / node.name;
-            LOG_TEST(log, "Removing node at path `{}` because max files limit is reached", path.string());
+            LOG_TEST(log, "Removing node at path {} ({}) because max files limit is reached",
+                     node.metadata.file_path, path.string());
 
             auto code = zk_client->tryRemove(path);
             if (code == Coordination::Error::ZOK)
@@ -480,7 +499,8 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             if (node_age >= max_set_age_sec)
             {
                 auto path = zookeeper_processed_path / node.name;
-                LOG_TEST(log, "Removing node at path `{}` because file ttl is reached", path.string());
+                LOG_TEST(log, "Removing node at path {} ({}) because file is reached",
+                        node.metadata.file_path, path.string());
 
                 auto code = zk_client->tryRemove(path);
                 if (code != Coordination::Error::ZOK)
