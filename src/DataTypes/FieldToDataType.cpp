@@ -136,8 +136,17 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
     DataTypes element_types;
     element_types.reserve(x.size());
 
+    bool has_signed_int = false;
+    bool uint64_convert_possible = true;
     for (const Field & elem : x)
-        element_types.emplace_back(applyVisitor(*this, elem));
+    {
+        DataTypePtr type = applyVisitor(*this, elem);
+        element_types.emplace_back(type);
+        checkUInt64ToIn64Conversion(has_signed_int, uint64_convert_possible, type, elem);
+    }
+
+    if (has_signed_int && uint64_convert_possible)
+        convertUInt64ToInt64IfPossible(element_types);
 
     return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(element_types));
 }
@@ -165,13 +174,27 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
     key_types.reserve(map.size());
     value_types.reserve(map.size());
 
+    bool k_has_signed_int = false;
+    bool k_uint64_convert_possible = true;
+    bool v_has_signed_int = false;
+    bool v_uint64_convert_possible = true;
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<const Tuple &>();
         assert(tuple.size() == 2);
-        key_types.push_back(applyVisitor(*this, tuple[0]));
-        value_types.push_back(applyVisitor(*this, tuple[1]));
+        DataTypePtr k_type = applyVisitor(*this, tuple[0]);
+        key_types.push_back(k_type);
+        checkUInt64ToIn64Conversion(k_has_signed_int, k_uint64_convert_possible, k_type, tuple[0]);
+        DataTypePtr v_type = applyVisitor(*this, tuple[1]);
+        value_types.push_back(v_type);
+        checkUInt64ToIn64Conversion(v_has_signed_int, v_uint64_convert_possible, v_type, tuple[1]);
     }
+
+    if (k_has_signed_int && k_uint64_convert_possible)
+        convertUInt64ToInt64IfPossible(key_types);
+
+    if (v_has_signed_int && v_uint64_convert_possible)
+        convertUInt64ToInt64IfPossible(value_types);
 
     return std::make_shared<DataTypeMap>(
         getLeastSupertype<on_error>(key_types),
@@ -202,6 +225,28 @@ template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator()(const bool &) const
 {
     return DataTypeFactory::instance().get("Bool");
+}
+
+template <LeastSupertypeOnError on_error>
+void FieldToDataType<on_error>::checkUInt64ToIn64Conversion(bool & has_signed_int, bool & uint64_convert_possible, const DataTypePtr & type, const Field & elem) const
+{
+    if (uint64_convert_possible)
+    {
+        bool is_native_int = WhichDataType(type).isNativeInt();
+
+        if (is_native_int)
+            has_signed_int |= is_native_int;
+        else if (type->getTypeId() == TypeIndex::UInt64)
+            uint64_convert_possible &= (elem.template get<UInt64>() <= std::numeric_limits<Int64>::max());
+    }
+}
+
+template <LeastSupertypeOnError on_error>
+void FieldToDataType<on_error>::convertUInt64ToInt64IfPossible(DataTypes & data_types) const
+{
+    for (auto& type : data_types)
+        if (type->getTypeId() == TypeIndex::UInt64)
+            type = std::make_shared<DataTypeInt64>();
 }
 
 template class FieldToDataType<LeastSupertypeOnError::Throw>;
