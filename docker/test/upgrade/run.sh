@@ -16,8 +16,8 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /usr/share/clickhouse-test/ci/attach_gdb.lib
-source /usr/share/clickhouse-test/ci/stress_tests.lib
+source /attach_gdb.lib
+source /stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
