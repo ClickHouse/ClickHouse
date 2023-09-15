@@ -38,9 +38,50 @@ std::string generateRandomString(size_t length)
 
     return s;
 }
+
+std::future<void> doMultiRequest(Coordination::ZooKeeper & zookeeper, const Coordination::Requests & requests)
+{
+    auto multi_promise = std::make_shared<std::promise<void>>();
+    auto multi_future = multi_promise->get_future();
+
+    auto multi_callback = [multi_promise, requests] (const MultiResponse & response)
+    {
+        if (response.error != Coordination::Error::ZOK)
+            multi_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
+        else
+            multi_promise->set_value();
+    };
+
+    zookeeper.multi(requests, multi_callback);
+    return multi_future;
 }
 
-void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
+void flushRequests(Coordination::ZooKeeper & zookeeper, Coordination::Requests & requests, std::vector<std::future<void>> & running_multis, bool force)
+{
+    static constexpr size_t multi_batch_size = 200;
+    static constexpr size_t max_running_multi_requests = 1000;
+
+    if (!requests.empty() && (requests.size() >= multi_batch_size || force))
+    {
+        running_multis.push_back(doMultiRequest(zookeeper, requests));
+        requests.clear();
+    }
+
+    if (!running_multis.empty() && (running_multis.size() >= max_running_multi_requests || force))
+    {
+        for (auto & multi : running_multis)
+            multi.get();
+
+        running_multis.clear();
+    }
+
+}
+
+void removeRecursive(
+    Coordination::ZooKeeper & zookeeper,
+    Coordination::Requests & requests,
+    std::vector<std::future<void>> & running_multis,
+    const std::string & path)
 {
     namespace fs = std::filesystem;
 
@@ -48,44 +89,29 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
     auto future = promise->get_future();
 
     Strings children;
-    auto list_callback = [promise, &children] (const ListResponse & response)
+    bool node_exists = true;
+    auto list_callback = [promise, &children, &node_exists] (const ListResponse & response)
     {
-        children = response.names;
+        if (response.error != Coordination::Error::ZOK)
+            node_exists = false;
+        else
+            children = response.names;
 
         promise->set_value();
     };
     zookeeper.list(path, ListRequestType::ALL, list_callback, nullptr);
     future.get();
 
-    while (!children.empty())
-    {
-        Coordination::Requests ops;
-        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
-        {
-            removeRecursive(zookeeper, fs::path(path) / children.back());
-            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
-            children.pop_back();
-        }
-        auto multi_promise = std::make_shared<std::promise<void>>();
-        auto multi_future = multi_promise->get_future();
+    if (!node_exists)
+        return;
 
-        auto multi_callback = [multi_promise] (const MultiResponse &)
-        {
-            multi_promise->set_value();
-        };
-        zookeeper.multi(ops, multi_callback);
-        multi_future.get();
-    }
-    auto remove_promise = std::make_shared<std::promise<void>>();
-    auto remove_future = remove_promise->get_future();
+    for (const auto & child : children)
+        removeRecursive(zookeeper, requests, running_multis, fs::path(path) / child);
 
-    auto remove_callback = [remove_promise] (const RemoveResponse &)
-    {
-        remove_promise->set_value();
-    };
+    requests.push_back(makeRemoveRequest(path, -1));
+    flushRequests(zookeeper, requests, running_multis, /*force=*/false);
+}
 
-    zookeeper.remove(path, -1, remove_callback);
-    remove_future.get();
 }
 
 NumberGetter
@@ -708,28 +734,27 @@ std::shared_ptr<Generator::Node> Generator::Node::clone() const
     return new_node;
 }
 
-void Generator::Node::createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const
+void Generator::Node::createNode(
+    Coordination::ZooKeeper & zookeeper,
+    Coordination::Requests & create_requests,
+    std::vector<std::future<void>> & running_multis,
+    const std::string & parent_path,
+    const Coordination::ACLs & acls) const
 {
     auto path = std::filesystem::path(parent_path) / name.getString();
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future();
-    auto create_callback = [promise] (const CreateResponse & response)
-    {
-        if (response.error != Coordination::Error::ZOK)
-            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-        else
-            promise->set_value();
-    };
-    zookeeper.create(path, data ? data->getString() : "", false, false, acls, create_callback);
-    future.get();
+
+    create_requests.push_back(makeCreateRequest(path, data ? data->getString() : "", CreateMode::Persistent));
+    flushRequests(zookeeper, create_requests, running_multis, /*force=*/false);
 
     for (const auto & child : children)
-        child->createNode(zookeeper, path, acls);
+        child->createNode(zookeeper, create_requests, running_multis, path, acls);
 }
 
 void Generator::startup(Coordination::ZooKeeper & zookeeper)
 {
     std::cerr << "---- Creating test data ----" << std::endl;
+    Coordination::Requests requests;
+    std::vector<std::future<void>> running_multis;
     for (const auto & node : root_nodes)
     {
         auto node_name = node->name.getString();
@@ -737,10 +762,14 @@ void Generator::startup(Coordination::ZooKeeper & zookeeper)
 
         std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
-        removeRecursive(zookeeper, root_path);
+        removeRecursive(zookeeper, requests, running_multis, root_path);
 
-        node->createNode(zookeeper, "/", default_acls);
+        std::cerr << "Creating " << root_path << std::endl;
+        node->createNode(zookeeper, requests, running_multis, "/", default_acls);
     }
+
+    flushRequests(zookeeper, requests, running_multis, /*force=*/true);
+
     std::cerr << "---- Created test data ----\n" << std::endl;
 
     std::cerr << "---- Initializing generators ----" << std::endl;
@@ -761,6 +790,9 @@ void Generator::cleanup(Coordination::ZooKeeper & zookeeper)
         auto node_name = node->name.getString();
         std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
-        removeRecursive(zookeeper, root_path);
+        Coordination::Requests requests;
+        std::vector<std::future<void>> running_multis;
+        removeRecursive(zookeeper, requests, running_multis, root_path);
+        flushRequests(zookeeper, requests, running_multis, /*force=*/true);
     }
 }

@@ -184,7 +184,12 @@ private:
 
         std::shared_ptr<Node> clone() const;
 
-        void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
+        void createNode(
+            Coordination::ZooKeeper & zookeeper,
+            Coordination::Requests & create_requests,
+            std::vector<std::future<void>> & running_multis,
+            const std::string & parent_path,
+            const Coordination::ACLs & acls) const;
         void dumpTree(int level = 0) const;
     };
 
