@@ -1,5 +1,7 @@
 select 'JSONEachRow';
 set schema_inference_make_columns_nullable=1;
+set input_format_json_try_infer_named_tuples_from_objects=0;
+set input_format_json_read_objects_as_strings=0;
 desc format(JSONEachRow, '{"x" : 1234}, {"x" : "String"}') settings input_format_json_try_infer_numbers_from_strings=1; -- { serverError TYPE_MISMATCH }
 desc format(JSONEachRow, '{"x" : [null, 1]}');
 desc format(JSONEachRow, '{"x" : [null, 1]}, {"x" : []}');

@@ -382,6 +382,21 @@ namespace
         }
     }
 
+    void transformMapsAndStringsToStrings(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        /// Check if we have both String and Map
+        if (!type_indexes.contains(TypeIndex::Map) || !type_indexes.contains(TypeIndex::String))
+            return;
+
+        for (auto & type : data_types)
+        {
+            if (isMap(type))
+                type = std::make_shared<DataTypeString>();
+        }
+
+        type_indexes.erase(TypeIndex::Map);
+    }
+
     template <bool is_json>
     void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
@@ -436,6 +451,9 @@ namespace
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeAllNamedTuplesAndEmptyMaps(data_types, type_indexes, settings, json_info);
+
+            if (settings.json.read_objects_as_strings)
+                transformMapsAndStringsToStrings(data_types, type_indexes);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -833,9 +851,6 @@ namespace
             {
                 if (settings.json.allow_object_type)
                     return std::make_shared<DataTypeObject>("json", true);
-
-                if (settings.json.read_objects_as_strings)
-                    return std::make_shared<DataTypeString>();
             }
 
             /// Empty Map is Map(Nothing, Nothing)
