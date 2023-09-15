@@ -422,7 +422,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 return false;
 
             const String & expression = value.get<const String &>();
-            // This optimization can't process alternation - this would reguire a comprehensive parsing of reqular expression.
+            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
             if (expression.contains('|'))
                 return false;
 
