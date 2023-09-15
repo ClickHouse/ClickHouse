@@ -138,8 +138,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    Names names;
     const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, query.columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
     {
         std::string current_name = identifier->getColumnName();
@@ -156,8 +157,9 @@ std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
         return std::nullopt;
 
     auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
-    Names names;
     const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
     {
         std::string current_name = identifier->getColumnName();
