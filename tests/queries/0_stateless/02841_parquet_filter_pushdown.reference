@@ -1,0 +1,73 @@
+number	Nullable(UInt64)					
+u8	Nullable(UInt8)					
+u16	Nullable(UInt16)					
+u32	Nullable(UInt32)					
+u64	Nullable(UInt64)					
+i8	Nullable(Int8)					
+i16	Nullable(Int16)					
+i32	Nullable(Int32)					
+i64	Nullable(Int64)					
+date32	Nullable(Date32)					
+dt64_ms	Nullable(DateTime64(3, \'UTC\'))					
+dt64_us	Nullable(DateTime64(6, \'UTC\'))					
+dt64_ns	Nullable(DateTime64(9, \'UTC\'))					
+dt64_s	Nullable(DateTime64(3, \'UTC\'))					
+dt64_cs	Nullable(DateTime64(3, \'UTC\'))					
+f32	Nullable(Float32)					
+f64	Nullable(Float64)					
+s	Nullable(String)					
+fs	Nullable(FixedString(9))					
+d32	Nullable(Decimal(9, 3))					
+d64	Nullable(Decimal(18, 10))					
+d128	Nullable(Decimal(38, 20))					
+d256	Nullable(Decimal(76, 40))					
+800	3959600
+1000	4999500
+1800	6479100
+500	2474750
+300	1604850
+500	2474750
+300	1604850
+500	2474750
+2100	5563950
+300	1184850
+400	1599800
+300	1184850
+500	2524750
+500	2524750
+300	1514850
+300	1514850
+300	1594850
+300	1594850
+200	999900
+200	999900
+200	999900
+200	999900
+0	\N
+400	1709800
+0	\N
+10000	49995000
+0	\N
+200	909900
+10000	49995000
+0	\N
+2
+500	244750
+500	244750
+300	104850
+300	104850
+200	179900
+200	179900
+200	179900
+200	179900
+200	19900
+200	19900
+600	259700
+600	259700
+500	244750
+500	244750
+0	\N
+500	244750
+500	244750
+500	244750
+500	244750

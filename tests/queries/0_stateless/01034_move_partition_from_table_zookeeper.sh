@@ -7,23 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-function query_with_retry
-{
-    retry=0
-    until [ $retry -ge 5 ]
-    do
-        result=$($CLICKHOUSE_CLIENT $2 --query="$1" 2>&1)
-        if [ "$?" == 0 ]; then
-            echo -n "$result"
-            return
-        else
-            retry=$(($retry + 1))
-            sleep 3
-        fi
-    done
-    echo "Query '$1' failed with '$result'"
-}
-
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS src;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst;"
 

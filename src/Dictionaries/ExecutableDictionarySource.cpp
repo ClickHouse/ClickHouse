@@ -114,10 +114,7 @@ QueryPipeline ExecutableDictionarySource::loadAll()
     auto command = configuration.command;
     updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
-    ShellCommandSourceConfiguration command_configuration {
-        .check_exit_code = true,
-    };
-    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context, command_configuration));
+    return QueryPipeline(coordinator->createPipe(command, configuration.command_arguments, {}, sample_block, context));
 }
 
 QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
@@ -152,10 +149,7 @@ QueryPipeline ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command);
 
-    ShellCommandSourceConfiguration command_configuration {
-        .check_exit_code = true,
-    };
-    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context, command_configuration));
+    return QueryPipeline(coordinator->createPipe(command, command_arguments, {}, sample_block, context));
 }
 
 QueryPipeline ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -186,11 +180,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-    ShellCommandSourceConfiguration command_configuration {
-        .check_exit_code = true,
-    };
-
-    auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context, command_configuration);
+    auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
@@ -275,6 +265,8 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
             .execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false)

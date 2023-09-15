@@ -317,7 +317,7 @@
     <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
-    <max_concurrent_queries>100</max_concurrent_queries>
+    <max_concurrent_queries>1000</max_concurrent_queries>
 
     <!-- Maximum memory usage (resident set size) for server process.
          Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
@@ -418,6 +418,8 @@
 
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
+
+    <validate_tcp_client_information>false</validate_tcp_client_information>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -1217,6 +1219,16 @@
         <partition_by>event_date</partition_by>
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
+
+    <!-- Backup/restore log.
+         Uncomment to write backup/restore log records into a system table.
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>0</flush_interval_milliseconds>
+    </backup_log>
+    -->
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.

@@ -88,7 +88,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
 ## background_merges_mutations_scheduling_policy
 
@@ -217,23 +217,61 @@ Type: UInt32
 Default: 1024
 
 
+## index_mark_cache_policy
+
+Index mark cache policy name.
+
+Type: String
+
+Default: SLRU
+
 ## index_mark_cache_size
 
 Size of cache for index marks. Zero means disabled.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
 
 Type: UInt64
 
 Default: 0
 
+## index_mark_cache_size_ratio
+
+The size of the protected queue in the index mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
+
+## index_uncompressed_cache_policy
+
+Index uncompressed cache policy name.
+
+Type: String
+
+Default: SLRU
 
 ## index_uncompressed_cache_size
 
 Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 0
 
+## index_uncompressed_cache_size_ratio
+
+The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## io_thread_pool_queue_size
 
@@ -255,9 +293,21 @@ Default: SLRU
 
 Size of cache for marks (index of MergeTree family of tables).
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 5368709120
+
+## mark_cache_size_ratio
+
+The size of the protected queue in the mark cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## max_backup_bandwidth_for_server
 
@@ -288,7 +338,7 @@ Default: 1000
 Limit on total number of concurrently executed queries. Zero means Unlimited. Note that limits on insert and select queries, and on the maximum number of queries for users must also be considered.  See also max_concurrent_insert_queries, max_concurrent_select_queries, max_concurrent_queries_for_all_users. Zero means unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -300,7 +350,7 @@ Default: 0
 Limit on total number of concurrent insert queries. Zero means Unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -312,7 +362,7 @@ Default: 0
 Limit on total number of concurrently select queries. Zero means Unlimited.
 
 :::note
-These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 :::
 
 Type: UInt64
@@ -456,6 +506,10 @@ Sets the cache size (in bytes) for mapped files. This setting allows avoiding fr
 
 Note that the amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 1000
@@ -529,7 +583,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default: 
+Default:
 
 ## thread_pool_queue_size
 
@@ -586,7 +640,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default: 
+Default:
 
 ## uncompressed_cache_policy
 
@@ -605,9 +659,21 @@ There is one shared cache for the server. Memory is allocated on demand. The cac
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
 Type: UInt64
 
 Default: 0
+
+## uncompressed_cache_size_ratio
+
+The size of the protected queue in the uncompressed cache relative to the cache's total size.
+
+Type: Double
+
+Default: 0.5
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -1640,7 +1706,7 @@ Keys for server/client settings:
 - verificationMode (default: relaxed) – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
 - verificationDepth (default: 9) – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile (default: true) – Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).
-- cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`) - Supported OpenSSL encryptions.
+- cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`) - Supported OpenSSL encryptions.
 - cacheSessions (default: false) – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
 - sessionIdContext (default: `${application.name}`) – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
 - sessionCacheSize (default: [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)) – The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.
@@ -1882,7 +1948,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
@@ -2084,6 +2150,47 @@ The default server configuration file `config.xml` contains the following settin
 </crash_log>
 ```
 
+## backup_log {#server_configuration_parameters-backup_log}
+
+Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` is defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
+- `storage_policy` – Name of storage policy to use for the table (optional).
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md#settings) that control the behavior of the MergeTree (optional).
+
+**Example**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
+</clickhouse>
+```
+
 ## query_masking_rules {#query-masking-rules}
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
@@ -2129,6 +2236,8 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 **See Also**
 
 - [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [Cluster Discovery](../../operations/cluster-discovery.md)
+- [Replicated database engine](../../engines/database-engines/replicated.md)
 
 ## timezone {#server_configuration_parameters-timezone}
 
@@ -2297,7 +2406,7 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-    
+
 **Example configuration**
 
 ``` xml
