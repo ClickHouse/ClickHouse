@@ -66,6 +66,14 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (attemptedRetries >= maxRetries)
         return false;
 
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        if (query_context->isCurrentQueryKilled())
+        {
+            return false;
+        }
+    }
+
     return error.ShouldRetry();
 }
 
@@ -599,7 +607,20 @@ Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn r
                 last_exception = std::current_exception();
 
                 auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-                client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+
+                /// Check if query is canceled
+                if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
+                    break;
+
+                auto sleepMillis = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+
+                /// RetryRequestSleep is cancelable in case of shutdown
+                /// But it will sleep all the time in case of query cancellation
+                /// All that fuzz with storing http_client inside client_configuration
+                /// is for ability to use http_client for calling RetryRequestSleep
+                if (auto http_client = client_configuration.getClient())
+                    http_client->RetryRequestSleep(std::chrono::milliseconds(sleepMillis));
+
                 continue;
             }
         }
