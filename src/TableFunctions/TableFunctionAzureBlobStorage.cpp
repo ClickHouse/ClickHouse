@@ -269,9 +269,9 @@ ColumnsDescription TableFunctionAzureBlobStorage::getActualTableStructure(Contex
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns()
+bool TableFunctionAzureBlobStorage::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
 StoragePtr TableFunctionAzureBlobStorage::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const

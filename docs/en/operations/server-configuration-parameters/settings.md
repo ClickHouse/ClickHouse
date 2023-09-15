@@ -88,7 +88,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
 ## background_merges_mutations_scheduling_policy
 
@@ -583,7 +583,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default: 
+Default:
 
 ## thread_pool_queue_size
 
@@ -640,7 +640,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default: 
+Default:
 
 ## uncompressed_cache_policy
 
@@ -1948,7 +1948,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
@@ -2236,6 +2236,8 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 **See Also**
 
 - [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [Cluster Discovery](../../operations/cluster-discovery.md)
+- [Replicated database engine](../../engines/database-engines/replicated.md)
 
 ## timezone {#server_configuration_parameters-timezone}
 
@@ -2404,7 +2406,7 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-    
+
 **Example configuration**
 
 ``` xml
