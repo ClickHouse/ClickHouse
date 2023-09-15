@@ -1689,9 +1689,9 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
         if (shouldExecuteLogEntry(**it, (*it)->postpone_reason, merger_mutator, data, lock))
         {
             entry = *it;
-            /// We gave a chance for the entry, move it to the tail of the queue, after that
-            /// we move it to the end of the queue.
-            queue.splice(queue.end(), queue, it);
+            /// We gave a chance for the entry move it to the end of the queue.
+            if (!shouldRespectEntryOrder(*entry))
+                queue.splice(queue.end(), queue, it);
             break;
         }
         else
@@ -2675,6 +2675,14 @@ void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
         subscriber_callback(queue_size, nullptr);
+}
+
+bool ReplicatedMergeTreeQueue::shouldRespectEntryOrder(const LogEntry & entry) const
+{
+    /// If the geo replication is enabled and we're not allowed to fetch merged parts or covered parts, we should respect
+    /// the relative order of GET_PART and ATTACH_PART to MERGE_PART
+    return (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART) && storage.geo_replication_controller.isValid()
+        && (storage.getSettings()->fetch_covered_part_within_region_only || storage.getSettings()->fetch_covered_part_within_region_only);
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
