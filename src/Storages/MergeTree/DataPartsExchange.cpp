@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Interpreters/ReplicatedFetchesLog.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -610,7 +611,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
-            return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));
+            return std::make_pair(downloadPartToDisk(context, nullptr, part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));
         }
         catch (const Exception & e)
         {
@@ -688,7 +689,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         return part_storage.writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
     };
 
-    return std::make_pair(downloadPartToDisk(
+    return std::make_pair(downloadPartToDisk(context, entry,
         part_name, replica_path, to_detached, tmp_prefix,
         disk, false, *in, output_buffer_getter,
         projections, throttler, sync),std::move(temporary_directory_lock));
@@ -824,6 +825,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
+    ContextPtr context,
+    const ReplicatedFetchListEntry & entry,
     const String & part_name,
     const String & replica_path,
     bool to_detached,
@@ -893,6 +896,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         sync_guard = part_storage_for_loading->getDirectorySyncGuard();
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
+    ExecutionStatus status;
+    SCOPE_EXIT(
+        if (entry)
+            ReplicatedFetchesLog::addNewEntry(context, (*entry)->getInfo(), status);
+    );
 
     try
     {
@@ -924,6 +932,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             part_storage_for_loading->removeSharedRecursive(true);
             part_storage_for_loading->commitTransaction();
         }
+        status = ExecutionStatus::fromCurrentException();
         throw;
     }
 

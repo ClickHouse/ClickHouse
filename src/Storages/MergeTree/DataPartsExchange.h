@@ -8,6 +8,7 @@
 #include <IO/copyData.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 
 
 namespace zkutil
@@ -90,6 +91,7 @@ public:
 
 private:
     using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;
+    using ReplicatedFetchListEntry = std::unique_ptr<BackgroundProcessListEntry<DB::ReplicatedFetchListElement, DB::ReplicatedFetchInfo>>;
 
     void downloadBaseOrProjectionPartToDisk(
         const String & replica_path,
@@ -101,6 +103,8 @@ private:
         bool sync) const;
 
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
+        ContextPtr context,
+        const ReplicatedFetchListEntry & entry,
         const String & part_name,
         const String & replica_path,
         bool to_detached,
