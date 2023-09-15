@@ -162,9 +162,9 @@ bool StorageS3Queue::supportsSubcolumns() const
     return true;
 }
 
-bool StorageS3Queue::supportsSubsetOfColumns() const
+bool StorageS3Queue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
 }
 
 Pipe StorageS3Queue::read(
@@ -187,7 +187,7 @@ Pipe StorageS3Queue::read(
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(local_context, query_info.query);
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
 
@@ -363,7 +363,7 @@ void StorageS3Queue::streamToViews()
     // Create a stream for each consumer and join them in a union stream
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(s3queue_context, nullptr);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(getContext()), getVirtuals());
     const size_t max_download_threads = s3queue_context->getSettingsRef().max_download_threads;
 
     auto pipe = Pipe(std::make_shared<StorageS3QueueSource>(

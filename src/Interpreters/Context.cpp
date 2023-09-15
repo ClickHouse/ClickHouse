@@ -987,7 +987,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
 
     auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
     if (!file_cache)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", file_cache->getBasePath());
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", disk_ptr->getCacheName());
 
     LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
 
@@ -1297,10 +1297,12 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
-ClassifierPtr Context::getClassifier() const
+ClassifierPtr Context::getWorkloadClassifier() const
 {
     auto lock = getLock();
-    return getResourceManager()->acquire(getSettingsRef().workload);
+    if (!classifier)
+        classifier = getResourceManager()->acquire(getSettingsRef().workload);
+    return classifier;
 }
 
 
@@ -1687,9 +1689,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             {
                 /// For input function we should check if input format supports reading subset of columns.
                 if (table_function_ptr->getName() == "input")
-                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat(), shared_from_this());
                 else
-                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(shared_from_this());
             }
 
             if (use_columns_from_insert_query)
