@@ -22,4 +22,6 @@ struct CheckResult
     {}
 };
 
+using CheckResults = std::vector<CheckResult>;
+
 }

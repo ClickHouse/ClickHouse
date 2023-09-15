@@ -20,10 +20,13 @@
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
+#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+
 
 namespace ProfileEvents
 {
@@ -188,7 +191,7 @@ Client::Client(
         }
     }
 
-    LOG_TRACE(log, "API mode: {}", toString(api_mode));
+    LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -861,16 +864,30 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler)
+    const ThrottlerPtr & put_request_throttler,
+    const String & protocol)
 {
-    return PocoHTTPClientConfiguration(
+    auto context = Context::getGlobalContextInstance();
+    chassert(context);
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+
+    auto config = PocoHTTPClientConfiguration(
+        per_request_configuration,
         force_region,
         remote_host_filter,
         s3_max_redirects,
         enable_s3_requests_logging,
         for_disk_s3,
         get_request_throttler,
-        put_request_throttler);
+        put_request_throttler,
+        error_report);
+
+    config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
+
+    return config;
 }
 
 }

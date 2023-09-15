@@ -279,8 +279,9 @@ def test_cmd_conf(started_cluster):
         assert result["stale_log_gap"] == "10000"
         assert result["fresh_log_gap"] == "200"
 
-        assert result["max_requests_batch_size"] == "100"
+        assert result["max_requests_batch_size"] == "1000"
         assert result["max_requests_batch_bytes_size"] == "102400"
+        assert result["max_flush_batch_size"] == "1000"
         assert result["max_request_queue_size"] == "100000"
         assert result["max_requests_quick_batch_size"] == "100"
         assert result["quorum_reads"] == "false"
@@ -290,6 +291,7 @@ def test_cmd_conf(started_cluster):
         assert result["compress_snapshots_with_zstd_format"] == "true"
         assert result["configuration_change_tries_count"] == "20"
 
+        assert result["async_replication"] == "true"
     finally:
         close_keeper_socket(client)
 

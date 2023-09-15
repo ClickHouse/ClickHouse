@@ -503,15 +503,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
 void StorageLog::Mark::write(WriteBuffer & out) const
 {
-    writeIntBinary(rows, out);
-    writeIntBinary(offset, out);
+    writeBinaryLittleEndian(rows, out);
+    writeBinaryLittleEndian(offset, out);
 }
 
 
 void StorageLog::Mark::read(ReadBuffer & in)
 {
-    readIntBinary(rows, in);
-    readIntBinary(offset, in);
+    readBinaryLittleEndian(rows, in);
+    readBinaryLittleEndian(offset, in);
 }
 
 
@@ -777,7 +777,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     num_marks_saved = 0;
     total_rows = 0;
     total_bytes = 0;
-    getContext()->dropMMappedFileCache();
+    getContext()->clearMMappedFileCache();
 }
 
 
@@ -866,18 +866,15 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & /* query */, ContextPtr local_context)
+CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
 {
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
+
+    return file_checker.check();
 }
 
-CheckResult StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
-{
-    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks, has_nothing_to_do);
-}
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {

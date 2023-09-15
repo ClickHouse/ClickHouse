@@ -18,6 +18,7 @@ RUN apt-get update \
         python3-termcolor \
         unixodbc \
         pv \
+        jq \
         zstd \
     --yes --no-install-recommends
 

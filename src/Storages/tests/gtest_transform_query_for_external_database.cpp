@@ -127,7 +127,8 @@ static void checkOld(
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
-        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
+        state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::Regular, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -180,7 +181,8 @@ static void checkNewAnalyzer(
     query_info.table_expression = findTableExpression(query_node->getJoinTree(), "table");
 
     std::string transformed_query = transformQueryForExternalDatabase(
-        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes, "test", "table", state.context);
+        query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
+        LiteralEscapingStyle::Regular, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
