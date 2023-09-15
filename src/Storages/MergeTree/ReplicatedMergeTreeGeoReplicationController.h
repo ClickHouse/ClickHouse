@@ -47,15 +47,14 @@ class ReplicatedMergeTreeGeoReplicationController
 {
 public:
     explicit ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_);
-    ~ReplicatedMergeTreeGeoReplicationController() { exitLeaderElection(); }
+    ~ReplicatedMergeTreeGeoReplicationController() { resetPreviousTerm(); }
+
 
     bool isValid() const { return !region.empty(); }
 
     const String & getRegion() const { return region; }
 
-    void startLeaderElection();
-
-    std::optional<String> getCurrentLeader() const;
+    void start();
 
     bool isLeader() const;
 
@@ -65,10 +64,12 @@ private:
     zkutil::ZooKeeperPtr current_zookeeper;
     zkutil::LeaderElectionPtr leader_election;
     zkutil::EphemeralNodeHolderPtr leader_lease_holder;
+    zkutil::EphemeralNodeHolderPtr region_holder;
 
-    void onLeader();
-    void exitLeaderElection();
+    void resetPreviousTerm();
+    void createEphemeralRegionNode();
     void enterLeaderElection();
+    void onLeader();
 };
 
 }

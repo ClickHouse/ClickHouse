@@ -1,6 +1,7 @@
 #include "ReplicatedMergeTreeGeoReplicationController.h"
 #include <optional>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include "Common/ZooKeeper/ZooKeeper.h"
 
 namespace DB
 {
@@ -23,67 +24,35 @@ void ReplicatedMergeTreeGeoReplicationController::onLeader()
     leader_lease_holder = zkutil::EphemeralNodeHolder::create(lease_path, *current_zookeeper, storage.getReplicaName());
 }
 
-void ReplicatedMergeTreeGeoReplicationController::exitLeaderElection()
+void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
 {
-    try
-    {
-        leader_lease_holder.reset();
-    }
-    catch (...)
-    {
-        /// Zookeeper session may have been expired
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    try
-    {
-        leader_election.reset();
-    }
-    catch (...)
-    {
-        /// Zookeeper session may have been expired
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
+    region_holder.reset();
+    leader_lease_holder.reset();
+    leader_election.reset();
     current_zookeeper.reset();
 }
 
 void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
 {
-    try
-    {
-        current_zookeeper = storage.getZooKeeper();
-        auto election_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_election";
+    auto election_path = fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_election";
 
-        current_zookeeper->createAncestors(fs::path(election_path) / "leader_election-");
+    current_zookeeper->createAncestors(fs::path(election_path) / "leader_election-");
 
-        leader_election = std::make_shared<zkutil::LeaderElection>(
-            storage.getContext()->getSchedulePool(),
-            election_path,
-            *current_zookeeper,
-            [this]() { leader_lease_holder.reset(); },
-            [this]() { return onLeader(); },
-            "",
-            storage.getSettings()->geo_replication_control_leader_election_period_ms);
-    }
-    catch (...)
-    {
-        /// Zookeeper maybe not ready now
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    leader_election = std::make_shared<zkutil::LeaderElection>(
+        storage.getContext()->getSchedulePool(),
+        election_path,
+        *current_zookeeper,
+        [this]() { leader_lease_holder.reset(); },
+        [this]() { return onLeader(); },
+        "",
+        storage.getSettings()->geo_replication_control_leader_election_period_ms);
 }
 
-void ReplicatedMergeTreeGeoReplicationController::startLeaderElection()
+void ReplicatedMergeTreeGeoReplicationController::start()
 {
-    exitLeaderElection();
-    enterLeaderElection();
-}
+    resetPreviousTerm();
 
-std::optional<String> ReplicatedMergeTreeGeoReplicationController::getCurrentLeader() const
-{
-    if (!isValid())
-        return std::nullopt;
-
+    current_zookeeper = storage.getZooKeeper();
     if (!current_zookeeper)
         throw Exception(
             ErrorCodes::NO_ZOOKEEPER,
@@ -91,9 +60,8 @@ std::optional<String> ReplicatedMergeTreeGeoReplicationController::getCurrentLea
             storage.getReplicaName(),
             region);
 
-    String leader_replica;
-    current_zookeeper->tryGet(fs::path(storage.getZooKeeperPath()) / "regions" / region / "leader_lease", leader_replica);
-    return leader_replica;
+    createEphemeralRegionNode();
+    enterLeaderElection();
 }
 
 bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
@@ -101,6 +69,12 @@ bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
     if (!isValid())
         return true;
     return current_zookeeper && !current_zookeeper->expired() && leader_lease_holder;
+}
+
+void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
+{
+    auto region_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region";
+    region_holder = zkutil::EphemeralNodeHolder::create(region_path, *current_zookeeper, region);
 }
 
 }

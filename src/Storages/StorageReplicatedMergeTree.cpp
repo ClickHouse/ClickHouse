@@ -1959,13 +1959,13 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                         }
                         else
                         {
+                            entry.wait_for_fetching_from_same_region = -1;
                             LOG_INFO(
                                 log,
                                 "Entry {} waited for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
                                 entry.getDescriptionForLogs(format_version),
                                 total_waited_seconds,
                                 geo_replication_controller.getRegion());
-                                entry.wait_for_fetching_from_same_region = -1;
                         }
                     }
                     return false;
