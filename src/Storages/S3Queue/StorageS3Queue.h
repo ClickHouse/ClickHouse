@@ -125,7 +125,7 @@ private:
     };
     std::shared_ptr<TaskContext> task;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     const UInt32 zk_create_table_retries = 1000;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);

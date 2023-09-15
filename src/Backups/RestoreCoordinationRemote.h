@@ -46,6 +46,10 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
 
+    /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
+    /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
+    void generateUUIDForTable(ASTCreateQuery & create_query) override;
+
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
