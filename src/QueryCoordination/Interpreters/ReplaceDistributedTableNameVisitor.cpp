@@ -174,18 +174,23 @@ void ReplaceDistributedTableNameVisitor::enter(ASTIdentifier & ident, ScopePtr &
     {
         auto part_num = ident.name_parts.size();
 
-        String & table_name = ident.name_parts[part_num - 2];
-        std::optional<String> db_name;
+        String & distributed_table_name = ident.name_parts[part_num - 2];
+        std::optional<String> distributed_db_name;
 
         if (part_num == 3)             /// ident: db.tbl.col
-            db_name = ident.name_parts[part_num - 3];
+            distributed_db_name = ident.name_parts[part_num - 3];
         else  if (part_num == 2)       /// ident: tbl.col
-            db_name = scope->getDBName(table_name);
+            distributed_db_name = scope->getDBName(distributed_table_name);
 
-        if (db_name)
+        if (distributed_db_name)
         {
-            if (auto local_table = scope->getLocalTable({*db_name, table_name}))
-                ident = ASTIdentifier({local_table->database_name, local_table->table_name, ident.shortName()});
+            if (auto local_table = scope->getLocalTable({*distributed_db_name, distributed_table_name}))
+            {
+                if (local_table->database_name == distributed_db_name && part_num == 2)
+                    ident = ASTIdentifier({local_table->table_name, ident.shortName()});
+                else
+                    ident = ASTIdentifier({local_table->database_name, local_table->table_name, ident.shortName()});
+            }
         }
     }
 }

@@ -28,7 +28,6 @@ public:
     ActionNodeStatistics visit(const ActionsDAG::Node * node, ContextType & context) override;
 
     ActionNodeStatistics visitChildren(const ActionsDAG::Node * node, ContextType & context) override;
-    ActionNodeStatistics visitDefault(const ActionsDAG::Node * node, ContextType & context) override;
 
     ActionNodeStatistics visitInput(const ActionsDAG::Node * node, ContextType & context) override;
     ActionNodeStatistics visitColumn(const ActionsDAG::Node * node, ContextType & context) override;
@@ -46,23 +45,15 @@ public:
     ActionNodeStatistics visitGreaterOrEqual(const ActionsDAG::Node * node, ContextType & context) override;
     ActionNodeStatistics visitLess(const ActionsDAG::Node * node, ContextType & context) override;
     ActionNodeStatistics visitLessOrEqual(const ActionsDAG::Node * node, ContextType & context) override;
-    ActionNodeStatistics visitCaseWhen(const ActionsDAG::Node * node, ContextType & context) override;
     ActionNodeStatistics visitOtherFuncs(const ActionsDAG::Node * node, ContextType & context) override;
-
-    ActionNodeStatistics visitConstant(const ActionsDAG::Node * node, ContextType & context) override;
 
 private:
     Poco::Logger * log;
 };
 
-ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAGPtr actions_dag_ptr, ContextType & context)
+ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAGPtr /*actions_dag_ptr*/, ContextType & /*context*/)
 {
-    chassert(actions_dag_ptr != nullptr);
-    chassert(!actions_dag_ptr->getOutputs().empty());
-
-    /// The first output node is filter column.
-    auto filter_node = actions_dag_ptr->getOutputs().front();
-    return visit(filter_node, context);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented");
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
@@ -80,20 +71,6 @@ ActionNodeStatistics PredicateNodeVisitor::visitChildren(const ActionsDAG::Node 
 {
     chassert(node->children.size() == 1);
     return visit(node->children.front(), context); /// TODO clone
-}
-
-ActionNodeStatistics PredicateNodeVisitor::visitDefault(const ActionsDAG::Node * node, ContextType & context)
-{
-    ActionNodeStatistics node_stats;
-    auto input_nodes = getInputNodes(node);
-    node_stats.selectivity = 0.8; /// TODO add to settings
-
-    /// collect input node statistics
-    for (auto input_node : input_nodes)
-    {
-        node_stats.set(input_node, context[input_node].get(input_node)->clone());
-    }
-    return node_stats;
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitInput(const ActionsDAG::Node * node, ContextType & context)
@@ -231,30 +208,29 @@ ActionNodeStatistics PredicateNodeVisitor::visitLessOrEqual(const ActionsDAG::No
     return r;
 }
 
-ActionNodeStatistics PredicateNodeVisitor::visitCaseWhen(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
+ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Node * node, ContextType & context)
 {
-    ActionNodeStatistics r;
-    return r;
+    ActionNodeStatistics node_stats;
+    auto input_nodes = getInputNodes(node);
+    node_stats.selectivity = 0.8; /// TODO add to settings
+
+    /// collect input node statistics
+    for (auto input_node : input_nodes)
+    {
+        auto cloned = context[input_node].get(input_node)->clone();
+        node_stats.set(input_node, cloned);
+    }
+    return node_stats;
 }
 
-ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
+Statistics PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input)
 {
-    ActionNodeStatistics r;
-    return r;
-}
+    Statistics statistics;
 
-ActionNodeStatistics PredicateNodeVisitor::visitConstant(const ActionsDAG::Node * /*node*/, ContextType & /*context*/)
-{
-    ActionNodeStatistics r;
-    return r;
-}
-
-Statistics PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predicates, const Statistics & input)
-{
     auto & input_nodes = predicates->getInputs();
     PredicateNodeVisitor::VisitContext context;
 
-    /// init context
+    /// 1. init context
     for (auto input_node : input_nodes)
     {
         /// check input contains all columns in input_nodes
@@ -265,23 +241,25 @@ Statistics PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & p
         context.insert({input_node, {1.0, {}, node_stats_map}});
     }
 
-    /// 1. calculate filter node
+    /// 2. calculate filter node
     PredicateNodeVisitor visitor;
-    ActionNodeStatistics node_stats = visitor.visit(predicates, context);
+    const auto * filter_node = &predicates->findInOutputs(filter_node_name);
+    ActionNodeStatistics filter_node_stats = visitor.visit(filter_node, context);
+    statistics.addColumnStatistics(filter_node->result_name, std::make_shared<ColumnStatistics>(0.0, 1.0, 2.0, 1.0));
 
     auto & output_nodes = predicates->getOutputs();
-    chassert(output_nodes.size() > 1);
+    chassert(output_nodes.size() > 0);
 
-    /// 2. calculate other output nodes
-    for (size_t i = 1; i < output_nodes.size(); i++)
+    /// 3. calculate other output nodes
+    if (output_nodes.size() > 1)
     {
-        ExpressionStatsCalculator::calculateStatistics(output_nodes[i], context);
+        for (size_t i = 1; i < output_nodes.size(); i++)
+            ExpressionStatsCalculator::calculateStatistics(output_nodes[i], context);
     }
 
-    Statistics statistics;
-    statistics.setOutputRowSize(node_stats.selectivity * input.getOutputRowSize());
+    statistics.setOutputRowSize(filter_node_stats.selectivity * input.getOutputRowSize());
 
-    /// 3. adjust output node statistics
+    /// 4. adjust output node statistics
     for (size_t i = 1; i < output_nodes.size(); i++)
     {
         chassert(context.contains(output_nodes[i]));
@@ -290,11 +268,12 @@ Statistics PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & p
         auto output_node_stats = context[output_nodes[i]].get();
         chassert(output_node_stats);
 
-        /// Next step will not use alias as input node, but its child.
-        if (output_nodes[i]->type == ActionsDAG::ActionType::ALIAS)
-            statistics.addColumnStatistics(output_nodes[i]->children[0]->result_name, output_node_stats);
-        else
-            statistics.addColumnStatistics(output_nodes[i]->result_name, output_node_stats);
+//        /// Next step will not use alias as input node, but its child.
+//        if (output_nodes[i]->type == ActionsDAG::ActionType::ALIAS)
+//            statistics.addColumnStatistics(output_nodes[i]->children[0]->result_name, output_node_stats);
+//        else
+        statistics.addColumnStatistics(output_nodes[i]->result_name, output_node_stats);
+
         adjustActionNodeStats(statistics.getOutputRowSize(), output_node_stats);
     }
     return statistics;

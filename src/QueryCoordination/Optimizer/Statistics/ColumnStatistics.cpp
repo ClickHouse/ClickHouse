@@ -37,9 +37,19 @@ void ColumnStatistics::updateValues(OP_TYPE op_type, Float64 value)
     }
 }
 
-bool ColumnStatistics::isUnKnow() const
+bool ColumnStatistics::isUnKnown() const
 {
     return is_unknown;
+}
+
+Float64 ColumnStatistics::getNdv() const
+{
+    return ndv;
+}
+
+void ColumnStatistics::setNdv(Float64 new_value)
+{
+    ndv = new_value;
 }
 
 void testFload64()

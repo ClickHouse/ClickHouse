@@ -109,12 +109,12 @@ public:
         }
         else
         {
-            return visitDefault();
+            return visitDefault(step);
         }
     }
 
     /// default implement
-    virtual R visitDefault()
+    virtual R visitDefault(QueryPlanStepPtr /*step*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method not implemented.");
     }

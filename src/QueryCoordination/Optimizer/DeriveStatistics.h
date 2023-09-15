@@ -18,7 +18,7 @@ public:
 
     Statistics visit(QueryPlanStepPtr step) override;
 
-    Statistics visitDefault() override;
+    Statistics visitDefault(QueryPlanStepPtr step) override;
 
     Statistics visit(ReadFromMergeTree & step) override;
 

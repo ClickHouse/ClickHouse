@@ -368,6 +368,13 @@ std::string debugExplainStep(const IQueryPlanStep & step)
     return out.str();
 }
 
+String QueryPlan::dumpPlan(ExplainPlanOptions options)
+{
+    WriteBufferFromOwnString buffer;
+    explainPlan(buffer, options);
+    return buffer.str();
+}
+
 void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
 {
     checkInitialized();

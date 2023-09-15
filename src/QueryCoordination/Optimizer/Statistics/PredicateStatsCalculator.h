@@ -9,7 +9,7 @@ namespace DB
 class PredicateStatsCalculator
 {
 public:
-    static Statistics calculateStatistics(const ActionsDAGPtr & predicates, const Statistics & input);
+    static Statistics calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input);
 };
 
 }

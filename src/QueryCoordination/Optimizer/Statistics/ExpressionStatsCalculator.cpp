@@ -1,5 +1,4 @@
 #include <QueryCoordination/Optimizer/Statistics/Utils.h>
-#include <QueryCoordination/Optimizer/Statistics/ActionNodeVisitor.h>
 #include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
 #include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
 #include <Common/logger_useful.h>
@@ -152,17 +151,44 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
     auto & input_nodes = expressions->getInputs();
     ExpressionNodeVisitor::VisitContext context;
 
-    /// check input contains all columns in input_nodes
+    /// 1. init context
     for (auto input_node : input_nodes)
     {
-        chassert(input.getColumnStatisticsMap().contains(input_node->result_name));
+        /// check input contains all columns in input_nodes
+        chassert(input.getColumnStatistics(input_node->result_name));
+        InputNodeStatsMap node_stats_map;
+
+        node_stats_map.insert({input_node, input.getColumnStatistics(input_node->result_name)});
+        context.insert({input_node, {1.0, {}, node_stats_map}});
     }
 
-    ExpressionNodeVisitor visitor;
-    ActionNodeStatistics node_stats = visitor.visit(expressions, context);
+    auto & output_nodes = expressions->getOutputs();
+    chassert(output_nodes.size() > 0);
+
+    /// 2. calculate other output nodes
+    for (auto output_node : output_nodes)
+    {
+        ExpressionStatsCalculator::calculateStatistics(output_node, context);
+    }
 
     Statistics statistics;
     statistics.setOutputRowSize(input.getOutputRowSize());
+
+    /// 3. add output node statistics to result
+    for (auto output_node : output_nodes)
+    {
+        chassert(context.contains(output_node));
+        chassert(context[output_node].input_node_stats.size() == 1);  /// TODO support 'col1 + col2'
+
+        auto output_node_stats = context[output_node].get();
+        chassert(output_node_stats);
+
+//        /// Next step will not use alias as input node, but its child.
+//        if (output_node->type == ActionsDAG::ActionType::ALIAS)
+//            statistics.addColumnStatistics(output_node->children[0]->result_name, output_node_stats);
+//        else
+        statistics.addColumnStatistics(output_node->result_name, output_node_stats);
+    }
 
     return statistics;
 }

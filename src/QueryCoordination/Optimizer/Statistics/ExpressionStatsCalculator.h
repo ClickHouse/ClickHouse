@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
-#include <QueryCoordination/Optimizer/Statistics/ActionNodeStatistics.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
+#include <QueryCoordination/Optimizer/Statistics/ActionNodeStatistics.h>
+#include <QueryCoordination/Optimizer/Statistics/ActionNodeVisitor.h>
 
 namespace DB
 {

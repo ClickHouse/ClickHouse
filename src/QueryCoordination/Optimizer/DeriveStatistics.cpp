@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <QueryCoordination/Optimizer/DeriveStatistics.h>
 #include <QueryCoordination/Optimizer/Statistics/PredicateStatsCalculator.h>
+#include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
 
 
 namespace DB
@@ -12,9 +13,18 @@ Statistics DeriveStatistics::visit(QueryPlanStepPtr step)
     return Base::visit(step);
 }
 
-Statistics DeriveStatistics::visitDefault()
+Statistics DeriveStatistics::visitDefault(QueryPlanStepPtr step)
 {
     Float64 input_row_size = input_statistics.front().getOutputRowSize(); /// TODO source step
+
+    if (auto * source_step = typeid_cast<ISourceStep *>(step.get()))
+    {
+        source_step->getOutputStream().header
+    }
+    else
+    {
+
+    }
 
     Statistics statistics;
     statistics.setOutputRowSize(input_row_size);
@@ -48,45 +58,133 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         statistics.addColumnStatistics(column, ColumnStatistics::unknown());
     }
 
-    /// calculate for filters
-    for (auto & filter : step.getFilters())
+    /// For action_dags in prewhere do not contains all output nodes,
+    /// we should append other nodes to statistics
+    auto append_column_stats = [&step](Statistics & statistics_)
     {
-        statistics = PredicateStatsCalculator::calculateStatistics(filter, statistics);
+        for (auto & column : step.getOutputStream().header.getNames())
+        {
+            if (!statistics_.getColumnStatistics(column))
+                statistics_.addColumnStatistics(column, ColumnStatistics::unknown());
+        }
+    };
+
+    /// 1. calculate for prewhere filters
+    if (step.getPrewhereInfo())
+    {
+        auto prewhere_info = step.getPrewhereInfo();
+        if (prewhere_info->row_level_filter)
+        {
+            statistics = PredicateStatsCalculator::calculateStatistics(
+                prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics);
+
+            statistics.removeColumnStatistics(prewhere_info->row_level_column_name);
+            append_column_stats(statistics);
+        }
+
+        if (prewhere_info->prewhere_actions)
+        {
+            statistics = PredicateStatsCalculator::calculateStatistics(
+                prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics);
+
+            if (prewhere_info->remove_prewhere_column)
+                statistics.removeColumnStatistics(prewhere_info->prewhere_column_name);
+            append_column_stats(statistics);
+        }
+    }
+
+    /// 2. calculate for pushed down filters
+    for (size_t i=0; i< step.getFilters().size(); i++)
+    {
+        auto & predicate = step.getFilters()[i];
+        auto & predicate_node_name = step.getFilterNodes().nodes[i]->result_name;
+        statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics);
     }
 
     return statistics;
 }
 
-Statistics DeriveStatistics::visit(ExpressionStep & /*step*/)
+Statistics DeriveStatistics::visit(ExpressionStep & step)
 {
-    Float64 input_row_size = input_statistics.front().getOutputRowSize();
-
-    Statistics statistics;
-    statistics.setOutputRowSize(input_row_size);
+    chassert(input_statistics.size() == 1);
+    const auto & action_dag = step.getExpression();
+    Statistics statistics = ExpressionStatsCalculator::calculateStatistics(action_dag, input_statistics.front());
     return statistics;
 }
 
 Statistics DeriveStatistics::visit(FilterStep & step)
 {
     chassert(input_statistics.size() == 1);
-    Statistics statistics = PredicateStatsCalculator::calculateStatistics(step.getExpression(), input_statistics.front());
+    Statistics statistics
+        = PredicateStatsCalculator::calculateStatistics(step.getExpression(), step.getFilterColumnName(), input_statistics.front());
     return statistics;
 }
 
 Statistics DeriveStatistics::visit(AggregatingStep & step)
 {
-    Float64 input_row_size = input_statistics.front().getOutputRowSize();
-
     Statistics statistics;
 
-    if (step.isFinal())
+    Names input_names = step.getInputStreams().front().header.getNames();
+    Names output_names = step.getOutputStream().header.getNames();
+
+    const auto & input = input_statistics.front();
+    for (const auto & name : input_names)
+        chassert(input.getColumnStatistics(name));
+
+    /// 1. initialize statistics
+    chassert(input_names.size() == output_names.size());
+    for (size_t i = 0; i < input_names.size(); i++)
     {
-        statistics.setOutputRowSize(std::max(1.0, input_row_size / 4)); /// fake agg
+        /// The input name and output name are one-to-one correspondences.
+        chassert(input.getColumnStatistics(input_names[i]));
+
+        auto column_stats = input.getColumnStatistics(input_names[i]);
+        statistics.addColumnStatistics(output_names[i], column_stats->clone());
+    }
+
+    /// 2. calculate selectivity
+    const auto & aggregate_keys = step.getParams().keys;
+    if (statistics.hasUnknownColumn())
+    {
+        /// Estimate by multiplying some coefficient
+        Float64 selectivity = 0.2; /// TODO add to settings
+        for (size_t i = 1; i < aggregate_keys.size(); i++)
+        {
+            if (selectivity * 1.1 > 1.0)
+                break;
+            selectivity *= 1.1; /// TODO add to settings
+        }
+        statistics.setOutputRowSize(selectivity * input.getOutputRowSize());
     }
     else
     {
-        statistics.setOutputRowSize(std::max(1.0, input_row_size / 2));
+        /// Estimate by ndv
+        Float64 selectivity = 1.0;
+        for (size_t i = 0; i < aggregate_keys.size(); i++)
+        {
+            auto aggregate_key_stats = statistics.getColumnStatistics(aggregate_keys[i]);
+            chassert(aggregate_key_stats);
+
+            Float64 ndv = aggregate_key_stats->getNdv();
+            auto aggregate_key_selectivity = ndv / input.getOutputRowSize();
+
+            if (i == 0)
+                selectivity = aggregate_key_selectivity;
+            else
+            {
+                if (selectivity + aggregate_key_selectivity * selectivity >= 1.0)
+                    break;
+                selectivity += aggregate_key_selectivity * selectivity;
+            }
+        }
+        statistics.setOutputRowSize(selectivity * input.getOutputRowSize());
     }
+
+    /// 3. adjust ndv
+    statistics.adjustStatistics();
+
+    /// TODO cube, grouping set, total
+
     return statistics;
 }
 

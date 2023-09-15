@@ -91,6 +91,7 @@ public:
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
+    String dumpPlan(ExplainPlanOptions options);
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }

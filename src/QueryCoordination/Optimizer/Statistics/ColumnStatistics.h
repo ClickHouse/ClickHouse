@@ -65,15 +65,16 @@ public:
     static ColumnStatisticsPtr unknown();
     static ColumnStatisticsPtr create(Float64 value);
 
-    ColumnStatisticsPtr clone();
-
     /// Calculate selectivity
     Float64 calculateSelectivity(OP_TYPE, Float64 value);
-
     /// Adjust min_value or max_value by value.
     void updateValues(OP_TYPE, Float64 value);
 
-    bool isUnKnow() const;
+    ColumnStatisticsPtr clone();
+    bool isUnKnown() const;
+
+    Float64 getNdv() const;
+    void setNdv(Float64 new_value);
 private:
     Float64 min_value;
     Float64 max_value;

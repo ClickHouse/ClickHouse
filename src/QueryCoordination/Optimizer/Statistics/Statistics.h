@@ -25,9 +25,14 @@ public:
     }
 
     void addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats);
+    void removeColumnStatistics(const String & column_name);
+
     ColumnStatisticsPtr getColumnStatistics(const String & column_name) const;
+    bool hasUnknownColumn() const;
 
     const ColumnStatisticsMap & getColumnStatisticsMap() const;
+
+    void adjustStatistics();
 
 private:
     Float64 output_row_size;

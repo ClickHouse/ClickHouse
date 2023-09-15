@@ -29,8 +29,6 @@ enum class ActionFuncType
     FUNC_GREATER_OR_EQUAL,
     FUNC_LESS,
     FUNC_LESS_OR_EQUAL,
-    /// case when
-    FUNC_CASE_WHEN,
     /// others
     FUNC_OTHERS
 };
@@ -58,8 +56,6 @@ static ActionFuncType getActionFuncType(const String & name)
         return ActionFuncType::FUNC_LESS;
     else if (lower_case_name == NameLessOrEquals::name)
         return ActionFuncType::FUNC_LESS_OR_EQUAL;
-    else if (lower_case_name == "case_when") // TODO maybe not support
-        return ActionFuncType::FUNC_CASE_WHEN;
     else
         return ActionFuncType::FUNC_OTHERS;
 }
@@ -96,10 +92,7 @@ public:
     virtual R visitGreaterOrEqual(const ActionsDAG::Node * node, C & context);
     virtual R visitLess(const ActionsDAG::Node * node, C & context);
     virtual R visitLessOrEqual(const ActionsDAG::Node * node, C & context);
-    virtual R visitCaseWhen(const ActionsDAG::Node * node, C & context);
     virtual R visitOtherFuncs(const ActionsDAG::Node * node, C & context);
-
-    virtual R visitConstant(const ActionsDAG::Node * node, C & context);
 };
 
 template <class R, class C>
@@ -159,9 +152,6 @@ R ActionNodeVisitor<R, C>::visit(const ActionsDAG::Node * node, C & context)
                     break;
                 case ActionFuncType::FUNC_LESS_OR_EQUAL:
                     ret = visitLessOrEqual(node, context);
-                    break;
-                case ActionFuncType::FUNC_CASE_WHEN:
-                    ret = visitCaseWhen(node, context);
                     break;
                 case ActionFuncType::FUNC_OTHERS:
                     ret = visitOtherFuncs(node, context);
@@ -270,19 +260,7 @@ R ActionNodeVisitor<R, C>::visitLessOrEqual(const ActionsDAG::Node * node, C & c
 }
 
 template <class R, class C>
-R ActionNodeVisitor<R, C>::visitCaseWhen(const ActionsDAG::Node * node, C & context)
-{
-    return visitDefault(node, context);
-}
-
-template <class R, class C>
 R ActionNodeVisitor<R, C>::visitOtherFuncs(const ActionsDAG::Node * node, C & context)
-{
-    return visitDefault(node, context);
-}
-
-template <class R, class C>
-R ActionNodeVisitor<R, C>::visitConstant(const ActionsDAG::Node * node, C & context)
 {
     return visitDefault(node, context);
 }
