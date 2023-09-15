@@ -558,10 +558,10 @@ Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn r
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
-        const long max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
+        const Int64 max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
-        for (long attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
+        for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
             try
             {
