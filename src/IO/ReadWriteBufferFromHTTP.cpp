@@ -594,16 +594,14 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
     /// This ensures we've sent at least one HTTP request and populated saved_uri_redirect.
     chassert(file_info && file_info->seekable);
 
-    if (n == 0)
-        return 0;
-
     Poco::URI uri_ = saved_uri_redirect.value_or(uri);
     if (uri_.getPath().empty())
         uri_.setPath("/");
 
+    size_t initial_n = n;
     size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
-    for (size_t attempt = 0;; ++attempt)
+    for (size_t attempt = 0; n > 0; ++attempt)
     {
         bool last_attempt = attempt + 1 >= settings.http_max_tries;
 
@@ -616,6 +614,7 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
 
         Poco::Net::HTTPResponse response;
         std::istream * result_istr;
+        size_t bytes_copied = 0;
 
         try
         {
@@ -629,17 +628,14 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
                     "Expected 206 Partial Content, got {} when reading {} range [{}, {})",
                     toString(response.getStatus()), uri_.toString(), offset, offset + n);
 
-            bool cancelled;
-            size_t r = copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &cancelled);
-
-            if (!cancelled)
+            copyFromIStreamWithProgressCallback(*result_istr, to, n, progress_callback, &bytes_copied);
+            if (bytes_copied == n)
             {
+                result_istr->ignore(UINT64_MAX);
                 /// Response was fully read.
-                markSessionForReuse(sess);
+                markSessionForReuse(*sess);
                 ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPPreservedSessions);
             }
-
-            return r;
         }
         catch (const Poco::Exception & e)
         {
@@ -664,9 +660,15 @@ size_t ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::readBigAt(char * to, si
 
             sleepForMilliseconds(milliseconds_to_wait);
             milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
-            continue;
         }
+
+        /// Make sure retries don't re-read the bytes that we've already reported to progress_callback.
+        offset += bytes_copied;
+        to += bytes_copied;
+        n -= bytes_copied;
     }
+
+    return initial_n;
 }
 
 template <typename UpdatableSessionPtr>

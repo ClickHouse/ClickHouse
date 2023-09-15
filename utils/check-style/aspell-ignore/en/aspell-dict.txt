@@ -987,6 +987,7 @@ acos
 acosh
 activecube
 activerecord
+addDate
 addDays
 addHours
 addMinutes
@@ -1346,17 +1347,18 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltaLake
-deltaSum
-deltaSumTimestamp
 deltalake
+deltaLake
 deltasum
+deltaSum
 deltasumtimestamp
+deltaSumTimestamp
 demangle
 denormalize
 denormalized
 denormalizing
 denormals
+dequeued
 deserialization
 deserialized
 deserializing
@@ -1441,6 +1443,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fifo
 filesystem
 filesystemAvailable
 filesystemCapacity
@@ -1608,6 +1611,7 @@ incrementing
 indexHint
 indexOf
 infi
+inflight
 initcap
 initcapUTF
 initialQueryID
@@ -1999,6 +2003,7 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
+proleptic
 prometheus
 proto
 protobuf
@@ -2251,6 +2256,7 @@ structureToProtobufSchema
 studentTTest
 studentttest
 subBitmap
+subDate
 subarray
 subarrays
 subcolumn
@@ -2355,6 +2361,7 @@ toDateTimeOrZero
 toDayOfMonth
 toDayOfWeek
 toDayOfYear
+toDaysSinceYearZero
 toDecimal
 toDecimalString
 toFixedString
@@ -2538,6 +2545,7 @@ visitParamExtractRaw
 visitParamExtractString
 visitParamExtractUInt
 visitParamHas
+vruntime
 wchc
 wchs
 webpage
