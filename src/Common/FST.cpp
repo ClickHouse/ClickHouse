@@ -1,6 +1,7 @@
 #include "FST.h"
 #include <algorithm>
 #include <cassert>
+#include <iostream>
 #include <memory>
 #include <vector>
 #include <Common/Exception.h>

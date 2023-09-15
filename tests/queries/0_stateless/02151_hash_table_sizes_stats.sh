@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan
+# Tags: long
 
 # shellcheck disable=SC2154
+
+unset CLICKHOUSE_LOG_COMMENT
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,9 +19,9 @@ prepare_table() {
   table_name="t_hash_table_sizes_stats_$RANDOM$RANDOM"
   $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $table_name;"
   if [ -z "$1" ]; then
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE $table_name(number UInt64) Engine=MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE $table_name(number UInt64) Engine=MergeTree() ORDER BY tuple();"
   else
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE $table_name(number UInt64) Engine=MergeTree() ORDER BY $1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE $table_name(number UInt64) Engine=MergeTree() ORDER BY $1;"
   fi
   $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES $table_name;"
   for ((i = 1; i <= max_threads; i++)); do

@@ -5,11 +5,13 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Common/HashTable/HashMap.h>
+
 #include <initializer_list>
 #include <list>
+#include <map>
 #include <set>
 #include <vector>
-#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -95,7 +97,7 @@ public:
     Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
-    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
+    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap getNamesToIndexesMap() const;
 
     Serializations getSerializations() const;

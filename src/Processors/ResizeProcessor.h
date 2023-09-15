@@ -10,7 +10,7 @@ namespace DB
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
-  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
+  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever is is not full).
   * Doesn't do any heavy calculations.
   * Doesn't preserve an order of data.
   *

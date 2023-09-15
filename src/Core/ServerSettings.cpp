@@ -19,13 +19,10 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
         "background_buffer_flush_schedule_pool_size",
         "background_schedule_pool_size",
         "background_message_broker_schedule_pool_size",
-        "background_distributed_schedule_pool_size",
-
-        "max_remote_read_network_bandwidth_for_server",
-        "max_remote_write_network_bandwidth_for_server",
+        "background_distributed_schedule_pool_size"
     };
 
-    for (const auto & setting : all())
+    for (auto setting : all())
     {
         const auto & name = setting.getName();
         if (config.has(name))

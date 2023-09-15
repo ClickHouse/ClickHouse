@@ -16,10 +16,6 @@ from ci_config import CI_CONFIG
 DOWNLOAD_RETRIES_COUNT = 5
 
 
-class DownloadException(Exception):
-    pass
-
-
 def get_with_retries(
     url: str,
     retries: int = DOWNLOAD_RETRIES_COUNT,
@@ -153,9 +149,7 @@ def download_build_with_progress(url: str, path: Path) -> None:
             if os.path.exists(path):
                 os.remove(path)
     else:
-        raise DownloadException(
-            f"Cannot download dataset from {url}, all retries exceeded"
-        )
+        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
@@ -180,7 +174,7 @@ def download_builds_filter(
     print(urls)
 
     if not urls:
-        raise DownloadException("No build URLs found")
+        raise Exception("No build URLs found")
 
     download_builds(result_path, urls, filter_fn)
 

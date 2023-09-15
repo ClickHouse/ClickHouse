@@ -26,7 +26,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     size_t max_single_part_upload_size_,
     size_t buf_size_,
     const WriteSettings & write_settings_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0)
     , log(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"))
     , max_single_part_upload_size(max_single_part_upload_size_)
     , blob_path(blob_path_)
@@ -51,7 +51,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         if (i == num_tries - 1)
             throw;
 
-        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {} {}", i + 1, blob_path, e.what(), e.Message);
+        LOG_DEBUG(log, "Write at attempt {} for blob `{}` failed: {}", i + 1, blob_path, e.Message);
     };
 
     for (size_t i = 0; i < num_tries; ++i)
@@ -61,6 +61,10 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
             ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
             func();
             break;
+        }
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e, i);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {

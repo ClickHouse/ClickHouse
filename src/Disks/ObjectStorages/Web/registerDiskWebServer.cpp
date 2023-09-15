@@ -52,9 +52,8 @@ void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
             "DiskWebServer",
             metadata_storage,
             object_storage,
-            config,
-            config_prefix);
-
+            /* send_metadata */false,
+            /* threadpool_size */16);
         disk->startup(context, skip_access_check);
         return disk;
     };

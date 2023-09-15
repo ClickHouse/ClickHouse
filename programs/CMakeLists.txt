@@ -55,8 +55,6 @@ option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_KEEPER_CLIENT "ClickHouse Keeper Client" ${ENABLE_CLICKHOUSE_ALL})
-
 option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
@@ -171,13 +169,6 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
-    message(STATUS "ClickHouse keeper-client mode: ON")
-else()
-    message(STATUS "ClickHouse keeper-client mode: OFF")
-endif()
-
-
 if (ENABLE_CLICKHOUSE_DISKS)
     message(STATUS "Clickhouse disks mode: ON")
 else()
@@ -246,10 +237,6 @@ if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
 
-if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
-    add_subdirectory (keeper-client)
-endif()
-
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
 endif ()
@@ -313,9 +300,6 @@ if (ENABLE_CLICKHOUSE_KEEPER)
 endif()
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     clickhouse_target_link_split_lib(clickhouse keeper-converter)
-endif()
-if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
-    clickhouse_target_link_split_lib(clickhouse keeper-client)
 endif()
 if (ENABLE_CLICKHOUSE_INSTALL)
     clickhouse_target_link_split_lib(clickhouse install)
@@ -407,18 +391,6 @@ if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_custom_target (clickhouse-keeper-converter ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-converter DEPENDS clickhouse)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
-endif ()
-if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
-    if (NOT BUILD_STANDALONE_KEEPER)
-        add_custom_target (clickhouse-keeper-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-client DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-    # symlink to standalone keeper binary
-    else ()
-        add_custom_target (clickhouse-keeper-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse-keeper clickhouse-keeper-client DEPENDS clickhouse-keeper)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT clickhouse-keeper)
-    endif ()
-
-    list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-client)
 endif ()
 if (ENABLE_CLICKHOUSE_DISKS)
     add_custom_target (clickhouse-disks ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-disks DEPENDS clickhouse)

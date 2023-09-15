@@ -9,20 +9,20 @@ Counts the number of rows or not-NULL values.
 
 ClickHouse supports the following syntaxes for `count`:
 
-- `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
+-   `count(expr)` or `COUNT(DISTINCT expr)`.
+-   `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
 
 **Arguments**
 
 The function can take:
 
-- Zero parameters.
-- One [expression](../../../sql-reference/syntax.md#syntax-expressions).
+-   Zero parameters.
+-   One [expression](../../../sql-reference/syntax.md#syntax-expressions).
 
 **Returned value**
 
-- If the function is called without parameters it counts the number of rows.
-- If the [expression](../../../sql-reference/syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+-   If the function is called without parameters it counts the number of rows.
+-   If the [expression](../../../sql-reference/syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
 
 In both cases the type of the returned value is [UInt64](../../../sql-reference/data-types/int-uint.md).
 

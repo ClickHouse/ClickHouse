@@ -22,13 +22,9 @@ class GraphiteRollupSortedAlgorithm final : public IMergingAlgorithmWithSharedCh
 {
 public:
     GraphiteRollupSortedAlgorithm(
-        const Block & header,
-        size_t num_inputs,
-        SortDescription description_,
-        size_t max_block_size_rows_,
-        size_t max_block_size_bytes_,
-        Graphite::Params params_,
-        time_t time_of_merge_);
+        const Block & header, size_t num_inputs,
+        SortDescription description_, size_t max_block_size,
+        Graphite::Params params_, time_t time_of_merge_);
 
     Status merge() override;
 

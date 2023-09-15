@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -186,9 +185,21 @@ Pipe StorageSystemDataSkippingIndices::read(
     size_t /* num_streams */)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    NameSet names_set(column_names.begin(), column_names.end());
+
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block header;
+
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.contains(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample_block.getByPosition(i));
+        }
+    }
 
     MutableColumnPtr column = ColumnString::create();
 

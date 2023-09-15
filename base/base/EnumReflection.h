@@ -3,7 +3,6 @@
 #include <magic_enum.hpp>
 #include <fmt/format.h>
 
-
 template <class T> concept is_enum = std::is_enum_v<T>;
 
 namespace detail

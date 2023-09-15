@@ -16,20 +16,20 @@ It can be used to do a batch of Keeper path queries.
 
 Columns:
 
-- `name` (String) — The name of the node.
-- `path` (String) — The path to the node.
-- `value` (String) — Node value.
-- `dataLength` (Int32) — Size of the value.
-- `numChildren` (Int32) — Number of descendants.
-- `czxid` (Int64) — ID of the transaction that created the node.
-- `mzxid` (Int64) — ID of the transaction that last changed the node.
-- `pzxid` (Int64) — ID of the transaction that last deleted or added descendants.
-- `ctime` (DateTime) — Time of node creation.
-- `mtime` (DateTime) — Time of the last modification of the node.
-- `version` (Int32) — Node version: the number of times the node was changed.
-- `cversion` (Int32) — Number of added or removed descendants.
-- `aversion` (Int32) — Number of changes to the ACL.
-- `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
+-   `name` (String) — The name of the node.
+-   `path` (String) — The path to the node.
+-   `value` (String) — Node value.
+-   `dataLength` (Int32) — Size of the value.
+-   `numChildren` (Int32) — Number of descendants.
+-   `czxid` (Int64) — ID of the transaction that created the node.
+-   `mzxid` (Int64) — ID of the transaction that last changed the node.
+-   `pzxid` (Int64) — ID of the transaction that last deleted or added descendants.
+-   `ctime` (DateTime) — Time of node creation.
+-   `mtime` (DateTime) — Time of the last modification of the node.
+-   `version` (Int32) — Node version: the number of times the node was changed.
+-   `cversion` (Int32) — Number of added or removed descendants.
+-   `aversion` (Int32) — Number of changes to the ACL.
+-   `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
 
 Example:
 

@@ -1,5 +1,3 @@
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -63,15 +61,11 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tre
     visitor.visit(new_tree);
     const auto * query_node = new_tree->as<QueryNode>();
 
-    auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
-    const IAST * ast = query_node_ast.get();
+    const auto & query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
 
-    if (const auto * ast_subquery = ast->as<ASTSubquery>())
-        ast = ast_subquery->children.at(0).get();
-
-    const auto * union_ast = ast->as<ASTSelectWithUnionQuery>();
+    const auto * union_ast = query_node_ast->as<ASTSelectWithUnionQuery>();
     if (!union_ast)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST ({}) is not a ASTSelectWithUnionQuery", query_node_ast->getID());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST is not a ASTSelectWithUnionQuery");
 
     if (union_ast->list_of_selects->children.size() != 1)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST is not a single ASTSelectQuery, got {}", union_ast->list_of_selects->children.size());

@@ -59,28 +59,11 @@ bool ColumnDecimal<T>::hasEqualValues() const
 }
 
 template <is_decimal T>
-StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
     memcpy(pos, &data[n], sizeof(T));
-    return res;
+    return StringRef(pos, sizeof(T));
 }
 
 template <is_decimal T>
@@ -403,11 +386,11 @@ ColumnPtr ColumnDecimal<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [my_compressed = std::move(compressed), column_size = data_size, my_scale = this->scale]
+        [compressed = std::move(compressed), column_size = data_size, scale = this->scale]
         {
-            auto res = ColumnDecimal<T>::create(column_size, my_scale);
+            auto res = ColumnDecimal<T>::create(column_size, scale);
             ColumnCompressed::decompressBuffer(
-                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

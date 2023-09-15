@@ -8,7 +8,7 @@
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <base/StringRef.h>
-#include <Common/FunctionDocumentation.h>
+#include <Common/Documentation.h>
 
 namespace DB
 {
@@ -244,7 +244,7 @@ private:
 REGISTER_FUNCTION(RegexpExtract)
 {
     factory.registerFunction<FunctionRegexpExtract>(
-        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
+        Documentation{"Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::CaseInsensitive);
