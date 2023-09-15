@@ -1281,10 +1281,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
             else
             {
-                /// If all keys are constant and this is new key
-                /// we don't need to do anything and just skip the whole block.
-                if (all_keys_are_const)
-                    return;
                 aggregate_data = overflow_row;
             }
         }
