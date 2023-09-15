@@ -46,9 +46,9 @@ public:
     /// decide whether to deny or to accept that request.
     struct Extension
     {
-        std::shared_ptr<TaskIterator> task_iterator;
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
-        std::optional<IConnections::ReplicaInfo> replica_info;
+        std::shared_ptr<TaskIterator> task_iterator = nullptr;
+        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
+        std::optional<IConnections::ReplicaInfo> replica_info = {};
     };
 
     /// Takes already set connection.
@@ -186,6 +186,8 @@ public:
 
     bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
 
+    bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
+
 private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
@@ -283,7 +285,7 @@ private:
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
-    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
+    void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.

@@ -58,6 +58,11 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(configuration, *named_collection);
+        if (configuration.format == "auto")
+        {
+            String file_path = named_collection->getOrDefault<String>("filename", Poco::URI(named_collection->get<String>("url")).getPath());
+            configuration.format = FormatFactory::instance().getFormatFromFileName(file_path, true);
+        }
     }
     else
     {
@@ -152,7 +157,8 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         }
 
         /// This argument is always the first
-        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+        String url = checkAndGetLiteralArgument<String>(args[0], "url");
+        configuration.url = S3::URI(url);
 
         if (args_to_idx.contains("format"))
         {
@@ -176,12 +182,12 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
 
         configuration.auth_settings.no_sign_request = no_sign_request;
+
+        if (configuration.format == "auto")
+            configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(url).getPath(), true);
     }
 
     configuration.keys = {configuration.url.key};
-
-    if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(configuration.url.uri.getPath()).getPath(), true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -325,9 +331,9 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionS3::supportsReadingSubsetOfColumns()
+bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const

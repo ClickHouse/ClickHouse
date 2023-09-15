@@ -60,6 +60,12 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
+# async_replication setting doesn't exist on some older versions
+sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+  | sed "/<async_replication>1<\/async_replication>/d" \
+  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
 rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
@@ -79,6 +85,12 @@ configure
 # force_sync=false doesn't work correctly on some older versions
 sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
+  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+
+# async_replication setting doesn't exist on some older versions
+sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+  | sed "/<async_replication>1<\/async_replication>/d" \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
@@ -129,6 +141,7 @@ sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
   | sed "s|>1<|>0<|g" \
   > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
