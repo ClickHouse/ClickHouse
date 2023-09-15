@@ -757,7 +757,7 @@ Like function `YYYYMMDDToDate()` but produces a Date32.
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>(
         FunctionDocumentation{
             .description = R"(
-Converts a number containing the year, month and day number to a DateTime.
+Converts a number containing the year, month, day, hour, minute and second number to a DateTime.
 The output is undefined if the input does not encode a valid DateTime value.
 This functions is the opposite of function `toYYYYMMDD()`.
 )",

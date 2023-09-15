@@ -1387,11 +1387,11 @@ Like function `YYYYMMDDToDate()` but produces a [Date32](../../sql-reference/dat
 
 ## YYYYMMDDhhmmssToDateTime
 
-Converts a number containing the year, month and day number to a [DateTime](../../sql-reference/data-types/datetime.md).
+Converts a number containing the year, month, day, hours, minute and second number to a [DateTime](../../sql-reference/data-types/datetime.md).
 
 The output is undefined if the input does not encode a valid DateTime value.
 
-This functions is the opposite of function `toYYYYMMDD()`.
+This functions is the opposite of function `toYYYYMMDDhhmmss()`.
 
 **Syntax**
 
@@ -1419,7 +1419,7 @@ SELECT YYYYMMDDToDateTime(20230911131415);
 Result:
 
 ```response
-┌────toYYYYMMDDhhmmssToDateTime(20230911131415)─┐
+┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
 │                           2023-09-11 13:14:15 │
 └───────────────────────────────────────────────┘
 ```
