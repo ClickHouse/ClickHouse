@@ -272,16 +272,17 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
+    enriched_images = changed_images.copy()
     try:
         # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-        enrich_images(changed_images)
+        enrich_images(enriched_images)
     except CHException as ex:
         logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 
     with open(
         os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
     ) as ci:
-        json.dump(changed_images, ci)
+        json.dump(enriched_images, ci)
 
     pr_info = PRInfo()
     s3_helper = S3Helper()
