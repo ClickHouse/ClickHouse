@@ -51,8 +51,7 @@ class GraceHashJoin final : public IJoin
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
-    using TemporaryFileStreamImpl = ThreadSafeTemporaryFileStream;
-    using TemporaryFileStreamImplPtr = std::shared_ptr<TemporaryFileStreamImpl>;
+    using ThreadSafeTemporaryFileStreamPtr = std::shared_ptr<ThreadSafeTemporaryFileStream>;
 
     GraceHashJoin(
         ContextPtr context_, std::shared_ptr<TableJoin> table_join_,

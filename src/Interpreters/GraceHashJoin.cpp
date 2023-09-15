@@ -6,7 +6,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include "GraceHashJoin.h"
 
 #include <base/FnTraits.h>
 #include <fmt/format.h>
@@ -34,6 +33,52 @@ namespace ErrorCodes
 
 namespace
 {
+    class AccumulatedBlockReader
+    {
+    public:
+        explicit AccumulatedBlockReader(ThreadSafeTemporaryFileStream & reader_,
+                               size_t result_block_size_ = 0)
+            : reader(reader_)
+            , result_block_size(result_block_size_)
+        {
+            if (!reader.isWriteFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading not finished file");
+        }
+
+        Block read()
+        {
+
+            if (eof)
+                return {};
+
+            Blocks blocks;
+            size_t rows_read = 0;
+            do
+            {
+                Block block = reader.read();
+                rows_read += block.rows();
+                if (!block)
+                {
+                    eof = true;
+                    if (blocks.size() == 1)
+                        return blocks.front();
+                    return concatenateBlocks(blocks);
+                }
+                blocks.push_back(std::move(block));
+            } while (rows_read < result_block_size);
+
+            if (blocks.size() == 1)
+                return blocks.front();
+            return concatenateBlocks(blocks);
+        }
+
+    private:
+        ThreadSafeTemporaryFileStream & reader;
+
+        const size_t result_block_size;
+        bool eof = false;
+    };
+
     std::deque<size_t> generateRandomPermutation(size_t from, size_t to)
     {
         size_t size = to - from;
@@ -69,8 +114,7 @@ class GraceHashJoin::FileBucket : boost::noncopyable
 
 public:
     using BucketLock = std::unique_lock<std::mutex>;
-    using TemporaryFileStreamImpl = GraceHashJoin::TemporaryFileStreamImpl;
-    using TemporaryFileStreamImplPtr = GraceHashJoin::TemporaryFileStreamImplPtr;
+    using ThreadSafeTemporaryFileStreamPtr = std::shared_ptr<ThreadSafeTemporaryFileStream>;
 
     explicit FileBucket(
         size_t bucket_index_,
@@ -86,10 +130,10 @@ public:
         , log{log_}
     {}
 
-    static TemporaryFileStreamImplPtr
+    static ThreadSafeTemporaryFileStreamPtr
     createTemporaryFileStream(TemporaryDataOnDisk & tmp_data_disk, const Block & header, size_t max_block_size)
     {
-        return std::make_shared<TemporaryFileStreamImpl>(header, tmp_data_disk.createRawStream(), max_block_size);
+        return std::make_shared<ThreadSafeTemporaryFileStream>(header, tmp_data_disk.createRawStream(), max_block_size);
     }
 
     inline void addLeftBlock(Block && block)
@@ -119,7 +163,7 @@ public:
 
     bool empty() const { return is_empty.load(); }
 
-    void startJoining()
+    AccumulatedBlockReader startJoining()
     {
         LOG_TRACE(log, "Joining file bucket {}", idx);
         {
@@ -128,24 +172,19 @@ public:
 
             state = State::JOINING_BLOCKS;
         }
+        return AccumulatedBlockReader(*right_file);
     }
 
-    TemporaryFileStreamImplPtr getLeftTableReader()
+    ThreadSafeTemporaryFileStreamPtr getLeftTableReader()
     {
         ensureState(State::JOINING_BLOCKS);
         return left_file;
     }
 
-    TemporaryFileStreamImplPtr getRightTableReader()
-    {
-        ensureState(State::JOINING_BLOCKS);
-        return right_file;
-    }
-
     const size_t idx;
 
 private:
-    bool addBlockImpl(Block && block, TemporaryFileStreamImpl & writer)
+    bool addBlockImpl(Block && block, ThreadSafeTemporaryFileStream & writer)
     {
         ensureState(State::WRITING_BLOCKS);
 
@@ -170,8 +209,8 @@ private:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid state transition, expected {}, got {}", expected, state.load());
     }
 
-    TemporaryFileStreamImplPtr left_file;
-    TemporaryFileStreamImplPtr right_file;
+    ThreadSafeTemporaryFileStreamPtr left_file;
+    ThreadSafeTemporaryFileStreamPtr right_file;
 
     std::atomic_bool is_empty = true;
 
@@ -469,7 +508,6 @@ public:
         GraceHashJoin & grace_hash_join_)
         : grace_hash_join(grace_hash_join_)
         , left_reader(current_bucket_.getLeftTableReader())
-        , right_reader(current_bucket_.getRightTableReader())
     {
     }
 
@@ -478,12 +516,6 @@ public:
         Block block;
         do
         {
-            // Wait data of the right file finish loading into hash table.
-            // The data of right file is loaded currently.
-            if (!checkAndReadRight())
-            {
-                continue;
-            }
             // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
             // There is a lock inside left_reader.read() .
             block = left_reader->read();
@@ -509,40 +541,7 @@ public:
 
     GraceHashJoin & grace_hash_join;
 
-    GraceHashJoin::TemporaryFileStreamImplPtr left_reader;
-    GraceHashJoin::TemporaryFileStreamImplPtr right_reader;
-
-    // Whether current thread finish loading the right file.
-    std::atomic<bool> is_right_reader_finished = false;
-    // The number of threads in reading right file.
-    std::atomic<Int32> right_reader_count = 0;
-    // This lock is used to reduce cpu cost.
-    std::shared_mutex right_reader_finished_mutex;
-
-    bool checkAndReadRight()
-    {
-        if (is_right_reader_finished)
-        {
-            // There are still other threads in reading right file, if right_reader_count != 0.
-            if (right_reader_count == 0)
-                return true;
-            std::unique_lock lock(right_reader_finished_mutex);
-            assert(right_reader_count == 0);
-            return true;
-        }
-
-        // Allow multiple threads to read the right file.
-        std::shared_lock lock(right_reader_finished_mutex);
-        /// increase right_reader_count to indicate that there is a thread in reading right file.
-        right_reader_count.fetch_add(1);
-        while (Block block = right_reader->read())
-        {
-            grace_hash_join.addBlockToJoin(block, false);
-        }
-        is_right_reader_finished = true;
-        // decrease right_reader_count. If it's the last thread, the value is 1.
-        return right_reader_count.fetch_sub(1) == 1;
-    }
+    ThreadSafeTemporaryFileStreamPtr left_reader;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -573,8 +572,17 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
         }
 
         hash_join = makeInMemoryJoin(prev_keys_num);
-        current_bucket->startJoining();
-        // The right stream data is loaded inside DelayedBlocks before any left stream data is read.
+        auto right_reader = current_bucket->startJoining();
+        size_t num_rows = 0; /// count rows that were written and rehashed
+        while (Block block = right_reader.read())
+        {
+            num_rows += block.rows();
+            addBlockToJoinImpl(std::move(block));
+        }
+
+        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
+            bucket_idx, hash_join->getTotalRowCount(), num_rows);
+
         return std::make_unique<DelayedBlocks>(*current_bucket, *this);
     }
 
