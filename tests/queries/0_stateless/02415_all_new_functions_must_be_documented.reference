@@ -690,6 +690,7 @@ throwIf
 tid
 timeSlot
 timeSlots
+timestamp
 timezoneOf
 timezoneOffset
 toBool
