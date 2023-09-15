@@ -29,6 +29,10 @@ namespace DB
             }
         }
 
+        /// The code below is required to write valid output in case of exception during parallel parsing,
+        /// because we finish formatting and collecting threads in case of exception.
+        /// So, in case of exception after finalize we could still not output prefix/suffix or finalize underlying format.
+
         if (collected_prefix && collected_suffix && collected_finalize)
             return;
 

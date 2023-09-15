@@ -3,7 +3,6 @@
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
