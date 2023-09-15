@@ -83,7 +83,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                     uint8_t value = assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
                     if (!cleanup || !value)
                         insertRow();
-                    else if (cleanedup_rows_count != nullptr)
+                    else if (cleanup && cleanedup_rows_count != nullptr)
                         *cleanedup_rows_count += current_row_sources.size();
                 }
                 else
@@ -141,7 +141,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             uint8_t value = assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
             if (!cleanup || !value)
                 insertRow();
-            else if (cleanedup_rows_count != nullptr)
+            else if (cleanup && cleanedup_rows_count != nullptr)
                 *cleanedup_rows_count += current_row_sources.size();
         }
         else
