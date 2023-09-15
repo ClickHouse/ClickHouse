@@ -10,6 +10,7 @@
 #    include "ElementTypes.h"
 #    include <Common/PODArray_fwd.h>
 #    include <Common/PODArray.h>
+#    include <charconv>
 
 namespace DB
 {
@@ -18,33 +19,36 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-class SimdJSONStringFormatter
+/// Format elements of basic types into string.
+/// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
+/// add a implementation here.
+class SimdJSONBasicFormatter
 {
 public:
-    explicit SimdJSONStringFormatter(PaddedPODArray<UInt8> & buffer_) : buffer(buffer_) {}
+    explicit SimdJSONBasicFormatter(PaddedPODArray<UInt8> & buffer_) : buffer(buffer_) {}
     inline void comma() { oneChar(','); }
     /** Start an array, prints [ **/
-    inline void start_array() { oneChar('['); }
+    inline void startArray() { oneChar('['); }
     /** End an array, prints ] **/
-    inline void end_array() { oneChar(']'); }
+    inline void endArray() { oneChar(']'); }
     /** Start an array, prints { **/
-    inline void start_object() { oneChar('{'); }
+    inline void startObject() { oneChar('{'); }
     /** Start an array, prints } **/
-    inline void end_object() { oneChar('}'); }
+    inline void endObject() { oneChar('}'); }
     /** Prints a true **/
-    inline void true_atom()
+    inline void trueAtom()
     {
         const char * s = "true";
         buffer.insert(s, s + 4);
     }
     /** Prints a false **/
-    inline void false_atom()
+    inline void falseAtom()
     {
         const char * s = "false";
         buffer.insert(s, s + 5);
     }
     /** Prints a null **/
-    inline void null_atom()
+    inline void nullAtom()
     {
         const char * s = "null";
         buffer.insert(s, s + 4);
@@ -53,25 +57,22 @@ public:
     inline void number(int64_t x)
     {
         char number_buffer[24];
-        char * newp = simdjson::fast_itoa(number_buffer, x);
-        buffer.insert(number_buffer, newp);
+        auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
+        buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a number **/
     inline void number(uint64_t x)
     {
         char number_buffer[24];
-        char *newp = simdjson::fast_itoa(number_buffer, x);
-        buffer.insert(number_buffer, newp);
+        auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
+        buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a number **/
     inline void number(double x)
     {
         char number_buffer[24];
-        // Currently, passing the nullptr to the second argument is
-        // safe because our implementation does not check the second
-        // argument.
-        char * newp = simdjson::internal::to_chars(number_buffer, nullptr, x);
-        buffer.insert(number_buffer, newp);
+        auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
+        buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a key (string + colon) **/
     inline void key(std::string_view unescaped)
@@ -173,10 +174,13 @@ private:
 
 };
 
-class SimdJSONStringSerializer
+
+/// Format object elements into string, element, array, object, kv-pair.
+/// Similar to string_builder in simdjson.h.
+class SimdJSONElementFormatter
 {
 public:
-    explicit SimdJSONStringSerializer(PaddedPODArray<UInt8> & buffer_) : format(buffer_) {}
+    explicit SimdJSONElementFormatter(PaddedPODArray<UInt8> & buffer_) : format(buffer_) {}
     /** Append an element to the builder (to be printed) **/
     inline void append(simdjson::dom::element value)
     {
@@ -200,13 +204,13 @@ public:
             }
             case simdjson::dom::element_type::BOOL: {
                 if (value.get_bool().value_unsafe())
-                    format.true_atom();
+                    format.trueAtom();
                 else
-                    format.false_atom();
+                    format.falseAtom();
                 break;
             }
             case simdjson::dom::element_type::NULL_VALUE: {
-                format.null_atom();
+                format.nullAtom();
                 break;
             }
             case simdjson::dom::element_type::ARRAY: {
@@ -222,7 +226,7 @@ public:
     /** Append an array to the builder (to be printed) **/
     inline void append(simdjson::dom::array value)
     {
-        format.start_array();
+        format.startArray();
         auto iter = value.begin();
         auto end = value.end();
         if (iter != end)
@@ -234,12 +238,12 @@ public:
                 append(*iter);
             }
         }
-        format.end_array();
+        format.endArray();
     }
 
     inline void append(simdjson::dom::object value)
     {
-        format.start_object();
+        format.startObject();
         auto pair = value.begin();
         auto end = value.end();
         if (pair != end)
@@ -251,7 +255,7 @@ public:
                 append(*pair);
             }
         }
-        format.end_object();
+        format.endObject();
     }
 
     inline void append(simdjson::dom::key_value_pair kv)
@@ -260,7 +264,7 @@ public:
         append(kv.value);
     }
 private:
-    SimdJSONStringFormatter format;
+    SimdJSONBasicFormatter format;
 };
 
 /// This class can be used as an argument for the template class FunctionJSON.
