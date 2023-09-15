@@ -39,7 +39,9 @@ std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> pa
 
 std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
-    return ostr << "ParserTestCase input: " << test_case.input_text;
+    std::string input_text{test_case.input_text};
+    std::replace(input_text.begin(), input_text.end(),'\n', ' ');
+    return ostr << "ParserTestCase input: " << input_text;
 }
 
 class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<IParser>, ParserTestCase>>
