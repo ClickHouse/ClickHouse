@@ -1,0 +1,81 @@
+-- { echoOn }
+set max_block_size = 10, enable_unaligned_array_join = true;
+SELECT n, count(1) from (SELECT groupArray(number % 10) AS x FROM (SELECT * FROM numbers(1000000))) ARRAY JOIN x as n group by n;
+0	100000
+1	100000
+2	100000
+3	100000
+4	100000
+5	100000
+6	100000
+7	100000
+8	100000
+9	100000
+SELECT n % 10, count(1) from (SELECT range(0, number) as x FROM numbers(10000)) LEFT ARRAY JOIN x as n group by n % 10;
+0	5004001
+1	5003000
+2	5002000
+3	5001000
+4	5000000
+5	4999000
+6	4998000
+7	4997000
+8	4996000
+9	4995000
+SELECT (m+n) % 10, count(1) from (SELECT range(0, number+1) as x, range(0, number+2) as y FROM numbers(10000)) ARRAY JOIN x as m, y as n group by (m+n) % 10;
+0	10006000
+1	1000
+2	10004000
+3	1000
+4	10002000
+5	1000
+6	10000000
+7	1000
+8	9998000
+9	1000
+set max_block_size = 1000, enable_unaligned_array_join = true;
+SELECT n, count(1) from (SELECT groupArray(number % 10) AS x FROM (SELECT * FROM numbers(1000000))) ARRAY JOIN x as n group by n;
+0	100000
+1	100000
+2	100000
+3	100000
+4	100000
+5	100000
+6	100000
+7	100000
+8	100000
+9	100000
+SELECT n % 10, count(1) from (SELECT range(0, number) as x FROM numbers(10000)) LEFT ARRAY JOIN x as n group by n % 10;
+0	5004001
+1	5003000
+2	5002000
+3	5001000
+4	5000000
+5	4999000
+6	4998000
+7	4997000
+8	4996000
+9	4995000
+set max_block_size = 100000, enable_unaligned_array_join = true;
+SELECT n, count(1) from (SELECT groupArray(number % 10) AS x FROM (SELECT * FROM numbers(1000000))) ARRAY JOIN x as n group by n;
+0	100000
+1	100000
+2	100000
+3	100000
+4	100000
+5	100000
+6	100000
+7	100000
+8	100000
+9	100000
+SELECT n % 10, count(1) from (SELECT range(0, number) as x FROM numbers(10000)) LEFT ARRAY JOIN x as n group by n % 10;
+0	5004001
+1	5003000
+2	5002000
+3	5001000
+4	5000000
+5	4999000
+6	4998000
+7	4997000
+8	4996000
+9	4995000
