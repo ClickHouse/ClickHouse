@@ -109,45 +109,45 @@ public:
         }
         else
         {
-            return visitDefault(step);
+            return visitDefault(*step);
         }
     }
 
     /// default implement
-    virtual R visitDefault(QueryPlanStepPtr /*step*/)
+    virtual R visitDefault(IQueryPlanStep & /*step*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method not implemented.");
     }
 
-    virtual R visit(ReadFromMergeTree & /*step*/) { return visitDefault(); }
+    virtual R visit(ReadFromMergeTree & step) { return visitDefault(step); }
 
-    virtual R visit(AggregatingStep & /*step*/) { return visitDefault(); }
+    virtual R visit(AggregatingStep & step) { return visitDefault(step); }
 
-    virtual R visit(MergingAggregatedStep & /*step*/) { return visitDefault(); }
+    virtual R visit(MergingAggregatedStep & step) { return visitDefault(step); }
 
-    virtual R visit(ExpressionStep & /*step*/) { return visitDefault(); }
+    virtual R visit(ExpressionStep & step) { return visitDefault(step); }
 
-    virtual R visit(FilterStep & /*step*/) { return visitDefault(); }
+    virtual R visit(FilterStep & step) { return visitDefault(step); }
 
-    virtual R visit(SortingStep & /*step*/) { return visitDefault(); }
+    virtual R visit(SortingStep & step) { return visitDefault(step); }
 
-    virtual R visit(LimitStep & /*step*/) { return visitDefault(); }
+    virtual R visit(LimitStep & step) { return visitDefault(step); }
 
-    virtual R visit(JoinStep & /*step*/) { return visitDefault(); }
+    virtual R visit(JoinStep & step) { return visitDefault(step); }
 
-    virtual R visit(UnionStep & /*step*/) { return visitDefault(); }
+    virtual R visit(UnionStep & step) { return visitDefault(step); }
 
-    virtual R visit(ExchangeDataStep & /*step*/) { return visitDefault(); }
+    virtual R visit(ExchangeDataStep & step) { return visitDefault(step); }
 
-    virtual R visit(CreatingSetStep & /*step*/) { return visitDefault(); }
+    virtual R visit(CreatingSetStep & step) { return visitDefault(step); }
 
-    virtual R visit(ExtremesStep & /*step*/) { return visitDefault(); }
+    virtual R visit(ExtremesStep & step) { return visitDefault(step); }
 
-    virtual R visit(RollupStep & /*step*/) { return visitDefault(); }
+    virtual R visit(RollupStep & step) { return visitDefault(step); }
 
-    virtual R visit(CubeStep & /*step*/) { return visitDefault(); }
+    virtual R visit(CubeStep & step) { return visitDefault(step); }
 
-    virtual R visit(TotalsHavingStep & /*step*/) { return visitDefault(); }
+    virtual R visit(TotalsHavingStep & step) { return visitDefault(step); }
 };
 
 }

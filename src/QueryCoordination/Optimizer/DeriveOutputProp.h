@@ -15,7 +15,7 @@ public:
 
     PhysicalProperties visit(QueryPlanStepPtr step) override;
 
-    PhysicalProperties visitDefault() override;
+    PhysicalProperties visitDefault(IQueryPlanStep & step) override;
 
     PhysicalProperties visit(ReadFromMergeTree & step) override;
 

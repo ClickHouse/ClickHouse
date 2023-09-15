@@ -19,7 +19,7 @@ public:
 
     Float64 visit(QueryPlanStepPtr step) override;
 
-    Float64 visitDefault() override;
+    Float64 visitDefault(IQueryPlanStep & step) override;
 
     Float64 visit(ReadFromMergeTree & step) override;
 

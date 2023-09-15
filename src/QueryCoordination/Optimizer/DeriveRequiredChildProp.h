@@ -16,7 +16,7 @@ public:
 
     AlternativeChildrenProp visit(QueryPlanStepPtr step) override;
 
-    AlternativeChildrenProp visitDefault() override;
+    AlternativeChildrenProp visitDefault(IQueryPlanStep & step) override;
 
     AlternativeChildrenProp visit(ReadFromMergeTree & step) override;
 

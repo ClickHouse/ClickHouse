@@ -15,7 +15,7 @@ Float64 CostCalculator::visit(ReadFromMergeTree & /*step*/)
     return std::max(1.0, 3 * statistics.getOutputRowSize());
 }
 
-Float64 CostCalculator::visitDefault()
+Float64 CostCalculator::visitDefault(IQueryPlanStep & /*step*/)
 {
     return std::max(1.0, 3 * input_statistics.front().getOutputRowSize());
 }

@@ -77,6 +77,16 @@ public:
     void setNdv(Float64 new_value);
 private:
     Float64 min_value;
+
+public:
+    Float64 getMinValue() const;
+    void setMinValue(Float64 minValue);
+    Float64 getMaxValue() const;
+    void setMaxValue(Float64 maxValue);
+    Float64 getAvgRowSize() const;
+    void setAvgRowSize(Float64 avgRowSize);
+
+private:
     Float64 max_value;
 
     /// number of distinct value

@@ -14,15 +14,11 @@ using StatisticsList = std::vector<Statistics>;
 class Statistics
 {
 public:
-    void setOutputRowSize(Float64 row_size)
-    {
-        output_row_size = row_size;
-    }
+    static Statistics unknown(const Names & column_names);
+    Statistics clone() const;
 
-    Float64 getOutputRowSize() const
-    {
-        return output_row_size;
-    }
+    void setOutputRowSize(Float64 row_size);
+    Float64 getOutputRowSize() const;
 
     void addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats);
     void removeColumnStatistics(const String & column_name);
@@ -31,8 +27,9 @@ public:
     bool hasUnknownColumn() const;
 
     const ColumnStatisticsMap & getColumnStatisticsMap() const;
-
     void adjustStatistics();
+
+    void mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other);
 
 private:
     Float64 output_row_size;

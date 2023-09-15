@@ -1,16 +1,13 @@
-#include <Columns/ColumnConst.h>
 #include <QueryCoordination/Optimizer/Statistics/ActionNodeStatistics.h>
 #include <QueryCoordination/Optimizer/Statistics/ActionNodeVisitor.h>
 #include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
 #include <QueryCoordination/Optimizer/Statistics/PredicateStatsCalculator.h>
 #include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
-#include <Common/logger_useful.h>
 
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-extern const int LOGICAL_ERROR;
 }
 
 namespace DB
@@ -237,7 +234,7 @@ Statistics PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & p
         chassert(input.getColumnStatisticsMap().contains(input_node->result_name));
         InputNodeStatsMap node_stats_map;
 
-        node_stats_map.insert({input_node, input.getColumnStatistics(input_node->result_name)});
+        node_stats_map.insert({input_node, input.getColumnStatistics(input_node->result_name)->clone()});
         context.insert({input_node, {1.0, {}, node_stats_map}});
     }
 

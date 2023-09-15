@@ -17,7 +17,7 @@ PhysicalProperties DeriveOutputProp::visit(QueryPlanStepPtr step)
     return Base::visit(step);
 }
 
-PhysicalProperties DeriveOutputProp::visitDefault()
+PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & /*step*/)
 {
     return {.distribution = children_prop[0].distribution, .sort_description = children_prop[0].sort_description};
 }

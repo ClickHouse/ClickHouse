@@ -14,7 +14,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(QueryPlanStepPtr step)
     return Base::visit(step);
 }
 
-AlternativeChildrenProp DeriveRequiredChildProp::visitDefault()
+AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & /*step*/)
 {
     AlternativeChildrenProp res;
     std::vector<PhysicalProperties> required_child_prop;
