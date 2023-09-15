@@ -1044,9 +1044,9 @@ bool StorageS3::supportsSubcolumns() const
     return FormatFactory::instance().checkIfFormatSupportsSubcolumns(format_name);
 }
 
-bool StorageS3::supportsSubsetOfColumns(const ContextPtr & context) const
+bool StorageS3::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
 }
 
 Pipe StorageS3::read(
