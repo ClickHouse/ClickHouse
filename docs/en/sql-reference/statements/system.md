@@ -340,6 +340,11 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
  - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
+### SYNC DATABASE REPLICA
+
+Sync all tables from all [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated). This will make the ClickHouse synchronously fetch all table definition
+from zookeeper and applied locally.
+
 ### RESTART REPLICA
 
 Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
