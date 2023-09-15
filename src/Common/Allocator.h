@@ -144,27 +144,6 @@ public:
         return buf;
     }
 
-    /// Address passed to madvise is required to be aligned to the page boundary.
-    auto adjustToPageSize(void * buf, size_t len, size_t page_size)
-    {
-        const uintptr_t address_numeric = reinterpret_cast<uintptr_t>(buf);
-        const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
-        return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
-    }
-
-    void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
-    {
-        static const size_t page_size = ::getPageSize();
-        if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
-            return;
-
-        auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
-        if (auto res = ::madvise(buf, len, MADV_POPULATE_WRITE); res < 0)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                                "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
-                                errnoToString(res));
-    }
-
 protected:
     static constexpr size_t getStackThreshold()
     {
@@ -172,6 +151,25 @@ protected:
     }
 
     static constexpr bool clear_memory = clear_memory_;
+
+    void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
+    {
+#if defined(MADV_POPULATE_WRITE)
+        if (len_ < POPULATE_THRESHOLD)
+            return;
+
+        static const size_t page_size = ::getPageSize();
+        if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
+            return;
+
+        auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
+        if (auto res = ::madvise(buf, len, MADV_POPULATE_WRITE); res < 0)
+            LOG_TRACE(
+                LogFrequencyLimiter(&Poco::Logger::get("Allocator"), 1),
+                "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
+                errnoToString(res));
+#endif
+    }
 
 private:
     void * allocNoTrack(size_t size, size_t alignment)
@@ -224,25 +222,6 @@ private:
         const uintptr_t address_numeric = reinterpret_cast<uintptr_t>(buf);
         const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
         return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
-    }
-
-    void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
-    {
-#if defined(MADV_POPULATE_WRITE)
-        if (len_ < POPULATE_THRESHOLD)
-            return;
-
-        static const size_t page_size = ::getPageSize();
-        if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
-            return;
-
-        auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
-        if (auto res = ::madvise(buf, len, MADV_POPULATE_WRITE); res < 0)
-            LOG_TRACE(
-                LogFrequencyLimiter(&Poco::Logger::get("Allocator"), 1),
-                "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
-                errnoToString(res));
-#endif
     }
 };
 
