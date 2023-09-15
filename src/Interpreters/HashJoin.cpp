@@ -935,12 +935,23 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
         size_t old_size = stored_block.allocatedBytes();
         stored_block = stored_block.shrinkToFit();
         size_t new_size = stored_block.allocatedBytes();
-        chassert(old_size >= new_size);
-        data->blocks_allocated_size -= old_size - new_size;
+
+        if (old_size >= new_size)
+        {
+            if (data->blocks_allocated_size < old_size - new_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Blocks allocated size value is broken: "
+                    "blocks_allocated_size = {}, old_size = {}, new_size = {}",
+                    data->blocks_allocated_size, old_size, new_size);
+
+            data->blocks_allocated_size -= old_size - new_size;
+        }
+        else
+            /// Sometimes after clone resized block can be bigger than original
+            data->blocks_allocated_size += new_size - old_size;
     }
 
     auto new_total_bytes_in_join = getTotalByteCount();
-    chassert(new_total_bytes_in_join <= total_bytes_in_join);
 
     Int64 new_current_memory_usage = getCurrentQueryMemoryUsage();
 
