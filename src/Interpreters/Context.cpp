@@ -1967,6 +1967,15 @@ void Context::killCurrentQuery() const
         elem->cancelQuery(true);
 }
 
+bool Context::isCurrentQueryKilled() const
+{
+    if (auto elem = getProcessListElement())
+        return elem->isKilled();
+
+    return false;
+}
+
+
 String Context::getDefaultFormat() const
 {
     return default_format.empty() ? "TabSeparated" : default_format;
