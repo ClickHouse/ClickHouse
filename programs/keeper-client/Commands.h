@@ -51,7 +51,7 @@ class CDCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} [path] -- Change the working path (default `.`)"; }
+    String getHelpMessage() const override { return "{} [path] -- Changes the working path (default `.`)"; }
 };
 
 class SetCommand : public IKeeperClientCommand
@@ -64,7 +64,7 @@ class SetCommand : public IKeeperClientCommand
 
     String getHelpMessage() const override
     {
-        return "{} <path> <value> [version] -- Updates the node's value. Only update if version matches (default: -1)";
+        return "{} <path> <value> [version] -- Updates the node's value. Only updates if version matches (default: -1)";
     }
 };
 
@@ -164,7 +164,6 @@ class FindBigFamily : public IKeeperClientCommand
         return "{} [path] [n] -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)";
     }
 };
-
 
 class RMCommand : public IKeeperClientCommand
 {
