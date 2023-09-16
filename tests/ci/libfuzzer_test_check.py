@@ -3,7 +3,6 @@
 import argparse
 import logging
 import os
-import subprocess
 import sys
 import atexit
 import zipfile
@@ -99,30 +98,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
     parser.add_argument("kill_timeout", type=int)
-    parser.add_argument(
-        "--validate-bugfix",
-        action="store_true",
-        help="Check that added tests failed on latest stable",
-    )
-    parser.add_argument(
-        "--post-commit-status",
-        default="commit_status",
-        choices=["commit_status", "file"],
-        help="Where to public post commit status",
-    )
     return parser.parse_args()
-
-
-def docker_build_image(image_name: str, filepath: Path) -> DockerImage:
-    # context = filepath.parent
-    docker_image = DockerImage(image_name)
-    build_cmd = f"docker build --network=host -t {image_name} {filepath}"
-    logging.info("Will build image with cmd: '%s'", build_cmd)
-    subprocess.check_call(
-        build_cmd,
-        shell=True,
-    )
-    return docker_image
 
 
 def main():
@@ -130,28 +106,20 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
+    temp_path = Path(TEMP_PATH)
+    repo_path = Path(REPO_COPY)
     reports_path = REPORTS_PATH
 
     args = parse_args()
     check_name = args.check_name
     kill_timeout = args.kill_timeout
-    validate_bugfix_check = args.validate_bugfix
 
-    run_changed_tests = validate_bugfix_check
     gh = Github(get_best_robot_token(), per_page=100)
-
-    # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
-    pr_info = PRInfo(
-        need_changed_files=run_changed_tests, pr_event_from_api=validate_bugfix_check
-    )
-
+    pr_info = PRInfo()
     commit = get_commit(gh, pr_info.sha)
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
-    if not Path(temp_path).exists():
-        os.makedirs(temp_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
@@ -201,7 +169,7 @@ def main():
 
     run_command = get_run_command(
         fuzzers_path,
-        Path(repo_path),
+        repo_path,
         result_path,
         kill_timeout,
         additional_envs,
