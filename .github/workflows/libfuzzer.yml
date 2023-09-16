@@ -5,9 +5,9 @@ env:
   PYTHONUNBUFFERED: 1
 
 on: # yamllint disable-line rule:truthy
-#  schedule:
-#    - cron: '0 0 2 31 1' # never for now
-  workflow_dispatch:
+  #  schedule:
+  #    - cron: '0 0 2 31 1' # never for now
+  workflow_call:
 jobs:
   BuilderFuzzers:
     runs-on: [self-hosted, builder]
@@ -21,11 +21,19 @@ jobs:
           CACHES_PATH=${{runner.temp}}/../ccaches
           BUILD_NAME=fuzzers
           EOF
+      - name: Download changed images
+        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
           submodules: true
+          ref: ${{github.ref}}
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -57,6 +65,13 @@ jobs:
           REPO_COPY=${{runner.temp}}/libfuzzer/ClickHouse
           KILL_TIMEOUT=10800
           EOF
+      - name: Download changed images
+        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+        continue-on-error: true
+        uses: actions/download-artifact@v3
+        with:
+          name: changed_images
+          path: ${{ env.TEMP_PATH }}
       - name: Download json reports
         uses: actions/download-artifact@v3
         with:

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+import configparser
 import logging
 import os
 from pathlib import Path
 import subprocess
-from parse_options import parse_options
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 FUZZER_ARGS = os.getenv("FUZZER_ARGS", "")
@@ -23,25 +23,29 @@ def run_fuzzer(fuzzer: str):
 
     with Path(options_file) as path:
         if path.exists() and path.is_file():
-            custom_asan_options = parse_options(options_file, "asan")
-            if custom_asan_options:
+            parser = configparser.ConfigParser()
+            parser.read(path)
+
+            if parser.has_section("asan"):
                 os.environ[
                     "ASAN_OPTIONS"
-                ] = f"{os.environ['ASAN_OPTIONS']}:{custom_asan_options}"
+                ] = f"{os.environ['ASAN_OPTIONS']}:{':'.join('%s=%s' % (key, value) for key, value in parser['asan'].items())}"
 
-            custom_msan_options = parse_options(options_file, "msan")
-            if custom_msan_options:
+            if parser.has_section("msan"):
                 os.environ[
                     "MSAN_OPTIONS"
-                ] = f"{os.environ['MSAN_OPTIONS']}:{custom_msan_options}"
+                ] = f"{os.environ['MSAN_OPTIONS']}:{':'.join('%s=%s' % (key, value) for key, value in parser['msan'].items())}"
 
-            custom_ubsan_options = parse_options(options_file, "ubsan")
-            if custom_ubsan_options:
+            if parser.has_section("ubsan"):
                 os.environ[
                     "UBSAN_OPTIONS"
-                ] = f"{os.environ['UBSAN_OPTIONS']}:{custom_ubsan_options}"
+                ] = f"{os.environ['UBSAN_OPTIONS']}:{':'.join('%s=%s' % (key, value) for key, value in parser['ubsan'].items())}"
 
-            custom_libfuzzer_options = parse_options(options_file, "libfuzzer")
+            if parser.has_section("libfuzzer"):
+                custom_libfuzzer_options = " ".join(
+                    "-%s=%s" % (key, value)
+                    for key, value in parser["libfuzzer"].items()
+                )
 
     cmd_line = f"{DEBUGGER} ./{fuzzer} {FUZZER_ARGS} {corpus_dir}"
     if custom_libfuzzer_options:
