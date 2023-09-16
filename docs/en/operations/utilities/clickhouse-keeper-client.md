@@ -51,7 +51,7 @@ keeper foo bar
 -   `create <path> <value> [mode]` -- Creates new node with the set value
 -   `touch <path>` -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists
 -   `get <path>` -- Returns the node's value
--   `remove <path>` -- Remove the node
+-   `rm <path> [version]` -- Removes the node only if version matches (default: -1)
 -   `rmr <path>` -- Recursively deletes path. Confirmation required
 -   `flwc <command>` -- Executes four-letter-word command
 -   `help` -- Prints this message
