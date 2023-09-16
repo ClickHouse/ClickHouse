@@ -1,3 +1,6 @@
+#include "Interpreters/AsynchronousInsertQueue.h"
+#include "Interpreters/Context_fwd.h"
+#include "Interpreters/SquashingTransform.h"
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -98,6 +101,7 @@ namespace DB::ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -493,7 +497,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -806,35 +810,66 @@ void TCPHandler::skipData()
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
+void TCPHandler::startInsertQuery()
+{
+    /// Send ColumnsDescription for insertion table
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    {
+        const auto & table_id = query_context->getInsertionTable();
+        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        {
+            if (!table_id.empty())
+            {
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+            }
+        }
+    }
+
+    /// Send block to the client - table structure.
+    sendData(state.io.pipeline.getHeader());
+    sendLogs();
+}
+
+AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue)
+{
+    using PushResult = AsynchronousInsertQueue::PushResult;
+
+    startInsertQuery();
+    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
+
+    while (readDataNext())
+    {
+        auto result = squashing.add(std::move(state.block_for_insert));
+        if (result)
+        {
+            return PushResult
+            {
+                .status = PushResult::TOO_MUCH_DATA,
+                .insert_block = std::move(result),
+            };
+        }
+    }
+
+    auto result = squashing.add({});
+    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
+}
 
 void TCPHandler::processInsertQuery()
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
-    auto run_executor = [&](auto & executor)
+    auto run_executor = [&](auto & executor, Block processed_data)
     {
         /// Made above the rest of the lines,
-        /// so that in case of `writePrefix` function throws an exception,
+        /// so that in case of `start` function throws an exception,
         /// client receive exception before sending data.
         executor.start();
 
-        /// Send ColumnsDescription for insertion table
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
-        {
-            const auto & table_id = query_context->getInsertionTable();
-            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-            {
-                if (!table_id.empty())
-                {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
-                }
-            }
-        }
-
-        /// Send block to the client - table structure.
-        sendData(executor.getHeader());
-        sendLogs();
+        if (processed_data)
+            executor.push(std::move(processed_data));
+        else
+            startInsertQuery();
 
         while (readDataNext())
             executor.push(std::move(state.block_for_insert));
@@ -845,15 +880,47 @@ void TCPHandler::processInsertQuery()
             executor.finish();
     };
 
+    /// TODO: better check.
+
+    Block processed_block;
+    const auto & settings = query_context->getSettingsRef();
+    auto insert_queue = query_context->getAsynchronousInsertQueue();
+
+    if (insert_queue && settings.async_insert)
+    {
+        auto result = processAsyncInsertQuery(*insert_queue);
+        if (result.status == AsynchronousInsertQueue::PushResult::OK)
+        {
+            if (settings.wait_for_async_insert)
+            {
+                size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
+                auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
+
+                if (wait_status == std::future_status::deferred)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
+
+                if (wait_status == std::future_status::timeout)
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
+
+                result.future.get();
+            }
+
+            sendInsertProfileEvents();
+            return;
+        }
+
+        processed_block = result.insert_block;
+    }
+
     if (num_threads > 1)
     {
         PushingAsyncPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor);
+        run_executor(executor, std::move(processed_block));
     }
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor);
+        run_executor(executor, processed_block);
     }
 
     sendInsertProfileEvents();

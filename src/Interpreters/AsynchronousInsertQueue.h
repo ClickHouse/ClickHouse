@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Poco/Logger.h>
@@ -8,6 +9,7 @@
 #include <Common/ThreadPool.h>
 
 #include <future>
+#include <variant>
 
 namespace DB
 {
@@ -38,11 +40,23 @@ public:
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
         std::unique_ptr<ReadBuffer> insert_data_buffer;
+
+        /// TODO:
+        Block insert_block;
+    };
+
+    enum class DataKind
+    {
+        Parsed = 0,
+        Preprocessed = 1,
     };
 
     /// Force flush the whole queue.
     void flushAll();
-    PushResult push(ASTPtr query, ContextPtr query_context);
+
+    PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
+    PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
+
     size_t getPoolSize() const { return pool_size; }
 
 private:
@@ -64,18 +78,45 @@ private:
         UInt128 calculateHash() const;
     };
 
+    struct DataChunk : public std::variant<String, Block>
+    {
+        using std::variant<String, Block>::variant;
+
+        size_t byteSize() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.bytes();
+                else
+                    return arg.size();
+            }, *this);
+        }
+
+        DataKind getDataKind() const
+        {
+            if (std::holds_alternative<Block>(*this))
+                return DataKind::Preprocessed;
+            else
+                return DataKind::Parsed;
+        }
+
+        const String * asString() const { return std::get_if<String>(this); }
+        const Block * asBlock() const {return std::get_if<Block>(this); }
+    };
+
     struct InsertData
     {
         struct Entry
         {
         public:
-            String bytes;
+            DataChunk chunk;
             const String query_id;
             const String async_dedup_token;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
+            Entry(DataChunk && chunk_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -155,6 +196,9 @@ private:
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
     Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
+
+    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
+    void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);

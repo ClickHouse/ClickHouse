@@ -1,3 +1,5 @@
+#include "Parsers/ASTOptimizeQuery.h"
+#include "Parsers/IAST_fwd.h"
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -113,8 +115,8 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, const String & async_dedup_token_, MemoryTracker * user_memory_tracker_)
-    : bytes(std::move(bytes_))
+AsynchronousInsertQueue::InsertData::Entry::Entry(DataChunk && chunk_, String && query_id_, const String & async_dedup_token_, MemoryTracker * user_memory_tracker_)
+    : chunk(std::move(chunk_))
     , query_id(std::move(query_id_))
     , async_dedup_token(async_dedup_token_)
     , user_memory_tracker(user_memory_tracker_)
@@ -133,7 +135,7 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
         // Each entry in the list may correspond to a different user,
         // so we need to switch current thread's MemoryTracker.
         MemoryTrackerSwitcher switcher(user_memory_tracker);
-        bytes = "";
+        chunk = {};
     }
 
     if (exception_)
@@ -203,15 +205,12 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
     });
 }
 
-AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
+void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
 {
-    query = query->clone();
-    const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
 
-    InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
+    InterpreterInsertQuery interpreter(query, query_context, query_context->getSettingsRef().insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
     auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr());
 
@@ -222,6 +221,13 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     /// InterpreterInsertQuery::getTable() -> ITableFunction::execute().
     if (insert_query.table_id)
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
+}
+
+AsynchronousInsertQueue::PushResult
+AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
+{
+    query = query->clone();
+    preprocessInsertQuery(query, query_context);
 
     String bytes;
     {
@@ -232,7 +238,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         auto read_buf = getReadBufferFromASTInsertQuery(query);
 
         LimitReadBuffer limit_buf(
-            *read_buf, settings.async_insert_max_data_size,
+            *read_buf, query_context->getSettingsRef().async_insert_max_data_size,
             /*throw_exception=*/ false, /*exact_limit=*/ {});
 
         WriteBufferFromString write_buf(bytes);
@@ -257,10 +263,25 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         }
     }
 
-    if (auto quota = query_context->getQuota())
-        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
+    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
+}
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
+AsynchronousInsertQueue::PushResult
+AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context)
+{
+    query = query->clone();
+    preprocessInsertQuery(query, query_context);
+    return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
+}
+
+AsynchronousInsertQueue::PushResult
+AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context)
+{
+    if (auto quota = query_context->getQuota())
+        quota->used(QuotaType::WRITTEN_BYTES, chunk.byteSize());
+
+    const auto & settings = query_context->getSettingsRef();
+    auto entry = std::make_shared<InsertData::Entry>(std::move(chunk), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -282,7 +303,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
-        size_t entry_data_size = entry->bytes.size();
+        size_t entry_data_size = entry->chunk.byteSize();
 
         assert(data);
         data->size_in_bytes += entry_data_size;
@@ -575,19 +596,35 @@ try
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
+
     for (const auto & entry : data->entries)
     {
-        auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
-        auto bytes_size = entry->bytes.size();
-        size_t num_rows = executor.execute(*buffer);
+        size_t bytes_size = entry->chunk.byteSize();
+        size_t num_rows = 0;
+
+        if (const auto * bytes = entry->chunk.asString())
+        {
+            auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+            num_rows = executor.execute(*buffer);
+
+            /// Keep buffer, because it still can be used
+            /// in destructor, while resetting buffer at next iteration.
+            last_buffer = std::move(buffer);
+        }
+        else if (const auto * block = entry->chunk.asBlock())
+        {
+            Chunk chunk{block->getColumns(), block->rows()};
+            num_rows = executor.insertChunk(std::move(chunk));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type in variant for data chunk");
+        }
+
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
-
-        /// Keep buffer, because it still can be used
-        /// in destructor, while resetting buffer at next iteration.
-        last_buffer = std::move(buffer);
 
         if (insert_log)
         {
@@ -602,6 +639,7 @@ try
             elem.bytes = bytes_size;
             elem.rows = num_rows;
             elem.exception = current_exception;
+            elem.data_kind = entry->chunk.getDataKind();
             current_exception.clear();
 
             /// If there was a parsing error,

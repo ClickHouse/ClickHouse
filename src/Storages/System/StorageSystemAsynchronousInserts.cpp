@@ -82,7 +82,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
             for (const auto & entry : data->entries)
             {
                 arr_query_id.push_back(entry->query_id);
-                arr_bytes.push_back(entry->bytes.size());
+                arr_bytes.push_back(entry->chunk.byteSize());
             }
 
             res_columns[i++]->insert(arr_query_id);
