@@ -45,9 +45,9 @@ keeper foo bar
 ## Commands {#clickhouse-keeper-client-commands}
 
 -   `ls [path]` -- Lists the nodes for the given path (default: cwd)
--   `cd [path]` -- Change the working path (default `.`)
+-   `cd [path]` -- Changes the working path (default `.`)
 -   `exists <path>` -- Returns `1` if node exists, `0` otherwise
--   `set <path> <value> [version]` -- Updates the node's value. Only update if version matches (default: -1)
+-   `set <path> <value> [version]` -- Updates the node's value. Only updates if version matches (default: -1)
 -   `create <path> <value> [mode]` -- Creates new node with the set value
 -   `touch <path>` -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists
 -   `get <path>` -- Returns the node's value
