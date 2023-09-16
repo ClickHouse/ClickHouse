@@ -174,7 +174,7 @@ class RMCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Remove the node"; }
+    String getHelpMessage() const override { return "{} <path> [version] -- Removes the node only if version matches (default: -1)"; }
 };
 
 class RMRCommand : public IKeeperClientCommand

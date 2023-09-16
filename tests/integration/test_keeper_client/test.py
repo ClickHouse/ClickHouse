@@ -1,7 +1,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.keeper_utils import KeeperClient
+from helpers.keeper_utils import KeeperClient, KeeperException
 
 
 cluster = ClickHouseCluster(__file__)
@@ -129,3 +129,41 @@ def test_base_commands(client: KeeperClient):
 
 def test_four_letter_word_commands(client: KeeperClient):
     assert client.execute_query("ruok") == "imok"
+
+
+def test_rm_with_version(client: KeeperClient):
+    node_path = "/test_rm_with_version_node"
+    client.create(node_path, "value")
+    assert client.get(node_path) == "value"
+
+    with pytest.raises(KeeperException) as ex:
+        client.rm(node_path, 1)
+
+    ex_as_str = str(ex)
+    assert "Coordination error: Bad version" in ex_as_str
+    assert node_path in ex_as_str
+    assert client.get(node_path) == "value"
+
+    client.rm(node_path, 0)
+
+    with pytest.raises(KeeperException) as ex:
+        client.get(node_path)
+
+    ex_as_str = str(ex)
+    assert "node doesn't exist" in ex_as_str
+    assert node_path in ex_as_str
+
+
+def test_rm_without_version(client: KeeperClient):
+    node_path = "/test_rm_with_version_node"
+    client.create(node_path, "value")
+    assert client.get(node_path) == "value"
+
+    client.rm(node_path)
+
+    with pytest.raises(KeeperException) as ex:
+        client.get(node_path)
+
+    ex_as_str = str(ex)
+    assert "node doesn't exist" in ex_as_str
+    assert node_path in ex_as_str
