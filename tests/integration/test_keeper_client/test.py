@@ -167,3 +167,52 @@ def test_rm_without_version(client: KeeperClient):
     ex_as_str = str(ex)
     assert "node doesn't exist" in ex_as_str
     assert node_path in ex_as_str
+
+
+def test_set_with_version(client: KeeperClient):
+    node_path = "/test_set_with_version_node"
+    client.create(node_path, "value")
+    assert client.get(node_path) == "value"
+
+    client.set(node_path, "value1", 0)
+    assert client.get(node_path) == "value1"
+
+    with pytest.raises(KeeperException) as ex:
+        client.set(node_path, "value2", 2)
+
+    ex_as_str = str(ex)
+    assert "Coordination error: Bad version" in ex_as_str
+    assert node_path in ex_as_str
+    assert client.get(node_path) == "value1"
+
+    client.set(node_path, "value2", 1)
+    assert client.get(node_path) == "value2"
+
+
+def test_set_without_version(client: KeeperClient):
+    node_path = "/test_set_without_version_node"
+    client.create(node_path, "value")
+    assert client.get(node_path) == "value"
+
+    client.set(node_path, "value1")
+    assert client.get(node_path) == "value1"
+
+    client.set(node_path, "value2")
+    assert client.get(node_path) == "value2"
+
+
+def test_quoted_argument_parsing(client: KeeperClient):
+    node_path = "/test_quoted_argument_parsing_node"
+    client.create(node_path, "value")
+
+    client.execute_query(f"set '{node_path}' 'value1 with some whitespace'")
+    assert client.get(node_path) == "value1 with some whitespace"
+
+    client.execute_query(f"set '{node_path}' 'value2 with some whitespace' 1")
+    assert client.get(node_path) == "value2 with some whitespace"
+
+    client.execute_query(f"set '{node_path}' \"value3 with some whitespace\"")
+    assert client.get(node_path) == "value3 with some whitespace"
+
+    client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
+    assert client.get(node_path) == "value4 with some whitespace"
