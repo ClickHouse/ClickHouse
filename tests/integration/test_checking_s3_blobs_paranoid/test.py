@@ -499,7 +499,9 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
     )
 
     assert_eq_with_retry(
-        node, f"SELECT count() FROM system.processes WHERE query_id='{insert_query_id}'", "1"
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{insert_query_id}'",
+        "1",
     )
 
     assert_eq_with_retry(
@@ -514,7 +516,9 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
 
     # no more than 2 minutes
     assert_eq_with_retry(
-        node, f"SELECT count() FROM system.processes WHERE query_id='{insert_query_id}'", "0",
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{insert_query_id}'",
+        "0",
         retry_count=120,
         sleep_time=1,
     )
