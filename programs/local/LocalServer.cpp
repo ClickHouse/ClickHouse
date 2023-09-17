@@ -572,17 +572,14 @@ void LocalServer::processConfig()
     if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
+    if (config().has("multiquery"))
+        is_multiquery = true;
+
     delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
-    if (is_interactive && !delayed_interactive)
-    {
-        if (config().has("multiquery"))
-            is_multiquery = true;
-    }
-    else
+    if (!is_interactive || delayed_interactive)
     {
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
-        is_multiquery = true;
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
@@ -881,6 +878,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         config().setBool("only-system-tables", true);
+    if (options.count("database"))
+        config().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());
