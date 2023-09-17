@@ -276,8 +276,6 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
-You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
-
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
