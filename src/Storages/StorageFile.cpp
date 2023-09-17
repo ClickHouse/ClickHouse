@@ -871,17 +871,24 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(const std::vector<std::string> & table_paths_, const std::string & user_files_path, CommonArguments args)
+StorageFile::StorageFile(
+    const std::vector<std::string> & table_paths,
+    const std::vector<std::string> & paths_to_archive,
+    const std::string & user_files_path,
+    CommonArguments args)
     : StorageFile(args)
 {
-    paths = getPathsList(table_paths_, user_files_path, args.getContext(), total_bytes_to_read);
+    if (!paths_to_archive.empty())
+        archive_info = getArchiveInfo(paths_to_archive, table_paths, user_files_path, args.getContext(), total_bytes_to_read);
+    else
+        paths = getPathsList(table_paths, user_files_path, args.getContext(), total_bytes_to_read);
 
     is_db_table = false;
     is_path_with_globs = paths.size() > 1;
     if (!paths.empty())
         path_for_partitioned_write = paths.front();
     else
-        path_for_partitioned_write = table_paths_.empty() ? "" : table_paths_.front();
+        path_for_partitioned_write = table_paths.empty() ? "" : table_paths.front();
 
     file_renamer = FileRenamer(args.rename_after_processing);
 
@@ -2105,4 +2112,24 @@ StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
     return archive_info;
 }
 
+StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
+    const std::vector<std::string> & paths_to_archive,
+    const std::vector<std::string> & files_in_archive,
+    const std::string & user_files_path,
+    ContextPtr context,
+    size_t & total_bytes_to_read)
+{
+    ArchiveInfo archive_info;
+    archive_info.paths_to_archives = getPathsList(paths_to_archive, user_files_path, context, total_bytes_to_read);
+    if (!files_in_archive.empty())
+    {
+        std::unordered_set<std::string> paths_in_archive;
+        paths_in_archive.insert(files_in_archive.begin(), files_in_archive.end());
+
+        archive_info.filter
+            = [paths_in_archive](const std::string & p) mutable { return paths_in_archive.find(p) != paths_in_archive.end(); };
+    }
+
+    return archive_info;
+}
 }

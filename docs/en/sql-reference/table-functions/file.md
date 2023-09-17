@@ -18,7 +18,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 **Parameters**
 
-- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in read-only mode: `*`, `?`, `{abc,def}` , `['abc', 'def']` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings.
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Path to file support following globs in read-only mode: `*`, `?`, `{abc,def}` , and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings. Path to file can also be passed in the form of Array, such as `['abc.csv', 'def.csv']`.
 - `path_to_archive` - The relative path to zip/tar/7z archive. Path to archive support the same globs as `path`.
 - `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.

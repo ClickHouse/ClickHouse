@@ -12,6 +12,8 @@
 
 #include <Formats/FormatFactory.h>
 
+#include <filesystem>
+
 namespace DB
 {
 
@@ -31,9 +33,7 @@ void ITableFunctionFileLike::parseFirstArguments(const ASTPtr & arg, const Conte
         filenames.clear();
         auto file_paths = checkAndGetLiteralArgument<Array>(arg, "source");
         for (const auto & file_path : file_paths)
-        {
             filenames.push_back(file_path.safeGet<String>());
-        }
         return;
     }
 

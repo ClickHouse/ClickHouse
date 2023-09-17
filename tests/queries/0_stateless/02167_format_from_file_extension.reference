@@ -42,6 +42,18 @@
 1
 0
 1
+RowBinary	0
+RowBinary	1
+RowBinary	0
+RowBinary	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+MsgPack	0
+MsgPack	1
+MsgPack	0
+MsgPack	1
 0
 1
 0
@@ -86,51 +98,53 @@
 1
 0
 1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
-0
-1
+RowBinary	0
+RowBinary	1
+RowBinary	0
+RowBinary	1
+RowBinary	0
+RowBinary	1
+RowBinary	0
+RowBinary	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+MsgPack	0
+MsgPack	1
+MsgPack	0
+MsgPack	1
+MsgPack	0
+MsgPack	1
+MsgPack	0
+MsgPack	1
+RowBinary	0
+RowBinary	1
+RowBinary	0
+RowBinary	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+MsgPack	0
+MsgPack	1
+MsgPack	0
+MsgPack	1
+JSONEachRow	0
+JSONEachRow	1
+JSONEachRow	0
+JSONEachRow	1
+RowBinary	0
+RowBinary	1
+RowBinary	0
+RowBinary	1
+MsgPack	0
+MsgPack	1
+MsgPack	0
+MsgPack	1

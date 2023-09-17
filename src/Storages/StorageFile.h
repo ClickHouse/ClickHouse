@@ -34,7 +34,11 @@ public:
     StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
 
     /// From user's file
-    StorageFile(const std::vector<std::string> & table_paths_, const std::string & user_files_path, CommonArguments args);
+    StorageFile(
+        const std::vector<std::string> & table_paths,
+        const std::vector<std::string> & paths_to_archive,
+        const std::string & user_files_path,
+        CommonArguments args);
 
     /// From table in database
     StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
@@ -119,6 +123,13 @@ public:
     static ArchiveInfo getArchiveInfo(
         const std::string & path_to_archive,
         const std::string & file_in_archive,
+        const std::string & user_files_path,
+        ContextPtr context,
+        size_t & total_bytes_to_read);
+
+    static ArchiveInfo getArchiveInfo(
+        const std::vector<std::string> & paths_to_archive,
+        const std::vector<std::string> & files_in_archive,
         const std::string & user_files_path,
         ContextPtr context,
         size_t & total_bytes_to_read);
