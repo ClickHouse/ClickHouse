@@ -160,9 +160,9 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         const auto & column_array_offsets = column_array->getOffsets();
         const size_t num_rows = column_array_offsets.size();
 
-        /// The Annoy algorithm naturally assumes that the indexed vectors have dimension >= 0. This condition is violated if empty arrays
+        /// The Annoy algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
         /// are INSERTed into an Annoy-indexed column or if no value was specified at all in which case the arrays take on their default
-        /// value which is also an empty array.
+        /// value which is also empty.
         if (column_array->isDefaultAt(0))
             throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
