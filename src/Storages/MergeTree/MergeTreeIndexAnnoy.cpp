@@ -160,21 +160,23 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         const auto & column_array_offsets = column_array->getOffsets();
         const size_t num_rows = column_array_offsets.size();
 
-        /// The index dimension is inferred from the inserted arrays (array cardinality). If no value was specified in the INSERT statement
-        /// for the annoy-indexed column (i.e. default value), we have a problem. Reject such values.
-        if (column_array_offsets.empty() || column_array_offsets[0] == 0)
-            /// (The if condition is a bit weird but I have seen either with default values)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Tried to insert {} rows into Annoy index but there were no values to insert. Likely, the INSERT used default values - these are not supported for Annoy.", rows_read);
+        /// The Annoy algorithm naturally assumes that the indexed vectors have dimension >= 0. This condition is violated if empty arrays
+        /// are INSERTed into an Annoy-indexed column or if no value was specified at all in which case the arrays take on their default
+        /// value which is also an empty array.
+        if (column_array->isDefaultAt(0))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
         /// Check all sizes are the same
         size_t dimension = column_array_offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
             if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
-        /// Also check that previously inserted blocks have the same size as this block
+        /// Also check that previously inserted blocks have the same size as this block.
+        /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
+        /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
         if (index && index->getDimensions() != dimension)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
         if (!index)
             index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(dimension);
