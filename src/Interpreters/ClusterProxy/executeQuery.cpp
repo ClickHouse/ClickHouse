@@ -180,8 +180,10 @@ void executeQuery(
 
     ClusterPtr cluster = query_info.getCluster();
     const size_t shards = cluster->getShardCount();
-    for (const auto & shard_info : cluster->getShardsInfo())
+    for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {
+        const auto & shard_info = cluster->getShardsInfo()[i];
+
         ASTPtr query_ast_for_shard = query_ast->clone();
         if (sharding_key_expr && query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
         {
@@ -213,18 +215,8 @@ void executeQuery(
 
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
-        bool parallel_replicas_enabled = false;
-        if (shard_info.shard_num > 0 && shard_info.shard_num <= cluster->getShardsAddresses().size())
-        {
-            const auto & addresses = cluster->getShardsAddresses().at(shard_info.shard_num - 1);
-            parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
-        }
-        else
-        {
-            chassert(shard_info.shard_num > 0);
-
-            // FIXME or code: when can it happened (shard_num bigger than shard's addresses)? looks inconsistent
-        }
+        const auto & addresses = cluster->getShardsAddresses().at(i);
+        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
 
         stream_factory.createForShard(shard_info,
             query_ast_for_shard, main_table, table_func_ptr,
