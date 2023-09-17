@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/QuantileBFloat16Histogram.h>
 #include <AggregateFunctions/QuantileSketch.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
@@ -19,9 +18,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-template <typename Value, bool float_return> using FuncQuantileBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantileBFloat16, false, std::conditional_t<float_return, Float64, void>, false>;
-template <typename Value, bool float_return> using FuncQuantilesBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16, false, std::conditional_t<float_return, Float64, void>, true>;
 
 template <typename Value, bool float_return> using FuncQuantileSketch = AggregateFunctionQuantile<Value, QuantileSketch<Value>, NameQuantileSketch, false, std::conditional_t<float_return, Float64, void>, false>;
 template <typename Value, bool float_return> using FuncQuantilesSketch = AggregateFunctionQuantile<Value, QuantileSketch<Value>, NameQuantilesSketch, false, std::conditional_t<float_return, Float64, void>, true>;
@@ -48,18 +44,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
                     argument_type->getName(), name);
 }
 
-}
-
-void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory & factory)
-{
-    /// For aggregate functions returning array we cannot return NULL on empty set.
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
-
-    factory.registerFunction(NameQuantileBFloat16::name, createAggregateFunctionQuantile<FuncQuantileBFloat16>);
-    factory.registerFunction(NameQuantilesBFloat16::name, { createAggregateFunctionQuantile<FuncQuantilesBFloat16>, properties });
-
-    /// 'median' is an alias for 'quantile'
-    factory.registerAlias("medianBFloat16", NameQuantileBFloat16::name);
 }
 
 void registerAggregateFunctionsQuantileSketch(AggregateFunctionFactory & factory)

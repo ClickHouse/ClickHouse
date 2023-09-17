@@ -1,30 +1,33 @@
 #pragma once
 
+#include <base/types.h>
 #include <vector>
 #include <cmath>
 #include <limits>
 
 constexpr int CHUNK_SIZE = 128;
 
+namespace DB {
+
 class Store {
 public:
     virtual ~Store() = default;
-    double count = 0;
+    Float64 count = 0;
     int min_key = std::numeric_limits<int>::max();
     int max_key = std::numeric_limits<int>::min();
     int offset = 0;
-    std::vector<double> bins;
+    std::vector<Float64> bins;
 
     virtual void copy(Store* store) = 0;
     virtual int length() = 0;
-    virtual void add(int key, double weight = 1.0) = 0;
-    virtual int keyAtRank(double rank, bool lower = true) = 0;
+    virtual void add(int key, Float64 weight = 1.0) = 0;
+    virtual int keyAtRank(Float64 rank, bool lower = true) = 0;
     virtual void merge(Store* store) = 0;
 };
 
 class DenseStore : public Store {
 public:
-    DenseStore(int chunk_size = CHUNK_SIZE) : chunk_size(chunk_size) {}
+    DenseStore(int chunkSize = CHUNK_SIZE) : chunk_size(chunkSize) {}
 
     void copy(Store* other) override {
         bins = other->bins;
@@ -38,18 +41,18 @@ public:
         return static_cast<int>(bins.size());
     }
 
-    void add(int key, double weight = 1.0) override {
+    void add(int key, Float64 weight = 1.0) override {
         int idx = getIndex(key);
         bins[idx] += weight;
         count += weight;
     }
 
-    int keyAtRank(double rank, bool lower = true) override {
-        double running_ct = 0.0;
-        for (int i = 0; i < bins.size(); ++i) {
+    int keyAtRank(Float64 rank, bool lower = true) override {
+        Float64 running_ct = 0.0;
+        for (size_t i = 0; i < bins.size(); ++i) {  // Fixed sign comparison
             running_ct += bins[i];
             if ((lower && running_ct > rank) || (!lower && running_ct >= rank + 1)) {
-                return i + offset;
+                return static_cast<int>(i) + offset;
             }
         }
         return max_key;
@@ -86,7 +89,7 @@ private:
 
     int getNewLength(int new_min_key, int new_max_key) {
         int desired_length = new_max_key - new_min_key + 1;
-        return chunk_size * std::ceil(static_cast<double>(desired_length) / chunk_size);
+        return static_cast<int>(chunk_size * std::ceil(static_cast<Float64>(desired_length) / chunk_size)); // Fixed float conversion
     }
 
     void extendRange(int key, int second_key) {
@@ -94,7 +97,7 @@ private:
         int new_max_key = std::max({second_key, max_key});
 
         if (length() == 0) {
-            bins = std::vector<double>(getNewLength(new_min_key, new_max_key), 0.0);
+            bins = std::vector<Float64>(getNewLength(new_min_key, new_max_key), 0.0);
             offset = new_min_key;
             adjust(new_min_key, new_max_key);
         } else if (new_min_key >= min_key && new_max_key < offset + length()) {
@@ -129,3 +132,5 @@ private:
         shiftBins(offset + length() / 2 - middle_key);
     }
 };
+
+}

@@ -31,6 +31,7 @@ void registerAggregateFunctionsQuantileTimingWeighted(AggregateFunctionFactory &
 void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileTDigestWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory &);
+void registerAggregateFunctionsQuantileSketch(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
@@ -124,6 +125,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileTDigest(factory);
         registerAggregateFunctionsQuantileTDigestWeighted(factory);
         registerAggregateFunctionsQuantileBFloat16(factory);
+        registerAggregateFunctionsQuantileSketch(factory);
         registerAggregateFunctionsQuantileBFloat16Weighted(factory);
         registerAggregateFunctionsQuantileApprox(factory);
         registerAggregateFunctionsSequenceMatch(factory);
