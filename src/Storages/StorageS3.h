@@ -388,7 +388,7 @@ private:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool prefersLargeBlocks() const override;
 
