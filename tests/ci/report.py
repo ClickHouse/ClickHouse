@@ -110,8 +110,8 @@ p.links a {{ padding: 5px; margin: 3px; background: var(--menu-background); line
 p.links a:hover {{ background: var(--menu-hover-background); color: var(--menu-hover-color); }}
 th {{ cursor: pointer; }}
 tr:hover {{ filter: var(--tr-hover-filter); }}
-.failed {{ cursor: pointer; }}
-.failed-content {{ display: none; }}
+.expandable {{ cursor: pointer; }}
+.expandable-content {{ display: none; }}
 #fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
 
 .themes {{
@@ -148,7 +148,7 @@ FOOTER_HTML_TEMPLATE = """<img id="fish" src="https://presentations.clickhouse.c
     const getCellValue = (tr, idx) => {{
         var classes = tr.classList;
         var elem = tr;
-        if (classes.contains("failed-content") || classes.contains("failed-content.open"))
+        if (classes.contains("expandable-content") || classes.contains("expandable-content.open"))
             elem = tr.previousElementSibling;
         return elem.children[idx].innerText || elem.children[idx].textContent;
     }}
@@ -164,9 +164,9 @@ FOOTER_HTML_TEMPLATE = """<img id="fish" src="https://presentations.clickhouse.c
             .forEach(tr => table.appendChild(tr) );
     }})));
 
-    Array.from(document.getElementsByClassName("failed")).forEach(tr => tr.addEventListener('click', function() {{
+    Array.from(document.getElementsByClassName("expandable")).forEach(tr => tr.addEventListener('click', function() {{
         var content = this.nextElementSibling;
-        content.classList.toggle("failed-content");
+        content.classList.toggle("expandable-content");
     }}));
 
     let theme = 'dark';
@@ -248,6 +248,10 @@ class TestResult:
             file = Path(log_path)
             assert file.exists(), file
             self.log_files.append(file)
+
+    @staticmethod
+    def create_check_timeout_expired(timeout: float) -> "TestResult":
+        return TestResult("Check timeout expired", "FAIL", timeout)
 
 
 TestResults = List[TestResult]
@@ -546,9 +550,8 @@ def create_test_html_report(
                 has_log_urls = True
 
             row = []
-            has_error = test_result.status in ("FAIL", "NOT_FAILED")
-            if has_error and test_result.raw_logs is not None:
-                row.append('<tr class="failed">')
+            if test_result.raw_logs is not None:
+                row.append('<tr class="expandable">')
             else:
                 row.append("<tr>")
             row.append(f"<td>{test_result.name}</td>")
@@ -557,6 +560,7 @@ def create_test_html_report(
 
             # Allow to quickly scroll to the first failure.
             fail_id = ""
+            has_error = test_result.status in ("FAIL", "NOT_FAILED")
             if has_error:
                 num_fails = num_fails + 1
                 fail_id = f'id="fail{num_fails}" '
@@ -578,11 +582,11 @@ def create_test_html_report(
                 colspan += 1
 
             row.append("</tr>")
-            rows_part.append("".join(row))
+            rows_part.append("\n".join(row))
             if test_result.raw_logs is not None:
                 raw_logs = escape(test_result.raw_logs)
                 row_raw_logs = (
-                    '<tr class="failed-content">'
+                    '<tr class="expandable-content">'
                     f'<td colspan="{colspan}"><pre>{raw_logs}</pre></td>'
                     "</tr>"
                 )

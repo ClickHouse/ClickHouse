@@ -55,7 +55,6 @@
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentMetrics.h>
-#include <re2/re2.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -63,6 +62,15 @@
 #include <filesystem>
 
 #include <boost/algorithm/string.hpp>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace fs = std::filesystem;
 
@@ -983,9 +991,9 @@ std::shared_ptr<StorageS3Source::IIterator> StorageS3::createFileIterator(
     }
 }
 
-bool StorageS3::supportsSubsetOfColumns() const
+bool StorageS3::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
 }
 
 bool StorageS3::prefersLargeBlocks() const
@@ -1017,7 +1025,7 @@ Pipe StorageS3::read(
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
         query_configuration, distributed_processing, local_context, query_info.query, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
