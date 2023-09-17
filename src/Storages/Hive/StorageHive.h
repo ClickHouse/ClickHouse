@@ -65,7 +65,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns() const;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
