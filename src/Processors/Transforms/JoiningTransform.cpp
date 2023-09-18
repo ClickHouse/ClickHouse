@@ -18,7 +18,14 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
     join->checkTypesOfKeys(header);
     join->initialize(header);
     ExtraBlockPtr tmp;
-    join->joinBlock(header, tmp);
+    if (join->supportStreamJoin())
+    {
+        join->joinBlockWithStreamOutput(header, tmp);
+    }
+    else
+    {
+        join->joinBlock(header, tmp);
+    }
     LOG_DEBUG(&Poco::Logger::get("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
@@ -207,9 +214,17 @@ void JoiningTransform::transform(Chunk & chunk)
     {
         chunk.setColumns(block.getColumns(), num_rows);
     }
+}
+
+void JoiningTransform::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed_block)
+{
+    if (join->supportStreamJoin())
+    {
+        blocks = join->joinBlockWithStreamOutput(block, not_processed_block);
+    }
     else
     {
-        blocks = join->getStreamBlocks();
+        join->joinBlock(block, not_processed_block);
     }
 }
 
@@ -223,7 +238,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
         if (res)
-            join->joinBlock(res, not_processed);
+            joinBlock(res, not_processed);
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
@@ -231,12 +246,12 @@ Block JoiningTransform::readExecute(Chunk & chunk)
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
         not_processed.reset();
-        join->joinBlock(res, not_processed);
+        joinBlock(res, not_processed);
     }
     else
     {
         res = std::move(not_processed->block);
-        join->joinBlock(res, not_processed);
+        joinBlock(res, not_processed);
     }
 
     return res;

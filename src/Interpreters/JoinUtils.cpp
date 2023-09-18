@@ -856,7 +856,7 @@ StreamReplicateBlocks::StreamReplicateBlocks(const Block & block_, std::unique_p
 
 Block StreamReplicateBlocks::nextImpl()
 {
-    if (!offsets_to_replicate || need_replicate_pos.empty())
+    if (need_replicate_pos.empty() || !offsets_to_replicate)
     {
         finished.store(true);
         return block;

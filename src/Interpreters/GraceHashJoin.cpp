@@ -425,7 +425,7 @@ void GraceHashJoin::initialize(const Block & sample_block)
     left_sample_block = sample_block.cloneEmpty();
     output_sample_block = left_sample_block.cloneEmpty();
     ExtraBlockPtr not_processed;
-    hash_join->joinBlock(output_sample_block, not_processed);
+    hash_join->joinBlockWithStreamOutput(output_sample_block, not_processed);
     initBuckets();
 }
 
@@ -433,7 +433,7 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 {
     if (block.rows() == 0)
     {
-        hash_join->joinBlock(block, not_processed);
+        hash_join->joinBlockWithStreamOutput(block, not_processed);
         return;
     }
 
@@ -446,7 +446,7 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
 
     block = std::move(blocks[current_bucket->idx]);
 
-    hash_join->joinBlock(block, not_processed);
+    auto stream_output = hash_join->joinBlockWithStreamOutput(block, not_processed);
     if (not_processed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
 
@@ -528,50 +528,51 @@ public:
 
     Block nextImpl() override
     {
-        Block block;
-        size_t num_buckets = buckets.size();
-        size_t current_idx = buckets[current_bucket]->idx;
-
-        do
+        if (!tmp_result || tmp_result->isFinished())
         {
-            // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
-            // There is a lock inside left_reader.read() .
-            block = left_reader.read();
-            if (!block)
+            Block block;
+            size_t num_buckets = buckets.size();
+            size_t current_idx = buckets[current_bucket]->idx;
+
+            do
             {
-                return {};
-            }
+                    // One DelayedBlocks is shared among multiple DelayedJoinedBlocksWorkerTransform.
+                    // There is a lock inside left_reader.read() .
+                    block = left_reader.read();
+                    if (!block)
+                        return {};
 
-            // block comes from left_reader, need to join with right table to get the result.
-            Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
-            block = std::move(blocks[current_idx]);
+                    // block comes from left_reader, need to join with right table to get the result.
+                    Blocks blocks = JoinCommon::scatterBlockByHash(left_key_names, block, num_buckets);
+                    block = std::move(blocks[current_idx]);
 
-            /*
+                    /*
              * We need to filter out blocks that were written to the current bucket `B_{n}`
              * but then virtually moved to another bucket `B_{n+i}` on rehash.
              * Bucket `B_{n+i}` is waiting for the buckets with smaller index to be processed,
              * and rows can be moved only forward (because we increase hash modulo twice on each rehash),
              * so it is safe to add blocks.
              */
-            for (size_t bucket_idx = 0; bucket_idx < num_buckets; ++bucket_idx)
-            {
-                if (blocks[bucket_idx].rows() == 0)
-                    continue;
+                    for (size_t bucket_idx = 0; bucket_idx < num_buckets; ++bucket_idx)
+                    {
+                        if (blocks[bucket_idx].rows() == 0)
+                            continue;
 
-                if (bucket_idx == current_idx) // Rows that are still in our bucket
-                    continue;
+                        if (bucket_idx == current_idx) // Rows that are still in our bucket
+                            continue;
 
-                buckets[bucket_idx]->addLeftBlock(blocks[bucket_idx]);
-            }
-        } while (block.rows() == 0);
+                        buckets[bucket_idx]->addLeftBlock(blocks[bucket_idx]);
+                    }
+            } while (block.rows() == 0);
 
-        ExtraBlockPtr not_processed;
-        hash_join->joinBlock(block, not_processed);
+            ExtraBlockPtr not_processed;
 
-        if (not_processed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported hash join type");
+            tmp_result = hash_join->joinBlockWithStreamOutput(block, not_processed);
 
-        return block;
+            if (not_processed)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported hash join type");
+        }
+        return tmp_result->next();
     }
 
     size_t current_bucket;
@@ -579,6 +580,7 @@ public:
     InMemoryJoinPtr hash_join;
 
     AccumulatedBlockReader left_reader;
+    IBlocksStreamPtr tmp_result;
 
     Names left_key_names;
     Names right_key_names;

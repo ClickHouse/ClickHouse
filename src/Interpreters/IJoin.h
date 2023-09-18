@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
@@ -67,6 +73,10 @@ public:
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
+    virtual IBlocksStreamPtr joinBlockWithStreamOutput(Block & /* block */, std::shared_ptr<ExtraBlock> & /* not_processed */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method joinBlockWithStreamOutput is not supported for {}", getName());
+    }
 
     /** Set/Get totals for right table
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
@@ -98,7 +108,6 @@ public:
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
     virtual bool supportStreamJoin() const { return false; }
-    virtual IBlocksStreamPtr getStreamBlocks() { return nullptr; }
 
 private:
     Block totals;

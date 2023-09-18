@@ -1600,11 +1600,11 @@ ColumnWithTypeAndName copyLeftKeyColumnToRight(
 } /// nameless
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-void HashJoin::joinBlockImpl(
+IBlocksStreamPtr HashJoin::joinBlockImpl(
     Block & block,
     const Block & block_with_columns_to_add,
     const std::vector<const Maps *> & maps_,
-    bool is_join_get)
+    bool is_join_get) const
 {
     constexpr JoinFeatures<KIND, STRICTNESS> join_features;
 
@@ -1704,15 +1704,15 @@ void HashJoin::joinBlockImpl(
         for (size_t i = 0; i < existing_columns; ++i)
             need_replicate_columns.emplace_back(i);
         need_replicate_columns.insert(need_replicate_columns.end(), right_keys_to_replicate.begin(), right_keys_to_replicate.end());
-        current_result = std::make_shared<StreamReplicateBlocks>(block, std::move(offsets_to_replicate), need_replicate_columns, table_join->maxJoinedBlockRows());
+        return std::make_shared<StreamReplicateBlocks>(block, std::move(offsets_to_replicate), need_replicate_columns, table_join->maxJoinedBlockRows());
     }
     else
     {
-        current_result = std::make_shared<StreamReplicateBlocks>(block);
+        return std::make_shared<StreamReplicateBlocks>(block);
     }
 }
 
-void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed)
+IBlocksStreamPtr HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed)
 {
     size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
     size_t start_left_row = 0;
@@ -1788,7 +1788,7 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed)
         block.insert(src_column);
 
     block = block.cloneWithColumns(std::move(dst_columns));
-    current_result = std::make_shared<StreamReplicateBlocks>(block);
+    return std::make_shared<StreamReplicateBlocks>(block);
 }
 
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -1821,7 +1821,7 @@ DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types,
 
 /// TODO: return multiple columns as named tuple
 /// TODO: return array of values when strictness == JoinStrictness::All
-ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add)
+ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block_with_columns_to_add) const
 {
     bool is_valid = (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
         && kind == JoinKind::Left;
@@ -1843,9 +1843,9 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
 
     std::vector<const MapsOne *> maps_vector;
     maps_vector.push_back(&std::get<MapsOne>(data->maps[0]));
-    joinBlockImpl<JoinKind::Left, JoinStrictness::Any>(
+    auto blocks = joinBlockImpl<JoinKind::Left, JoinStrictness::Any>(
         keys, block_with_columns_to_add, maps_vector, /* is_join_get = */ true);
-    keys = current_result->next();
+    keys = blocks->next();
     return keys.getByPosition(keys.columns() - 1);
 }
 
@@ -1857,7 +1857,7 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
-void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
+IBlocksStreamPtr HashJoin::joinBlockWithStreamOutput(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -1872,8 +1872,7 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (kind == JoinKind::Cross)
     {
-        joinBlockImplCross(block, not_processed);
-        return;
+        return joinBlockImplCross(block, not_processed);
     }
 
     if (kind == JoinKind::Right || kind == JoinKind::Full)
@@ -1885,13 +1884,13 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
         for (size_t i = 0; i < table_join->getClauses().size(); ++i)
             maps_vector.push_back(&data->maps[i]);
-
+        IBlocksStreamPtr blocks;
         if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+                         {
+                             blocks = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+                         }))
         {
-            joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
-        }))
-        {
-            /// Joined
+            return blocks;
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
@@ -2240,10 +2239,4 @@ bool HashJoin::supportStreamJoin() const
 {
     return true;
 }
-
-IBlocksStreamPtr HashJoin::getStreamBlocks()
-{
-    return current_result;
-}
-
 }

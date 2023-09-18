@@ -87,6 +87,7 @@ private:
     IBlocksStreamPtr blocks;
 
     Block readExecute(Chunk & chunk);
+    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed_block);
 };
 
 /// Fills Join with block from right table.

@@ -165,13 +165,18 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+    void joinBlock(Block & /* block */, ExtraBlockPtr & /* not_processed */) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method joinBlock is not supported for {}, use joinBlockWithStreamOutput", getName());
+    }
+
+    IBlocksStreamPtr joinBlockWithStreamOutput(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
     /// Used by joinGet function that turns StorageJoin into a dictionary.
-    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add);
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
 
     bool isFilled() const override { return from_storage_join; }
 
@@ -397,7 +402,6 @@ public:
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
     bool supportStreamJoin() const override;
-    IBlocksStreamPtr getStreamBlocks() override;
 
 private:
     template<bool> friend class NotJoinedHash;
@@ -453,13 +457,13 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    void joinBlockImpl(
+    IBlocksStreamPtr joinBlockImpl(
         Block & block,
         const Block & block_with_columns_to_add,
         const std::vector<const Maps *> & maps_,
-        bool is_join_get = false);
+        bool is_join_get = false) const;
 
-    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed);
+    IBlocksStreamPtr joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed);
 
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
