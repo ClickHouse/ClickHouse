@@ -91,7 +91,7 @@ public:
 
         if (rhs_elems.value.empty())
             return;
-        
+
         if (rhs_elems.value.size())
             cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
 
@@ -110,11 +110,19 @@ public:
         {
             if (elem.isNull())
             {
+<<<<<<< HEAD
+                writeBinary(elem, buf);
+=======
                 writeBinary(false, buf);
+>>>>>>> 9cd33da5c8694523a6adffc6cbbd3e6290b53230
             }
             else
             {
+<<<<<<< HEAD
+                writeBinary(elem, buf);
+=======
                 writeBinary(true, buf);
+>>>>>>> 9cd33da5c8694523a6adffc6cbbd3e6290b53230
                 serialization->serializeBinary(elem, buf, {});
             }
         }
@@ -260,11 +268,19 @@ public:
         {
             if (elem.isNull())
             {
+<<<<<<< HEAD
+                writeBinary(elem, buf);
+=======
                 writeBinary(false, buf);
+>>>>>>> 9cd33da5c8694523a6adffc6cbbd3e6290b53230
             }
             else
             {
+<<<<<<< HEAD
+                writeBinary(elem, buf);
+=======
                 writeBinary(true, buf);
+>>>>>>> 9cd33da5c8694523a6adffc6cbbd3e6290b53230
                 serialization->serializeBinary(elem, buf, {});
             }
         }
