@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Dict, List, Set, Union, Any, Literal
+from typing import Dict, List, Set, Union, Literal
 
 from unidiff import PatchSet  # type: ignore
 
@@ -366,14 +366,12 @@ def can_skip_functional_tests(
             or f == "tests/ci/functional_test_check.py"
             for f in self.changed_files
         )
-    elif test_type == "stateful":
+    else: #stateful
         return not any(
             f.startswith("tests/queries/1_stateful")
             or f == "tests/ci/functional_test_check.py"
             for f in self.changed_files
         )
-
-    return False
 
 
 class FakePRInfo:
