@@ -1147,18 +1147,7 @@ void ClientBase::onEndOfStream()
         bool is_running = false;
         output_format->setStartTime(
             clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
-
-        try
-        {
-            output_format->finalize();
-        }
-        catch (...)
-        {
-            /// Format should be reset to make it work for subsequent query
-            /// (otherwise it will throw again in resetOutput())
-            output_format.reset();
-            throw;
-        }
+        output_format->finalize();
     }
 
     resetOutput();

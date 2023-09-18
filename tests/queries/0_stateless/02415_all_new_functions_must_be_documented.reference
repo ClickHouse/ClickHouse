@@ -229,7 +229,6 @@ dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent

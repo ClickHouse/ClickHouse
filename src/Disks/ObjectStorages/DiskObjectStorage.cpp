@@ -509,11 +509,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     LOG_TEST(log, "Write file: {}", path);
 
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(
+    auto result = transaction->writeFile(
         path,
         buf_size,
         mode,
         object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
+
+    return result;
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const

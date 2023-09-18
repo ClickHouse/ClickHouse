@@ -948,66 +948,48 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
 
 #if defined(FUZZING_MODE)
 
-// linked from programs/main.cpp
-bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv);
-
 std::optional<DB::LocalServer> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
-    std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
-
-    if (!isClickhouseApp("local", argv))
-    {
-        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
-        exit(1);
-    }
+    int & argc = *pargc;
+    char ** argv = *pargv;
 
     /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
+    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
 
-    char **p = &(*pargv)[1];
-
-    auto it = argv.begin() + 1;
-    for (; *it; ++it)
-        if (strcmp(*it, "--") == 0)
+    /// Calculate the position of delimiter "--" that separates arguments
+    /// of clickhouse-local and libfuzzer
+    int pos_delim = argc;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--") == 0)
         {
-            ++it;
+            pos_delim = i;
             break;
         }
-
-    while (*it)
-        if (strncmp(*it, "--", 2) != 0)
-        {
-            *(p++) = *it;
-            it = argv.erase(it);
-        }
-        else
-            ++it;
-
-    *pargc = static_cast<int>(p - &(*pargv)[0]);
-    *p = nullptr;
+    }
 
     /// Initialize clickhouse-local app
     fuzz_app.emplace();
-    fuzz_app->init(static_cast<int>(argv.size() - 1), argv.data());
+    fuzz_app->init(pos_delim, argv);
 
+    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
+    /// all keys starting with --
     return 0;
 }
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
 {
-    try
-    {
-        auto input = String(reinterpret_cast<const char *>(data), size);
-        DB::FunctionGetFuzzerData::update(input);
-        fuzz_app->run();
-    }
-    catch (...)
-    {
-    }
-
+    auto input = String(reinterpret_cast<const char *>(data), size);
+    DB::FunctionGetFuzzerData::update(input);
+    fuzz_app->run();
     return 0;
+}
+catch (...)
+{
+    return 1;
 }
 #endif

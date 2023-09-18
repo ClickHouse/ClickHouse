@@ -471,7 +471,7 @@ void TCPHandler::runImpl()
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
 
-                sendMergeTreeAllRangesAnnouncementAssumeLocked(announcement);
+                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
             });
@@ -1044,9 +1044,9 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
+void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
-    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
     announcement.serialize(*out);
     out->next();
 }

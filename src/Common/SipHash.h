@@ -200,7 +200,11 @@ public:
     ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
-        get128(res.items[UInt128::_impl::little(0)], res.items[UInt128::_impl::little(1)]);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        get128(res.items[1], res.items[0]);
+#else
+        get128(res.items[0], res.items[1]);
+#endif
         return res;
     }
 
@@ -210,13 +214,20 @@ public:
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR, "Logical error: can't call get128Reference when is_reference_128 is not set");
         finalize();
-        const auto lo = v0 ^ v1 ^ v2 ^ v3;
+        auto lo = v0 ^ v1 ^ v2 ^ v3;
         v1 ^= 0xdd;
         SIPROUND;
         SIPROUND;
         SIPROUND;
         SIPROUND;
-        const auto hi = v0 ^ v1 ^ v2 ^ v3;
+        auto hi = v0 ^ v1 ^ v2 ^ v3;
+
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            lo = std::byteswap(lo);
+            hi = std::byteswap(hi);
+            std::swap(lo, hi);
+        }
 
         UInt128 res = hi;
         res <<= 64;

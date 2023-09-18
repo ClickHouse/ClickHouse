@@ -250,6 +250,20 @@ size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
     return impl->getPosition();
 }
 
+IAsynchronousReader::Result ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t /*ignore*/)
+{
+    /// TODO: we don't need to copy if there is no pending data
+    seek(offset, SEEK_SET);
+    if (eof())
+        return {0, 0, nullptr};
+
+    /// Make sure returned size no greater than available bytes in working_buffer
+    size_t count = std::min(size, available());
+    memcpy(data, position(), count);
+    position() += count;
+    return {count, 0, nullptr};
+}
+
 String ReadBufferFromHDFS::getFileName() const
 {
     return impl->hdfs_file_path;

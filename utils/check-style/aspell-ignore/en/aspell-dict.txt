@@ -1332,7 +1332,6 @@ debian
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
-decodeHTMLComponent
 decompressor
 decrypt
 decrypted
@@ -2582,4 +2581,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-hardlink
