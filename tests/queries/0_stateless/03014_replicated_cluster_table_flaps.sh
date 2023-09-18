@@ -34,7 +34,7 @@ function backup_replicas_thread()
 
             create table data_r3 (key Int, part Int, value Int) engine=ReplicatedMergeTree('/tables/{database}/data', '3') order by key partition by part settings cluster=1, cluster_replication_factor=2;
             create table data_r4 (key Int, part Int, value Int) engine=ReplicatedMergeTree('/tables/{database}/data', '4') order by key partition by part settings cluster=1, cluster_replication_factor=2;
-        " |& grep "DB::Exception: " | grep -v -e NOT_IMPLEMENTED
+        "
         sleep 0.$((RANDOM % 10))
     done
 }

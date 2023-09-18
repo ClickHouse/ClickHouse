@@ -258,7 +258,7 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr, ReplicatedMergeTreeCluster * cluster = nullptr);
 
     void dropReplica(const String & drop_zookeeper_path, const String & drop_replica, Poco::Logger * logger);
 

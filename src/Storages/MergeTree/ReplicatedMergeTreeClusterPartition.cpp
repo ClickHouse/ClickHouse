@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
-    extern const int NOT_IMPLEMENTED;
 };
 
 constexpr char HEADER[] = "cluster partition format version: 1\n";
@@ -188,12 +187,19 @@ bool ReplicatedMergeTreeClusterPartition::hasReplica(const String & replica) con
 
 void ReplicatedMergeTreeClusterPartition::removeReplica(const String & replica)
 {
-    /// FIXME:
-    if (new_replica == replica)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Removing destination of migration ({}) is not implemented yet", replica);
-    if (source_replica == replica)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Removing source of migration ({}) is not implemented yet", replica);
-
+    /// NOTE: It is safe to do this because we have synchronization via version in coordinator.
+    ///
+    /// We have following interested persons:
+    ///
+    /// - balancer -- after it finishes the job, it will update the partition
+    ///               with incrementing the version, so if this fails, it will
+    ///               revert the operation, but in case of revert it should
+    ///               also check is this replica still in list.
+    ///
+    /// - remover --  DROP/CREATE TABLE will update the partition version as
+    ///               well, and retry in case of ZBADVERSION.
+    if (state != UP_TO_DATE)
+        revert();
     if (!std::erase(all_replicas, replica))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No {} in all replicas ({})", replica, fmt::join(all_replicas, ", "));
     std::erase(active_replicas, replica);

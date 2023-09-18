@@ -630,15 +630,24 @@ void ReplicatedMergeTreeClusterBalancer::revert(const ReplicatedMergeTreeCluster
     auto new_partition = target;
     new_partition.revert();
     String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
+
+    Coordination::Requests ops;
+    Coordination::Responses responses;
+
+    ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), target.getVersion()));
+    /// Just update version, because merges and balancer selector relies on it
+    ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
+
+    auto error = zookeeper->tryMulti(ops, responses);
+    if (error == Coordination::Error::ZOK)
     {
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeSetRequest(partition_path, new_partition.toString(), -1));
-        /// Just update version, because merges and balancer selector relies on it
-        ops.emplace_back(zkutil::makeSetRequest(cluster.zookeeper_path / "log", "", -1));
-        zookeeper->multi(ops);
+        cluster.updateClusterPartition(new_partition);
+        LOG_WARNING(log, "Task had been reverted for partition {}", target.toStringForLog());
     }
-    cluster.updateClusterPartition(new_partition);
-    LOG_WARNING(log, "Task had been reverted for partition {}", target.toStringForLog());
+    if (error == Coordination::Error::ZBADVERSION)
+        LOG_WARNING(log, "Task had been reverted but partition {} had been updated by someone else, keep it as-is", target.toStringForLog());
+    else if (error != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(error, partition_path);
 }
 
 void ReplicatedMergeTreeClusterBalancer::enqueueDropPartition(const zkutil::ZooKeeperPtr & zookeeper, const String & source_replica, const String & partition_id)
