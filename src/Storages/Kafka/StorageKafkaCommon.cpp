@@ -175,9 +175,9 @@ void KafkaConfigLoader::loadTopicConfig(
 
         /// Read topic name between <name>...</name>
         const String kafka_topic_path = config_prefix + "." + tag;
-        const String kafpa_topic_name_path = kafka_topic_path + "." + String{CONFIG_NAME_TAG};
+        const String kafka_topic_name_path = kafka_topic_path + "." + String{CONFIG_NAME_TAG};
 
-        const String topic_name = config.getString(kafpa_topic_name_path);
+        const String topic_name = config.getString(kafka_topic_name_path);
         if (topic_name == topic)
         {
             /// Found it! Now read the per-topic configuration into cppkafka.
