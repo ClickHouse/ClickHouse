@@ -127,12 +127,12 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseParallelReplicas())
     {
-        bool disable_parallel_replicas = false;
+        bool disable_parallel_replicas = true;
         for (const auto & shard : cluster.getShardsInfo())
         {
-            if (shard.getAllNodeCount() <= 1)
+            if (shard.getAllNodeCount() > 1)
             {
-                disable_parallel_replicas = true;
+                disable_parallel_replicas = false;
                 break;
             }
         }
@@ -192,10 +192,10 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context
-        = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
-    if (new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
-        != context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
+    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
+        && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
+           != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
     {
         LOG_TRACE(
             log,
