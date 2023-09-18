@@ -125,7 +125,9 @@ public:
 
     double getTokens() const
     {
-        return tokens;
+        auto now = event_queue->now();
+        double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
+        return std::min(tokens + max_speed * elapsed, max_burst);
     }
 
     std::chrono::nanoseconds getThrottlingDuration() const
