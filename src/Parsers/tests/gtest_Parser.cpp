@@ -40,6 +40,8 @@ std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> pa
 
 std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
+    // New line characters are removed because at the time of writing this the unit test results are parsed from the
+    // command line output, and multi-line string representations are breaking the parsing logic.
     std::string input_text{test_case.input_text};
     boost::replace_all(input_text, "\n", "\\n");
     return ostr << "ParserTestCase input: " << input_text;
