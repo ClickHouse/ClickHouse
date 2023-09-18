@@ -336,7 +336,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class ExecutableFunctionJSON : public IExecutableFunction
+class ExecutableFunctionJSON : public IExecutableFunction, WithContext
 {
 
 public:

@@ -738,16 +738,16 @@ age('unit', startdate, enddate, [timezone])
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
+    - `second` (possible abbreviations: `ss`, `s`)
+    - `minute` (possible abbreviations: `mi`, `n`)
+    - `hour` (possible abbreviations: `hh`, `h`)
+    - `day` (possible abbreviations: `dd`, `d`)
+    - `week` (possible abbreviations: `wk`, `ww`)
+    - `month` (possible abbreviations: `mm`, `m`)
+    - `quarter` (possible abbreviations: `qq`, `q`)
+    - `year` (possible abbreviations: `yyyy`, `yy`)
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -815,16 +815,16 @@ Aliases: `dateDiff`, `DATE_DIFF`, `timestampDiff`, `timestamp_diff`, `TIMESTAMP_
 - `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
-    - `microsecond` `microseconds` `us` `u`
-    - `millisecond` `milliseconds` `ms`
-    - `second` `seconds` `ss` `s`
-    - `minute` `minutes` `mi` `n`
-    - `hour` `hours` `hh` `h`
-    - `day` `days` `dd` `d`
-    - `week` `weeks` `wk` `ww`
-    - `month` `months` `mm` `m`
-    - `quarter` `quarters` `qq` `q`
-    - `year` `years` `yyyy` `yy`
+    - `microsecond` (possible abbreviations: `us`, `u`)
+    - `millisecond` (possible abbreviations: `ms`)
+    - `second` (possible abbreviations: `ss`, `s`)
+    - `minute` (possible abbreviations: `mi`, `n`)
+    - `hour` (possible abbreviations: `hh`, `h`)
+    - `day` (possible abbreviations: `dd`, `d`)
+    - `week` (possible abbreviations: `wk`, `ww`)
+    - `month` (possible abbreviations: `mm`, `m`)
+    - `quarter` (possible abbreviations: `qq`, `q`)
+    - `year` (possible abbreviations: `yyyy`, `yy`)
 
 - `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 
@@ -1817,72 +1817,6 @@ Result:
 ┌─fromModifiedJulianDayOrNull(58849)─┐
 │ 2020-01-01                         │
 └────────────────────────────────────┘
-```
-
-## toUTCTimestamp
-
-Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
-
-**Syntax**
-
-``` sql
-toUTCTimestamp(time_val, time_zone)
-```
-
-**Arguments**
-
-- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
-
-**Returned value**
-
-- DateTime/DateTime64 in text form
-
-**Example**
-
-``` sql
-SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
-```
-
-Result:
-
-``` text
-┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
-```
-
-## fromUTCTimestamp
-
-Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
-
-**Syntax**
-
-``` sql
-fromUTCTimestamp(time_val, time_zone)
-```
-
-**Arguments**
-
-- `time_val` — A DateTime/DateTime64 type const value or a expression . [DateTime/DateTime64 types](../../sql-reference/data-types/datetime.md)
-- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
-
-**Returned value**
-
-- DateTime/DateTime64 in text form
-
-**Example**
-
-``` sql
-SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai');
-```
-
-Result:
-
-``` text
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related content

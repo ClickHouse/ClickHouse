@@ -69,9 +69,9 @@ void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
     Hash hash = getTreeHash();
 
     writeCString("__settings_", ostr);
-    writeText(hash.low64, ostr);
+    writeText(hash.first, ostr);
     ostr.write('_');
-    writeText(hash.high64, ostr);
+    writeText(hash.second, ostr);
 }
 
 }

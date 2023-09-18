@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 
 CREATE TABLE test
 (

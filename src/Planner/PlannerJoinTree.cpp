@@ -101,7 +101,7 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
         }
 
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
             query_context->getUserName(),
             storage_id.getFullTableName());
     }
@@ -111,20 +111,6 @@ void checkAccessRights(const TableNode & table_node, const Names & column_names,
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
         query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
-}
-
-bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
-{
-    const auto & storage_id = table_node.getStorageID();
-    if (!storage_id.hasDatabase())
-        return false;
-    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-    {
-        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (tables_ignoring_quota.count(storage_id.table_name))
-            return true;
-    }
-    return false;
 }
 
 NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot)
@@ -186,9 +172,7 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
-    SelectQueryInfo & select_query_info,
-    const TableNode * table_node,
-    const TableFunctionNode * table_function_node,
+    const TableNode & table_node,
     const QueryTreeNodePtr & query_tree,
     ContextMutablePtr & query_context,
     const Names & columns_names)
@@ -197,7 +181,7 @@ bool applyTrivialCountIfPossible(
     if (!settings.optimize_trivial_count_query)
         return false;
 
-    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+    const auto & storage = table_node.getStorage();
     if (!storage->supportsTrivialCountOptimization())
         return false;
 
@@ -207,9 +191,6 @@ bool applyTrivialCountIfPossible(
         RowPolicyFilterType::SELECT_FILTER);
     if (row_policy_filter)
         return {};
-
-    if (select_query_info.additional_filter_ast)
-        return false;
 
     /** Transaction check here is necessary because
       * MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
@@ -221,13 +202,9 @@ bool applyTrivialCountIfPossible(
         return false;
 
     /// can't apply if FINAL
-    if (table_node && table_node->getTableExpressionModifiers().has_value() &&
-        (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
-        return false;
-    else if (table_function_node && table_function_node->getTableExpressionModifiers().has_value() &&
-        (table_function_node->getTableExpressionModifiers()->hasFinal() || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+    if (table_node.getTableExpressionModifiers().has_value() &&
+        (table_node.getTableExpressionModifiers()->hasFinal() || table_node.getTableExpressionModifiers()->hasSampleSizeRatio() ||
+            table_node.getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -251,11 +228,6 @@ bool applyTrivialCountIfPossible(
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
     if (!count_func)
         return false;
-
-    /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
-    /// require reading some data (but much faster than reading columns).
-    /// Set a special flag in query info so the storage will see it and optimize count in read() method.
-    select_query_info.optimize_trivial_count = true;
 
     /// Get number of rows
     std::optional<UInt64> num_rows = storage->totalRows(settings);
@@ -289,8 +261,7 @@ bool applyTrivialCountIfPossible(
     DataTypes argument_types;
     argument_types.reserve(columns_names.size());
     {
-        const Block source_header = table_node ? table_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names)
-                                               : table_function_node->getStorageSnapshot()->getSampleBlockForColumns(columns_names);
+        const Block source_header = table_node.getStorageSnapshot()->getSampleBlockForColumns(columns_names);
         for (const auto & column_name : columns_names)
             argument_types.push_back(source_header.getByName(column_name).type);
     }
@@ -664,10 +635,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// Apply trivial_count optimization if possible
         bool is_trivial_count_applied = !select_query_options.only_analyze &&
             is_single_table_expression &&
-            (table_node || table_function_node) &&
+            table_node &&
             select_query_info.has_aggregates &&
-            settings.additional_table_filters.value.empty() &&
-            applyTrivialCountIfPossible(query_plan, table_expression_query_info, table_node, table_function_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
+            applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
         {
@@ -794,8 +764,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                   */
                 if (!query_plan.getMaxThreads() || is_remote)
                     query_plan.setMaxThreads(max_threads_execute_query);
-
-                query_plan.setConcurrencyControl(settings.use_concurrency_control);
             }
             else
             {
@@ -860,9 +828,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     }
     else
     {
-        SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
         Planner planner(select_query_info.query_tree,
-            analyze_query_options,
+            SelectQueryOptions(from_stage).analyze(),
             select_query_info.planner_context);
         planner.buildQueryPlanIfNeeded();
 
@@ -1408,7 +1375,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const SelectQueryInfo & select_query_info,
-    SelectQueryOptions & select_query_options,
+    const SelectQueryOptions & select_query_options,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
@@ -1418,16 +1385,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
     ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
-
-    if (is_single_table_expression)
-    {
-        auto * table_node = table_expressions_stack[0]->as<TableNode>();
-        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
-        {
-            select_query_options.ignore_quota = true;
-            select_query_options.ignore_limits = true;
-        }
-    }
 
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)

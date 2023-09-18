@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <memory>
 #include <optional>
+#include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin.h>
@@ -32,16 +33,9 @@ class ConcurrentHashJoin : public IJoin
 {
 
 public:
-    explicit ConcurrentHashJoin(
-        ContextPtr context_,
-        std::shared_ptr<TableJoin> table_join_,
-        size_t slots_,
-        const Block & right_sample_block,
-        bool any_take_last_row_ = false);
-
+    explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_ = false);
     ~ConcurrentHashJoin() override = default;
 
-    std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -72,6 +66,7 @@ private:
 
     IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
+
 };
 
 }

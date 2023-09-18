@@ -34,5 +34,3 @@ function run_with_retry()
 function fn_exists() {
     declare -F "$1" > /dev/null;
 }
-
-# vi: ft=bash

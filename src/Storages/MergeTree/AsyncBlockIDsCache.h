@@ -8,7 +8,8 @@
 namespace DB
 {
 
-template <typename TStorage>
+class StorageReplicatedMergeTree;
+
 class AsyncBlockIDsCache
 {
     struct Cache;
@@ -19,7 +20,7 @@ class AsyncBlockIDsCache
     void update();
 
 public:
-    explicit AsyncBlockIDsCache(TStorage & storage_);
+    explicit AsyncBlockIDsCache(StorageReplicatedMergeTree & storage_);
 
     void start();
 
@@ -29,7 +30,7 @@ public:
 
 private:
 
-    TStorage & storage;
+    StorageReplicatedMergeTree & storage;
 
     std::atomic<std::chrono::steady_clock::time_point> last_updatetime;
     const std::chrono::milliseconds update_min_interval;
@@ -46,5 +47,7 @@ private:
     const String log_name;
     Poco::Logger * log;
 };
+
+using AsyncBlockIDsCachePtr = std::shared_ptr<AsyncBlockIDsCache>;
 
 }

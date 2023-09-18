@@ -1,8 +1,6 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010,SC2015
 
-# shellcheck disable=SC1091
-source /setup_export_logs.sh
 set -x
 
 # core.COMM.PID-TID
@@ -124,8 +122,6 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
-
-    config_logs_export_cluster db/config.d/system_logs_export.yaml
 }
 
 function filter_exists_and_template
@@ -227,9 +223,7 @@ quit
     done
     clickhouse-client --query "select 1" # This checks that the server is responding
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
-    echo 'Server started and responded'
-
-    setup_logs_replication
+    echo Server started and responded
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.

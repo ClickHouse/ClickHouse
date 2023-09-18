@@ -79,7 +79,7 @@ public:
     RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    std::optional<DataTypes> readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

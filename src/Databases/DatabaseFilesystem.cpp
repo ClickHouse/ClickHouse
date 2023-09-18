@@ -11,10 +11,8 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
-#include <Formats/FormatFactory.h>
 
 #include <filesystem>
-
 
 namespace fs = std::filesystem;
 
@@ -77,28 +75,28 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     /// Check access for file before checking its existence.
     if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
     {
-        /// Access denied is thrown regardless of 'throw_on_error'
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        if (throw_on_error)
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        else
+            return false;
     }
 
-    if (!containsGlobs(table_path))
+    /// Check if the corresponding file exists.
+    if (!fs::exists(table_path))
     {
-        /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
-        {
-            if (throw_on_error)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
-            else
-                return false;
-        }
+        if (throw_on_error)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
+        else
+            return false;
+    }
 
-        if (!fs::is_regular_file(table_path))
-        {
-            if (throw_on_error)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
-            else
-                return false;
-        }
+    if (!fs::is_regular_file(table_path))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
+                            "File is directory, but expected a file: {}", table_path);
+        else
+            return false;
     }
 
     return true;
@@ -130,31 +128,27 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
     if (tryGetTableFromCache(name))
         return true;
 
-    return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */ false);
+    return checkTableFilePath(getTablePath(name), context_, /* throw_on_error */false);
 }
 
-StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
+StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_) const
 {
     /// Check if table exists in loaded tables map.
     if (auto table = tryGetTableFromCache(name))
         return table;
 
     auto table_path = getTablePath(name);
-    if (!checkTableFilePath(table_path, context_, throw_on_error))
-        return {};
+    checkTableFilePath(table_path, context_, /* throw_on_error */true);
 
-    auto format = FormatFactory::instance().getFormatFromFileName(table_path, throw_on_error);
-    if (format.empty())
-        return {};
+    /// If the file exists, create a new table using TableFunctionFile and return it.
+    auto args = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
 
-    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path), std::make_shared<ASTLiteral>(format));
-
-    auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
+    auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
         return nullptr;
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(ast_function_ptr, context_, name);
+    auto table_storage = table_function->execute(args, context_, name);
     if (table_storage)
         addTable(name, table_storage);
 
@@ -164,7 +158,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
 StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_) const
 {
     /// getTableImpl can throw exceptions, do not catch them to show correct error to user.
-    if (auto storage = getTableImpl(name, context_, true))
+    if (auto storage = getTableImpl(name, context_))
         return storage;
 
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
@@ -173,7 +167,20 @@ StoragePtr DatabaseFilesystem::getTable(const String & name, ContextPtr context_
 
 StoragePtr DatabaseFilesystem::tryGetTable(const String & name, ContextPtr context_) const
 {
-    return getTableImpl(name, context_, false);
+    try
+    {
+        return getTableImpl(name, context_);
+    }
+    catch (const Exception & e)
+    {
+        /// Ignore exceptions thrown by TableFunctionFile, which indicate that there is no table
+        /// see tests/02722_database_filesystem.sh for more details.
+        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+        {
+            return nullptr;
+        }
+        throw;
+    }
 }
 
 bool DatabaseFilesystem::empty() const

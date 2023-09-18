@@ -313,7 +313,6 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/mysql-java-client",
             "clickhouse/mysql-js-client",
             "clickhouse/mysql-php-client",
-            "clickhouse/nginx-dav",
             "clickhouse/postgresql-java-client",
         ]
 

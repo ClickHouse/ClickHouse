@@ -118,7 +118,8 @@ ExpressionTransform
                   MergingAggregatedBucketTransform × 4
                     Resize 1 → 4
                       GroupingAggregatedTransform 3 → 1
-                        (ReadFromRemoteParallelReplicas)
+                        (Union)
+                          (ReadFromRemoteParallelReplicas)
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 500	1000
 501	1000

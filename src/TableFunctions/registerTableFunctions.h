@@ -72,7 +72,6 @@ void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
 void registerTableFunctionAzureBlobStorage(TableFunctionFactory & factory);
-void registerTableFunctionAzureBlobStorageCluster(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctions();

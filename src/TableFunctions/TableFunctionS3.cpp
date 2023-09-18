@@ -181,7 +181,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
     configuration.keys = {configuration.url.key};
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(Poco::URI(configuration.url.uri.getPath()).getPath(), true);
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.uri.getPath(), true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -313,7 +313,7 @@ void TableFunctionS3::addColumnsStructureToArguments(ASTs & args, const String &
     }
 }
 
-ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
 {
     if (configuration.structure == "auto")
     {
@@ -325,12 +325,12 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, 
     return parseColumnsListFromString(configuration.structure, context);
 }
 
-bool TableFunctionS3::supportsReadingSubsetOfColumns()
+bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     S3::URI s3_uri (configuration.url);
 

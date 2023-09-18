@@ -1,46 +1,15 @@
 #pragma once
 
-#include <Formats/FormatFactory.h>
-#include <Storages/Cache/SchemaCache.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/Cache/SchemaCache.h>
+#include <Formats/FormatFactory.h>
 
 namespace DB
 {
 
-struct IReadBufferIterator
-{
-    virtual ~IReadBufferIterator() = default;
+using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>(ColumnsDescription &)>;
 
-    virtual void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> /* buffer */) {}
-
-    virtual std::unique_ptr<ReadBuffer> next() = 0;
-
-    virtual std::optional<ColumnsDescription> getCachedColumns() { return std::nullopt; }
-
-    virtual void setNumRowsToLastFile(size_t /*num_rows*/) {}
-};
-
-struct SingleReadBufferIterator : public IReadBufferIterator
-{
-public:
-    explicit SingleReadBufferIterator(std::unique_ptr<ReadBuffer> buf_) : buf(std::move(buf_))
-    {
-    }
-
-    std::unique_ptr<ReadBuffer> next() override
-    {
-        if (done)
-            return nullptr;
-        done = true;
-        return std::move(buf);
-    }
-
-private:
-    std::unique_ptr<ReadBuffer> buf;
-    bool done = false;
-};
-
-/// Try to determine the schema of the data and number of rows in data in the specified format.
+/// Try to determine the schema of the data in the specified format.
 /// For formats that have an external schema reader, it will
 /// use it and won't create a read buffer.
 /// For formats that have a schema reader from the data,
@@ -53,7 +22,7 @@ private:
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    IReadBufferIterator & read_buffer_iterator,
+    ReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context);
 
@@ -61,12 +30,12 @@ ColumnsDescription readSchemaFromFormat(
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    IReadBufferIterator & read_buffer_iterator,
+    ReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf_out);
 
-SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
-SchemaCache::Keys getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+SchemaCache::Key  getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+SchemaCache::Keys  getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
 }

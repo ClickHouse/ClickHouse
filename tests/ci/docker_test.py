@@ -41,12 +41,6 @@ class TestDockerImageCheck(unittest.TestCase):
                 di.DockerImage("docker/test/base", "clickhouse/test-base", False),
                 di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
                 di.DockerImage(
-                    "docker/test/sqltest",
-                    "clickhouse/sqltest",
-                    False,
-                    "clickhouse/test-base",  # type: ignore
-                ),
-                di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
                     False,
@@ -132,12 +126,13 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version --cache-from type=registry,ref=name:version "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --push --progress plain path",
+            "--cache-to type=inline,mode=max --push --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -149,12 +144,13 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version2 "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -166,11 +162,12 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
@@ -184,13 +181,14 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-from type=registry,ref=name:cached-version "
             "--cache-from type=registry,ref=name:another-cached "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)

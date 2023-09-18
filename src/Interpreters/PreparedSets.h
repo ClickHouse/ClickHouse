@@ -127,10 +127,10 @@ class PreparedSets
 {
 public:
 
-    using Hash = CityHash_v1_0_2::uint128;
+    using Hash = std::pair<UInt64, UInt64>;
     struct Hashing
     {
-        UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
+        UInt64 operator()(const Hash & key) const { return key.first ^ key.second; }
     };
 
     using SetsFromTuple = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSetFromTuple>>, Hashing>;

@@ -14,70 +14,69 @@
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
 {
-    try
+    using namespace DB;
+
+    static SharedContextHolder shared_context;
+    static ContextMutablePtr context;
+
+    auto initialize = [&]() mutable
     {
-        using namespace DB;
+        shared_context = Context::createShared();
+        context = Context::createGlobal(shared_context.get());
+        context->makeGlobalContext();
+        context->setApplicationType(Context::ApplicationType::LOCAL);
 
-        static SharedContextHolder shared_context;
-        static ContextMutablePtr context;
+        MainThreadStatus::getInstance();
 
-        auto initialize = [&]() mutable
-        {
-            shared_context = Context::createShared();
-            context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
-            context->setApplicationType(Context::ApplicationType::LOCAL);
+        registerAggregateFunctions();
+        return true;
+    };
 
-            MainThreadStatus::getInstance();
+    static bool initialized = initialize();
+    (void) initialized;
 
-            registerAggregateFunctions();
-            return true;
-        };
+    total_memory_tracker.resetCounters();
+    total_memory_tracker.setHardLimit(1_GiB);
+    CurrentThread::get().memory_tracker.resetCounters();
+    CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
 
-        static bool initialized = initialize();
-        (void) initialized;
+    /// The input format is as follows:
+    /// - data type name on the first line,
+    /// - the data for the rest of the input.
 
-        total_memory_tracker.resetCounters();
-        total_memory_tracker.setHardLimit(1_GiB);
-        CurrentThread::get().memory_tracker.resetCounters();
-        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+    /// Compile the code as follows:
+    ///   mkdir build_asan_fuzz
+    ///   cd build_asan_fuzz
+    ///   CC=clang CXX=clang++ cmake -D SANITIZE=address -D ENABLE_FUZZING=1 -D WITH_COVERAGE=1 ..
+    ///
+    /// The corpus is located here:
+    /// https://github.com/ClickHouse/fuzz-corpus/tree/main/data_type_deserialization
+    ///
+    /// The fuzzer can be run as follows:
+    ///   ../../../build_asan_fuzz/src/DataTypes/fuzzers/data_type_deserialization_fuzzer corpus -jobs=64 -rss_limit_mb=8192
 
-        /// The input format is as follows:
-        /// - data type name on the first line,
-        /// - the data for the rest of the input.
+    /// clickhouse-local --query "SELECT toJSONString(*) FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.data_type_families)" > dictionary
 
-        /// Compile the code as follows:
-        ///   mkdir build_asan_fuzz
-        ///   cd build_asan_fuzz
-        ///   CC=clang CXX=clang++ cmake -D SANITIZE=address -D ENABLE_FUZZING=1 -D WITH_COVERAGE=1 ..
-        ///
-        /// The corpus is located here:
-        /// https://github.com/ClickHouse/fuzz-corpus/tree/main/data_type_deserialization
-        ///
-        /// The fuzzer can be run as follows:
-        ///   ../../../build_asan_fuzz/src/DataTypes/fuzzers/data_type_deserialization_fuzzer corpus -jobs=64 -rss_limit_mb=8192
+    DB::ReadBufferFromMemory in(data, size);
 
-        /// clickhouse-local --query "SELECT toJSONString(*) FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.data_type_families)" > dictionary
+    String data_type;
+    readStringUntilNewlineInto(data_type, in);
+    assertChar('\n', in);
 
-        DB::ReadBufferFromMemory in(data, size);
+    DataTypePtr type = DataTypeFactory::instance().get(data_type);
 
-        String data_type;
-        readStringUntilNewlineInto(data_type, in);
-        assertChar('\n', in);
+    FormatSettings settings;
+    settings.max_binary_string_size = 100;
+    settings.max_binary_array_size = 100;
 
-        DataTypePtr type = DataTypeFactory::instance().get(data_type);
-
-        FormatSettings settings;
-        settings.max_binary_string_size = 100;
-        settings.max_binary_array_size = 100;
-
-        Field field;
-        type->getDefaultSerialization()->deserializeBinary(field, in, settings);
-    }
-    catch (...)
-    {
-    }
+    Field field;
+    type->getDefaultSerialization()->deserializeBinary(field, in, settings);
 
     return 0;
+}
+catch (...)
+{
+    return 1;
 }

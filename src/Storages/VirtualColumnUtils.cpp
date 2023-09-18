@@ -20,10 +20,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -267,101 +263,6 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     {
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(*filter.data, -1);
-    }
-}
-
-NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns)
-{
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-
-    default_virtuals.sort();
-    storage_columns.sort();
-
-    NamesAndTypesList result_virtuals;
-    std::set_difference(
-        default_virtuals.begin(), default_virtuals.end(), storage_columns.begin(), storage_columns.end(),
-        std::back_inserter(result_virtuals),
-        [](const NameAndTypePair & lhs, const NameAndTypePair & rhs){ return lhs.name < rhs.name; });
-
-    return result_virtuals;
-}
-
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
-{
-    if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
-
-    if (block.has("_file"))
-    {
-        auto pos = path.find_last_of('/');
-        String file;
-        if (pos != std::string::npos)
-            file = path.substr(pos + 1);
-        else
-            file = path;
-
-        block.getByName("_file").column->assumeMutableRef().insert(file);
-    }
-
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
-}
-
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context)
-{
-    if (!query || virtual_columns.empty())
-        return {};
-
-    Block block;
-    for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
-    /// Create a block with one row to construct filter
-    /// Append "idx" column as the filter result
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    addPathAndFileToVirtualColumns(block, path_example, 0);
-    ASTPtr filter_ast;
-    prepareFilterBlockWithQuery(query, context, block, filter_ast);
-    return filter_ast;
-}
-
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
-{
-    Block block;
-    for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-    for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i);
-
-    filterBlockWithQuery(query, block, context, filter_ast);
-
-    return block.getByName("_idx").column;
-}
-
-void addRequestedPathAndFileVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-    {
-        if (virtual_column.name == "_path")
-        {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path));
-        }
-        else if (virtual_column.name == "_file")
-        {
-            if (filename)
-            {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename));
-            }
-            else
-            {
-                size_t last_slash_pos = path.find_last_of('/');
-                auto filename_from_path = path.substr(last_slash_pos + 1);
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path));
-            }
-        }
     }
 }
 

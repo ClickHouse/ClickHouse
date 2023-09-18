@@ -160,10 +160,6 @@ def get_ssl_context(cert_name):
         )
         context.verify_mode = ssl.CERT_REQUIRED
     context.check_hostname = True
-    # Python 3.10 has removed many ciphers from the cipher suite.
-    # Hence based on https://github.com/urllib3/urllib3/issues/3100#issuecomment-1671106236
-    # we are expanding the list of cipher suites.
-    context.set_ciphers("DEFAULT")
     return context
 
 
@@ -212,9 +208,7 @@ def test_https_wrong_cert():
         with pytest.raises(Exception) as err:
             execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
         err_str = str(err.value)
-        if count < MAX_RETRY and (
-            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
-        ):
+        if count < MAX_RETRY and "Broken pipe" in err_str:
             count = count + 1
             logging.warning(f"Failed attempt with wrong cert, err: {err_str}")
             continue
@@ -320,9 +314,7 @@ def test_https_non_ssl_auth():
                 cert_name="wrong",
             )
         err_str = str(err.value)
-        if count < MAX_RETRY and (
-            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
-        ):
+        if count < MAX_RETRY and "Broken pipe" in err_str:
             count = count + 1
             logging.warning(
                 f"Failed attempt with wrong cert, user: peter, err: {err_str}"
@@ -342,9 +334,7 @@ def test_https_non_ssl_auth():
                 cert_name="wrong",
             )
         err_str = str(err.value)
-        if count < MAX_RETRY and (
-            ("Broken pipe" in err_str) or ("EOF occurred" in err_str)
-        ):
+        if count < MAX_RETRY and "Broken pipe" in err_str:
             count = count + 1
             logging.warning(
                 f"Failed attempt with wrong cert, user: jane, err: {err_str}"

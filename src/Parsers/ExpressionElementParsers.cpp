@@ -243,38 +243,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (pos->type != TokenType::StringLiteral)
-        return false;
-
-    ReadBufferFromMemory in(pos->begin, pos->size());
-    String s;
-
-    if (!tryReadQuotedStringInto(s, in))
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (in.count() != pos->size())
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (s.empty())
-    {
-        expected.add(pos, "non-empty string literal");
-        return false;
-    }
-
-    node = std::make_shared<ASTTableIdentifier>(s);
-    ++pos;
-    return true;
-}
-
-
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr id_list;

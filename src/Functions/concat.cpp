@@ -208,10 +208,6 @@ public:
         {
             return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
         }
-        else if (isTuple(arguments.at(0).type))
-        {
-            return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
-        }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);

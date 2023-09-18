@@ -49,7 +49,6 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
-class BackupLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -59,7 +58,6 @@ struct SystemLogs
     ~SystemLogs();
 
     void shutdown();
-    void handleCrash();
 
     std::shared_ptr<QueryLog> query_log;                /// Used to log queries.
     std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
@@ -85,18 +83,10 @@ struct SystemLogs
     /// Used to log processors profiling
     std::shared_ptr<ProcessorsProfileLog> processors_profile_log;
     std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
-    /// Backup and restore events
-    std::shared_ptr<BackupLog> backup_log;
 
     std::vector<ISystemLog *> logs;
 };
 
-struct SystemLogSettings
-{
-    SystemLogQueueSettings queue_settings;
-
-    String engine;
-};
 
 template <typename LogElement>
 class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
@@ -113,9 +103,13 @@ public:
       *   where N - is a minimal number from 1, for that table with corresponding name doesn't exist yet;
       *   and new table get created - as if previous table was not exist.
       */
-    SystemLog(ContextPtr context_,
-              const SystemLogSettings & settings_,
-              std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
+    SystemLog(
+        ContextPtr context_,
+        const String & database_name_,
+        const String & table_name_,
+        const String & storage_def_,
+        size_t flush_interval_milliseconds_,
+        std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
@@ -134,6 +128,8 @@ protected:
     using Base::queue;
 
 private:
+
+
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;

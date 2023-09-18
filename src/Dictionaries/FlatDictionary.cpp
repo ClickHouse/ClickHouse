@@ -395,15 +395,11 @@ void FlatDictionary::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        PullingPipelineExecutor executor(pipeline);
-        update_field_loaded_block.reset();
-        Block block;
 
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
         while (executor.pull(block))
         {
-            if (!block.rows())
-                continue;
-
             convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
@@ -687,7 +683,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false, false);
+    factory.registerLayout("flat", create_layout, false);
 }
 
 

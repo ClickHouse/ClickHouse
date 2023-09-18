@@ -144,7 +144,6 @@ class Client:
         user=None,
         password=None,
         database=None,
-        query_id=None,
     ):
         return self.get_query_request(
             sql,
@@ -154,7 +153,6 @@ class Client:
             user=user,
             password=password,
             database=database,
-            query_id=query_id,
         ).get_answer_and_error()
 
 
@@ -184,8 +182,7 @@ class CommandRequest:
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
         env = {}
-        env["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
+        env["TSAN_OPTIONS"] = "verbosity=0"
         self.process = sp.Popen(
             command,
             stdin=stdin_file,

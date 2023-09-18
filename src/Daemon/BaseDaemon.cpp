@@ -466,10 +466,6 @@ private:
         if (collectCrashLog)
             collectCrashLog(sig, thread_num, query_id, stack_trace);
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-        Context::getGlobalContextInstance()->handleCrash();
-#endif
-
         /// Send crash report to developers (if configured)
         if (sig != SanitizerTrap)
         {
@@ -501,7 +497,7 @@ private:
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
         /// List changed settings.
         if (!query_id.empty())
         {
