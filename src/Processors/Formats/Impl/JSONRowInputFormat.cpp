@@ -40,16 +40,27 @@ void JSONRowInputFormat::readPrefix()
         JSONUtils::skipArrayStart(*peekable_buf);
         data_in_square_brackets = true;
     }
-    catch (...)
+    catch (const ParsingException &)
+    {
+        parse_as_json_each_row = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::INCORRECT_DATA)
+            throw;
+
+        parse_as_json_each_row = true;
+    }
+
+    if (parse_as_json_each_row)
     {
         peekable_buf->rollbackToCheckpoint();
         JSONEachRowRowInputFormat::readPrefix();
-        parse_as_json_each_row = true;
-        return;
     }
-
-    if (validate_types_from_metadata)
+    else if (validate_types_from_metadata)
+    {
         JSONUtils::validateMetadataByHeader(names_and_types_from_metadata, getPort().getHeader());
+    }
 }
 
 void JSONRowInputFormat::readSuffix()
