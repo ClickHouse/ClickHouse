@@ -33,7 +33,7 @@ private:
     std::unordered_map<String, std::vector<String>> replicas_partitions;
     ReplicatedMergeTreeClusterPartitions partitions;
     std::unordered_set<String> local_partitions;
-    size_t partitions_per_replica = 0;
+    double partitions_per_replica = 0.;
 };
 ReplicatedMergeTreeClusterPartitionSelectorImpl::ReplicatedMergeTreeClusterPartitionSelectorImpl(ReplicatedMergeTreeCluster & cluster_, const StorageReplicatedMergeTree & storage_, Poco::Logger * log_)
     : cluster(cluster_)
@@ -92,8 +92,8 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
     }
 
     local_partitions = storage.getAllPartitionIds();
-    partitions_per_replica = unique_partitions.size() / (replicas / cluster_replication_factor);
-    LOG_TEST(log, "Cluster (replicas: {}, partitions: {}, expected partitions per replica: {}, min {}/max {} partitions per replica), replica (cluster partitions: {}, local partitions: {})",
+    partitions_per_replica = unique_partitions.size() / (static_cast<double>(replicas) / cluster_replication_factor);
+    LOG_TEST(log, "Cluster (replicas: {}, partitions: {}, expected partitions per replica: {:.2}, min {}/max {} partitions per replica), replica (cluster partitions: {}, local partitions: {})",
         replicas_partitions.size(), unique_partitions.size(), partitions_per_replica, min_partitions_per_replica, max_partitions_per_replica,
         replicas_partitions[replica_name].size(), local_partitions.size());
 
