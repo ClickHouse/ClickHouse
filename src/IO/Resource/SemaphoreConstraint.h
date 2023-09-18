@@ -152,7 +152,6 @@ private:
         return satisfied() && child_active;
     }
 
-private:
     const Int64 max_requests = default_max_requests;
     const Int64 max_cost = default_max_cost;
 
