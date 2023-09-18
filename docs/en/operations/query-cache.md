@@ -136,8 +136,24 @@ As a result, the query cache stores for each query multiple (partial)
 result blocks. While this behavior is a good default, it can be suppressed using setting
 [query_cache_squash_partial_query_results](settings/settings.md#query-cache-squash-partial-query-results).
 
-Also, results of queries with non-deterministic functions such as `rand()` and `now()` are not cached. This can be overruled using
-setting [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
+Also, results of queries with non-deterministic functions are not cached. Such functions include
+- functions for accessing dictionaries: [`dictGet()`](../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-dictGet) etc.
+- [user-defined functions](sql-reference/statements/create/function.md),
+- functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#date_time_functions-now),
+  [`today()`](../sql-reference/functions/date-time-functions.md#date_time_functions-today),
+  [`yesterday()`](../sql-reference/functions/date-time-functions.md#date_time_functions-yesterday) etc.,
+- functions which return random values: [`randomString()`](../sql-reference/functions/random-functions.md#random_functions-randomString),
+  [`fuzzBits()`](../sql-reference/functions/random-functions.md#random_functions-fuzzBits) etc.,
+- functions whose result depends on the size and order or the internal chunks used for query processing:
+  [`nowInBlock()`](../sql-reference/functions/date-time-functions.md#date_time_functions-nowInBlock) etc.,
+  [`rowNumberInBlock()`](../sql-reference/functions/other-functions.md#other_functions-rowNumberInBlock),
+  [`runningDifference()`](../sql-reference/functions/other-functions.md#other_functions-runningDifference),
+  [`blockSize()`](../sql-reference/functions/other-functions.md#other_functions-blockSize) etc.,
+- functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#other_functions-currentUser),
+  [`queryID()`](../sql-reference/functions/other-functions.md#other_functions-queryID),
+  [`getMacro()`](../sql-reference/functions/other-functions.md#other_functions-getMacro) etc.
+Caching of non-determinstic functions can be forced regardless using setting
+[query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
