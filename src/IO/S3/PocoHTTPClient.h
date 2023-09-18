@@ -38,7 +38,6 @@ class PocoHTTPClient;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
-    mutable std::shared_ptr<PocoHTTPClient> http_client;
     std::function<DB::ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
@@ -60,9 +59,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::function<void(const DB::ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
-
-    std::shared_ptr<PocoHTTPClient> createAndGetClient() const;
-    std::shared_ptr<PocoHTTPClient> getClient() const;
 
 private:
     PocoHTTPClientConfiguration(
