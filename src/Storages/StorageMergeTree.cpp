@@ -237,9 +237,13 @@ void StorageMergeTree::read(
                 processed_stage);
 
         ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,
-            select_stream_factory, modified_query_ast,
-            local_context, query_info, cluster);
+            query_plan,
+            getStorageID(),
+            select_stream_factory,
+            modified_query_ast,
+            local_context,
+            query_info.storage_limits,
+            cluster);
     }
     else
     {

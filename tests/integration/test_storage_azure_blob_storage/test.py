@@ -35,7 +35,9 @@ def cluster():
         cluster.shutdown()
 
 
-def azure_query(node, query, expect_error="false", try_num=10, settings={}):
+def azure_query(
+    node, query, expect_error="false", try_num=10, settings={}, query_on_retry=None
+):
     for i in range(try_num):
         try:
             if expect_error == "true":
@@ -62,6 +64,8 @@ def azure_query(node, query, expect_error="false", try_num=10, settings={}):
                     break
             if not retry or i == try_num - 1:
                 raise Exception(ex)
+            if query_on_retry is not None:
+                node.query(query_on_retry)
             continue
 
 
@@ -761,8 +765,15 @@ def run_describe_query(instance, file, connection_string):
     azure_query(instance, query)
 
 
-def run_count_query(instance, file, connection_string):
+def run_count_query(instance, file, connection_string, drop_cache_on_retry=False):
     query = f"select count() from azureBlobStorage('{connection_string}', 'cont', '{file}', auto, auto, 'x UInt64')"
+    if drop_cache_on_retry:
+        return azure_query(
+            node=instance,
+            query=query,
+            query_on_retry="system drop schema cache for azure",
+        )
+
     return azure_query(instance, query)
 
 
@@ -872,7 +883,6 @@ def test_schema_inference_cache(cluster):
 
     files = "test_cache{0,1,2,3}.jsonl"
     run_describe_query(node, files, connection_string)
-    print(node.query("select * from system.schema_inference_cache format Pretty"))
     check_cache_hits(node, files)
 
     node.query(f"system drop schema cache for azure")
@@ -957,7 +967,7 @@ def test_schema_inference_cache(cluster):
     node.query(f"system drop schema cache for azure")
     check_cache(node, [])
 
-    res = run_count_query(node, "test_cache{0,1}.csv", connection_string)
+    res = run_count_query(node, "test_cache{0,1}.csv", connection_string, True)
     assert int(res) == 300
     check_cache_misses(node, "test_cache{0,1}.csv", 2)
 
