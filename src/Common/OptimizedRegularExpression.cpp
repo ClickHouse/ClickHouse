@@ -441,8 +441,7 @@ finish:
 }
 }
 
-template <bool thread_safe>
-void OptimizedRegularExpressionImpl<thread_safe>::analyze(
+void OptimizedRegularExpression::analyze(
         std::string_view regexp_,
         std::string & required_substring,
         bool & is_trivial,
@@ -467,8 +466,7 @@ catch (...)
     LOG_ERROR(&Poco::Logger::get("OptimizeRegularExpression"), "Analyze RegularExpression failed, got error: {}", DB::getCurrentExceptionMessage(false));
 }
 
-template <bool thread_safe>
-OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
+OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
 {
     std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
     analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
@@ -486,7 +484,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        typename RegexType::Options regexp_options;
+        typename re2::RE2::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);
@@ -497,7 +495,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
         if (is_dot_nl)
             regexp_options.set_dot_nl(true);
 
-        re2 = std::make_unique<RegexType>(regexp_, regexp_options);
+        re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
         if (!re2->ok())
         {
             throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
@@ -527,8 +525,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     }
 }
 
-template <bool thread_safe>
-OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept
+OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept
     : is_trivial(rhs.is_trivial)
     , required_substring_is_prefix(rhs.required_substring_is_prefix)
     , is_case_insensitive(rhs.is_case_insensitive)
@@ -545,8 +542,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(Opti
     }
 }
 
-template <bool thread_safe>
-bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const
+bool OptimizedRegularExpression::match(const char * subject, size_t subject_size) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -577,13 +573,12 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
             }
         }
 
-        return re2->Match({subject, subject_size}, 0, subject_size, RegexType::UNANCHORED, nullptr, 0);
+        return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
     }
 }
 
 
-template <bool thread_safe>
-bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, Match & match) const
+bool OptimizedRegularExpression::match(const char * subject, size_t subject_size, Match & match) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -624,7 +619,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
         std::string_view piece;
 
-        if (!RegexType::PartialMatch({subject, subject_size}, *re2, &piece))
+        if (!re2::RE2::PartialMatch({subject, subject_size}, *re2, &piece))
             return false;
         else
         {
@@ -636,8 +631,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 }
 
 
-template <bool thread_safe>
-unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
@@ -695,7 +689,7 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
             {subject, subject_size},
             0,
             subject_size,
-            RegexType::UNANCHORED,
+            re2::RE2::UNANCHORED,
             pieces.data(),
             static_cast<int>(pieces.size())))
         {
@@ -721,6 +715,3 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
         }
     }
 }
-
-template class OptimizedRegularExpressionImpl<true>;
-template class OptimizedRegularExpressionImpl<false>;
