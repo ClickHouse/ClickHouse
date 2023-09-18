@@ -34,13 +34,15 @@ namespace ErrorCodes
 namespace
 {
 
-FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns)
+constexpr UInt64 DEFAULT_VALUE_INDEX = std::numeric_limits<UInt64>::max();
+
+FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns, JoinStrictness strictness)
 {
     SortDescription desc;
     desc.reserve(columns.size());
     for (const auto & name : columns)
         desc.emplace_back(name);
-    return std::make_unique<FullMergeJoinCursor>(materializeBlock(block), desc);
+    return std::make_unique<FullMergeJoinCursor>(materializeBlock(block), desc, strictness == JoinStrictness::Asof);
 }
 
 template <bool has_left_nulls, bool has_right_nulls>
@@ -90,9 +92,10 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
 int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, size_t lpos,
                                  const SortCursorImpl & rhs, size_t rpos,
+                                 size_t key_length,
                                  int null_direction_hint)
 {
-    for (size_t i = 0; i < lhs.sort_columns_size; ++i)
+    for (size_t i = 0; i < key_length; ++i)
     {
         /// TODO(@vdimir): use nullableCompareAt only if there's nullable columns
         int cmp = nullableCompareAt<true, true>(*lhs.sort_columns[i], *rhs.sort_columns[i], lpos, rpos, null_direction_hint);
@@ -104,13 +107,18 @@ int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, size_t lpos,
 
 int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImpl & rhs, int null_direction_hint)
 {
-    return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow(), null_direction_hint);
+    return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow(), lhs.sort_columns_size, null_direction_hint);
+}
+
+int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs)
+{
+    return nullableCompareAt<false, false>(lhs.getAsofColumn(), rhs.getAsofColumn(), lhs->getRow(), rhs->getRow());
 }
 
 bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs, int null_direction_hint)
 {
     /// The last row of left cursor is less than the current row of the right cursor.
-    int cmp = compareCursors(lhs, lhs.rows - 1, rhs, rhs.getRow(), null_direction_hint);
+    int cmp = compareCursors(lhs, lhs.rows - 1, rhs, rhs.getRow(), lhs.sort_columns_size, null_direction_hint);
     return cmp < 0;
 }
 
@@ -222,17 +230,22 @@ Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
     return result;
 }
 
-void inline addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end)
+void inline addRange(PaddedPODArray<UInt64> & values, UInt64 start, UInt64 end)
 {
     assert(end > start);
-    for (size_t i = start; i < end; ++i)
-        left_map.push_back(i);
+    for (UInt64 i = start; i < end; ++i)
+        values.push_back(i);
 }
 
 void inline addMany(PaddedPODArray<UInt64> & left_or_right_map, size_t idx, size_t num)
 {
     for (size_t i = 0; i < num; ++i)
         left_or_right_map.push_back(idx);
+}
+
+void inline addMany(PaddedPODArray<UInt64> & values, UInt64 value, size_t num)
+{
+    values.resize_fill(values.size() + num, value);
 }
 
 }
@@ -283,8 +296,14 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
 
-    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
+    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All && strictness != JoinStrictness::Asof)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
+
+    if (strictness == JoinStrictness::Asof)
+    {
+        if (kind != JoinKind::Left && kind != JoinKind::Inner)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not implement ASOF {} join", kind);
+    }
 
     if (!isInner(kind) && !isLeft(kind) && !isRight(kind) && !isFull(kind))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for kind {}", kind);
@@ -293,8 +312,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
     cursors = {
-        createCursor(input_headers[0], on_clause_.key_names_left),
-        createCursor(input_headers[1], on_clause_.key_names_right)
+        createCursor(input_headers[0], on_clause_.key_names_left,  strictness),
+        createCursor(input_headers[1], on_clause_.key_names_right,  strictness),
     };
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
@@ -313,6 +332,8 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         size_t left_idx = input_headers[0].getPositionByName(left_key);
         size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
+        if (strictness == JoinStrictness::Asof)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ASOF joins USING");
     }
 
     const auto *smjPtr = typeid_cast<const FullSortingMergeJoin *>(table_join.get());
@@ -321,6 +342,19 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         null_direction_hint = smjPtr->getNullDirection();
     }
 
+    if (strictness == JoinStrictness::Asof)
+        setAsofInequality(join_ptr->getTableJoin().getAsofInequality());
+}
+
+void MergeJoinAlgorithm::setAsofInequality(ASOFJoinInequality asof_inequality_)
+{
+    if (strictness != JoinStrictness::Asof)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "setAsofInequality is only supported for ASOF joins");
+
+    if (asof_inequality_ == ASOFJoinInequality::None)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ASOF inequality cannot be None");
+
+    asof_inequality = asof_inequality_;
 }
 
 void MergeJoinAlgorithm::logElapsed(double seconds)
@@ -774,6 +808,81 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
     return Status(std::move(result));
 }
 
+
+MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
+{
+    auto & left_cursor = *cursors[0];
+    if (!left_cursor->isValid())
+        return Status(0);
+
+    auto & right_cursor = *cursors[1];
+    if (!right_cursor->isValid())
+        return Status(1);
+
+    PaddedPODArray<UInt64> left_map;
+    PaddedPODArray<UInt64> right_map;
+
+    while (left_cursor->isValid() && right_cursor->isValid())
+    {
+        auto lpos = left_cursor->getRow();
+        auto rpos = right_cursor->getRow();
+        auto cmp = compareCursors(*left_cursor, *right_cursor);
+        if (cmp == 0)
+        {
+            auto asof_cmp = compareAsofCursors(left_cursor, right_cursor);
+            if ((asof_inequality == ASOFJoinInequality::Less && asof_cmp <= -1)
+             || (asof_inequality == ASOFJoinInequality::LessOrEquals && asof_cmp <= 0))
+            {
+                /// First row in right table that is greater (or equal) than current row in left table
+                /// matches asof join condition the best
+                left_map.push_back(lpos);
+                right_map.push_back(rpos);
+                left_cursor->next();
+                continue;
+            }
+
+            if (asof_inequality == ASOFJoinInequality::Less || asof_inequality == ASOFJoinInequality::LessOrEquals)
+            {
+                /// Asof condition is not (yet) satisfied, skip row in right table
+                right_cursor->next();
+                continue;
+            }
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: implement ASOF equality join");
+        }
+        else if (cmp < 0)
+        {
+            /// no matches for rows in left table, just pass them through
+            size_t num = nextDistinct(*left_cursor);
+            if (isLeft(kind))
+            {
+                /// return them with default values at right side
+                addRange(left_map, lpos, lpos + num);
+                addMany(right_map, DEFAULT_VALUE_INDEX, num);
+            }
+        }
+        else
+        {
+            /// skip rows in right table until we find match for current row in left table
+            nextDistinct(*right_cursor);
+        }
+    }
+
+    chassert(left_map.size() == right_map.size());
+    Chunk result;
+    {
+        Columns lcols = indexColumns(left_cursor.getCurrent().getColumns(), left_map);
+        for (auto & col : lcols)
+            result.addColumn(std::move(col));
+
+        Columns rcols = indexColumns(right_cursor.getCurrent().getColumns(), right_map);
+        for (auto & col : rcols)
+            result.addColumn(std::move(col));
+    }
+    UNUSED(asof_inequality);
+    return Status(std::move(result));
+}
+
+
 /// if `source_num == 0` get data from left cursor and fill defaults at right
 /// otherwise - vice versa
 Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const
@@ -871,6 +980,9 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     if (strictness == JoinStrictness::All)
         return allJoin();
 
+    if (strictness == JoinStrictness::Asof)
+        return asofJoin();
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);
 }
 
@@ -888,10 +1000,6 @@ MergeJoinTransform::MergeJoinTransform(
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
-<<<<<<< HEAD
-    , log(getLogger("MergeJoinTransform"))
-=======
->>>>>>> b4a16f38320 (Add simple unit test for full sorting join)
 {
 }
 
