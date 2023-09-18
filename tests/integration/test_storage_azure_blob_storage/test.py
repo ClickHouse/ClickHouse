@@ -464,14 +464,14 @@ def test_schema_inference_from_globs(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_glob_select_inference Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')",
+        f"CREATE TABLE test_glob_select_inference Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/*_schema.csv')",
     )
 
     print(node.query("SHOW CREATE TABLE test_glob_select_inference"))
 
     query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from test_glob_select_inference"
     assert azure_query(node, query).splitlines() == [
-        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
+        "450\t450\t900\t0_schema.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
         )
     ]
@@ -546,9 +546,9 @@ def test_put_get_with_globs_tf(cluster):
                 node,
                 f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
             )
-    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV', structure='{table_format}')"
+    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/*_tf.csv', format='CSV', structure='{table_format}')"
     assert azure_query(node, query).splitlines() == [
-        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
+        "450\t450\t900\t0_tf.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
         )
     ]
@@ -585,9 +585,9 @@ def test_schema_inference_from_globs_tf(cluster):
             query = f"insert into table function azureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}"
             azure_query(node, query)
 
-    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')"
+    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/*_schema_tf.csv')"
     assert azure_query(node, query).splitlines() == [
-        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
+        "450\t450\t900\t0_schema_tf.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
         )
     ]
