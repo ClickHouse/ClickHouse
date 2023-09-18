@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerSemaphoreConstraint(SchedulerNodeFactory & factory)
+void registerThrottlerConstraint(SchedulerNodeFactory & factory)
 {
     factory.registerMethod<ThrottlerConstraint>("bandwidth_limit");
 }
