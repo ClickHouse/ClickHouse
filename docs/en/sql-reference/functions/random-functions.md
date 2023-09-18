@@ -478,7 +478,7 @@ Result:
 └─────────────────────┘
 ```
 
-## randomString {#random_functions-randomString}
+## randomString {#randomString}
 
 Generates a string of the specified length filled with random bytes (including zero bytes). Not all characters may be printable.
 
@@ -627,7 +627,7 @@ Result:
 └──────────────────────┘
 ```
 
-## fuzzBits {#random_functions-fuzzBits}
+## fuzzBits {#fuzzBits}
 
 **Syntax**
 

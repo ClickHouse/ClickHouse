@@ -12,7 +12,7 @@ For dictionaries created with [DDL queries](../../sql-reference/statements/creat
 
 For information on connecting and configuring dictionaries, see [Dictionaries](../../sql-reference/dictionaries/index.md).
 
-## dictGet, dictGetOrDefault, dictGetOrNull {#ext_dict_functions-dictGet}
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictGet}
 
 Retrieves values from a dictionary.
 
