@@ -13,16 +13,20 @@ SHOW TABLES FROM information_schema;
 ```
 
 ``` text
-┌─name─────┐
-│ COLUMNS  │
-│ SCHEMATA │
-│ TABLES   │
-│ VIEWS    │
-│ columns  │
-│ schemata │
-│ tables   │
-│ views    │
-└──────────┘
+┌─name────────────────────┐
+│ COLUMNS                 │
+│ KEY_COLUMN_USAGE        │
+│ REFERENTIAL_CONSTRAINTS │
+│ SCHEMATA                │
+│ TABLES                  │
+│ VIEWS                   │
+│ columns                 │
+│ key_column_usage        │
+│ referential_constraints │
+│ schemata                │
+│ tables                  │
+│ views                   │
+└─────────────────────────┘
 ```
 
 `INFORMATION_SCHEMA` contains the following views:
@@ -31,6 +35,8 @@ SHOW TABLES FROM information_schema;
 - [SCHEMATA](#schemata)
 - [TABLES](#tables)
 - [VIEWS](#views)
+- [KEY_COLUMN_USAGE](#key_column_usage)
+- [REFERENTIAL_CONSTRAINTS](#referential_constraints)
 
 Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases.
 
@@ -218,3 +224,62 @@ is_trigger_updatable:       NO
 is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
+
+## KEY_COLUMN_USAGE (#key_column_usage)
+
+It was added for compatibility with third party tools such as Tableau Online. Contains only the primary keys columns read from [system.columns](../../operations/system-tables/columns.md).
+
+Columns:
+
+- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog to which the constraint belongs. This value is always `def`.
+- `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the constraint belongs.
+- `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the constraint.
+- `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog to which the table belongs. This value is always `def`.
+- `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the table belongs.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table that has the constraint.
+- `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the column that has the constraint.
+- `ordinal_position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The column's position within the constraint, not the column's position within the table. Column positions are numbered beginning with 1.
+- `position_in_unique_constraint` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Always `NULL`.
+- `referenced_table_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the schema referenced by the constraint. Always `NULL`.
+- `referenced_table_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the table referenced by the constraint. Always `NULL`.
+- `referenced_column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the column referenced by the constraint. Always `NULL`.
+
+**Example**
+
+```sql
+CREATE TABLE test (i UInt32, s String) ENGINE MergeTree ORDER BY i;
+SELECT * FROM information_schema.key_column_usage WHERE table_name = 'test' FORMAT Vertical;
+```
+
+Result:
+
+```
+Row 1:
+──────
+referenced_table_schema: ᴺᵁᴸᴸ
+referenced_table_name:   ᴺᵁᴸᴸ
+referenced_column_name:  ᴺᵁᴸᴸ
+table_schema:            default
+table_name:              test
+column_name:             i
+ordinal_position:        1
+constraint_name:         PRIMARY
+```
+
+## REFERENTIAL_CONSTRAINTS (#referential_constraints)
+
+It was added for compatibility with third party tools such as Tableau Online. Reads no data by design, selects from this view will always yield an empty result set.
+
+Columns:
+
+- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog to which the constraint belongs.
+- `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the constraint belongs.
+- `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the constraint.
+- `unique_constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog containing the unique constraint that the constraint references.
+- `unique_constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema containing the unique constraint that the constraint references.
+- `unique_constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the unique constraint that the constraint references.
+- `match_option` ([String](../../sql-reference/data-types/string.md)) — The value of the constraint `MATCH` attribute.
+- `update_rule` ([String](../../sql-reference/data-types/string.md)) — The value of the constraint `ON UPDATE` attribute.
+- `delete_rule` ([String](../../sql-reference/data-types/string.md)) — The value of the constraint `ON DELETE` attribute.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table.
+- `referenced_table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table referenced by the constraint.
