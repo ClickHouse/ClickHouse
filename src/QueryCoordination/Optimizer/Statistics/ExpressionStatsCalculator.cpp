@@ -165,7 +165,7 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
     auto & output_nodes = expressions->getOutputs();
     chassert(output_nodes.size() > 0);
 
-    /// 2. calculate other output nodes
+    /// 2. calculate output nodes statistics
     for (auto output_node : output_nodes)
     {
         ExpressionStatsCalculator::calculateStatistics(output_node, context);

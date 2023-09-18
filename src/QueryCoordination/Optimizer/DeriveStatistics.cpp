@@ -79,17 +79,20 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     //        statistics.addColumnStatistics("score", std::make_shared<ColumnStatistics>(50.0, 96.0, 8.0, 8.0, std::make_shared<DataTypeInt32>()));
     //    }
 
+    /// Step output column names who column statistics name must be equal to.
+    const auto & output_columns = step.getOutputStream().header.getNames();
+
     /// add column statistics
-    for (auto & column : step.getRealColumnNames())
+    for (const auto & column : output_columns)
     {
         statistics.addColumnStatistics(column, ColumnStatistics::unknown());
     }
 
     /// For action_dags in prewhere do not contains all output nodes,
     /// we should append other nodes to statistics
-    auto append_column_stats = [&step](Statistics & statistics_)
+    auto append_column_stats = [&output_columns](Statistics & statistics_)
     {
-        for (auto & column : step.getOutputStream().header.getNames())
+        for (const auto & column : output_columns)
         {
             if (!statistics_.getColumnStatistics(column))
                 statistics_.addColumnStatistics(column, ColumnStatistics::unknown());
@@ -103,7 +106,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         if (prewhere_info->row_level_filter)
         {
             statistics = PredicateStatsCalculator::calculateStatistics(
-                prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics);
+                prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics, output_columns);
 
             statistics.removeColumnStatistics(prewhere_info->row_level_column_name);
             append_column_stats(statistics);
@@ -112,7 +115,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         if (prewhere_info->prewhere_actions)
         {
             statistics = PredicateStatsCalculator::calculateStatistics(
-                prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics);
+                prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics, output_columns);
 
             if (prewhere_info->remove_prewhere_column)
                 statistics.removeColumnStatistics(prewhere_info->prewhere_column_name);
@@ -125,7 +128,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     {
         auto & predicate = step.getFilters()[i];
         auto & predicate_node_name = step.getFilterNodes().nodes[i]->result_name;
-        statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics);
+        statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics, output_columns);
     }
 
     return statistics;
@@ -176,7 +179,7 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     if (statistics.hasUnknownColumn())
     {
         /// Estimate by multiplying some coefficient
-        selectivity = 0.2; /// TODO add to settings
+        selectivity = 0.1; /// TODO add to settings
         for (size_t i = 1; i < aggregate_keys.size(); i++)
         {
             if (selectivity * 1.1 > 1.0)
@@ -274,7 +277,13 @@ Statistics DeriveStatistics::visit(JoinStep & step)
 
     /// TODO Join type inner cross anti-...
     /// TODO on predicate
-//    auto join = step.getJoin();
+
+//    const auto & join = step.getJoin()->getTableJoin();
+//    const auto & on_clause = join.getOnlyClause();
+//    on_clause.key_names_left;
+//    on_clause.key_names_right;
+//    on
+
 //    auto & left_stream = step.getInputStreams()[0];
 //    auto & right_stream = step.getInputStreams()[1];
 //

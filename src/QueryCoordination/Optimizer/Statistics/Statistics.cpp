@@ -95,8 +95,8 @@ void Statistics::mergeColumnByUnion(const String & column_name, ColumnStatistics
     my->setMinValue(std::min(my->getMinValue(), other->getMinValue()));
     my->setMaxValue(std::max(my->getMaxValue(), other->getMaxValue()));
 
-    auto ndv = std::min(my->getNdv(), other->getNdv());
-    ndv = ndv + (std::max(my->getNdv(), other->getNdv()) - ndv) * 0.5; /// TODO add to settings
+    auto ndv = std::max(my->getNdv(), other->getNdv());
+    ndv = ndv + (ndv - std::min(my->getNdv(), other->getNdv())) * 0.1; /// TODO add to settings
     my->setNdv(ndv);
 }
 
