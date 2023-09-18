@@ -67,17 +67,8 @@ void attachInformationSchema(ContextMutablePtr context, IDatabase & information_
     createInformationSchemaView(context, information_schema_database, "tables", std::string_view(reinterpret_cast<const char *>(gresource_tables_sqlData), gresource_tables_sqlSize));
     createInformationSchemaView(context, information_schema_database, "views", std::string_view(reinterpret_cast<const char *>(gresource_views_sqlData), gresource_views_sqlSize));
     createInformationSchemaView(context, information_schema_database, "columns", std::string_view(reinterpret_cast<const char *>(gresource_columns_sqlData), gresource_columns_sqlSize));
-    createInformationSchemaView(
-        context,
-        information_schema_database,
-        "key_column_usage",
-        std::string_view(reinterpret_cast<const char *>(gresource_key_column_usage_sqlData), gresource_key_column_usage_sqlSize));
-    createInformationSchemaView(
-        context,
-        information_schema_database,
-        "referential_constraints",
-        std::string_view(
-            reinterpret_cast<const char *>(gresource_referential_constraints_sqlData), gresource_referential_constraints_sqlSize));
+    createInformationSchemaView(context, information_schema_database, "key_column_usage", std::string_view(reinterpret_cast<const char *>(gresource_key_column_usage_sqlData), gresource_key_column_usage_sqlSize));
+    createInformationSchemaView(context, information_schema_database, "referential_constraints", std::string_view(reinterpret_cast<const char *>(gresource_referential_constraints_sqlData), gresource_referential_constraints_sqlSize));
 }
 
 }
