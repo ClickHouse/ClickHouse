@@ -153,12 +153,14 @@ Columns:
 - `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 - `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `table_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Table type. Possible values:
+- `table_type` ([String](../../sql-reference/data-types/string.md)) — Table type. Possible values:
     - `BASE TABLE`
     - `VIEW`
     - `FOREIGN TABLE`
     - `LOCAL TEMPORARY`
     - `SYSTEM VIEW`
+- `table_comment` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The comment used when creating the table.
+- `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4`.
 
 **Example**
 
