@@ -138,7 +138,7 @@ result blocks. While this behavior is a good default, it can be suppressed using
 
 Also, results of queries with non-deterministic functions are not cached. Such functions include
 - functions for accessing dictionaries: [`dictGet()`](../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-dictGet) etc.
-- [user-defined functions](sql-reference/statements/create/function.md),
+- [user-defined functions](../sql-reference/statements/create/function.md),
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#date_time_functions-now),
   [`today()`](../sql-reference/functions/date-time-functions.md#date_time_functions-today),
   [`yesterday()`](../sql-reference/functions/date-time-functions.md#date_time_functions-yesterday) etc.,
@@ -152,7 +152,7 @@ Also, results of queries with non-deterministic functions are not cached. Such f
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#other_functions-currentUser),
   [`queryID()`](../sql-reference/functions/other-functions.md#other_functions-queryID),
   [`getMacro()`](../sql-reference/functions/other-functions.md#other_functions-getMacro) etc.
-Caching of non-determinstic functions can be forced regardless using setting
+Caching of non-deterministic functions can be forced regardless using setting
 [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
