@@ -47,15 +47,10 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         for (size_t i = 0; i < columns_to_read.size(); ++i)
             addStreams(columns_to_read[i], serializations[i], profile_callback_, clock_type_);
     }
-    catch (const Exception & e)
-    {
-        if (!isRetryableException(e))
-            data_part_info_for_read->reportBroken();
-        throw;
-    }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -78,15 +73,10 @@ void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
         /// of range only once so there is no such problem.
         /// 4. continue_reading == false, as we haven't read anything yet.
     }
-    catch (const Exception & e)
-    {
-        if (!isRetryableException(e))
-            data_part_info_for_read->reportBroken();
-        throw;
-    }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -184,18 +174,21 @@ size_t MergeTreeReaderWide::readRows(
         /// In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
     }
-    catch (Exception & e)
+    catch (...)
     {
-        if (!isRetryableException(e))
+        if (!isRetryableException(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
-        throw;
-    }
-    catch (...)
-    {
-        data_part_info_for_read->reportBroken();
+        try
+        {
+            rethrow_exception(std::current_exception());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+        }
+
         throw;
     }
 

@@ -61,7 +61,7 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
-class DatabaseNameHints : public IHints<1, DatabaseNameHints>
+class DatabaseNameHints : public IHints<>
 {
 public:
     explicit DatabaseNameHints(const DatabaseCatalog & database_catalog_)
@@ -897,19 +897,37 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     /// TSA does not support unique_lock
     auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
+    return std::make_unique<DDLGuard>(db_guard.table_guards, db_guard.database_ddl_mutex, std::move(lock), table, database);
 }
 
-std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
+DatabaseCatalog::DatabaseGuard & DatabaseCatalog::getDatabaseGuard(const String & database)
 {
     DDLGuards::iterator db_guard_iter;
     {
         std::lock_guard lock(ddl_guards_mutex);
         db_guard_iter = ddl_guards.try_emplace(database).first;
-        assert(db_guard_iter->second.first.contains(""));
     }
     DatabaseGuard & db_guard = db_guard_iter->second;
-    return std::unique_lock{db_guard.second};
+    return db_guard;
+}
+
+std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
+{
+    return std::unique_lock{getDatabaseGuard(database).database_ddl_mutex};
+}
+
+std::unique_lock<SharedMutex> DatabaseCatalog::getLockForDropDatabase(const String & database)
+{
+    return std::unique_lock{getDatabaseGuard(database).restart_replica_mutex};
+}
+
+std::optional<std::shared_lock<SharedMutex>> DatabaseCatalog::tryGetLockForRestartReplica(const String & database)
+{
+    DatabaseGuard & db_guard = getDatabaseGuard(database);
+    std::shared_lock lock(db_guard.restart_replica_mutex, std::defer_lock);
+    if (lock.try_lock())
+        return lock;
+    return {};
 }
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const

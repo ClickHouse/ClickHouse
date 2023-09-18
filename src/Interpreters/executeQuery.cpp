@@ -241,6 +241,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
+    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
@@ -1073,7 +1074,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// Save insertion table (not table function). TODO: support remote() table function.
                     auto table_id = insert_interpreter->getDatabaseTable();
                     if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id));
+                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
 
                     if (insert_data_buffer_holder)
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
