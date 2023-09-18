@@ -88,7 +88,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
 ## background_merges_mutations_scheduling_policy
 
@@ -583,7 +583,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default: 
+Default:
 
 ## thread_pool_queue_size
 
@@ -640,7 +640,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default: 
+Default:
 
 ## uncompressed_cache_policy
 
@@ -1948,7 +1948,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
@@ -2150,6 +2150,47 @@ The default server configuration file `config.xml` contains the following settin
 </crash_log>
 ```
 
+## backup_log {#server_configuration_parameters-backup_log}
+
+Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
+
+Parameters:
+
+- `database` — Database name.
+- `table` — Table name.
+- `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.
+- `order_by` - [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.
+- `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` is defined.
+- `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+- `max_size_rows` – Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.
+Default: 1048576.
+- `reserved_size_rows` –  Pre-allocated memory size in lines for the logs.
+Default: 8192.
+- `buffer_size_rows_flush_threshold` – Lines amount threshold, reaching it launches flushing logs to the disk in background.
+Default: `max_size_rows / 2`.
+- `flush_on_crash` - Indication whether logs should be dumped to the disk in case of a crash.
+Default: false.
+- `storage_policy` – Name of storage policy to use for the table (optional).
+- `settings` - [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md#settings) that control the behavior of the MergeTree (optional).
+
+**Example**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
+</clickhouse>
+```
+
 ## query_masking_rules {#query-masking-rules}
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
@@ -2195,6 +2236,8 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 **See Also**
 
 - [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [Cluster Discovery](../../operations/cluster-discovery.md)
+- [Replicated database engine](../../engines/database-engines/replicated.md)
 
 ## timezone {#server_configuration_parameters-timezone}
 
@@ -2363,7 +2406,7 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-    
+
 **Example configuration**
 
 ``` xml

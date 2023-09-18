@@ -433,7 +433,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
-    auto res = this->create();
+    auto res = this->create(size);
 
     if (size > 0)
     {

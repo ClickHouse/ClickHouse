@@ -431,7 +431,7 @@ def test_system_detached_parts(drop_detached_parts_table):
         )
 
     res = q(
-        "select system.detached_parts.* except (bytes_on_disk, `path`) from system.detached_parts where table like 'sdp_%' order by table, name"
+        "select system.detached_parts.* except (bytes_on_disk, `path`, modification_time) from system.detached_parts where table like 'sdp_%' order by table, name"
     )
     assert (
         res == "default\tsdp_0\tall\tall_1_1_0\tdefault\t\t1\t1\t0\n"

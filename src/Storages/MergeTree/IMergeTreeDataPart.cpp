@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <Storages/MergeTree/PartMetadataManagerWithCache.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -320,7 +319,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , part_type(part_type_)
     , parent_part(parent_part_)
     , parent_part_name(parent_part ? parent_part->name : "")
-    , use_metadata_cache(storage.use_metadata_cache)
 {
     if (parent_part)
     {
@@ -1676,14 +1674,7 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
 
 void IMergeTreeDataPart::initializePartMetadataManager()
 {
-#if USE_ROCKSDB
-    if (auto metadata_cache = storage.getContext()->tryGetMergeTreeMetadataCache(); metadata_cache && use_metadata_cache)
-        metadata_manager = std::make_shared<PartMetadataManagerWithCache>(this, metadata_cache);
-    else
-        metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
-#else
-        metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
-#endif
+    metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(this);
 }
 
 void IMergeTreeDataPart::initializeIndexGranularityInfo()
@@ -1805,11 +1796,12 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
-        /*save_metadata_callback=*/ {},
+        Context::getGlobalContextInstance()->getWriteSettings(),
+        /* save_metadata_callback= */ {},
         params);
 }
 
-MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const
+MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const WriteSettings & write_settings) const
 {
     assertOnDisk();
 
@@ -1819,7 +1811,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & di
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, storage.log);
+    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, write_settings, storage.log);
 }
 
 UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
@@ -1918,6 +1910,13 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
+}
+
+void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metadata) const
+{
+    checkConsistency(require_part_metadata);
+    for (const auto & [_, proj_part] : projection_parts)
+        proj_part->checkConsistency(require_part_metadata);
 }
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
@@ -2067,29 +2066,6 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
 }
 
-IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_name) const
-{
-    assert(use_metadata_cache);
-
-    const auto filenames_without_checksums = getFileNamesWithoutChecksums();
-    auto it = checksums.files.find(file_name);
-    if (!filenames_without_checksums.contains(file_name) && it != checksums.files.end())
-    {
-        return it->second.file_hash;
-    }
-
-    if (!getDataPartStorage().exists(file_name))
-    {
-        return {};
-    }
-    std::unique_ptr<ReadBufferFromFileBase> in_file = getDataPartStorage().readFile(file_name, {}, std::nullopt, std::nullopt);
-    HashingReadBuffer in_hash(*in_file);
-
-    String value;
-    readStringUntilEOF(value, in_hash);
-    return in_hash.getHash();
-}
-
 std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
     const String & stream_name,
     const Checksums & checksums_)
@@ -2157,11 +2133,6 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     return getStreamNameOrHash(stream_name, extension, storage_);
 }
 
-std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::checkMetadata() const
-{
-    return metadata_manager->check();
-}
-
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::Compact);
@@ -2183,8 +2154,6 @@ std::optional<std::string> getIndexExtensionFromFilesystem(const IDataPartStorag
     {
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
-            const auto & extension = fs::path(it->name()).extension();
-            if (extension == getIndexExtension(true))
                 return extension;
         }
     }

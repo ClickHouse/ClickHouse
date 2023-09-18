@@ -38,7 +38,7 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
-    const SelectQueryInfo * query_info,
+    ASTPtr additional_filter_ast,
     Poco::Logger * log)
 {
     Settings new_settings = settings;
@@ -115,11 +115,11 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     ///
     /// Here we don't try to analyze setting again. In case if query_info->additional_filter_ast is not empty, some filter was applied.
     /// It's just easier to add this filter for a source table.
-    if (query_info && query_info->additional_filter_ast)
+    if (additional_filter_ast)
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(queryToString(query_info->additional_filter_ast));
+        tuple.push_back(queryToString(additional_filter_ast));
         new_settings.additional_table_filters.value.push_back(std::move(tuple));
     }
 
@@ -174,7 +174,8 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(!query_info.getCluster()->getSecret().empty(), context, settings, main_table, &query_info, log);
+    auto new_context = updateSettingsForCluster(!not_optimized_cluster->getSecret().empty(), context, settings,
+                                                main_table, query_info.additional_filter_ast, log);
     new_context->increaseDistributedDepth();
 
     size_t shards = query_info.getCluster()->getShardCount();
@@ -265,11 +266,10 @@ void executeQuery(
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    const SelectQueryInfo & query_info,
+    std::shared_ptr<const StorageLimitsList> storage_limits,
     const ClusterPtr & not_optimized_cluster)
 {
     const auto & settings = context->getSettingsRef();
@@ -305,17 +305,18 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(&Poco::Logger::get("executeQueryWithParallelReplicas"), "Parallel replicas query in shard scope: shard_num={} cluster={}",
                   shard_num, not_optimized_cluster->getName());
 
-        const auto shard_replicas_num = not_optimized_cluster->getShardsAddresses()[shard_num - 1].size();
-        all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), shard_replicas_num);
-
-        /// shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
-        new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+        // get cluster for shard specified by shard_num
+        // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
+        auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+        // convert cluster to representation expected by parallel replicas
+        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings);
     }
     else
     {
         new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
-        all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
     }
+
+    all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
     auto external_tables = new_context->getExternalTables();
@@ -326,13 +327,12 @@ void executeQueryWithParallelReplicas(
         stream_factory.header,
         stream_factory.processed_stage,
         main_table,
-        table_func_ptr,
         new_context,
         getThrottler(new_context),
         std::move(scalars),
         std::move(external_tables),
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-        query_info.storage_limits);
+        std::move(storage_limits));
 
     query_plan.addStep(std::move(read_from_remote));
 }
