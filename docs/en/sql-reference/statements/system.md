@@ -342,9 +342,11 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA
 
-Sync all tables from all [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated). This will make the ClickHouse synchronously fetch all table definition
-from zookeeper and applied locally.
+Waits until the specified [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database. 
 
+**Syntax**
+```sql
+SYSTEM SYNC DATABASE REPLICA replicated_database_name;
 ### RESTART REPLICA
 
 Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
