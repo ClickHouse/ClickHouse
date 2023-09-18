@@ -190,7 +190,7 @@ private:
     double tokens; /// in ResourceCost units
     bool child_active = false;
 
-    std::chrono::nanoseconds throttling_duration;
+    std::chrono::nanoseconds throttling_duration{0};
 
     SchedulerNodePtr child;
 };
