@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 namespace
@@ -106,6 +107,13 @@ void MergeTreeDataPartWriterWide::addStreams(
             stream_name = sipHash128String(full_stream_name);
         else
             stream_name = full_stream_name;
+
+        auto it = stream_name_to_full_name.find(stream_name);
+        if (it != stream_name_to_full_name.end() && it->second != full_stream_name)
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                "Stream with name {} already created (full stream name: {}). Current full stream name: {}."
+                " It is a collision between a filename for one column and a hash of filename for another column or a bug",
+                stream_name, it->second, full_stream_name);
 
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))

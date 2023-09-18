@@ -850,7 +850,7 @@ If the file name for column is too long (more than `max_file_name_length` bytes)
 
 ## max_file_name_length {#max_file_name_length}
 
-The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. Default value: 128.
+The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
 
 ## clean_deleted_rows
 
