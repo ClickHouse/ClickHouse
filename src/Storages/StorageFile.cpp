@@ -56,11 +56,19 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <re2/re2.h>
 #include <filesystem>
 #include <shared_mutex>
 #include <cmath>
 #include <algorithm>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace ProfileEvents
 {
