@@ -1405,7 +1405,7 @@ Result:
 └─────────────────────┴─────────────────────┴──────────┘
 ```
 
-## today {#date_time_functions#today}
+## today {#date_time_functions-today}
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
