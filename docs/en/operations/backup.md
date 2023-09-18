@@ -255,7 +255,38 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-`system.backups` is by default a persistent [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree)-based system table (default engine definition is `ENGINE = MergeTree PARTITION BY toYYYYMM(start_time) ORDER BY start_time SETTINGS index_granularity = 8192`) that has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds`. You can also specify the engine and its parameters in the settings file:
+`system.backups` table has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds` and is by default a transient system table which uses a special engine named `SystemBackups`:
+```
+SELECT
+    database,
+    name,
+    engine,
+    engine_full
+FROM system.tables
+WHERE (database = 'system') AND (name = 'backups')
+```
+```response
+┌─database─┬─name────┬─engine────────┬─engine_full───┐
+│ system   │ backups │ SystemBackups │ SystemBackups │
+└──────────┴─────────┴───────────────┴───────────────┘
+
+1 row in set. Elapsed: 0.024 sec.
+```
+
+That is, upon each server's start, it doesn't contain any records regardless of any `BACKUP`/`RESTORE` queries run during previous sessions. However, you can specify the engine and its parameters in the settings file, under the `backups.system_table` section. There are several possible options:
+- `Memory` engine is explicitly specified:
+```xml
+<clickhouse>
+    <backups>
+        <system_table>
+            <engine>ENGINE = Memory</engine>
+        </system_table>
+    </backups>
+</clickhouse>
+```
+The behaviour is essentially the same as default, except that the engine is `Memory` rather than `SystemBackups`.
+
+- [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine is explicitly specified along with its parameters:
 ```xml
 <clickhouse>
     <backups>
@@ -266,18 +297,28 @@ end_time:          2022-08-30 09:21:46
 </clickhouse>
 ```
 
-If you don't want to keep persistent information about backup and restore operations, you can specify the `Memory` engine:
+- [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine’s parameters are specified, which is common for [system log tables](../operations/system-tables/index.md) configuration:
 ```xml
 <clickhouse>
     <backups>
         <system_table>
-            <engine>ENGINE = Memory</engine>
+            <partition_by>toYYYYMM(start_time)</partition_by>
         </system_table>
     </backups>
 </clickhouse>
 ```
 
-Currently, only two engines — `MergeTree` and `Memory` — can be specified for the `system.backups` table.
+- Neither engine nor [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine’s parameters are specified:
+```xml
+<clickhouse>
+    <backups>
+        <system_table/>
+    </backups>
+</clickhouse>
+```
+In this case, [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine with default parameters applies: `ENGINE = MergeTree PARTITION BY toYYYYMM(start_time) ORDER BY start_time SETTINGS index_granularity = 8192`. 
+
+Currently, only three engines — [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree), `Memory`, and `SystemBackups` — can be explicitly specified for the `system.backups` table.
 
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
