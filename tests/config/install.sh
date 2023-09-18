@@ -123,9 +123,19 @@ else
     ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 fi
 
+function randomize_config_boolean_value {
+    value=$(($RANDOM % 2))
+    sed --follow-symlinks -i "s|<$1>[01]</$1>|<$1>$value</$1>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+}
+
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
-create_snapshot_on_exit=$(($RANDOM % 2))
-sed --follow-symlinks -i "s|<create_snapshot_on_exit>true</create_snapshot_on_exit>|<create_snapshot_on_exit>$create_snapshot_on_exit</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+randomize_config_boolean_value create_snapshot_on_exit
+
+# Randomize all Keeper feature flags
+randomize_config_boolean_value filtered_list
+randomize_config_boolean_value multi_read
+randomize_config_boolean_value check_not_exists
+randomize_config_boolean_value create_if_not_exists
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
