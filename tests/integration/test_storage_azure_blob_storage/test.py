@@ -448,7 +448,7 @@ def test_schema_inference_from_globs(cluster):
     max_path = ""
     for i in range(10):
         for j in range(10):
-            path = "{}/{}_{}/{}.csv".format(
+            path = "{}/{}_{}/{}_schema.csv".format(
                 unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
             )
             max_path = max(path, max_path)
@@ -536,7 +536,7 @@ def test_put_get_with_globs_tf(cluster):
     max_path = ""
     for i in range(10):
         for j in range(10):
-            path = "{}/{}_{}/{}.csv".format(
+            path = "{}/{}_{}/{}_tf.csv".format(
                 unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
             )
             max_path = max(path, max_path)
@@ -576,7 +576,7 @@ def test_schema_inference_from_globs_tf(cluster):
 
     for i in range(10):
         for j in range(10):
-            path = "{}/{}_{}/{}.csv".format(
+            path = "{}/{}_{}/{}_schema_tf.csv".format(
                 unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
             )
             max_path = max(path, max_path)
