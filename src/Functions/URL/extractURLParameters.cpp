@@ -27,7 +27,7 @@ public:
         validateFunctionArgumentTypes(func, arguments, mandatory_args);
     }
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/, MaxSubstringBehavior /*max_substring_behavior*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substrings_includes_remaining_string*/) {}
 
     static constexpr auto strings_argument_position = 0uz;
 

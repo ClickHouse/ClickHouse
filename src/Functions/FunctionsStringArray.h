@@ -54,14 +54,7 @@ namespace ErrorCodes
 
 using Pos = const char *;
 
-enum class MaxSubstringBehavior
-{
-    LikeClickHouse,
-    LikeSpark,
-    LikePython
-};
-
-std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position, MaxSubstringBehavior max_substring_behavior);
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position);
 
 /// Substring generators. All of them have a common interface.
 
@@ -72,7 +65,7 @@ private:
     Pos end;
     std::optional<size_t> max_splits;
     size_t splits;
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "alphaTokens";
@@ -97,10 +90,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
-        max_substring_behavior = max_substring_behavior_;
-        max_splits = extractMaxSplits(arguments, 1, max_substring_behavior);
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 1);
     }
 
     /// Called for each next string.
@@ -125,35 +118,18 @@ public:
 
         if (max_splits)
         {
-            switch (max_substring_behavior)
+            if (max_substrings_includes_remaining_string)
             {
-                case MaxSubstringBehavior::LikeClickHouse:
+                if (splits == *max_splits - 1)
                 {
-                    if (splits == *max_splits)
-                        return false;
-                    break;
-                }
-                case MaxSubstringBehavior::LikeSpark:
-                {
-                    if (splits == *max_splits - 1)
-                    {
-                        token_end = end;
-                        pos = end;
-                        return true;
-                    }
-                    break;
-                }
-                case MaxSubstringBehavior::LikePython:
-                {
-                    if (splits == *max_splits)
-                    {
-                        token_end = end;
-                        pos = end;
-                        return true;
-                    }
-                    break;
+                    token_end = end;
+                    pos = end;
+                    return true;
                 }
             }
+            else
+                if (splits == *max_splits)
+                    return false;
         }
 
         while (pos < end && isAlphaASCII(*pos))
@@ -173,7 +149,7 @@ private:
     Pos end;
     std::optional<size_t> max_splits;
     size_t splits;
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     /// Get the name of the function.
@@ -190,10 +166,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
-        max_substring_behavior = max_substring_behavior_;
-        max_splits = extractMaxSplits(arguments, 1, max_substring_behavior);
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 1);
     }
 
     /// Called for each next string.
@@ -218,35 +194,18 @@ public:
 
         if (max_splits)
         {
-            switch (max_substring_behavior)
+            if (max_substrings_includes_remaining_string)
             {
-                case MaxSubstringBehavior::LikeClickHouse:
+                if (splits == *max_splits - 1)
                 {
-                    if (splits == *max_splits)
-                        return false;
-                    break;
-                }
-                case MaxSubstringBehavior::LikeSpark:
-                {
-                    if (splits == *max_splits - 1)
-                    {
-                        token_end = end;
-                        pos = end;
-                        return true;
-                    }
-                    break;
-                }
-                case MaxSubstringBehavior::LikePython:
-                {
-                    if (splits == *max_splits)
-                    {
-                        token_end = end;
-                        pos = end;
-                        return true;
-                    }
-                    break;
+                    token_end = end;
+                    pos = end;
+                    return true;
                 }
             }
+            else
+                if (splits == *max_splits)
+                    return false;
         }
 
         while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
@@ -266,7 +225,7 @@ private:
     Pos end;
     std::optional<size_t> max_splits;
     size_t splits;
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByWhitespace";
@@ -282,10 +241,10 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
-        max_substring_behavior = max_substring_behavior_;
-        max_splits = extractMaxSplits(arguments, 1, max_substring_behavior);
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 1);
     }
 
     /// Called for each next string.
@@ -310,35 +269,18 @@ public:
 
         if (max_splits)
         {
-            switch (max_substring_behavior)
+            if (max_substrings_includes_remaining_string)
             {
-                case MaxSubstringBehavior::LikeClickHouse:
+                if (splits == *max_splits - 1)
                 {
-                    if (splits == *max_splits)
-                        return false;
-                    break;
-                }
-                case MaxSubstringBehavior::LikeSpark:
-                {
-                    if (splits == *max_splits - 1)
-                    {
-                        token_end = end;
-                        pos = end;
-                        return true;
-                    }
-                    break;
-                }
-                case MaxSubstringBehavior::LikePython:
-                {
-                    if (splits == *max_splits)
-                    {
-                        token_end = end;
-                        pos = end;
-                        return true;
-                    }
-                    break;
+                    token_end = end;
+                    pos = end;
+                    return true;
                 }
             }
+            else
+                if (splits == *max_splits)
+                    return false;
         }
 
         while (pos < end && !isWhitespaceASCII(*pos))
@@ -359,7 +301,7 @@ private:
     char separator;
     std::optional<size_t> max_splits;
     size_t splits;
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -383,7 +325,7 @@ public:
 
     static constexpr auto strings_argument_position = 1uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -398,8 +340,8 @@ public:
 
         separator = sep_str[0];
 
-        max_substring_behavior = max_substring_behavior_;
-        max_splits = extractMaxSplits(arguments, 2, max_substring_behavior);
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     void set(Pos pos_, Pos end_)
@@ -418,35 +360,18 @@ public:
 
         if (max_splits)
         {
-            switch (max_substring_behavior)
+            if (max_substrings_includes_remaining_string)
             {
-                case MaxSubstringBehavior::LikeClickHouse:
+                if (splits == *max_splits - 1)
                 {
-                    if (splits == *max_splits)
-                        return false;
-                    break;
-                }
-                case MaxSubstringBehavior::LikeSpark:
-                {
-                    if (splits == *max_splits - 1)
-                    {
-                        token_end = end;
-                        pos = nullptr;
-                        return true;
-                    }
-                    break;
-                }
-                case MaxSubstringBehavior::LikePython:
-                {
-                    if (splits == *max_splits)
-                    {
-                        token_end = end;
-                        pos = nullptr;
-                        return true;
-                    }
-                    break;
+                    token_end = end;
+                    pos = nullptr;
+                    return true;
                 }
             }
+            else
+               if (splits == *max_splits)
+                   return false;
         }
 
         pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
@@ -472,7 +397,7 @@ private:
     String separator;
     std::optional<size_t> max_splits;
     size_t splits;
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByString";
@@ -487,7 +412,7 @@ public:
 
     static constexpr auto strings_argument_position = 1uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -497,8 +422,8 @@ public:
 
         separator = col->getValue<String>();
 
-        max_substring_behavior = max_substring_behavior_;
-        max_splits = extractMaxSplits(arguments, 2, max_substring_behavior);
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     /// Called for each next string.
@@ -521,35 +446,18 @@ public:
 
             if (max_splits)
             {
-                switch (max_substring_behavior)
+                if (max_substrings_includes_remaining_string)
                 {
-                    case MaxSubstringBehavior::LikeClickHouse:
+                    if (splits == *max_splits - 1)
                     {
-                        if (splits == *max_splits)
-                            return false;
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikeSpark:
-                    {
-                        if (splits == *max_splits - 1)
-                        {
-                            token_end = end;
-                            pos = end;
-                            return true;
-                        }
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikePython:
-                    {
-                        if (splits == *max_splits)
-                        {
-                            token_end = end;
-                            pos = end;
-                            return true;
-                        }
-                        break;
+                        token_end = end;
+                        pos = end;
+                        return true;
                     }
                 }
+                else
+                    if (splits == *max_splits)
+                        return false;
             }
 
             pos += 1;
@@ -565,35 +473,18 @@ public:
 
             if (max_splits)
             {
-                switch (max_substring_behavior)
+                if (max_substrings_includes_remaining_string)
                 {
-                    case MaxSubstringBehavior::LikeClickHouse:
+                    if (splits == *max_splits - 1)
                     {
-                        if (splits == *max_splits)
-                            return false;
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikeSpark:
-                    {
-                        if (splits == *max_splits - 1)
-                        {
-                            token_end = end;
-                            pos = nullptr;
-                            return true;
-                        }
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikePython:
-                    {
-                        if (splits == *max_splits)
-                        {
-                            token_end = end;
-                            pos = nullptr;
-                            return true;
-                        }
-                        break;
+                        token_end = end;
+                        pos = nullptr;
+                        return true;
                     }
                 }
+                else
+                    if (splits == *max_splits)
+                        return false;
             }
 
             pos = reinterpret_cast<Pos>(memmem(pos, end - pos, separator.data(), separator.size()));
@@ -622,7 +513,7 @@ private:
 
     std::optional<size_t> max_splits;
     size_t splits;
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByRegexp";
@@ -638,7 +529,7 @@ public:
 
     static constexpr auto strings_argument_position = 1uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior max_substring_behavior_)
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
@@ -649,8 +540,8 @@ public:
         if (!col->getValue<String>().empty())
             re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
 
-        max_substring_behavior = max_substring_behavior_;
-        max_splits = extractMaxSplits(arguments, 2, max_substring_behavior);
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     /// Called for each next string.
@@ -673,35 +564,18 @@ public:
 
             if (max_splits)
             {
-                switch (max_substring_behavior)
+                if (max_substrings_includes_remaining_string)
                 {
-                    case MaxSubstringBehavior::LikeClickHouse:
+                    if (splits == *max_splits - 1)
                     {
-                        if (splits == *max_splits)
-                            return false;
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikeSpark:
-                    {
-                        if (splits == *max_splits - 1)
-                        {
-                            token_end = end;
-                            pos = end;
-                            return true;
-                        }
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikePython:
-                    {
-                        if (splits == *max_splits)
-                        {
-                            token_end = end;
-                            pos = end;
-                            return true;
-                        }
-                        break;
+                        token_end = end;
+                        pos = end;
+                        return true;
                     }
                 }
+                else
+                    if (splits == *max_splits)
+                        return false;
             }
 
             pos += 1;
@@ -717,35 +591,18 @@ public:
 
             if (max_splits)
             {
-                switch (max_substring_behavior)
+                if (max_substrings_includes_remaining_string)
                 {
-                    case MaxSubstringBehavior::LikeClickHouse:
+                    if (splits == *max_splits - 1)
                     {
-                        if (splits == *max_splits)
-                            return false;
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikeSpark:
-                    {
-                        if (splits == *max_splits - 1)
-                        {
-                            token_end = end;
-                            pos = nullptr;
-                            return true;
-                        }
-                        break;
-                    }
-                    case MaxSubstringBehavior::LikePython:
-                    {
-                        if (splits == *max_splits)
-                        {
-                            token_end = end;
-                            pos = nullptr;
-                            return true;
-                        }
-                        break;
+                        token_end = end;
+                        pos = nullptr;
+                        return true;
                     }
                 }
+                else
+                    if (splits == *max_splits)
+                        return false;
             }
 
             if (!re->match(pos, end - pos, matches) || !matches[0].length)
@@ -792,7 +649,7 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & arguments, MaxSubstringBehavior /*max_substring_behavior*/)
+    void init(const ColumnsWithTypeAndName & arguments, bool /*max_substrings_includes_remaining_string*/)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
 
@@ -845,7 +702,7 @@ template <typename Generator>
 class FunctionTokens : public IFunction
 {
 private:
-    MaxSubstringBehavior max_substring_behavior;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = Generator::name;
@@ -854,17 +711,7 @@ public:
     explicit FunctionTokens<Generator>(ContextPtr context)
     {
         const Settings & settings = context->getSettingsRef();
-        if (settings.splitby_max_substring_behavior.value == "")
-            max_substring_behavior = MaxSubstringBehavior::LikeClickHouse;
-        else if (settings.splitby_max_substring_behavior.value == "python")
-            max_substring_behavior = MaxSubstringBehavior::LikePython;
-        else if (settings.splitby_max_substring_behavior.value == "spark")
-            max_substring_behavior = MaxSubstringBehavior::LikeSpark;
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal value {} for setting splitby_max_substring_behavior in function {}, must be '', 'python' or 'spark'",
-                settings.splitby_max_substring_behavior.value, getName());
+        max_substrings_includes_remaining_string = settings.splitby_max_substrings_includes_remaining_string;
     }
 
     String getName() const override { return name; }
@@ -885,7 +732,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         Generator generator;
-        generator.init(arguments, max_substring_behavior);
+        generator.init(arguments, max_substrings_includes_remaining_string);
 
         const auto & array_argument = arguments[generator.strings_argument_position];
 

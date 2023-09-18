@@ -21,7 +21,7 @@ splitByChar(separator, s[, max_substrings]))
 
 - `separator` — The separator which should contain exactly one character. [String](../../sql-reference/data-types/string.md).
 - `s` — The string to split. [String](../../sql-reference/data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
+- `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
@@ -39,7 +39,9 @@ For example,
 - in v22.10: `SELECT splitByChar('=', 'a=b=c=d', 2); -- ['a','b','c=d']`
 - in v22.11: `SELECT splitByChar('=', 'a=b=c=d', 2); -- ['a','b']`
 
-The previous behavior can be restored by setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) = 'python'.
+A behavior similar to ClickHouse pre-v22.11 can be achieved by setting
+[splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string)
+`SELECT splitByChar('=', 'a=b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1 -- ['a', 'b=c=d']`
 :::
 
 **Example**
@@ -82,7 +84,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 - There are multiple consecutive non-empty separators;
 - The original string `s` is empty while the separator is not empty.
 
-Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
@@ -137,7 +139,7 @@ Returns an array of selected substrings. Empty substrings may be selected when:
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
@@ -188,7 +190,7 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
@@ -227,7 +229,7 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
@@ -289,7 +291,7 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-Setting [splitby_max_substring_behavior](../../operations/settings/settings.md#splitby-max-substring-behavior) (default: '') controls the behavior with `max_substrings` > 0.
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
