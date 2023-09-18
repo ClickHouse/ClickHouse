@@ -1,0 +1,6 @@
+<clickhouse>
+    <keeper_server>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+    </keeper_server>
+</clickhouse>

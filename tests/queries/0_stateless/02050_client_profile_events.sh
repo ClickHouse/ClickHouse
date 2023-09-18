@@ -25,7 +25,7 @@ profile_events="$($CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events -
 test "$profile_events" -gt 1 && echo OK || echo "FAIL ($profile_events)"
 
 echo 'print each 100 ms'
-profile_events="$($CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events --profile-events-delay-ms=100 -q 'select sleep(1) from numbers(2) format Null' |& grep -c 'SelectedRows')"
+profile_events="$($CLICKHOUSE_CLIENT --max_block_size 1 --print-profile-events --profile-events-delay-ms=100 -q 'select sleep(0.2) from numbers(10) format Null' |& grep -c 'SelectedRows')"
 test "$profile_events" -gt 1 && echo OK || echo "FAIL ($profile_events)"
 
 echo 'check that ProfileEvents is new for each query'

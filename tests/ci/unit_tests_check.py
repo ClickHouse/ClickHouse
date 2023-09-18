@@ -12,7 +12,6 @@ from github import Github
 from build_download_helper import download_unit_tests
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -159,7 +158,6 @@ def main():
     state, description, test_results, additional_logs = process_results(test_output)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,

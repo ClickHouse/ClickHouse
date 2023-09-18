@@ -304,6 +304,12 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 }
 
+void StorageEmbeddedRocksDB::drop()
+{
+    rocksdb_ptr->Close();
+    rocksdb_ptr = nullptr;
+}
+
 void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
@@ -461,7 +467,7 @@ Pipe StorageEmbeddedRocksDB::read(
 }
 
 SinkToStoragePtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }

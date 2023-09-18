@@ -12,3 +12,5 @@ services:
             - type: ${HDFS_FS:-tmpfs}
               source: ${HDFS_LOGS:-}
               target: /usr/local/hadoop/logs
+        sysctls:
+            net.ipv4.ip_local_port_range: '55000 65535'
