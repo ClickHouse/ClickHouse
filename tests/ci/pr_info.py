@@ -343,7 +343,9 @@ def can_skip_integration_tests(self, versions: List[str]):
     )
 
 
-def can_skip_functional_tests(self, version, test_type: Literal["stateless", "stateful"]):
+def can_skip_functional_tests(
+    self, version, test_type: Literal["stateless", "stateful"]
+):
     if FORCE_TESTS_LABEL in self.labels:
         return False
 
