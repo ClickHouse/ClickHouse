@@ -63,12 +63,6 @@ public:
 
     String getName() const override { return "groupArraySorted"; }
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
-    {
-        [[maybe_unused]] auto a = new (place) Data;
-    }
-    /// NOTE: Later we need to remove: limit_num_elems (if possible)
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & row_values = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
@@ -97,29 +91,30 @@ public:
 
         if (rhs_elems.value.empty())
             return;
+        
+        if (rhs_elems.value.size())
+            cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
 
         std::sort(cur_elems.value.begin(), cur_elems.value.end());
         if (limit_num_elems)
             cur_elems.value.resize(max_elems, arena);
-
-        if (rhs_elems.value.size())
-            cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        writeVarUInt(this->data(place).value.size(), buf);
-
         auto & value = this->data(place).value;
+        size_t size = value.size();
+        writeVarUInt(size, buf);
+
         for (const Field & elem : value)
         {
             if (elem.isNull())
             {
-                writeBinary(UInt8(1), buf);
+                writeBinary(false, buf);
             }
             else
             {
-                writeBinary(UInt8(0), buf);
+                writeBinary(true, buf);
                 serialization->serializeBinary(elem, buf, {});
             }
         }
@@ -130,17 +125,19 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (size > 0xFFFFFF)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", 0xFFFFFF);
-        if (limit_num_elems && unlikely(size > max_elems))
+        if (unlikely(size > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
         auto & value = this->data(place).value;
 
-        value.resize_exact(size, arena);
+        value.resize(size, arena);
         for (auto & element : value)
-            readBinaryLittleEndian(element, buf);
+        {
+            UInt8 is_null = 0;
+            readBinary(is_null, buf);
+            if (!is_null)
+                readBinaryLittleEndian(element, buf);
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * a) const override
@@ -199,7 +196,7 @@ class GroupArraySortedGeneralImpl final
     DataTypePtr & data_type;
     UInt64 max_elems;
     SerializationPtr serialization;
-    
+
 
 public:
     GroupArraySortedGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -213,16 +210,8 @@ public:
 
     String getName() const override { return "groupArraySorted"; }
 
-    void create(AggregateDataPtr __restrict place) const override /// NOLINT
-    {
-        [[maybe_unused]] auto a = new (place) Data;
-    }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (limit_num_elems && (columns[0]->size() < max_elems))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Max size of result array is bigger than actual array size");
-
         auto & cur_elems = data(place);
 
         cur_elems.value.push_back(columns[0][0][row_num], arena);
@@ -255,22 +244,27 @@ public:
 
         for (UInt64 i = 0; i < new_elems; ++i)
             cur_elems.value.push_back(rhs_elems.value[i], arena);
+
+        std::sort(cur_elems.value.begin(), cur_elems.value.end());
+        if (limit_num_elems)
+            cur_elems.value.resize(max_elems, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        writeVarUInt(data(place).value.size(), buf);
-
         auto & value = data(place).value;
+        size_t size = value.size();
+        writeVarUInt(size, buf);
+
         for (const Field & elem : value)
         {
             if (elem.isNull())
             {
-                writeBinary(UInt8(1), buf);
+                writeBinary(false, buf);
             }
             else
             {
-                writeBinary(UInt8(0), buf);
+                writeBinary(true, buf);
                 serialization->serializeBinary(elem, buf, {});
             }
         }
@@ -281,22 +275,18 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        if (size > 0xFFFFFF)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size (maximum: {})", 0xFFFFFF);
-
-        if (limit_num_elems && unlikely(size > max_elems))
+        if (unlikely(size > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
-        auto & arr = data(place).value;
+        auto & value = data(place).value;
 
-        arr.resize(size, arena);
-        for (size_t i = 0; i < size; ++i)
+        value.resize(size, arena);
+        for (Field & elem : value)
         {
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf, {});
+                serialization->deserializeBinary(elem, buf, {});
         }
     }
 
@@ -305,9 +295,13 @@ public:
         auto & column_array = assert_cast<ColumnArray &>(to);
         auto & value = data(place).value;
         std::sort(value.begin(), value.end());
-        if (limit_num_elems)
-            value.resize_exact(max_elems, arena);
 
+        if (limit_num_elems)
+        {
+            if (value.size() < max_elems)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
+            value.resize_exact(max_elems, arena);
+        }
         auto & offsets = column_array.getOffsets();
         offsets.push_back(offsets.back() + value.size());
 

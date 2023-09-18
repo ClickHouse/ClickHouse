@@ -16,7 +16,6 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
-#include <Core/Field.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -414,7 +413,6 @@ struct GroupArrayNodeString : public GroupArrayNodeBase<GroupArrayNodeString>
 struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
 {
     using Node = GroupArrayNodeGeneral;
-    // field of data in node (method data() doesn't allow to compare Nodes)
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {

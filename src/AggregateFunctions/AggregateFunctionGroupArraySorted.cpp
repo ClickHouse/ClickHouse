@@ -71,7 +71,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySorted(
     if (limit_size)
         return createAggregateFunctionGroupArraySortedImpl<GroupArrayTrait</* Thas_limit= */ true, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
     else
-        return createAggregateFunctionGroupArraySortedImpl<GroupArrayTrait</* Thas_limit= */ false, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters);
+        return createAggregateFunctionGroupArraySortedImpl<GroupArrayTrait</* Thas_limit= */ false, false, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, 0xFFFFFF);
 }
 
 }
