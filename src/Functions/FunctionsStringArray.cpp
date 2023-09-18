@@ -19,7 +19,7 @@ std::optional<Int64> extractMaxSplitsImpl(const ColumnWithTypeAndName & argument
     return static_cast<Int64>(value);
 }
 
-std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position, MaxSubstringBehavior max_substring_behavior)
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position)
 {
     if (max_substrings_argument_position >= arguments.size())
         return std::nullopt;
@@ -35,24 +35,8 @@ std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments,
             arguments[max_substrings_argument_position].column->getName(),
             max_substrings_argument_position + 1);
 
-    if (max_splits)
-        switch (max_substring_behavior)
-        {
-            case MaxSubstringBehavior::LikeClickHouse:
-            case MaxSubstringBehavior::LikeSpark:
-            {
-                if (*max_splits <= 0)
-                    return std::nullopt;
-                break;
-            }
-            case MaxSubstringBehavior::LikePython:
-            {
-                if (*max_splits < 0)
-                    return std::nullopt;
-                break;
-            }
-        }
-
+    if (*max_splits <= 0)
+        return std::nullopt;
 
     return max_splits;
 }

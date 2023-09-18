@@ -29,7 +29,7 @@ public:
 
     static constexpr auto strings_argument_position = 0uz;
 
-    void init(const ColumnsWithTypeAndName & /*arguments*/, MaxSubstringBehavior /*max_substring_behavior*/) {}
+    void init(const ColumnsWithTypeAndName & /*arguments*/, bool /*max_substring_behavior*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
