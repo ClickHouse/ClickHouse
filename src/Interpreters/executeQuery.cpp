@@ -241,6 +241,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
+    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during

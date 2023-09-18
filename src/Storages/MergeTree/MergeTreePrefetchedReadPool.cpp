@@ -61,6 +61,12 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetechedReaders::get(
 {
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+
+    /// First wait for completion of all futures.
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.wait();
+
+    /// Then rethrow first exception if any.
     for (auto & prefetch_future : prefetch_futures)
         prefetch_future.get();
 
