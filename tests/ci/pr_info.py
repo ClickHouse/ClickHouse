@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Dict, List, Set, Union
+from typing import Dict, List, Set, Union, Any, Literal
 
 from unidiff import PatchSet  # type: ignore
 
@@ -327,7 +327,7 @@ def can_skip_integration_tests(self, versions: List[str]):
         return False
 
     # If docker image(s) relevant to integration tests are updated
-    if self.sha not in versions:
+    if any(self.sha in version for version in versions):
         return False
 
     if self.changed_files is None or not self.changed_files:
@@ -343,7 +343,7 @@ def can_skip_integration_tests(self, versions: List[str]):
     )
 
 
-def can_skip_functional_tests(self, version):
+def can_skip_functional_tests(self, version, test_type: Literal["stateless", "stateful"]):
     if FORCE_TESTS_LABEL in self.labels:
         return False
 
@@ -358,12 +358,20 @@ def can_skip_functional_tests(self, version):
         return False
 
     # Functional tests can be skipped if queries tests are not changed
-    return not any(
-        f.startswith("tests/queries/0_stateless")
-        or f.startswith("tests/queries/1_stateful")
-        or f == "tests/ci/functional_test_check.py"
-        for f in self.changed_files
-    )
+    if test_type == "stateless":
+        return not any(
+            f.startswith("tests/queries/0_stateless")
+            or f == "tests/ci/functional_test_check.py"
+            for f in self.changed_files
+        )
+    elif test_type == "stateful":
+        return not any(
+            f.startswith("tests/queries/1_stateful")
+            or f == "tests/ci/functional_test_check.py"
+            for f in self.changed_files
+        )
+
+    return False
 
 
 class FakePRInfo:
