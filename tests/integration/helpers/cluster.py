@@ -3378,6 +3378,7 @@ class ClickHouseInstance:
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
+        exception = None
         for i in range(retry_count):
             try:
                 result = self.query(
@@ -3396,11 +3397,14 @@ class ClickHouseInstance:
                 time.sleep(sleep_time)
             except Exception as ex:
                 # logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                exception = ex
                 time.sleep(sleep_time)
 
         if result is not None:
             return result
-        raise Exception("Can't execute query {}".format(sql))
+        raise Exception(
+            "Can't execute query {} with exception {}".format(sql, exception)
+        )
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, sql, *args, **kwargs):
