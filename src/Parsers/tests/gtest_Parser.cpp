@@ -18,6 +18,7 @@
 #include <string_view>
 #include <regex>
 #include <gtest/gtest.h>
+#include <boost/algorithm/string/replace.hpp>
 
 namespace
 {
@@ -40,7 +41,7 @@ std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> pa
 std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
     std::string input_text{test_case.input_text};
-    std::replace(input_text.begin(), input_text.end(),'\n', ' ');
+    boost::replace_all(input_text, "\n", "\\n");
     return ostr << "ParserTestCase input: " << input_text;
 }
 
