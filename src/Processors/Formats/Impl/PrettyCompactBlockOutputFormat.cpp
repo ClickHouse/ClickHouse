@@ -194,7 +194,8 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
     writeBottom(max_widths);
 
-    total_rows += num_rows;
+    if (port_kind != PortKind::PartialResult)
+        total_rows += num_rows;
 }
 
 

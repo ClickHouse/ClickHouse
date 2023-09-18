@@ -52,12 +52,14 @@ class S3Helper:
         self.host = S3_URL
         self.download_host = S3_DOWNLOAD
 
-    def _upload_file_to_s3(self, bucket_name: str, file_path: str, s3_path: str) -> str:
+    def _upload_file_to_s3(
+        self, bucket_name: str, file_path: Path, s3_path: str
+    ) -> str:
         logging.debug(
             "Start uploading %s to bucket=%s path=%s", file_path, bucket_name, s3_path
         )
         metadata = {}
-        if os.path.getsize(file_path) < 64 * 1024 * 1024:
+        if file_path.stat().st_size < 64 * 1024 * 1024:
             if (
                 s3_path.endswith("txt")
                 or s3_path.endswith("log")
@@ -97,17 +99,14 @@ class S3Helper:
             if re.search(r"\.(txt|log|err|out)$", s3_path) or re.search(
                 r"\.log\..*(?<!\.zst)$", s3_path
             ):
+                compressed_path = file_path.with_suffix(file_path.suffix + ".zst")
                 logging.info(
                     "Going to compress file log file %s to %s",
                     file_path,
-                    file_path + ".zst",
+                    compressed_path,
                 )
-                # FIXME: rewrite S3 to Path
-                _file_path = Path(file_path)
-                compress_file_fast(
-                    _file_path, _file_path.with_suffix(_file_path.suffix + ".zst")
-                )
-                file_path += ".zst"
+                compress_file_fast(file_path, compressed_path)
+                file_path = compressed_path
                 s3_path += ".zst"
             else:
                 logging.info("Processing file without compression")
@@ -121,22 +120,20 @@ class S3Helper:
         logging.info("Upload %s to %s. Meta: %s", file_path, url, metadata)
         return url
 
-    def upload_test_report_to_s3(self, file_path: str, s3_path: str) -> str:
+    def upload_test_report_to_s3(self, file_path: Path, s3_path: str) -> str:
         if CI:
             return self._upload_file_to_s3(S3_TEST_REPORTS_BUCKET, file_path, s3_path)
-        else:
-            return S3Helper.copy_file_to_local(
-                S3_TEST_REPORTS_BUCKET, file_path, s3_path
-            )
 
-    def upload_build_file_to_s3(self, file_path, s3_path):
+        return S3Helper.copy_file_to_local(S3_TEST_REPORTS_BUCKET, file_path, s3_path)
+
+    def upload_build_file_to_s3(self, file_path: Path, s3_path: str) -> str:
         if CI:
             return self._upload_file_to_s3(S3_BUILDS_BUCKET, file_path, s3_path)
-        else:
-            return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
+
+        return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
 
     def fast_parallel_upload_dir(
-        self, dir_path: Union[str, Path], s3_dir_path: str, bucket_name: str
+        self, dir_path: Path, s3_dir_path: str, bucket_name: str
     ) -> List[str]:
         all_files = []
 
@@ -196,37 +193,37 @@ class S3Helper:
         logging.basicConfig(level=original_level)
         return result
 
-    def _upload_folder_to_s3(
+    def _upload_directory_to_s3(
         self,
-        folder_path,
-        s3_folder_path,
-        bucket_name,
-        keep_dirs_in_s3_path,
-        upload_symlinks,
-    ):
+        directory_path: Path,
+        s3_directory_path: str,
+        bucket_name: str,
+        keep_dirs_in_s3_path: bool,
+        upload_symlinks: bool,
+    ) -> List[str]:
         logging.info(
-            "Upload folder '%s' to bucket=%s of s3 folder '%s'",
-            folder_path,
+            "Upload directory '%s' to bucket=%s of s3 directory '%s'",
+            directory_path,
             bucket_name,
-            s3_folder_path,
+            s3_directory_path,
         )
-        if not os.path.exists(folder_path):
+        if not directory_path.exists():
             return []
-        files = os.listdir(folder_path)
+        files = list(directory_path.iterdir())
         if not files:
             return []
 
         p = Pool(min(len(files), 5))
 
-        def task(file_name):
-            full_fs_path = os.path.join(folder_path, file_name)
+        def task(file_path: Path) -> Union[str, List[str]]:
+            full_fs_path = file_path.absolute()
             if keep_dirs_in_s3_path:
-                full_s3_path = s3_folder_path + "/" + os.path.basename(folder_path)
+                full_s3_path = os.path.join(s3_directory_path, directory_path.name)
             else:
-                full_s3_path = s3_folder_path
+                full_s3_path = s3_directory_path
 
             if os.path.isdir(full_fs_path):
-                return self._upload_folder_to_s3(
+                return self._upload_directory_to_s3(
                     full_fs_path,
                     full_s3_path,
                     bucket_name,
@@ -234,60 +231,63 @@ class S3Helper:
                     upload_symlinks,
                 )
 
-            if os.path.islink(full_fs_path):
+            if full_fs_path.is_symlink():
                 if upload_symlinks:
                     if CI:
                         return self._upload_file_to_s3(
-                            bucket_name, full_fs_path, full_s3_path + "/" + file_name
+                            bucket_name,
+                            full_fs_path,
+                            full_s3_path + "/" + file_path.name,
                         )
-                    else:
-                        return S3Helper.copy_file_to_local(
-                            bucket_name, full_fs_path, full_s3_path + "/" + file_name
-                        )
+                    return S3Helper.copy_file_to_local(
+                        bucket_name, full_fs_path, full_s3_path + "/" + file_path.name
+                    )
                 return []
 
             if CI:
                 return self._upload_file_to_s3(
-                    bucket_name, full_fs_path, full_s3_path + "/" + file_name
+                    bucket_name, full_fs_path, full_s3_path + "/" + file_path.name
                 )
-            else:
-                return S3Helper.copy_file_to_local(
-                    bucket_name, full_fs_path, full_s3_path + "/" + file_name
-                )
+
+            return S3Helper.copy_file_to_local(
+                bucket_name, full_fs_path, full_s3_path + "/" + file_path.name
+            )
 
         return sorted(_flatten_list(list(p.map(task, files))))
 
-    def upload_build_folder_to_s3(
+    def upload_build_directory_to_s3(
         self,
-        folder_path,
-        s3_folder_path,
-        keep_dirs_in_s3_path=True,
-        upload_symlinks=True,
-    ):
-        return self._upload_folder_to_s3(
-            folder_path,
-            s3_folder_path,
+        directory_path: Path,
+        s3_directory_path: str,
+        keep_dirs_in_s3_path: bool = True,
+        upload_symlinks: bool = True,
+    ) -> List[str]:
+        return self._upload_directory_to_s3(
+            directory_path,
+            s3_directory_path,
             S3_BUILDS_BUCKET,
             keep_dirs_in_s3_path,
             upload_symlinks,
         )
 
-    def upload_test_folder_to_s3(
+    def upload_test_directory_to_s3(
         self,
-        folder_path,
-        s3_folder_path,
-        keep_dirs_in_s3_path=True,
-        upload_symlinks=True,
-    ):
-        return self._upload_folder_to_s3(
-            folder_path,
-            s3_folder_path,
+        directory_path: Path,
+        s3_directory_path: str,
+        keep_dirs_in_s3_path: bool = True,
+        upload_symlinks: bool = True,
+    ) -> List[str]:
+        return self._upload_directory_to_s3(
+            directory_path,
+            s3_directory_path,
             S3_TEST_REPORTS_BUCKET,
             keep_dirs_in_s3_path,
             upload_symlinks,
         )
 
-    def list_prefix(self, s3_prefix_path, bucket=S3_BUILDS_BUCKET):
+    def list_prefix(
+        self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
+    ) -> List[str]:
         objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
         if "Contents" in objects:
@@ -296,7 +296,7 @@ class S3Helper:
 
         return result
 
-    def exists(self, key, bucket=S3_BUILDS_BUCKET):
+    def exists(self, key: str, bucket: str = S3_BUILDS_BUCKET) -> bool:
         try:
             self.client.head_object(Bucket=bucket, Key=key)
             return True
@@ -304,13 +304,12 @@ class S3Helper:
             return False
 
     @staticmethod
-    def copy_file_to_local(bucket_name: str, file_path: str, s3_path: str) -> str:
-        local_path = os.path.abspath(
-            os.path.join(RUNNER_TEMP, "s3", bucket_name, s3_path)
-        )
-        local_dir = os.path.dirname(local_path)
-        if not os.path.exists(local_dir):
-            os.makedirs(local_dir)
+    def copy_file_to_local(bucket_name: str, file_path: Path, s3_path: str) -> str:
+        local_path = (
+            Path(RUNNER_TEMP) / "s3" / os.path.join(bucket_name, s3_path)
+        ).absolute()
+        local_dir = local_path.parent
+        local_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(file_path, local_path)
 
         logging.info("Copied %s to %s", file_path, local_path)

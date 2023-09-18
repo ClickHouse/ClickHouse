@@ -1516,7 +1516,7 @@ bool ZooKeeper::hasReachedDeadline() const
 void ZooKeeper::maybeInjectSendFault()
 {
     if (unlikely(inject_setup.test() && send_inject_fault && send_inject_fault.value()(thread_local_rng)))
-        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+        throw Exception::fromMessage(Error::ZSESSIONEXPIRED, "Session expired (fault injected on send)");
 }
 
 void ZooKeeper::maybeInjectRecvFault()
