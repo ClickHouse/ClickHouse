@@ -1,9 +1,8 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
--- Start with empty query cache (QC) and query log.
+-- Start with empty query cache (QC)
 SYSTEM DROP QUERY CACHE;
-DROP TABLE system.query_log SYNC;
 
 -- Run query whose result gets cached in the query cache.
 -- Besides "use_query_cache", pass two more knobs (one QC-specific knob and one non-QC-specific knob). We just care
@@ -24,6 +23,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query = 'SELECT 1 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false, max_threads = 16;';
 
 SYSTEM DROP QUERY CACHE;

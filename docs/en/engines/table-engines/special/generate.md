@@ -23,7 +23,7 @@ array or map columns and strings correspondingly in generated data.
 
 Generate table engine supports only `SELECT` queries.
 
-It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can be stored in a table except `LowCardinality` and `AggregateFunction`.
+It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can be stored in a table except `AggregateFunction`.
 
 ## Example {#example}
 

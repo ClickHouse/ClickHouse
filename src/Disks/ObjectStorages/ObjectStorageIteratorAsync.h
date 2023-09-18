@@ -22,9 +22,12 @@ public:
     }
 
     void next() override;
-    bool isValid() const override;
-    RelativePathWithMetadata current() const override;
+    void nextBatch() override;
+    bool isValid() override;
+    RelativePathWithMetadata current() override;
+    RelativePathsWithMetadata currentBatch() override;
     size_t getAccumulatedSize() const override;
+    std::optional<RelativePathsWithMetadata> getCurrrentBatchAndScheduleNext() override;
 
     ~IObjectStorageIteratorAsync() override
     {
@@ -43,9 +46,10 @@ protected:
 
     std::future<BatchAndHasNext> scheduleBatch();
 
+    bool is_initialized{false};
     bool is_finished{false};
 
-    std::mutex mutex;
+    mutable std::recursive_mutex mutex;
     ThreadPool list_objects_pool;
     ThreadPoolCallbackRunner<BatchAndHasNext> list_objects_scheduler;
     std::future<BatchAndHasNext> outcome_future;

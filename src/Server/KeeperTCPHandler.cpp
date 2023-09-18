@@ -175,10 +175,13 @@ struct SocketInterruptablePollWrapper
             }
             while (rc < 0 && errno == POCO_EINTR);
 
-            if (rc >= 1 && poll_buf[0].revents & POLLIN)
-                socket_ready = true;
-            if (rc >= 2 && poll_buf[1].revents & POLLIN)
-                fd_ready = true;
+            if (rc >= 1)
+            {
+                if (poll_buf[0].revents & POLLIN)
+                    socket_ready = true;
+                if (poll_buf[1].revents & POLLIN)
+                    fd_ready = true;
+            }
 #endif
         }
 

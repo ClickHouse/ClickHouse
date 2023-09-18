@@ -32,5 +32,10 @@
             <secret_access_key>testtest</secret_access_key>
             <structure>auto</structure>
         </s3_conn>
+        <s3_conn_db>
+            <url>http://localhost:11111/test/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>testtest</secret_access_key>
+        </s3_conn_db>
     </named_collections>
 </clickhouse>

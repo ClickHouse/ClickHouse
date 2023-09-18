@@ -26,9 +26,9 @@ SELECT p, toTypeName(p) FROM geo_point;
 Result:
 
 ``` text
-┌─p─────┬─toTypeName(p)─┐
+┌─p───────┬─toTypeName(p)─┐
 │ (10,10) │ Point         │
-└───────┴───────────────┘
+└─────────┴───────────────┘
 ```
 
 ## Ring

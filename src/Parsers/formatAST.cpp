@@ -4,18 +4,17 @@
 namespace DB
 {
 
-void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
+void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line, bool show_secrets)
 {
-    IAST::FormatSettings settings(buf, one_line);
-    settings.hilite = hilite;
-
+    IAST::FormatSettings settings(buf, one_line, hilite);
+    settings.show_secrets = show_secrets;
     ast.format(settings);
 }
 
-String serializeAST(const IAST & ast, bool one_line)
+String serializeAST(const IAST & ast)
 {
     WriteBufferFromOwnString buf;
-    formatAST(ast, buf, false, one_line);
+    formatAST(ast, buf, false, true);
     return buf.str();
 }
 

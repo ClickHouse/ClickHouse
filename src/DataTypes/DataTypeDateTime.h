@@ -21,7 +21,9 @@ namespace DB
   *  all types with different time zones are equivalent and may be used interchangingly.
   * Time zone only affects parsing and displaying in text formats.
   *
-  * If time zone is not specified (example: DateTime without parameter), then default time zone is used.
+  * If time zone is not specified (example: DateTime without parameter),
+  * then `session_timezone` setting value is used.
+  * If `session_timezone` is not set (or empty string), server default time zone is used.
   * Default time zone is server time zone, if server is doing transformations
   *  and if client is doing transformations, unless 'use_client_time_zone' setting is passed to client;
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
@@ -36,6 +38,7 @@ public:
     static constexpr auto family_name = "DateTime";
 
     const char * getFamilyName() const override { return family_name; }
+    String getSQLCompatibleName() const override { return "DATETIME"; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 

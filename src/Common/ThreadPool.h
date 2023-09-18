@@ -19,6 +19,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Priority.h>
+#include <Common/StackTrace.h>
+#include <Common/Exception.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -127,8 +129,19 @@ private:
         Priority priority;
         DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
-        JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
+        /// Call stacks of all jobs' schedulings leading to this one
+        std::vector<StackTrace::FramePointers> frame_pointers;
+        bool enable_job_stack_trace = false;
+
+        JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool capture_frame_pointers = false)
+            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+        {
+            if (!capture_frame_pointers)
+                return;
+            /// Save all previous jobs call stacks and append with current
+            frame_pointers = DB::Exception::thread_frame_pointers;
+            frame_pointers.push_back(StackTrace().getFramePointers());
+        }
 
         bool operator<(const JobWithPriority & rhs) const
         {

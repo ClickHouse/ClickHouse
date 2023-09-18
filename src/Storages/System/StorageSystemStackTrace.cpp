@@ -275,15 +275,6 @@ Pipe StorageSystemStackTrace::read(
 
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    std::vector<UInt8> columns_mask(sample_block.columns());
-    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
-    {
-        if (names_set.contains(sample_block.getByPosition(i).name))
-        {
-            columns_mask[i] = 1;
-        }
-    }
-
     bool send_signal = names_set.contains("trace") || names_set.contains("query_id");
     bool read_thread_names = names_set.contains("thread_name");
 

@@ -32,6 +32,9 @@ class PartitionManager:
             {"destination": instance.ip_address, "source_port": 2181, "action": action}
         )
 
+    def dump_rules(self):
+        return _NetworkManager.get().dump_rules()
+
     def restore_instance_zk_connections(self, instance, action="DROP"):
         self._check_instance(instance)
 
@@ -157,6 +160,10 @@ class _NetworkManager:
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
+    def dump_rules(self):
+        cmd = ["iptables", "-L", "DOCKER-USER"]
+        return self._exec_run(cmd, privileged=True)
+
     @staticmethod
     def clean_all_user_iptables_rules():
         for i in range(1000):
@@ -212,10 +219,15 @@ class _NetworkManager:
 
     def __init__(
         self,
-        container_expire_timeout=50,
-        container_exit_timeout=60,
+        container_expire_timeout=600,
+        container_exit_timeout=660,
         docker_api_version=os.environ.get("DOCKER_API_VERSION"),
     ):
+        # container should be alive for at least 15 seconds then the expiration
+        # timeout, this is the protection from the case when the container will
+        # be destroyed just when some test will try to use it.
+        assert container_exit_timeout >= container_expire_timeout + 15
+
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 
@@ -231,6 +243,9 @@ class _NetworkManager:
 
     def _ensure_container(self):
         if self._container is None or self._container_expire_time <= time.time():
+            image_name = "clickhouse/integration-helper:" + os.getenv(
+                "DOCKER_HELPER_TAG", "latest"
+            )
             for i in range(5):
                 if self._container is not None:
                     try:
@@ -247,7 +262,7 @@ class _NetworkManager:
                         time.sleep(i)
 
             image = subprocess.check_output(
-                "docker images -q clickhouse/integration-helper 2>/dev/null", shell=True
+                f"docker images -q {image_name} 2>/dev/null", shell=True
             )
             if not image.strip():
                 print("No network image helper, will try download")
@@ -256,22 +271,18 @@ class _NetworkManager:
                 for i in range(5):
                     try:
                         subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                            "docker pull clickhouse/integration-helper", shell=True
+                            f"docker pull {image_name}", shell=True
                         )
                         break
                     except:
                         time.sleep(i)
                 else:
-                    raise Exception("Cannot pull clickhouse/integration-helper image")
+                    raise Exception(f"Cannot pull {image_name} image")
 
             self._container = self._docker_client.containers.run(
-                "clickhouse/integration-helper",
+                image_name,
                 auto_remove=True,
                 command=("sleep %s" % self.container_exit_timeout),
-                # /run/xtables.lock passed inside for correct iptables --wait
-                volumes={
-                    "/run/xtables.lock": {"bind": "/run/xtables.lock", "mode": "ro"}
-                },
                 detach=True,
                 network_mode="host",
             )

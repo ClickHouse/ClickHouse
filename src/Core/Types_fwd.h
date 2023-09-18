@@ -27,7 +27,7 @@ namespace DB
 
 using UUID = StrongTypedef<UInt128, struct UUIDTag>;
 
-using IPv4 = StrongTypedef<UInt32, struct IPv4Tag>;
+struct IPv4;
 
 struct IPv6;
 
