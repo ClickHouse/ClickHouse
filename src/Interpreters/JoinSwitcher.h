@@ -36,6 +36,16 @@ public:
         join->joinBlock(block, not_processed);
     }
 
+    IBlocksStreamPtr joinBlockWithStreamOutput(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
+    {
+        return join->joinBlockWithStreamOutput(block, not_processed);
+    }
+
+    bool supportStreamJoin() const override
+    {
+        return join->supportStreamJoin();
+    }
+
     const Block & getTotals() const override
     {
         return join->getTotals();

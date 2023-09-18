@@ -1887,7 +1887,8 @@ IBlocksStreamPtr HashJoin::joinBlockWithStreamOutput(Block & block, std::shared_
         IBlocksStreamPtr blocks;
         if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
                          {
-                             blocks = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+                             auto res = joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
+                             blocks.swap(res);
                          }))
         {
             return blocks;
