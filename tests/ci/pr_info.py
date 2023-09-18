@@ -337,7 +337,8 @@ class PRInfo:
 
         # Integration tests can be skipped if integration tests are not changed
         return not any(
-            f.startswith("tests/integration/") or f == "tests/ci/integration_test_check.py"
+            f.startswith("tests/integration/")
+            or f == "tests/ci/integration_test_check.py"
             for f in self.changed_files
         )
 
