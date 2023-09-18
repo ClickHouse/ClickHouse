@@ -1,14 +1,12 @@
 #pragma once
 
 #include <IO/ISchedulerConstraint.h>
-#include <__chrono/duration.h>
-#include <__chrono/time_point.h>
-#include "IO/ISchedulerNode.h"
 
 #include <chrono>
 #include <mutex>
 #include <limits>
 #include <utility>
+
 
 namespace DB
 {
@@ -24,6 +22,8 @@ public:
         : ISchedulerConstraint(event_queue_, config, config_prefix)
         , max_burst(config.getDouble(config_prefix + ".max_burst", 0))
         , max_speed(config.getDouble(config_prefix + ".max_speed", 0))
+        , last_update(event_queue_->now())
+        , tokens(max_burst)
     {}
 
     ~ThrottlerConstraint() override
@@ -144,17 +144,18 @@ private:
         postponed = EventQueue::not_postponed;
         bool was_active = active();
         updateBucket();
-        if (!was_active && active())
+        if (!was_active && active() && parent)
             parent->activateChild(this);
     }
 
     void updateBucket(ResourceCost use = 0)
     {
-        auto now = std::chrono::system_clock::now();
+        auto now = event_queue->now();
         if (max_speed > 0.0)
         {
             double elapsed = std::chrono::nanoseconds(now - last_update).count() / 1e9;
-            tokens = std::min(tokens + max_speed * elapsed - use, max_burst);
+            tokens = std::min(tokens + max_speed * elapsed, max_burst);
+            tokens -= use; // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
 
             // Postpone activation until there is positive amount of tokens
             if (tokens < 0.0)
@@ -162,7 +163,7 @@ private:
                 auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
                 if (postponed == EventQueue::not_postponed)
                 {
-                    postponed = event_queue->postpone(std::chrono::time_point_cast<std::chrono::system_clock::duration>(now + delay_ns),
+                    postponed = event_queue->postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
                         [this] { onPostponed(); });
                     throttling_duration += delay_ns;
                 }
@@ -181,7 +182,6 @@ private:
         return satisfied() && child_active;
     }
 
-private:
     const double max_burst{0}; /// in tokens
     const double max_speed{0}; /// in tokens per second
 

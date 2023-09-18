@@ -3,6 +3,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Priority.h>
+#include <base/defines.h>
 #include <base/types.h>
 
 #include <IO/ResourceRequest.h>
@@ -90,6 +91,7 @@ class EventQueue
 public:
     using Event = std::function<void()>;
     using TimePoint = std::chrono::system_clock::time_point;
+    using Duration = std::chrono::system_clock::duration;
     static constexpr UInt64 not_postponed = 0;
 
     struct Postponed
@@ -188,7 +190,7 @@ public:
             return false;
         else
         {
-            if (postponed.front().key <= std::chrono::system_clock::now())
+            if (postponed.front().key <= now())
             {
                 processPostponed(lock);
                 return true;
@@ -206,17 +208,54 @@ public:
             if (!queue.empty())
                 return processQueue(lock);
             if (postponed.empty())
-                pending.wait(lock);
+                wait(lock);
             else
             {
-                if (postponed.front().key <= std::chrono::system_clock::now())
+                if (postponed.front().key <= now())
                     return processPostponed(lock);
-                pending.wait_until(lock, postponed.front().key);
+                waitUntil(lock, postponed.front().key);
             }
         }
     }
 
+    TimePoint now()
+    {
+        if (auto result = manual_time.load(); likely(result == TimePoint()))
+            return std::chrono::system_clock::now();
+        else
+            return result;
+    }
+
+    /// For testing only
+    void setManualTime(TimePoint value)
+    {
+        std::unique_lock lock{mutex};
+        manual_time.store(value);
+        pending.notify_one();
+    }
+
+    /// For testing only
+    void advanceManualTime(Duration elapsed)
+    {
+        std::unique_lock lock{mutex};
+        manual_time.store(manual_time.load() + elapsed);
+        pending.notify_one();
+    }
+
 private:
+    void wait(std::unique_lock<std::mutex> & lock)
+    {
+        pending.wait(lock);
+    }
+
+    void waitUntil(std::unique_lock<std::mutex> & lock, TimePoint t)
+    {
+        if (likely(manual_time.load() == TimePoint()))
+            pending.wait_until(lock, t);
+        else
+            pending.wait(lock);
+    }
+
     void processQueue(std::unique_lock<std::mutex> & lock)
     {
         Event event = std::move(queue.front());
@@ -239,6 +278,8 @@ private:
     std::deque<Event> queue;
     std::vector<Postponed> postponed;
     UInt64 last_id = 0;
+
+    std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 };
 
 /*
@@ -272,12 +313,12 @@ private:
 class ISchedulerNode : private boost::noncopyable
 {
 public:
-    ISchedulerNode(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit ISchedulerNode(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : event_queue(event_queue_)
         , info(config, config_prefix)
     {}
 
-    virtual ~ISchedulerNode() {}
+    virtual ~ISchedulerNode() = default;
 
     /// Checks if two nodes configuration is equal
     virtual bool equals(ISchedulerNode * other)
