@@ -1274,7 +1274,7 @@ Alias: `SUBDATE`
 **See Also**
 - [date_sub](#date_sub)
 
-## now
+## now {#now}
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
@@ -1361,7 +1361,7 @@ Result:
 └─────────────────────────┴───────────────────────────────┘
 ```
 
-## nowInBlock
+## nowInBlock {#nowInBlock}
 
 Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
@@ -1405,14 +1405,14 @@ Result:
 └─────────────────────┴─────────────────────┴──────────┘
 ```
 
-## today
+## today {#today}
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
 
 Aliases: `curdate`, `current_date`.
 
-## yesterday
+## yesterday {#yesterday}
 
 Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
 The same as ‘today() - 1’.
