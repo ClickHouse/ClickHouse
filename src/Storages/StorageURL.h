@@ -114,7 +114,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool supportsSubsetOfColumns() const override;
+    virtual bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool prefersLargeBlocks() const override;
 
