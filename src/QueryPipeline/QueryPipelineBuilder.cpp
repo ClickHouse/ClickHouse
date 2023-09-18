@@ -278,7 +278,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
-    bool concurrency_control = false;
     Pipes pipes;
     QueryPlanResourceHolder resources;
 
@@ -298,8 +297,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         /// It may happen if max_distributed_connections > max_threads
         if (pipeline.max_threads > max_threads_limit)
             max_threads_limit = pipeline.max_threads;
-
-        concurrency_control = pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -310,7 +307,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
-        pipeline.setConcurrencyControl(concurrency_control);
     }
 
     pipeline.setCollectedProcessors(nullptr);
@@ -495,10 +491,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (delayed_root)
         {
             // Process delayed joined blocks when all JoiningTransform are finished.
-            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(
-                joined_header,
-                [left_header, joined_header, max_block_size, join]()
-                { return join->getNonJoinedBlocks(left_header, joined_header, max_block_size); });
+            auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(joined_header);
             if (delayed->getInputs().size() != 1 || delayed->getOutputs().size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
 
@@ -583,7 +576,6 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -594,7 +586,12 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             limits,
             std::move(prepared_sets_cache));
 
-    pipe.addTransform(std::move(transform));
+    InputPort * totals_port = nullptr;
+
+    if (pipe.getTotalsPort())
+        totals_port = transform->addTotalsPort();
+
+    pipe.addTransform(std::move(transform), totals_port, nullptr);
 }
 
 void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
@@ -648,7 +645,6 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
-    res.setConcurrencyControl(builder.getConcurrencyControl());
     res.setProcessListElement(builder.process_list_element);
     res.setProgressCallback(builder.progress_callback);
     return res;

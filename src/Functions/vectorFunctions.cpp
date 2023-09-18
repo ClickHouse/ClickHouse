@@ -23,9 +23,6 @@ struct PlusName { static constexpr auto name = "plus"; };
 struct MinusName { static constexpr auto name = "minus"; };
 struct MultiplyName { static constexpr auto name = "multiply"; };
 struct DivideName { static constexpr auto name = "divide"; };
-struct ModuloName { static constexpr auto name = "modulo"; };
-struct IntDivName { static constexpr auto name = "intDiv"; };
-struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
@@ -98,7 +95,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
                 types[i] = elem_func->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -144,12 +141,6 @@ using FunctionTupleMultiply = FunctionTupleOperator<MultiplyName>;
 
 using FunctionTupleDivide = FunctionTupleOperator<DivideName>;
 
-using FunctionTupleModulo = FunctionTupleOperator<ModuloName>;
-
-using FunctionTupleIntDiv = FunctionTupleOperator<IntDivName>;
-
-using FunctionTupleIntDivOrZero = FunctionTupleOperator<IntDivOrZeroName>;
-
 class FunctionTupleNegate : public ITupleFunction
 {
 public:
@@ -190,7 +181,7 @@ public:
                 auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
                 types[i] = elem_negate->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -267,7 +258,7 @@ public:
                 auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
                 types[i] = elem_func->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -305,12 +296,6 @@ public:
 using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName>;
 
 using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
-
-using FunctionTupleModuloByNumber = FunctionTupleOperatorByNumber<ModuloName>;
-
-using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
-
-using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
 
 class FunctionDotProduct : public ITupleFunction
 {
@@ -378,7 +363,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -482,7 +467,7 @@ public:
                 auto plus_elem = plus->build({left, right});
                 res_type = plus_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -755,7 +740,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -857,7 +842,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1008,7 +993,7 @@ public:
                 auto max_elem = max->build({left_type, right_type});
                 res_type = max_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1118,7 +1103,7 @@ public:
                 auto plus_elem = plus->build({left_type, right_type});
                 res_type = plus_elem->getResultType();
             }
-            catch (Exception & e)
+            catch (DB::Exception & e)
             {
                 e.addMessage("While executing function {} for tuple element {}", getName(), i);
                 throw;
@@ -1578,9 +1563,6 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
-    factory.registerFunction<FunctionTupleModulo>();
-    factory.registerFunction<FunctionTupleIntDiv>();
-    factory.registerFunction<FunctionTupleIntDivOrZero>();
     factory.registerFunction<FunctionTupleNegate>();
 
     factory.registerFunction<FunctionAddTupleOfIntervals>(FunctionDocumentation
@@ -1644,9 +1626,6 @@ If the types of the first interval (or the interval in the tuple) and the second
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
-    factory.registerFunction<FunctionTupleModuloByNumber>();
-    factory.registerFunction<FunctionTupleIntDivByNumber>();
-    factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 
     factory.registerFunction<TupleOrArrayFunctionDotProduct>();
     factory.registerAlias("scalarProduct", TupleOrArrayFunctionDotProduct::name, FunctionFactory::CaseInsensitive);

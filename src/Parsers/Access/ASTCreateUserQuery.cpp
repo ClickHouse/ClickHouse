@@ -208,11 +208,6 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     format.ostr << " ";
     names->format(format);
 
-    if (!storage_name.empty())
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "")
-                    << " IN " << (format.hilite ? IAST::hilite_none : "")
-                    << backQuoteIfNeed(storage_name);
-
     formatOnCluster(format);
 
     if (new_name)

@@ -187,15 +187,15 @@ bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
         String name;
         Checksum sum;
 
-        readStringBinary(name, in);
+        readBinary(name, in);
         readVarUInt(sum.file_size, in);
-        readBinaryLittleEndian(sum.file_hash, in);
-        readBinaryLittleEndian(sum.is_compressed, in);
+        readPODBinary(sum.file_hash, in);
+        readBinary(sum.is_compressed, in);
 
         if (sum.is_compressed)
         {
             readVarUInt(sum.uncompressed_size, in);
-            readBinaryLittleEndian(sum.uncompressed_hash, in);
+            readPODBinary(sum.uncompressed_hash, in);
         }
 
         files.emplace(std::move(name), sum);
@@ -223,15 +223,15 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
         const String & name = it.first;
         const Checksum & sum = it.second;
 
-        writeStringBinary(name, out);
+        writeBinary(name, out);
         writeVarUInt(sum.file_size, out);
-        writeBinaryLittleEndian(sum.file_hash, out);
-        writeBinaryLittleEndian(sum.is_compressed, out);
+        writePODBinary(sum.file_hash, out);
+        writeBinary(sum.is_compressed, out);
 
         if (sum.is_compressed)
         {
             writeVarUInt(sum.uncompressed_size, out);
-            writeBinaryLittleEndian(sum.uncompressed_hash, out);
+            writePODBinary(sum.uncompressed_hash, out);
         }
     }
 }
@@ -307,7 +307,19 @@ static void updateHash(SipHash & hash, const std::string & data)
 /// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
 String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
-    return getHexUIntUppercase(getTotalChecksumUInt128());
+    SipHash hash_of_all_files;
+
+    for (const auto & [name, checksum] : files)
+    {
+        updateHash(hash_of_all_files, name);
+        hash_of_all_files.update(checksum.file_hash);
+    }
+
+    UInt64 lo;
+    UInt64 hi;
+    hash_of_all_files.get128(lo, hi);
+
+    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
 }
 
 MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTotalChecksumUInt128() const
@@ -323,7 +335,9 @@ MergeTreeDataPartChecksums::Checksum::uint128 MergeTreeDataPartChecksums::getTot
         hash_of_all_files.update(checksum.file_hash);
     }
 
-    return getSipHash128AsPair(hash_of_all_files);
+    MergeTreeDataPartChecksums::Checksum::uint128 ret;
+    hash_of_all_files.get128(reinterpret_cast<char *>(&ret));
+    return ret;
 }
 
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
@@ -337,9 +351,9 @@ void MinimalisticDataPartChecksums::serializeWithoutHeader(WriteBuffer & to) con
     writeVarUInt(num_compressed_files, to);
     writeVarUInt(num_uncompressed_files, to);
 
-    writeBinaryLittleEndian(hash_of_all_files, to);
-    writeBinaryLittleEndian(hash_of_uncompressed_files, to);
-    writeBinaryLittleEndian(uncompressed_hash_of_compressed_files, to);
+    writePODBinary(hash_of_all_files, to);
+    writePODBinary(hash_of_uncompressed_files, to);
+    writePODBinary(uncompressed_hash_of_compressed_files, to);
 }
 
 String MinimalisticDataPartChecksums::getSerializedString() const
@@ -380,9 +394,9 @@ void MinimalisticDataPartChecksums::deserializeWithoutHeader(ReadBuffer & in)
     readVarUInt(num_compressed_files, in);
     readVarUInt(num_uncompressed_files, in);
 
-    readBinaryLittleEndian(hash_of_all_files, in);
-    readBinaryLittleEndian(hash_of_uncompressed_files, in);
-    readBinaryLittleEndian(uncompressed_hash_of_compressed_files, in);
+    readPODBinary(hash_of_all_files, in);
+    readPODBinary(hash_of_uncompressed_files, in);
+    readPODBinary(uncompressed_hash_of_compressed_files, in);
 }
 
 void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums_)
@@ -413,9 +427,14 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
         }
     }
 
-    hash_of_all_files = getSipHash128AsPair(hash_of_all_files_state);
-    hash_of_uncompressed_files = getSipHash128AsPair(hash_of_uncompressed_files_state);
-    uncompressed_hash_of_compressed_files = getSipHash128AsPair(uncompressed_hash_of_compressed_files_state);
+    auto get_hash = [] (SipHash & hash, uint128 & data)
+    {
+        hash.get128(data);
+    };
+
+    get_hash(hash_of_all_files_state, hash_of_all_files);
+    get_hash(hash_of_uncompressed_files_state, hash_of_uncompressed_files);
+    get_hash(uncompressed_hash_of_compressed_files_state, uncompressed_hash_of_compressed_files);
 }
 
 String MinimalisticDataPartChecksums::getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic)

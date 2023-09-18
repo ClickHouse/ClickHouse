@@ -12,7 +12,6 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
@@ -106,8 +105,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         for (auto it = addresses.begin(); it != addresses.end();)
         {
-            have_more_addresses_to_connect = it != std::prev(addresses.end());
-
             if (connected)
                 disconnect();
 
@@ -281,9 +278,9 @@ void Connection::sendHello()
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
-    writeStringBinary((VERSION_NAME " ") + client_name, *out);
-    writeVarUInt(VERSION_MAJOR, *out);
-    writeVarUInt(VERSION_MINOR, *out);
+    writeStringBinary((DBMS_NAME " ") + client_name, *out);
+    writeVarUInt(DBMS_VERSION_MAJOR, *out);
+    writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     writeStringBinary(default_database, *out);
@@ -886,7 +883,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             return sink;
         });
         executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1, false);
+        executor->execute(/*num_threads = */ 1);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;
@@ -1013,8 +1010,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeAllRangesAnnouncement:
-                res.announcement = receiveInitialParallelReadAnnouncement();
+            case Protocol::Server::MergeTreeAllRangesAnnounecement:
+                res.announcement = receiveInitialParallelReadAnnounecement();
                 return res;
 
             case Protocol::Server::MergeTreeReadTaskRequest:
@@ -1181,7 +1178,7 @@ ParallelReadRequest Connection::receiveParallelReadRequest() const
     return ParallelReadRequest::deserialize(*in);
 }
 
-InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
+InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
 {
     return InitialAllRangesAnnouncement::deserialize(*in);
 }
@@ -1205,7 +1202,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
-        std::string(DEFAULT_CLIENT_NAME),
+        "client",
         parameters.compression,
         parameters.security);
 }

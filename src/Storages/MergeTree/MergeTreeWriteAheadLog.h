@@ -11,7 +11,6 @@ namespace DB
 {
 
 class MergeTreeData;
-struct DataPartsLock;
 
 /** WAL stores addditions and removals of data parts in in-memory format.
   * Format of data in WAL:
@@ -65,7 +64,7 @@ public:
     std::vector<MergeTreeMutableDataPartPtr> restore(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        DataPartsLock & parts_lock,
+        std::unique_lock<std::mutex> & parts_lock,
         bool readonly);
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;

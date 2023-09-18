@@ -16,6 +16,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
     FileCachePtr cache_,
@@ -74,6 +79,8 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (objects.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
     return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
 }
 
@@ -113,8 +120,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             implementation_buffer->getFileName(),
             key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
-            modified_write_settings,
-            Context::getGlobalContextInstance()->getFilesystemCacheLog());
+            modified_write_settings);
     }
 
     return implementation_buffer;

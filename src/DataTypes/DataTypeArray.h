@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -16,8 +15,6 @@ private:
     DataTypePtr nested;
 
 public:
-    using FieldType = Array;
-    using ColumnType = ColumnArray;
     static constexpr bool is_parametric = true;
 
     explicit DataTypeArray(const DataTypePtr & nested_);
@@ -44,7 +41,6 @@ public:
     }
 
     MutableColumnPtr createColumn() const override;
-
 
     Field getDefault() const override;
 

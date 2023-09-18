@@ -3,7 +3,7 @@
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/ClickHouse/lz4
+	url = https://github.com/lz4/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -13,6 +13,7 @@
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/ClickHouse/zlib-ng
+	branch = clickhouse-2.0.x
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest
@@ -46,6 +47,7 @@
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse/arrow
+	branch = blessed/release-6.0.1
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift
@@ -91,6 +93,7 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
+	branch = v1.33.2
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp
@@ -137,9 +140,11 @@
 [submodule "contrib/cassandra"]
 	path = contrib/cassandra
 	url = https://github.com/ClickHouse/cpp-driver
+	branch = clickhouse
 [submodule "contrib/libuv"]
 	path = contrib/libuv
 	url = https://github.com/ClickHouse/libuv
+	branch = clickhouse
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt
@@ -152,9 +157,11 @@
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/ClickHouse/cyrus-sasl
+	branch = cyrus-sasl-2.1
 [submodule "contrib/croaring"]
 	path = contrib/croaring
 	url = https://github.com/RoaringBitmap/CRoaring
+	branch = v0.2.66
 [submodule "contrib/miniselect"]
 	path = contrib/miniselect
 	url = https://github.com/danlark1/miniselect
@@ -167,6 +174,7 @@
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp
+	branch = lts_2021_11_02
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox
@@ -179,6 +187,7 @@
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse/boringssl
+	branch = unknown_branch_from_artur
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
@@ -239,6 +248,7 @@
 [submodule "contrib/annoy"]
 	path = contrib/annoy
 	url = https://github.com/ClickHouse/annoy
+	branch = ClickHouse-master
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
@@ -248,6 +258,9 @@
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
+[submodule "contrib/hashidsxx"]
+	path = contrib/hashidsxx
+	url = https://github.com/schoentoon/hashidsxx
 [submodule "contrib/nats-io"]
 	path = contrib/nats-io
 	url = https://github.com/ClickHouse/nats.c
@@ -272,6 +285,7 @@
 [submodule "contrib/openssl"]
 	path = contrib/openssl
 	url = https://github.com/openssl/openssl
+	branch = openssl-3.0
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark
@@ -320,10 +334,6 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
-[submodule "contrib/libarchive"]
-	path = contrib/libarchive
-	url = https://github.com/libarchive/libarchive.git
-	ignore = dirty
 [submodule "contrib/libfiu"]
 	path = contrib/libfiu
 	url = https://github.com/ClickHouse/libfiu.git
@@ -333,18 +343,3 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/c-ares/c-ares.git
-[submodule "contrib/incbin"]
-	path = contrib/incbin
-	url = https://github.com/graphitemaster/incbin.git
-[submodule "contrib/usearch"]
-	path = contrib/usearch
-	url = https://github.com/unum-cloud/usearch.git
-[submodule "contrib/SimSIMD"]
-	path = contrib/SimSIMD
-	url = https://github.com/ashvardanian/SimSIMD.git
-[submodule "contrib/FP16"]
-	path = contrib/FP16
-	url = https://github.com/Maratyszcza/FP16.git
-[submodule "contrib/robin-map"]
-	path = contrib/robin-map
-	url = https://github.com/Tessil/robin-map.git

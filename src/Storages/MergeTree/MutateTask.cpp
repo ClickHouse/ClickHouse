@@ -67,9 +67,7 @@ static void splitAndModifyMutationCommands(
 
     if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
-        NameSet mutated_columns;
-        NameSet dropped_columns;
-
+        NameSet mutated_columns, dropped_columns;
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
@@ -260,10 +258,6 @@ getColumnsForNewDataPart(
             storage_columns.emplace_back(column);
     }
 
-    NameSet storage_columns_set;
-    for (const auto & [name, _] : storage_columns)
-        storage_columns_set.insert(name);
-
     for (const auto & command : all_commands)
     {
         if (command.type == MutationCommand::UPDATE)
@@ -298,19 +292,15 @@ getColumnsForNewDataPart(
     SerializationInfoByName new_serialization_infos;
     for (const auto & [name, old_info] : serialization_infos)
     {
+        if (removed_columns.contains(name))
+            continue;
+
         auto it = renamed_columns_from_to.find(name);
         auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
 
-        /// Column can be removed only in this data part by CLEAR COLUMN query.
-        if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
-            continue;
-
-        /// In compact part we read all columns and all of them are in @updated_header.
-        /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
         if (!updated_header.has(new_name))
         {
-            if (isWidePart(source_part))
-                new_serialization_infos.emplace(new_name, old_info);
+            new_serialization_infos.emplace(new_name, old_info);
             continue;
         }
 
@@ -453,7 +443,6 @@ static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snaps
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
 static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
-    const MergeTreeDataPartPtr & source_part,
     QueryPipelineBuilder & builder,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -464,15 +453,10 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
-    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
     for (const auto & index : indices)
     {
-        bool need_recalculate =
-            materialized_indices.contains(index.name)
-            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name));
-
-        if (need_recalculate)
+        if (materialized_indices.contains(index.name))
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {
@@ -502,23 +486,15 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
 }
 
 static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
-    const MergeTreeDataPartPtr & source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & materialized_projections)
 {
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
-    bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
-
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        bool need_recalculate =
-            materialized_projections.contains(projection.name)
-            || (!is_full_part_storage && source_part->hasProjection(projection.name));
-
-        if (need_recalculate)
+        if (materialized_projections.contains(projection.name))
             projections_to_recalc.insert(&projection);
     }
-
     return projections_to_recalc;
 }
 
@@ -908,9 +884,8 @@ public:
         }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -942,7 +917,7 @@ public:
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
                 selected_parts[0]->renameTo(projection.name + ".proj", true);
-                selected_parts[0]->setName(projection.name);
+                selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
@@ -1231,9 +1206,8 @@ public:
     explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1293,20 +1267,14 @@ private:
                 removed_indices.insert(command.column_name);
         }
 
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
-
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
             if (removed_indices.contains(idx.name))
                 continue;
 
-            bool need_recalculate =
-                ctx->materialized_indices.contains(idx.name)
-                || (!is_full_part_storage && ctx->source_part->hasSecondaryIndex(idx.name));
-
-            if (need_recalculate)
+            if (ctx->materialized_indices.contains(idx.name))
             {
                 skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
             }
@@ -1339,11 +1307,7 @@ private:
             if (removed_projections.contains(projection.name))
                 continue;
 
-            bool need_recalculate =
-                ctx->materialized_projections.contains(projection.name)
-                || (!is_full_part_storage && ctx->source_part->hasProjection(projection.name));
-
-            if (need_recalculate)
+            if (ctx->materialized_projections.contains(projection.name))
             {
                 ctx->projections_to_build.push_back(&projection);
             }
@@ -1470,9 +1434,8 @@ public:
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1845,7 +1808,7 @@ bool MutateTask::prepare()
             .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
         };
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getWriteSettings());
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params);
         part->getDataPartStorage().beginTransaction();
 
         ctx->temporary_directory_lock = std::move(lock);
@@ -1865,7 +1828,6 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("max_threads", 1);
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
-    context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
 
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part, ctx->metadata_snapshot,
@@ -1945,16 +1907,9 @@ bool MutateTask::prepare()
     else /// TODO: check that we modify only non-key columns in this case.
     {
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
-            ctx->source_part,
-            ctx->mutating_pipeline_builder,
-            ctx->metadata_snapshot,
-            ctx->context,
-            ctx->materialized_indices);
+            ctx->mutating_pipeline_builder, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices);
 
-        ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
-            ctx->source_part,
-            ctx->metadata_snapshot,
-            ctx->materialized_projections);
+        ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(ctx->metadata_snapshot, ctx->materialized_projections);
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,

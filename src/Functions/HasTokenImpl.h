@@ -13,12 +13,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
 }
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
   */
-template <typename Name, typename Searcher, bool negate>
+template <typename Name, typename TokenSearcher, bool negate>
 struct HasTokenImpl
 {
     using ResultType = UInt8;
@@ -47,7 +46,7 @@ struct HasTokenImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        if (const auto has_separator = std::any_of(pattern.cbegin(), pattern.cend(), isTokenSeparator); has_separator || pattern.empty())
+        if (!ASCIICaseSensitiveTokenSearcher::isValidNeedle(pattern.data(), pattern.size()))
         {
             if (res_null)
             {
@@ -55,16 +54,11 @@ struct HasTokenImpl
                 std::ranges::fill(res_null->getData(), true);
                 return;
             }
-            else if (has_separator)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
-            else if (pattern.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle cannot be empty, because empty string isn't a token");
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected internal state");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
         }
 
-        size_t pattern_size = pattern.size();
-        Searcher searcher(pattern.data(), pattern_size, end - pos);
+        TokenSearcher searcher(pattern.data(), pattern.size(), end - pos);
         if (res_null)
             std::ranges::fill(res_null->getData(), false);
 
@@ -73,31 +67,21 @@ struct HasTokenImpl
         /// We will search for the next occurrence in all rows at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
-            /// The found substring is a token
-            if ((pos == begin || isTokenSeparator(pos[-1]))
-                && (pos + pattern_size == end || isTokenSeparator(pos[pattern_size])))
+            /// Let's determine which index it refers to.
+            while (begin + haystack_offsets[i] <= pos)
             {
-                /// Let's determine which index it refers to.
-                while (begin + haystack_offsets[i] <= pos)
-                {
-                    res[i] = negate;
-                    ++i;
-                }
-
-                /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + pattern.size() < begin + haystack_offsets[i])
-                    res[i] = !negate;
-                else
-                    res[i] = negate;
-
-                pos = begin + haystack_offsets[i];
+                res[i] = negate;
                 ++i;
             }
+
+            /// We check that the entry does not pass through the boundaries of strings.
+            if (pos + pattern.size() < begin + haystack_offsets[i])
+                res[i] = !negate;
             else
-            {
-                /// Not a token. Jump over it.
-                pos += pattern_size;
-            }
+                res[i] = negate;
+
+            pos = begin + haystack_offsets[i];
+            ++i;
         }
 
         /// Tail, in which there can be no substring.
@@ -128,12 +112,6 @@ struct HasTokenImpl
     static void vectorFixedVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
-    }
-
-private:
-    static bool isTokenSeparator(UInt8 c)
-    {
-        return isASCII(c) && !isAlphaNumericASCII(c);
     }
 };
 

@@ -11,7 +11,6 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
-#include <Common/TransformEndianness.hpp>
 #include <Core/Settings.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -50,7 +49,6 @@ namespace
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
-        transformEndianness<std::endian::native, std::endian::little>(result);
         return result;
     }
 
@@ -289,7 +287,7 @@ namespace
         }
 
         bool access_management = config.getBool(user_config + ".access_management", false);
-        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false) || config.getBool(user_config + ".named_collection_admin", false);
+        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
         bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
 
         if (grant_queries)
@@ -330,7 +328,7 @@ namespace
 
             if (!named_collection_control)
             {
-                user->access.revoke(AccessType::NAMED_COLLECTION_ADMIN);
+                user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
             }
 
             if (!show_named_collections_secrets)
@@ -809,7 +807,7 @@ void UsersConfigAccessStorage::load(
     config_reloader.reset();
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
-        std::vector{{include_from_path}},
+        include_from_path,
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),

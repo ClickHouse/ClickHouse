@@ -4,12 +4,6 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/Cache/Guards.h"
-
-namespace CurrentMetrics
-{
-    extern const Metric FilesystemCacheSizeLimit;
-}
 
 namespace DB
 {
@@ -24,10 +18,7 @@ private:
     using LRUQueueIterator = typename LRUQueue::iterator;
 
 public:
-    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_)
-    {
-        CurrentMetrics::set(CurrentMetrics::FilesystemCacheSizeLimit, max_size_);
-    }
+    LRUFileCachePriority(size_t max_size_, size_t max_elements_) : IFileCachePriority(max_size_, max_elements_) {}
 
     size_t getSize(const CacheGuard::Lock &) const override { return current_size; }
 
@@ -40,8 +31,6 @@ public:
     void removeAll(const CacheGuard::Lock &) override;
 
     void iterate(IterateFunc && func, const CacheGuard::Lock &) override;
-
-    void shuffle(const CacheGuard::Lock &) override;
 
 private:
     void updateElementsCount(int64_t num);
@@ -71,15 +60,13 @@ public:
 
     size_t use(const CacheGuard::Lock &) override;
 
-    void remove(const CacheGuard::Lock &) override;
+    Iterator remove(const CacheGuard::Lock &) override;
 
     void invalidate() override;
 
     void updateSize(int64_t size) override;
 
 private:
-    void checkUsable() const;
-
     LRUFileCachePriority * cache_priority;
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };

@@ -548,17 +548,15 @@ void ExpressionAnalyzer::getRootActionsForWindowFunctions(const ASTPtr & ast, bo
 
 void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions)
 {
-    for (const ASTPtr & ast : aggregates())
+    for (const ASTFunction * node : aggregates())
     {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-
         AggregateDescription aggregate;
-        if (node.arguments)
-            getRootActionsNoMakeSet(node.arguments, actions);
+        if (node->arguments)
+            getRootActionsNoMakeSet(node->arguments, actions);
 
-        aggregate.column_name = node.getColumnName();
+        aggregate.column_name = node->getColumnName();
 
-        const ASTs & arguments = node.arguments ? node.arguments->children : ASTs();
+        const ASTs & arguments = node->arguments ? node->arguments->children : ASTs();
         aggregate.argument_names.resize(arguments.size());
         DataTypes types(arguments.size());
 
@@ -570,7 +568,7 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in aggregate function '{}'",
-                    name, node.formatForErrorMessage());
+                    name, node->formatForErrorMessage());
             }
 
             types[i] = dag_node->result_type;
@@ -578,8 +576,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
         }
 
         AggregateFunctionProperties properties;
-        aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node.name, types, aggregate.parameters, properties);
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters, "", getContext()) : Array();
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -746,13 +744,12 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
     }
 
     // Window functions
-    for (const ASTPtr & ast : syntax->window_function_asts)
+    for (const ASTFunction * function_node : syntax->window_function_asts)
     {
-        const ASTFunction & function_node = typeid_cast<const ASTFunction &>(*ast);
-        assert(function_node.is_window_function);
+        assert(function_node->is_window_function);
 
         WindowFunctionDescription window_function;
-        window_function.function_node = &function_node;
+        window_function.function_node = function_node;
         window_function.column_name
             = window_function.function_node->getColumnName();
         window_function.function_parameters
@@ -763,7 +760,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
-        // Hence, we clone the node (not very sane either, I know).
+        // Hence we clone the node (not very sane either, I know).
         getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
 
         const ASTs & arguments
@@ -796,22 +793,22 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
         // may be defined inline.
-        if (!function_node.window_name.empty())
+        if (!function_node->window_name.empty())
         {
-            auto it = window_descriptions.find(function_node.window_name);
+            auto it = window_descriptions.find(function_node->window_name);
             if (it == std::end(window_descriptions))
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Window '{}' is not defined (referenced by '{}')",
-                    function_node.window_name,
-                    function_node.formatForErrorMessage());
+                    function_node->window_name,
+                    function_node->formatForErrorMessage());
             }
 
             it->second.window_functions.push_back(window_function);
         }
         else
         {
-            const auto & definition = function_node.window_definition->as<
+            const auto & definition = function_node->window_definition->as<
                 const ASTWindowDefinition &>();
             WindowDescription desc;
             desc.window_name = definition.getDefaultWindowName();
@@ -1130,17 +1127,9 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext());
-        NamesWithAliases required_columns_with_aliases = analyzed_join->getRequiredColumns(
-            Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
-
-        Names original_right_column_names;
-        for (auto & pr : required_columns_with_aliases)
-            original_right_column_names.push_back(pr.first);
-
         auto right_columns = storage->getRightSampleBlock().getColumnsWithTypeAndName();
         std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
-        return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
+        return storage->getJoinLocked(analyzed_join, getContext());
     }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
@@ -1334,13 +1323,10 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
         GetAggregatesVisitor(data).visit(select_query->orderBy());
 
     /// TODO: data.aggregates -> aggregates()
-    for (const ASTPtr & ast : data.aggregates)
-    {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-        if (node.arguments)
-            for (auto & argument : node.arguments->children)
+    for (const ASTFunction * node : data.aggregates)
+        if (node->arguments)
+            for (auto & argument : node->arguments->children)
                 getRootActions(argument, only_types, step.actions());
-    }
 }
 
 void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
@@ -1513,16 +1499,14 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         for (const auto & child : select_query->select()->children)
             select.insert(child->getAliasOrColumnName());
 
-        NameSet required_by_interpolate;
         /// collect columns required for interpolate expressions -
         /// interpolate expression can use any available column
-        auto find_columns = [&step, &select, &required_by_interpolate](IAST * function)
+        auto find_columns = [&step, &select](IAST * function)
         {
-            auto f_impl = [&step, &select, &required_by_interpolate](IAST * fn, auto fi)
+            auto f_impl = [&step, &select](IAST * fn, auto fi)
             {
                 if (auto * ident = fn->as<ASTIdentifier>())
                 {
-                    required_by_interpolate.insert(ident->getColumnName());
                     /// exclude columns from select expression - they are already available
                     if (!select.contains(ident->getColumnName()))
                         step.addRequiredOutput(ident->getColumnName());
@@ -1538,14 +1522,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
         for (const auto & interpolate : interpolate_list->children)
             find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
-
-        if (!required_result_columns.empty())
-        {
-            NameSet required_result_columns_set(required_result_columns.begin(), required_result_columns.end());
-            for (const auto & name : required_by_interpolate)
-                if (!required_result_columns_set.contains(name))
-                    required_result_columns.push_back(name);
-        }
     }
 
     if (optimize_read_in_order)

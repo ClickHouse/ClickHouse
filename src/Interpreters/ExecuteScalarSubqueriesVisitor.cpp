@@ -77,10 +77,6 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     subquery_settings.max_result_rows = 1;
     subquery_settings.extremes = false;
     subquery_context->setSettings(subquery_settings);
-
-    /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
-    /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-    subquery_context->getQueryContext()->setSetting("use_structure_from_insertion_table_in_table_functions", false);
     if (!data.only_analyze && subquery_context->hasQueryContext())
     {
         /// Save current cached scalars in the context before analyzing the query
@@ -102,7 +98,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
 {
     auto hash = subquery.getTreeHash();
-    const auto scalar_query_hash_str = toString(hash);
+    auto scalar_query_hash_str = toString(hash.first) + "_" + toString(hash.second);
 
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;
     bool hit = false;
@@ -184,9 +180,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
-            while (block.rows() == 0 && executor.pull(block))
-            {
-            }
+            while (block.rows() == 0 && executor.pull(block));
 
             if (block.rows() == 0)
             {
@@ -218,8 +212,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             Block tmp_block;
             while (tmp_block.rows() == 0 && executor.pull(tmp_block))
-            {
-            }
+                ;
 
             if (tmp_block.rows() != 0)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
