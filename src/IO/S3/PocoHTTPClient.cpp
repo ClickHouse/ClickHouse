@@ -115,17 +115,6 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
 {
 }
 
-std::shared_ptr<PocoHTTPClient> PocoHTTPClientConfiguration::createAndGetClient() const
-{
-    http_client = std::make_shared<PocoHTTPClient>(*this);
-    return http_client;
-}
-
-std::shared_ptr<PocoHTTPClient> PocoHTTPClientConfiguration::getClient() const
-{
-    return http_client;
-}
-
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 {
     if (!endpointOverride.empty())
@@ -153,8 +142,6 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
         {
             region = force_region;
         }
-
-        http_client.reset();
     }
 }
 
