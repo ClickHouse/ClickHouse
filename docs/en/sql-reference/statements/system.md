@@ -347,6 +347,8 @@ Waits until the specified [replicated database](https://clickhouse.com/docs/en/e
 **Syntax**
 ```sql
 SYSTEM SYNC DATABASE REPLICA replicated_database_name;
+```
+
 ### RESTART REPLICA
 
 Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
