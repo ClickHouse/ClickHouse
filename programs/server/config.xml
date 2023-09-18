@@ -448,8 +448,6 @@
                 <account_name>account</account_name>
                 <account_key>pass123</account_key>
                 <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </blob_storage_disk>
         </disks>

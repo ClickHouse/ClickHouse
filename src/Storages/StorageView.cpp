@@ -101,6 +101,19 @@ ContextPtr getViewContext(ContextPtr context)
     return view_context;
 }
 
+ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
+{
+    if (!select_query.tables() || select_query.tables()->children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
+
+    auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+
+    if (!select_element->table_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
+
+    return select_element->table_expression->as<ASTTableExpression>();
+}
+
 }
 
 StorageView::StorageView(
@@ -146,6 +159,21 @@ void StorageView::read(
         if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected optimized VIEW query");
         current_inner_query = query_info.view_query->clone();
+    }
+
+    const auto & select_query = query_info.query->as<ASTSelectQuery &>();
+    if (auto sample_size = select_query.sampleSize(), sample_offset = select_query.sampleOffset(); sample_size || sample_offset)
+    {
+        for (auto & inner_select_query : current_inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children)
+        {
+            if (auto * select = inner_select_query->as<ASTSelectQuery>(); select)
+            {
+                ASTTableExpression * table_expression = getFirstTableExpression(*select);
+
+                table_expression->sample_offset = sample_offset;
+                table_expression->sample_size = sample_size;
+            }
+        }
     }
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
@@ -194,19 +222,6 @@ void StorageView::read(
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
-}
-
-static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
-{
-    if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
-
-    auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
-
-    if (!select_element->table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
-
-    return select_element->table_expression->as<ASTTableExpression>();
 }
 
 void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
