@@ -149,7 +149,7 @@ def gen_versions(
     pr_commit_version = str(pr_info.number) + "-" + pr_info.sha
     # The order is important, PR number is used as cache during the build
     versions = [str(pr_info.number), pr_commit_version]
-    result_version = pr_commit_version
+    result_version = pr_commit_version  # type: Union[str, List[str]]
     if pr_info.number == 0 and pr_info.base_ref == "master":
         # First get the latest for cache
         versions.insert(0, "latest")
