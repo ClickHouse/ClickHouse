@@ -195,10 +195,27 @@ private:
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_)
+    FullMergeJoinCursor(
+        const Block & sample_block_,
+        const SortDescription & description_,
+        bool is_asof = false)
         : sample_block(sample_block_.cloneEmpty())
         , desc(description_)
     {
+        if (desc.size() == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty sort description for FullMergeJoinCursor");
+
+        if (is_asof)
+        {
+            /// For ASOF join prefix of sort description is used for equality comparison
+            /// and the last column is used for inequality comparison and is handled separately
+
+            auto asof_column_description = desc.back();
+            desc.pop_back();
+
+            chassert(asof_column_description.direction == 1 && asof_column_description.nulls_direction == 1);
+            asof_column_position = sample_block.getPositionByName(asof_column_description.column_name);
+        }
     }
 
     bool fullyCompleted() const;
@@ -209,10 +226,18 @@ public:
     SortCursorImpl * operator-> () { return &cursor; }
     const SortCursorImpl * operator-> () const { return &cursor; }
 
+    SortCursorImpl & operator* () { return cursor; }
+    const SortCursorImpl & operator* () const { return cursor; }
+
     SortCursorImpl cursor;
 
     const Block & sampleBlock() const { return sample_block; }
     Columns sampleColumns() const { return sample_block.getColumns(); }
+
+    const IColumn & getAsofColumn() const
+    {
+        return *cursor.all_columns[asof_column_position];
+    }
 
 private:
     Block sample_block;
@@ -220,6 +245,8 @@ private:
 
     Chunk current_chunk;
     bool recieved_all_blocks = false;
+
+    size_t asof_column_position;
 };
 
 /*
@@ -242,8 +269,9 @@ public:
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    void logElapsed(double seconds);
+    void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
+    void logElapsed(double seconds);
 private:
     std::optional<Status> handleAnyJoinState();
     Status anyJoin();
@@ -251,13 +279,17 @@ private:
     std::optional<Status> handleAllJoinState();
     Status allJoin();
 
+    Status asofJoin();
+
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
+
 
     /// For `USING` join key columns should have values from right side instead of defaults
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursorPtr, 2> cursors;
+    ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;
 
     /// Keep some state to make handle data from different blocks
     AnyJoinState any_join_state;
@@ -304,6 +336,8 @@ public:
         UInt64 limit_hint_ = 0);
 
     String getName() const override { return "MergeJoinTransform"; }
+
+    void setAsofInequality(ASOFJoinInequality asof_inequality_) { algorithm.setAsofInequality(asof_inequality_); }
 
 protected:
     void onFinish() override;
