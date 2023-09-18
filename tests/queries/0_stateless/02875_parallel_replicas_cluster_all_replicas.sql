@@ -9,7 +9,7 @@ SYSTEM FLUSH LOGS;
 
 SET allow_experimental_parallel_reading_from_replicas=0;
 SELECT count() > 0 FROM system.text_log
-WHERE query_id in (select query_id from system.query_log where log_comment = '02875_190aed82-2423-413b-ad4c-24dcca50f65b')
+WHERE query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment = '02875_190aed82-2423-413b-ad4c-24dcca50f65b')
     AND message LIKE '%Parallel reading from replicas is disabled for cluster%';
 
 DROP TABLE tt;
