@@ -139,7 +139,7 @@ public:
             if (i->id == postponed_id)
             {
                 postponed.erase(i);
-                // It is O(n), but we do not expect neither big heaps, nor frequent cancels. So it is fine.
+                // It is O(n), but we do not expect either big heaps or frequent cancels. So it is fine.
                 std::make_heap(postponed.begin(), postponed.end());
                 return true;
             }
