@@ -132,7 +132,7 @@ void JoiningTransform::work()
         // Process the next chunk after all the current result set is output.
         if (!join->supportStreamJoin() || !blocks || blocks->isFinished())
             transform(input_chunk);
-        if (join->supportStreamJoin() && !on_totals)
+        if (blocks)
         {
             auto block = blocks->next();
             output_chunk.setColumns(block.getColumns(), block.rows());
