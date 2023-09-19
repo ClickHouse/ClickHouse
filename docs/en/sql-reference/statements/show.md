@@ -208,7 +208,7 @@ The optional keyword `FULL` causes the output to include the collation, comment 
 The statement produces a result table with the following structure:
 - field - The name of the column (String)
 - type - The column data type (String)
-- null - If the column data type is Nullable (UInt8)
+- null - `YES` if the column data type is Nullable, `NO` otherwise (String)
 - key - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
 - default - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
 - extra - Additional information, currently unused (String)
@@ -638,3 +638,16 @@ Outputs the content of the [system.table_engines](../../operations/system-tables
 **See Also**
 
 - [system.table_engines](../../operations/system-tables/table_engines.md) table
+
+## SHOW FUNCTIONS
+
+``` sql
+SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
+```
+
+Outputs the content of the [system.functions](../../operations/system-tables/functions.md) table.
+
+If either `LIKE` or `ILIKE` clause is specified, the query returns a list of system functions whose names match the provided `<pattern>`.
+
+**See Also**
+- [system.functions](../../operations/system-tables/functions.md) table

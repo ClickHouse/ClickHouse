@@ -197,22 +197,8 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     return unmodified;
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
+static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
 {
-    if (block.rows() == 0)
-        return;
-
-    if (!expression_ast)
-        prepareFilterBlockWithQuery(query, context, block, expression_ast);
-
-    if (!expression_ast)
-        return;
-
-    /// Let's analyze and calculate the prepared expression.
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
-    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
-
     for (const auto & node : actions->getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
@@ -229,6 +215,10 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
                     {
                         auto plan = set_from_subquery->build(context);
+
+                        if (!plan)
+                            continue;
+
                         auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
                         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
                         pipeline.complete(std::make_shared<EmptySink>(Block()));
@@ -240,6 +230,58 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
             }
         }
     }
+}
+
+void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context)
+{
+    auto actions = std::make_shared<ExpressionActions>(dag);
+    makeSets(actions, context);
+    Block block_with_filter = block;
+    actions->execute(block_with_filter);
+
+    /// Filter the block.
+    String filter_column_name = dag->getOutputs().at(0)->result_name;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
+
+    ConstantFilterDescription constant_filter(*filter_column);
+
+    if (constant_filter.always_true)
+    {
+        return;
+    }
+
+    if (constant_filter.always_false)
+    {
+        block = block.cloneEmpty();
+        return;
+    }
+
+    FilterDescription filter(*filter_column);
+
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        ColumnPtr & column = block.safeGetByPosition(i).column;
+        column = column->filter(*filter.data, -1);
+    }
+}
+
+void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
+{
+    if (block.rows() == 0)
+        return;
+
+    if (!expression_ast)
+        prepareFilterBlockWithQuery(query, context, block, expression_ast);
+
+    if (!expression_ast)
+        return;
+
+    /// Let's analyze and calculate the prepared expression.
+    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
+    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
+    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
+
+    makeSets(actions, context);
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);

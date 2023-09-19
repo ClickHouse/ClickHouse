@@ -107,15 +107,25 @@ public:
     static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
-    void linkThread(UInt64 thread_it);
+    size_t getPeakThreadsUsage() const;
+
+    void linkThread(UInt64 thread_id);
+    void unlinkThread();
 
 private:
     mutable std::mutex mutex;
 
     /// Set up at creation, no race when reading
-    SharedData shared_data;
+    SharedData shared_data TSA_GUARDED_BY(mutex);
+
     /// Set of all thread ids which has been attached to the group
-    std::unordered_set<UInt64> thread_ids;
+    std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);
+
+    /// Count of simultaneously working threads
+    size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;
+
+    /// Peak threads count in the group
+    size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 };
 
 /**
