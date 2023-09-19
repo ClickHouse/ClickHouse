@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /usr/share/clickhouse-test/ci/utils.lib
+source /utils.lib
 
 function attach_gdb_to_clickhouse()
 {

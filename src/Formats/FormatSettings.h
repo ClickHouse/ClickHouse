@@ -46,8 +46,6 @@ struct FormatSettings
     bool try_infer_dates = false;
     bool try_infer_datetimes = false;
 
-    bool output_format_markdown_escape_special_characters = false;
-
     enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -415,6 +413,11 @@ struct FormatSettings
     {
         bool allow_types_conversion = true;
     } native;
+
+    struct
+    {
+        bool escape_special_characters = false;
+    } markdown;
 };
 
 }

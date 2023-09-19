@@ -87,7 +87,7 @@ public:
 
         if (rhs_elems.value.empty())
             return;
-        
+
         if (rhs_elems.value.size())
             cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
 
