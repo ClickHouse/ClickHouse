@@ -493,6 +493,12 @@ public:
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
+    /// Checks the consistency of this data part.
+    virtual void checkConsistency(bool require_part_metadata) const;
+
+    /// Checks the consistency of this data part, and check the consistency of its projections (if any) as well.
+    void checkConsistencyWithProjections(bool require_part_metadata) const;
+
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
     /// TODO: remove this method after some time.
     void removeDeleteOnDestroyMarker();
@@ -538,7 +544,6 @@ protected:
 
     void removeIfNeeded();
 
-    virtual void checkConsistency(bool require_part_metadata) const;
     void checkConsistencyBase() const;
 
     /// Fill each_columns_size and total_size with sizes from columns files on

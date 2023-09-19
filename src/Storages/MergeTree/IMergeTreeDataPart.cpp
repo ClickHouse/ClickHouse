@@ -1935,6 +1935,13 @@ void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) cons
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
 }
 
+void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metadata) const
+{
+    checkConsistency(require_part_metadata);
+    for (const auto & [_, proj_part] : projection_parts)
+        proj_part->checkConsistency(require_part_metadata);
+}
+
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
 {
     calculateColumnsSizesOnDisk();
