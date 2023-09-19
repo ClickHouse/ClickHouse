@@ -23,6 +23,9 @@ class IStatistic;
 using StatisticPtr = std::shared_ptr<IStatistic>;
 using Statistics = std::vector<StatisticPtr>;
 
+/// Statistic for a column
+/// right now we support
+/// - tdigest
 class IStatistic
 {
 public:
@@ -42,11 +45,6 @@ public:
     {
         return stat.column_name;
     }
-
-    //const String & type() const
-    //{
-    //    return stat.type;
-    //}
 
     virtual void serialize(WriteBuffer & buf) = 0;
 
@@ -112,20 +110,27 @@ class MergeTreeStatisticFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticFactory & instance();
 
+    void validate(const StatisticDescription & stat, DataTypePtr data_type) const;
+
     using Creator = std::function<StatisticPtr(const StatisticDescription & stat)>;
+
+    using Validator = std::function<void(const StatisticDescription & stat, DataTypePtr data_type)>;
 
     StatisticPtr get(const StatisticDescription & stat) const;
 
     Statistics getMany(const StatisticsDescriptions & stats) const;
 
     void registerCreator(StatisticType type, Creator creator);
+    void registerValidator(StatisticType type, Validator validator);
 
 protected:
     MergeTreeStatisticFactory();
 
 private:
     using Creators = std::unordered_map<StatisticType, Creator>;
+    using Validators = std::unordered_map<StatisticType, Validator>;
     Creators creators;
+    Validators validators;
 };
 
 class RPNBuilderTreeNode;

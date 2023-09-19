@@ -151,6 +151,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
+        if (getContext()->getSettings().allow_experimental_statistic ||
+            command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
+            command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
+            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTIC)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistic");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))

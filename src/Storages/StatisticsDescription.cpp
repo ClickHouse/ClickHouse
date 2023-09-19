@@ -18,13 +18,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
+    extern const int ILLEGAL_STATISTIC;
     extern const int LOGICAL_ERROR;
 };
 
 StatisticType StatisticDescription::stringToType(String type)
 {
-    if (type.empty())
-        return TDigest;
     if (type == "tdigest")
         return TDigest;
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
@@ -87,8 +86,12 @@ bool StatisticsDescriptions::has(const String & name) const
 
 void StatisticsDescriptions::merge(const StatisticsDescriptions & other)
 {
+    /// Check duplicate
+    for (const auto & old_stat : * this)
+        for (const auto & new_stat : other)
+            if (old_stat.column_name == new_stat.column_name)
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Statistic column {} has existed", old_stat.column_name);
     insert(end(), other.begin(), other.end());
-    /// definition_asts.insert(definition_asts.end(), other.definition_asts.begin(), other.definition_asts.end());
 }
 
 ASTPtr StatisticsDescriptions::getAST() const

@@ -714,12 +714,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 properties.indices.push_back(index_desc);
             }
+
         if (create.columns_list->stats)
+        {
+            const auto & settings = getContext()->getSettingsRef();
+            if (!settings.allow_experimental_statistic)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
             for (const auto & statistic : create.columns_list->stats->children)
             {
                 auto stats = StatisticsDescriptions::getStatisticsFromAST(statistic->clone(), properties.columns, getContext());
                 properties.stats.merge(stats);
             }
+        }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
