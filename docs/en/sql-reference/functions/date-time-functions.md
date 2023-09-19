@@ -239,7 +239,7 @@ int32samoa: 1546300800
 
 **See Also**
 
-- [formatDateTime](#date_time_functions-formatDateTime) - supports non-constant timezone.
+- [formatDateTime](#formatDateTime) - supports non-constant timezone.
 - [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
 
 ## timeZoneOf
@@ -1628,7 +1628,7 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime {#date_time_functions-formatDateTime}
+## formatDateTime {#formatDateTime}
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
@@ -1753,7 +1753,7 @@ LIMIT 10
 - [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
 
 
-## formatDateTimeInJodaSyntax {#date_time_functions-formatDateTimeInJodaSyntax}
+## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
