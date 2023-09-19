@@ -37,10 +37,13 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 SELECT
     name AS field,
     type AS type,
-    startsWith(type, 'Nullable') AS null,
+    if (startsWith(type, 'Nullable'), 'YES', 'NO') AS `null`,
     trim(concatWithSeparator(' ', if (is_in_primary_key, 'PRI', ''), if (is_in_sorting_key, 'SOR', ''))) AS key,
     if (default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED'), default_expression, NULL) AS default,
     '' AS extra )";
+
+    // Known issue: Field 'null' is wrong for types like 'LowCardinality(Nullable(String))'. Can't simply replace 'startsWith' by
+    // `hasSubsequence` as that would return `true` for non-nullable types such as `Tuple(Nullable(String), String)`...
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
     // IStorage::getVirtuals(). We can't easily do that via SQL.
