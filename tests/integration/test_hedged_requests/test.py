@@ -381,7 +381,7 @@ def test_async_connect(started_cluster):
     NODES["node"].restart_clickhouse()
 
     attempt = 0
-    while attempt < 1000:
+    while attempt < 100:
         NODES["node"].query(
             "SELECT hostName(), id FROM distributed_connect ORDER BY id LIMIT 1 SETTINGS prefer_localhost_replica = 0, connect_timeout_with_failover_ms=5000, async_query_sending_for_remote=1, max_threads=1, max_distributed_connections=1"
         )
@@ -392,7 +392,7 @@ def test_async_connect(started_cluster):
 
         attempt += 1
 
-    assert attempt < 1000
+    assert attempt < 100
 
     NODES["node"].query("DROP TABLE distributed_connect")
 
@@ -427,7 +427,7 @@ def test_async_query_sending(started_cluster):
     check_if_query_sending_was_not_suspended()
 
     attempt = 0
-    while attempt < 1000:
+    while attempt < 100:
         NODES["node"].query(
             "SELECT hostName(), id FROM distributed_query_sending ORDER BY id LIMIT 1 SETTINGS"
             " prefer_localhost_replica = 0, async_query_sending_for_remote=1, max_threads = 1, max_distributed_connections=1"
@@ -438,5 +438,5 @@ def test_async_query_sending(started_cluster):
 
         attempt += 1
 
-    assert attempt < 1000
+    assert attempt < 100
     NODES["node"].query("DROP TABLE distributed_query_sending")
