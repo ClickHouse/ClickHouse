@@ -165,12 +165,12 @@ public:
         std::unique_lock lock{mutex};
         if (!queue.empty())
         {
-            processQueue(lock);
+            processQueue(std::move(lock));
             return true;
         }
         if (!postponed.empty())
         {
-            processPostponed(lock);
+            processPostponed(std::move(lock));
             return true;
         }
         return false;
@@ -183,7 +183,7 @@ public:
         std::unique_lock lock{mutex};
         if (!queue.empty())
         {
-            processQueue(lock);
+            processQueue(std::move(lock));
             return true;
         }
         if (postponed.empty())
@@ -192,7 +192,7 @@ public:
         {
             if (postponed.front().key <= now())
             {
-                processPostponed(lock);
+                processPostponed(std::move(lock));
                 return true;
             }
             return false;
@@ -206,13 +206,13 @@ public:
         while (true)
         {
             if (!queue.empty())
-                return processQueue(lock);
+                return processQueue(std::move(lock));
             if (postponed.empty())
                 wait(lock);
             else
             {
                 if (postponed.front().key <= now())
-                    return processPostponed(lock);
+                    return processPostponed(std::move(lock));
                 waitUntil(lock, postponed.front().key);
             }
         }
@@ -256,7 +256,7 @@ private:
             pending.wait(lock);
     }
 
-    void processQueue(std::unique_lock<std::mutex> & lock)
+    void processQueue(std::unique_lock<std::mutex> && lock)
     {
         Event event = std::move(queue.front());
         queue.pop_front();
@@ -264,7 +264,7 @@ private:
         event();
     }
 
-    void processPostponed(std::unique_lock<std::mutex> & lock)
+    void processPostponed(std::unique_lock<std::mutex> && lock)
     {
         Event event = std::move(*postponed.front().event);
         std::pop_heap(postponed.begin(), postponed.end());
