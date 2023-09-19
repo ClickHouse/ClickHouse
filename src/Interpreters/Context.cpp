@@ -3431,6 +3431,16 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
     return shared->system_logs->backup_log;
 }
 
+std::shared_ptr<PipelineLog> Context::getPipelineTraceLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->pipeline_trace_log;
+}
+
 std::vector<ISystemLog *> Context::getSystemLogs() const
 {
     auto lock = getLock();
