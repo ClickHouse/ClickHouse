@@ -82,6 +82,11 @@ struct LogFileSettings
     uint64_t overallocate_size = 0;
 };
 
+struct FlushSettings
+{
+    uint64_t max_flush_batch_size = 1000;
+};
+
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -91,6 +96,7 @@ public:
     Changelog(
         Poco::Logger * log_,
         LogFileSettings log_file_settings,
+        FlushSettings flush_settings,
         KeeperContextPtr keeper_context_);
 
     Changelog(Changelog &&) = delete;
@@ -228,6 +234,8 @@ private:
     nuraft::wptr<nuraft::raft_server> raft_server;
 
     KeeperContextPtr keeper_context;
+
+    const FlushSettings flush_settings;
 
     bool initialized = false;
 };
