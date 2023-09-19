@@ -532,6 +532,7 @@ try
 
     return object_storage->readObjects(
         storage_objects,
+        "DiskObjectStorage",
         object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
         read_hint,
         file_size);

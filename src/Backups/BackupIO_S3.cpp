@@ -138,7 +138,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file_name)
 {
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
+        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings, "BackupReaderS3");
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -264,7 +264,7 @@ std::unique_ptr<ReadBuffer> BackupWriterS3::readFile(const String & file_name, s
 {
     return std::make_unique<ReadBufferFromS3>(
             client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings,
-            false, 0, 0, false, expected_file_size);
+            "BackupWriterS3", false, 0, 0, false, expected_file_size);
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)

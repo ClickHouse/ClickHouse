@@ -1228,6 +1228,7 @@ TEST_F(WBS3Test, ReadBeyondLastOffset) {
                 "Latest",
                 request_settings,
                 disk_read_settings,
+                "ReadBeyondLastOffset",
                 /* use_external_buffer */true,
                 /* offset */0,
                 read_until_position,

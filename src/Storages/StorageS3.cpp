@@ -604,7 +604,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     }
 
     return std::make_unique<ReadBufferFromS3>(
-        client, bucket, key, version_id, request_settings, read_settings,
+        client, bucket, key, version_id, request_settings, read_settings, "StorageS3Source::createS3ReadBuffer",
         /*use_external_buffer*/ false, /*offset_*/ 0, /*read_until_position_*/ 0,
         /*restricted_seek_*/ false, object_size);
 }
@@ -624,6 +624,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
             version_id,
             request_settings,
             read_settings,
+            "StorageS3Source::createAsyncS3ReadBuffer",
             /* use_external_buffer */true,
             /* offset */0,
             read_until_position,
@@ -1446,7 +1447,7 @@ namespace
                     continue;
 
                 int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-                auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, current_key_with_info.key, configuration.url.version_id, configuration.request_settings, getContext()->getReadSettings());
+                auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, current_key_with_info.key, configuration.url.version_id, configuration.request_settings, getContext()->getReadSettings(), "ReadBufferIterator::next");
                 if (!getContext()->getSettingsRef().s3_skip_empty_files || !impl->eof())
                 {
                     first = false;

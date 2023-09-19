@@ -196,6 +196,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
 
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
+    const String & /* read_caller_name */,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const

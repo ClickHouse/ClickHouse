@@ -85,7 +85,8 @@ void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::U
         uri.key,
         version_id,
         request_settings,
-        read_settings
+        read_settings,
+        "doReadRequest"
     );
 
     String content;

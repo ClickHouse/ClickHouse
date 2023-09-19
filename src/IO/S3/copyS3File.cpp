@@ -644,7 +644,7 @@ namespace
         {
             return [&]
             {
-                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, Context::getGlobalContextInstance()->getReadSettings());
+                return std::make_unique<ReadBufferFromS3>(client_ptr, src_bucket, src_key, "", request_settings, Context::getGlobalContextInstance()->getReadSettings(), "CopyFileHelper::getSourceObjectReadBuffer");
             };
         }
 
@@ -839,7 +839,7 @@ void copyS3File(
     {
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, Context::getGlobalContextInstance()->getReadSettings());
+            return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, Context::getGlobalContextInstance()->getReadSettings(), "copyS3File");
         };
         copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, s3_client_with_long_timeout, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
     }

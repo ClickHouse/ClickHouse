@@ -49,6 +49,7 @@ public:
         const String & version_id_,
         const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & settings_,
+        String buffer_creator_name,
         bool use_external_buffer = false,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
@@ -101,6 +102,8 @@ private:
     bool restricted_seek;
 
     bool read_all_range_successfully = false;
+
+    String buffer_creator_name;
 };
 
 }

@@ -154,6 +154,7 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
+    const String & read_caller_name,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
@@ -164,7 +165,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
     auto settings_ptr = s3_settings.get();
 
     auto read_buffer_creator =
-        [this, settings_ptr, disk_read_settings]
+        [this, settings_ptr, disk_read_settings, read_caller_name]
         (const std::string & path, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
     {
         return std::make_unique<ReadBufferFromS3>(
@@ -174,6 +175,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             version_id,
             settings_ptr->request_settings,
             disk_read_settings,
+            read_caller_name,
             /* use_external_buffer */true,
             /* offset */0,
             read_until_position,
@@ -223,7 +225,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         object.remote_path,
         version_id,
         settings_ptr->request_settings,
-        patchSettings(read_settings));
+        patchSettings(read_settings),
+        "S3ObjectStorage");
 }
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
