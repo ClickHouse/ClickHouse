@@ -15,10 +15,10 @@ bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_typ
     bool to_type_was_nullable = isNullableOrLowCardinalityNullable(to_type);
     auto to_type_unwrapped = removeNullable(removeLowCardinality(to_type));
 
-    if (from_type->equals(*to_type))
+    if (from_type->equals(*to_type_unwrapped))
         return true;
 
-    auto to_which_type = WhichDataType(to_type->getTypeId());
+    auto to_which_type = WhichDataType(to_type_unwrapped->getTypeId());
 
     switch (from_which_type.idx)
     {
