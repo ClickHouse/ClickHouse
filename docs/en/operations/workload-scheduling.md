@@ -79,7 +79,7 @@ graph TD
 
 **Possible node types:**
 * `inflight_limit` (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
-* `bandwidth_limit` (constraint) - blocks if burst exceeds `max_burst` (default 0) or current bandwidth exceeds `max_speed` (0 means unlimited); must have a single child.
+* `bandwidth_limit` (constraint) - blocks if current bandwidth exceeds `max_speed` (0 means unlimited) or burst exceeds `max_burst` (by default equals `max_speed`); must have a single child.
 * `fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
 * `priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
 * `fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.

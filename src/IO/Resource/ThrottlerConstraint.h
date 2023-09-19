@@ -18,10 +18,12 @@ namespace DB
 class ThrottlerConstraint : public ISchedulerConstraint
 {
 public:
+    static constexpr double default_burst_seconds = 1.0;
+
     ThrottlerConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerConstraint(event_queue_, config, config_prefix)
-        , max_burst(config.getDouble(config_prefix + ".max_burst", 0))
         , max_speed(config.getDouble(config_prefix + ".max_speed", 0))
+        , max_burst(config.getDouble(config_prefix + ".max_burst", default_burst_seconds * max_speed))
         , last_update(event_queue_->now())
         , tokens(max_burst)
     {}
@@ -37,7 +39,7 @@ public:
         if (!ISchedulerNode::equals(other))
             return false;
         if (auto * o = dynamic_cast<ThrottlerConstraint *>(other))
-            return max_burst == o->max_burst && max_speed == o->max_speed;
+            return max_speed == o->max_speed && max_burst == o->max_burst;
         return false;
     }
 
@@ -137,7 +139,7 @@ public:
 
     std::pair<double, double> getParams() const
     {
-        return {max_burst, max_speed};
+        return {max_speed, max_burst};
     }
 
 private:
@@ -184,8 +186,8 @@ private:
         return satisfied() && child_active;
     }
 
-    const double max_burst{0}; /// in tokens
     const double max_speed{0}; /// in tokens per second
+    const double max_burst{0}; /// in tokens
 
     EventQueue::TimePoint last_update;
     UInt64 postponed = EventQueue::not_postponed;
