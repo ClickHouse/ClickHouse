@@ -6,10 +6,13 @@
 namespace DB
 {
 
+/// This interface is meant to be used by the SinkToStorage processor
+/// SinkToStorage delegates on it the creation of the data chunk that will deliver to the next stages of the query pipeline
+/// Default implementation (createDefault() factory method) just forwards everything that it receives
 class IOutputChunkGenerator
 {
 public:
-    static std::unique_ptr<IOutputChunkGenerator> createCopyRanges(ContextPtr context);
+    static std::unique_ptr<IOutputChunkGenerator> createCopyRanges(bool deduplicate_later);
     static std::unique_ptr<IOutputChunkGenerator> createDefault();
 
     virtual ~IOutputChunkGenerator() = default;
