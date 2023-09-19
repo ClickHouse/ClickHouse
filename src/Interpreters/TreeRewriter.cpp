@@ -1134,7 +1134,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 if (object_pos != std::string::npos)
                 {
                     String object_name = it->substr(0, object_pos);
-                    if (pair.type->getTypeId() == TypeIndex::Object)
+                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::Object)
                     {
                         const auto * object_type = typeid_cast<const DataTypeObject *>(pair.type.get());
                         if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
