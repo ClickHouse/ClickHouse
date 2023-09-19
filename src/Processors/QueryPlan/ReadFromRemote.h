@@ -74,7 +74,6 @@ public:
         Block header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
-        ASTPtr table_func_ptr_,
         ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
@@ -98,7 +97,6 @@ private:
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     StorageID main_table;
-    ASTPtr table_func_ptr;
     ContextMutablePtr context;
     ThrottlerPtr throttler;
     Scalars scalars;
