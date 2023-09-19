@@ -210,7 +210,10 @@ void JoiningTransform::transform(Chunk & chunk)
     else
         block = readExecute(chunk);
     auto num_rows = block.rows();
-    chunk.setColumns(block.getColumns(), num_rows);
+    if (!join->supportStreamJoin() || on_totals)
+    {
+        chunk.setColumns(block.getColumns(), num_rows);
+    }
 }
 
 void JoiningTransform::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed_block)
