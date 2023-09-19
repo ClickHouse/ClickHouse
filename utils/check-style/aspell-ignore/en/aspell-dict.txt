@@ -969,6 +969,8 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDDToDate
+YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -1809,6 +1811,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
