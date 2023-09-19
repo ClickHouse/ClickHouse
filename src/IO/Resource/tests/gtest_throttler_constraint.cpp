@@ -42,6 +42,43 @@ TEST(IOResourceThrottlerConstraint, LeakyBucketConstraint)
     t.consumed("A", 10);
 }
 
+TEST(IOResourceThrottlerConstraint, Unlimited)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    t.process(start, 0);
+
+    t.add<ThrottlerConstraint>("/", "");
+    t.add<FifoQueue>("/A", "");
+
+    for (int i = 0; i < 10; i++)
+    {
+        t.enqueue("/A", {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000});
+        t.process(start + std::chrono::seconds(i / 2)); // Stick to the same time twice
+        t.consumed("A", 11111111);
+    }
+}
+
+TEST(IOResourceThrottlerConstraint, Pacing)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    t.process(start, 0);
+
+    // Zero burst allows you to send one request of any `size` and than throttle for `size/max_speed` seconds.
+    // Useful if outgoing traffic should be "paced", i.e. have the least possible burstiness.
+    t.add<ThrottlerConstraint>("/", "<max_burst>0</max_burst><max_speed>1</max_speed>");
+    t.add<FifoQueue>("/A", "");
+
+    t.enqueue("/A", {1, 2, 3, 1, 2, 1});
+    int output[] = {1, 2, 0, 3, 0, 0, 1, 2, 0, 1, 0};
+    for (int i = 0; i < std::size(output); i++)
+    {
+        t.process(start + std::chrono::seconds(i));
+        t.consumed("A", output[i]);
+    }
+}
+
 TEST(IOResourceThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
