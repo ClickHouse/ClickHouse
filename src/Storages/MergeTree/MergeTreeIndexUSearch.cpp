@@ -174,10 +174,14 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
         const auto & column_array_data = column_array->getData();
-        const auto & column_array_data_float_data = typeid_cast<const ColumnFloat32 &>(column_array_data).getData();
+        const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
+        const auto & column_array_data_float_data = column_array_data_float.getData();
 
         const auto & column_array_offsets = column_array->getOffsets();
         const size_t num_rows = column_array_offsets.size();
+
+        if (column_array->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
 
         /// The Usearch algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
         /// are INSERTed into an Usearch-indexed column or if no value was specified at all in which case the arrays take on their default

@@ -205,8 +205,8 @@ more accurate search results but slower index creation / query times (approximat
 :::note
 Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays must have same length. To avoid
 errors, you can use a [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT
-constraint_name_1 CHECK length(vectors) = 256`. Also, unspecified `Array` values in INSERT statements (i.e. default values) are not
-supported.
+constraint_name_1 CHECK length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default
+values) are not supported.
 :::
 
 Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
