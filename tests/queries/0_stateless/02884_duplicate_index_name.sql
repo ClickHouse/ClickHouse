@@ -7,4 +7,4 @@ CREATE TABLE test_dup_index
 	INDEX idx_a a TYPE minmax,
 	INDEX idx_a b TYPE minmax
 ) Engine = MergeTree()
-ORDER BY a; -- { serverError 127 }
+ORDER BY a; -- { serverError ILLEGAL_INDEX }
