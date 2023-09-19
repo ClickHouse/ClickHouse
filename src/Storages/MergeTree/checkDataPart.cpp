@@ -15,11 +15,6 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
-#include <Poco/Net/NetException.h>
-
-#if USE_AZURE_BLOB_STORAGE
-#    include <azure/core/http/http.hpp>
-#endif
 
 namespace CurrentMetrics
 {
@@ -67,47 +62,6 @@ bool isRetryableException(const Exception & e)
     if (s3_exception && s3_exception->isRetryableError())
         return true;
 #endif
-
-    /// In fact, there can be other similar situations.
-    /// But it is OK, because there is a safety guard against deleting too many parts.
-    return false;
-}
-
-bool isRetryableException(const std::exception_ptr exception_ptr)
-{
-    try
-    {
-        rethrow_exception(exception_ptr);
-    }
-#if USE_AWS_S3
-    catch (const S3Exception & s3_exception)
-    {
-        if (s3_exception.isRetryableError())
-            return true;
-    }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-    catch (const Azure::Core::RequestFailedException &)
-    {
-        return true;
-    }
-#endif
-    catch (const Exception & e)
-    {
-        if (isNotEnoughMemoryErrorCode(e.code()))
-            return true;
-
-        if (e.code() == ErrorCodes::NETWORK_ERROR || e.code() == ErrorCodes::SOCKET_TIMEOUT)
-            return true;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        return true;
-    }
-    catch (const Poco::TimeoutException &)
-    {
-        return true;
-    }
 
     /// In fact, there can be other similar situations.
     /// But it is OK, because there is a safety guard against deleting too many parts.
