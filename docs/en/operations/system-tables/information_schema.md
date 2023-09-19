@@ -229,22 +229,22 @@ is_trigger_insertable_into: NO
 
 ## KEY_COLUMN_USAGE (#key_column_usage)
 
-It was added for compatibility with third party tools such as Tableau Online. Contains only the primary keys columns read from [system.columns](../../operations/system-tables/columns.md).
+Contains columns from the [system.tables](../../operations/system-tables/tables.md) system table which are restricted by constraints.
 
 Columns:
 
-- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog to which the constraint belongs. This value is always `def`.
+- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused. Always `def`.
 - `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the constraint belongs.
 - `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the constraint.
-- `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog to which the table belongs. This value is always `def`.
+- `table_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused. Always `def`.
 - `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the table belongs.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table that has the constraint.
 - `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the column that has the constraint.
 - `ordinal_position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The column's position within the constraint, not the column's position within the table. Column positions are numbered beginning with 1.
-- `position_in_unique_constraint` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Always `NULL`.
-- `referenced_table_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the schema referenced by the constraint. Always `NULL`.
-- `referenced_table_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the table referenced by the constraint. Always `NULL`.
-- `referenced_column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the column referenced by the constraint. Always `NULL`.
+- `position_in_unique_constraint` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Currently unused. Always `NULL`.
+- `referenced_table_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
+- `referenced_table_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
+- `referenced_column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
 
 **Example**
 
@@ -270,18 +270,18 @@ constraint_name:         PRIMARY
 
 ## REFERENTIAL_CONSTRAINTS (#referential_constraints)
 
-It was added for compatibility with third party tools such as Tableau Online. Reads no data by design, selects from this view will always yield an empty result set.
+Contains information about foreign keys. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
 
 Columns:
 
-- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog to which the constraint belongs.
-- `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the constraint belongs.
-- `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the constraint.
-- `unique_constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the catalog containing the unique constraint that the constraint references.
-- `unique_constraint_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema containing the unique constraint that the constraint references.
-- `unique_constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the unique constraint that the constraint references.
-- `match_option` ([String](../../sql-reference/data-types/string.md)) — The value of the constraint `MATCH` attribute.
-- `update_rule` ([String](../../sql-reference/data-types/string.md)) — The value of the constraint `ON UPDATE` attribute.
-- `delete_rule` ([String](../../sql-reference/data-types/string.md)) — The value of the constraint `ON DELETE` attribute.
-- `table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table.
-- `referenced_table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table referenced by the constraint.
+- `constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `constraint_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `unique_constraint_catalog` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `unique_constraint_schema` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `unique_constraint_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused.
+- `match_option` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `update_rule` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `delete_rule` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
+- `referenced_table_name` ([String](../../sql-reference/data-types/string.md)) — Currently unused.
