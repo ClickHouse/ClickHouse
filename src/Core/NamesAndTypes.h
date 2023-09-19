@@ -122,6 +122,8 @@ public:
 
     /// Try to get column position by name, returns number of columns if column isn't found
     size_t getPosByName(const std::string & name) const noexcept;
+
+    String toNamesAndTypesDescription() const;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;
