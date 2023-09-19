@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1257,7 +1258,7 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!future_set)
         return false;
 
-    const auto & set_types = future_set->getTypes();
+    const auto set_types = future_set->getTypes();
     size_t set_types_size = set_types.size();
     size_t indexes_mapping_size = indexes_mapping.size();
 
@@ -1283,24 +1284,37 @@ bool KeyCondition::tryPrepareSetIndex(
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
     {
+        const auto & key_column_type = data_types[indexes_mapping_index];
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
-        const auto & set_element_type = set_types[set_element_index];
-        auto & set_column = set_columns[set_element_index];
+        auto set_element_type = set_types[set_element_index];
+        auto set_column = set_columns[set_element_index];
 
-        bool is_set_column_nullable = set_element_type->isNullable();
-        bool is_set_column_low_cardinality_nullable = set_element_type->isLowCardinalityNullable();
+        if (canBeSafelyCasted(set_element_type, key_column_type))
+        {
+            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            continue;
+        }
+
+        if (!key_column_type->canBeInsideNullable())
+            return false;
 
         const NullMap * set_column_null_map = nullptr;
 
-        if (is_set_column_nullable || is_set_column_low_cardinality_nullable)
+        if (isNullableOrLowCardinalityNullable(set_element_type))
         {
-            if (is_set_column_low_cardinality_nullable)
+            if (WhichDataType(set_element_type).isLowCardinality())
+            {
+                set_element_type = removeLowCardinality(set_element_type);
                 set_column = set_column->convertToFullColumnIfLowCardinality();
+            }
 
-            set_column_null_map = &assert_cast<const ColumnNullable &>(*set_column).getNullMapData();
+            set_element_type = removeNullable(set_element_type);
+            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
+            set_column_null_map = &set_column_nullable.getNullMapData();
+            set_column = set_column_nullable.getNestedColumnPtr();
         }
 
-        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, data_types[indexes_mapping_index]);
+        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
         const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
         const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
@@ -1321,6 +1335,8 @@ bool KeyCondition::tryPrepareSetIndex(
 
             set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
         }
+
+        set_columns[set_element_index] = std::move(set_column);
     }
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
