@@ -23,10 +23,15 @@ public:
     void addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats);
     void removeColumnStatistics(const String & column_name);
 
+    bool containsColumnStatistics(const String & column_name) const;
     ColumnStatisticsPtr getColumnStatistics(const String & column_name) const;
-    bool hasUnknownColumn() const;
 
-    const ColumnStatisticsMap & getColumnStatisticsMap() const;
+    void addAllColumnsFrom(const Statistics & other);
+
+    size_t getColumnStatisticsSize() const;
+    Names getColumnNames() const;
+
+    bool hasUnknownColumn() const;
     void adjustStatistics();
 
     void mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other);

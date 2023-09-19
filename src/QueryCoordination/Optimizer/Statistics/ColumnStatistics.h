@@ -70,6 +70,9 @@ public:
     /// Adjust min_value or max_value by value.
     void updateValues(OP_TYPE, Float64 value);
 
+    void mergeColumnByUnion(ColumnStatisticsPtr other);
+    void mergeColumnByIntersect(ColumnStatisticsPtr other);
+
     ColumnStatisticsPtr clone();
     bool isUnKnown() const;
 

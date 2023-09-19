@@ -1,5 +1,10 @@
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -41,24 +46,41 @@ Float64 Statistics::getOutputRowSize() const
 
 void Statistics::addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats)
 {
+    if (columns_stats_map.contains(column_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already exists statistics for column {}", column_name);
     columns_stats_map.insert({column_name, column_stats});
 }
 
 void Statistics::removeColumnStatistics(const String & column_name)
 {
+    if (columns_stats_map.contains(column_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No statistics for column {}", column_name);
     columns_stats_map.erase(column_name);
+}
+
+bool Statistics::containsColumnStatistics(const String & column_name) const
+{
+    return columns_stats_map.contains(column_name);
 }
 
 ColumnStatisticsPtr Statistics::getColumnStatistics(const String & column_name) const
 {
-    if (columns_stats_map.contains(column_name))
-        return columns_stats_map.at(column_name);
-    return {};
+    if (!columns_stats_map.contains(column_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No statistics for column {}", column_name);
+    return columns_stats_map.at(column_name);
 }
 
-const ColumnStatisticsMap & Statistics::getColumnStatisticsMap() const
+size_t Statistics::getColumnStatisticsSize() const
 {
-    return columns_stats_map;
+    return columns_stats_map.size();
+}
+
+Names Statistics::getColumnNames() const
+{
+    Names columns;
+    for (const auto & entry : columns_stats_map)
+        columns.push_back(entry.first);
+    return columns;
 }
 
 bool Statistics::hasUnknownColumn() const
@@ -84,20 +106,19 @@ void Statistics::adjustStatistics()
 void Statistics::mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other)
 {
     chassert(other);
-    auto & my = columns_stats_map.at(column_name);
+    auto my = getColumnStatistics(column_name);
+    my->mergeColumnByUnion(other);
+}
 
-    if (!my)
-        columns_stats_map.insert({column_name, other});
 
-    if (my->isUnKnown() || other->isUnKnown())
-        columns_stats_map.insert({column_name, ColumnStatistics::unknown()});
-
-    my->setMinValue(std::min(my->getMinValue(), other->getMinValue()));
-    my->setMaxValue(std::max(my->getMaxValue(), other->getMaxValue()));
-
-    auto ndv = std::max(my->getNdv(), other->getNdv());
-    ndv = ndv + (ndv - std::min(my->getNdv(), other->getNdv())) * 0.1; /// TODO add to settings
-    my->setNdv(ndv);
+void Statistics::addAllColumnsFrom(const Statistics & other)
+{
+    for (auto & entry : other.columns_stats_map)
+    {
+        if (columns_stats_map.contains(entry.first))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Already exists statistics for column {}", entry.first);
+        columns_stats_map.insert(entry);
+    }
 }
 
 }

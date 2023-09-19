@@ -1,7 +1,10 @@
+#include <QueryCoordination/Optimizer/Statistics/DeriveStatistics.h>
+
+#include <Core/Joins.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <QueryCoordination/Optimizer/DeriveStatistics.h>
 #include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
 #include <QueryCoordination/Optimizer/Statistics/PredicateStatsCalculator.h>
+#include <QueryCoordination/Optimizer/Statistics/Utils.h>
 
 namespace ErrorCodes
 {
@@ -37,12 +40,14 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
         ColumnStatisticsPtr output_column_stats;
         for (size_t i = 0; i < input_statistics.size(); i++)
         {
-            output_column_stats = input_statistics[i].getColumnStatistics(output_column);
-            if (output_column_stats)
+            if (input_statistics[i].containsColumnStatistics(output_column))
+            {
+                output_column_stats = input_statistics[i].getColumnStatistics(output_column);
                 break;
+            }
         }
         if (output_column_stats)
-            statistics.addColumnStatistics(output_column, output_column_stats);
+            statistics.addColumnStatistics(output_column, output_column_stats->clone());
         else
             statistics.addColumnStatistics(output_column, ColumnStatistics::unknown());
     }
@@ -94,7 +99,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     {
         for (const auto & column : output_columns)
         {
-            if (!statistics_.getColumnStatistics(column))
+            if (!statistics_.containsColumnStatistics(column))
                 statistics_.addColumnStatistics(column, ColumnStatistics::unknown());
         }
     };
@@ -158,16 +163,12 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     Names output_names = step.getOutputStream().header.getNames();
 
     const auto & input = input_statistics.front();
-    for (const auto & name : input_names)
-        chassert(input.getColumnStatistics(name));
 
     /// 1. initialize statistics
     chassert(input_names.size() == output_names.size());
     for (size_t i = 0; i < input_names.size(); i++)
     {
         /// The input name and output name are one-to-one correspondences.
-        chassert(input.getColumnStatistics(input_names[i]));
-
         auto column_stats = input.getColumnStatistics(input_names[i]);
         statistics.addColumnStatistics(output_names[i], column_stats->clone());
     }
@@ -194,7 +195,6 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
         for (size_t i = 0; i < aggregate_keys.size(); i++)
         {
             auto aggregate_key_stats = statistics.getColumnStatistics(aggregate_keys[i]);
-            chassert(aggregate_key_stats);
 
             Float64 ndv = aggregate_key_stats->getNdv();
             auto aggregate_key_selectivity = ndv / input.getOutputRowSize();
@@ -226,7 +226,7 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
 Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
 {
     for (auto & output_column : step.getOutputStream().header.getNames())
-        chassert(input_statistics.front().getColumnStatistics(output_column));
+        chassert(input_statistics.front().containsColumnStatistics(output_column));
 
     Statistics statistics = input_statistics.front().clone();
     statistics.setOutputRowSize(statistics.getOutputRowSize() / 5);
@@ -260,38 +260,138 @@ Statistics DeriveStatistics::visit(LimitStep & step)
 Statistics DeriveStatistics::visit(JoinStep & step)
 {
     Statistics statistics;
-    for (auto & output_column : step.getOutputStream().header.getNames())
-    {
-        ColumnStatisticsPtr output_column_stats;
-        for (auto & input_stats : input_statistics)
-        {
-            if (input_stats.getColumnStatistics(output_column))
-            {
-                output_column_stats = input_stats.getColumnStatistics(output_column)->clone();
-                break;
-            }
-        }
-        chassert(output_column_stats);
-        statistics.addColumnStatistics(output_column, output_column_stats);
-    }
+    chassert(input_statistics.size() == 2);
 
-    /// TODO Join type inner cross anti-...
-    /// TODO on predicate
-
-//    const auto & join = step.getJoin()->getTableJoin();
-//    const auto & on_clause = join.getOnlyClause();
-//    on_clause.key_names_left;
-//    on_clause.key_names_right;
-//    on
-
-//    auto & left_stream = step.getInputStreams()[0];
-//    auto & right_stream = step.getInputStreams()[1];
-//
+    /// 1. calculate cross join statistics
     auto & left_stats = input_statistics[0];
     auto & right_stats = input_statistics[1];
 
-    Float64 row_count = (left_stats.getOutputRowSize() + right_stats.getOutputRowSize()) * 0.1;
+    statistics.addAllColumnsFrom(left_stats);
+    statistics.addAllColumnsFrom(right_stats);
+
+    /// 2. filter by on_expression
+
+    auto cross_join_row_count = input_statistics[0].getOutputRowSize() * input_statistics[1].getOutputRowSize();
+    Float64 row_count = cross_join_row_count;
+
+    const auto & join = step.getJoin()->getTableJoin();
+    auto join_kind = join.getTableJoin().kind;
+
+    /// whether on clause has unknown column
+    bool has_unknown_column = false;
+    if (join_kind != JoinKind::Cross)
+    {
+        const auto & on_clauses = join.getClauses();
+        LOG_DEBUG(log, "Has {} on clause for query.", on_clauses.size());
+
+        for (auto & on_clause : on_clauses)
+        {
+            for (const auto & column : on_clause.key_names_left)
+            {
+                if (statistics.getColumnStatistics(column)->isUnKnown())
+                    has_unknown_column = true;
+            }
+            for (const auto & column : on_clause.key_names_right)
+            {
+                if (statistics.getColumnStatistics(column)->isUnKnown())
+                    has_unknown_column = true;
+            }
+        }
+
+        if (has_unknown_column)
+        {
+            switch (join_kind)
+            {
+                case JoinKind::Left:
+                    row_count = left_stats.getOutputRowSize();
+                    break;
+                case JoinKind::Right:
+                    row_count = right_stats.getOutputRowSize();
+                    break;
+                case JoinKind::Inner:
+                    row_count = std::min(left_stats.getOutputRowSize(), right_stats.getOutputRowSize());
+                    break;
+                case JoinKind::Full:
+                    row_count = std::max(left_stats.getOutputRowSize(), right_stats.getOutputRowSize());
+                    break;
+                default:
+                    row_count = cross_join_row_count;
+            }
+            row_count = std::max(1.0, row_count);
+        }
+        else
+        {
+            Float64 selectivity = 1.0;
+            for (size_t i = 0; i < on_clauses.size(); i++)
+            {
+                selectivity *= 0.5; /// TODO add to settings
+            }
+            row_count = cross_join_row_count * selectivity;
+        }
+
+    }
+
+    /// 3. filter by constant on_expression, such as: 't1 join t2 on 1'
+    if (isAlwaysFalse(join.getTableJoin().on_expression))
+        row_count = 1.0;
+
+    /// 4. calculate join strictness
+    if (join.getTableJoin().strictness == JoinStrictness::Anti)
+        row_count = cross_join_row_count - row_count;
+
+    /// 5. calculate on_expression columns statistics
+
+    for (const auto & on_clause : join.getClauses())
+    {
+        chassert(on_clause.key_names_left.size() == on_clause.key_names_right.size());
+        for (size_t i = 0; i < on_clause.key_names_left.size(); i++)
+        {
+            const auto & left_key = on_clause.key_names_left[i];
+            const auto & right_key = on_clause.key_names_right[i];
+
+            auto output_columns = step.getOutputStream().header.getNames();
+
+            bool left_key_in_output_column = std::find(output_columns.begin(), output_columns.end(), left_key) != output_columns.end();
+            bool right_key_in_output_column = std::find(output_columns.begin(), output_columns.end(), right_key) != output_columns.end();
+
+            auto left_key_stats = left_stats.getColumnStatistics(left_key);
+            auto right_key_stats = right_stats.getColumnStatistics(right_key);
+
+            if (left_key_in_output_column && !right_key_in_output_column)
+            {
+                left_key_stats->mergeColumnByIntersect(right_key_stats);
+                statistics.removeColumnStatistics(right_key);
+            }
+            else if (!left_key_in_output_column && right_key_in_output_column)
+            {
+                right_key_stats->mergeColumnByIntersect(left_key_stats);
+                statistics.removeColumnStatistics(left_key);
+            }
+        }
+    }
+
+    /// 6. remove non output column statistics
+
+    auto stats_columns = statistics.getColumnNames();
+    auto output_columns = step.getOutputStream().header.getNames();
+
+    if (stats_columns.size() > output_columns.size())
+    {
+        std::sort(stats_columns.begin(), stats_columns.end());
+        std::sort(output_columns.begin(), output_columns.end());
+
+        Names non_output_columns;
+        std::set_difference(
+            stats_columns.begin(), stats_columns.end(), output_columns.begin(), output_columns.end(), non_output_columns.begin());
+
+        for (const auto & non_output_column : non_output_columns)
+        {
+            statistics.removeColumnStatistics(non_output_column);
+        }
+    }
+
     statistics.setOutputRowSize(std::max(1.0, row_count));
+    statistics.adjustStatistics();
 
     return statistics;
 }
@@ -308,7 +408,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     for (size_t i = 0; input_statistics.size(); i++)
     {
         chassert(step.getInputStreams()[i].header.getNames().size() == output_columns.size());
-        chassert(input_statistics[i].getColumnStatisticsMap().size() == output_columns.size());
+        chassert(input_statistics[i].getColumnStatisticsSize() == output_columns.size());
     }
 
     /// init by the first input
@@ -318,7 +418,6 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     for (size_t i = 0; output_columns.size(); i++)
     {
         auto column_stats = first_stats.getColumnStatistics(first_input_columns[i]);
-        chassert(column_stats);
         statistics.addColumnStatistics(output_columns[i], column_stats);
     }
 
@@ -329,7 +428,6 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     for (size_t i = 0; output_columns.size(); i++)
     {
         auto column_stats = second_stats.getColumnStatistics(second_input_columns[i]);
-        chassert(column_stats);
         statistics.mergeColumnByUnion(output_columns[i], column_stats);
     }
 

@@ -2,11 +2,11 @@
 #include <QueryCoordination/Optimizer/Cost/CostCalculator.h>
 #include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
-#include <QueryCoordination/Optimizer/DeriveStatistics.h>
 #include <QueryCoordination/Optimizer/GroupStep.h>
 #include <QueryCoordination/Optimizer/Memo.h>
 #include <QueryCoordination/Optimizer/Transform/Transformation.h>
 #include <Common/typeid_cast.h>
+#include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
 
 
 namespace DB

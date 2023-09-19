@@ -1,13 +1,13 @@
 #include <QueryCoordination/Optimizer/Cost/CostCalculator.h>
 #include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
-#include <QueryCoordination/Optimizer/DeriveStatistics.h>
 #include <QueryCoordination/Optimizer/Group.h>
 #include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/Memo.h>
-#include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
+#include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
+#include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
 
 
 namespace DB

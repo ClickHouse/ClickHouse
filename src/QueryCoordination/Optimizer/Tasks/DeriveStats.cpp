@@ -1,9 +1,9 @@
 #include <memory>
-#include <QueryCoordination/Optimizer/DeriveStatistics.h>
 #include <QueryCoordination/Optimizer/Group.h>
 #include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 #include <QueryCoordination/Optimizer/Tasks/DeriveStats.h>
+#include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
 
 namespace DB
 {

@@ -3,11 +3,6 @@
 namespace DB
 {
 
-ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visit(const ActionsDAGPtr, ContextType &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented");
-}
-
 ActionsDAG::NodeRawConstPtrs InputNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {
     ActionsDAG::NodeRawConstPtrs nodes;

@@ -16,7 +16,6 @@ public:
 
     ExpressionNodeVisitor() : log(&Poco::Logger::get("ExpressionNodeVisitor")) {}
 
-    ActionNodeStatistics visit(const ActionsDAGPtr actions_dag_ptr, ContextType & context) override;
     ActionNodeStatistics visit(const ActionsDAG::Node * node, ContextType & context) override;
 
     ActionNodeStatistics visitChildren(const ActionsDAG::Node * node, ContextType & context) override;

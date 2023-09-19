@@ -34,11 +34,6 @@ DB::ActionsDAG::NodeRawConstPtrs findNodesByColumns(const DB::Names & names, DB:
 namespace DB
 {
 
-ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAGPtr /*actions_dag_ptr*/, ContextType & /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method not implemented");
-}
-
 ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {
     if (context.contains(node))
@@ -217,10 +212,8 @@ Statistics PredicateStatsCalculator::calculateStatistics(
     /// 1. init context
     for (auto input_node : input_nodes)
     {
-        /// check input contains all columns in input_nodes
-        chassert(input.getColumnStatisticsMap().contains(input_node->result_name));
         InputNodeStatsMap node_stats_map;
-
+        /// input statistics contains all columns in input_nodes
         node_stats_map.insert({input_node, input.getColumnStatistics(input_node->result_name)->clone()});
         context.insert({input_node, {1.0, {}, node_stats_map}});
     }

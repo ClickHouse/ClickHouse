@@ -10,7 +10,7 @@ struct Void
 {
 };
 
-/// Get the uniq input node for an action node tree, if more than one, return null.
+/// Get input nodes for an action node tree.
 class InputNodeVisitor : public ActionNodeVisitor<ActionsDAG::NodeRawConstPtrs, Void>
 {
 public:
@@ -18,8 +18,6 @@ public:
     using VisitContext = Void;
 
     InputNodeVisitor() = default;
-
-    ActionsDAG::NodeRawConstPtrs visit(const ActionsDAGPtr actions_dag_ptr, ContextType & context) override;
 
     ActionsDAG::NodeRawConstPtrs visit(const ActionsDAG::Node * node, ContextType & context) override;
     ActionsDAG::NodeRawConstPtrs visitChildren(const ActionsDAG::Node * node, ContextType & context) override;

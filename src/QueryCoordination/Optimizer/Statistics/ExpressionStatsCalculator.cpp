@@ -12,21 +12,6 @@ extern const int LOGICAL_ERROR;
 namespace DB
 {
 
-ActionNodeStatistics ExpressionNodeVisitor::visit(const ActionsDAGPtr actions_dag_ptr, ContextType & /*context*/)
-{
-    chassert(actions_dag_ptr != nullptr);
-    chassert(!actions_dag_ptr->getOutputs().empty());
-
-    /// TODO
-
-    //    auto root_nodes = FindActionsRootNodes(actions_dag_ptr).get();
-    //    for (auto node : root_nodes)
-    //    {
-    //        return visit(node, context);
-    //    }
-    return {};
-}
-
 ActionNodeStatistics ExpressionNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {
     if (context.contains(node))
@@ -154,10 +139,8 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
     /// 1. init context
     for (auto input_node : input_nodes)
     {
-        /// check input contains all columns in input_nodes
-        chassert(input.getColumnStatistics(input_node->result_name));
         InputNodeStatsMap node_stats_map;
-
+        /// input statistics contains all columns in input_nodes
         node_stats_map.insert({input_node, input.getColumnStatistics(input_node->result_name)});
         context.insert({input_node, {1.0, {}, node_stats_map}});
     }
@@ -180,14 +163,17 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
         chassert(context.contains(output_node));
         chassert(context[output_node].input_node_stats.size() == 1);  /// TODO support 'col1 + col2'
 
-        auto output_node_stats = context[output_node].get();
-        chassert(output_node_stats);
-
-//        /// Next step will not use alias as input node, but its child.
-//        if (output_node->type == ActionsDAG::ActionType::ALIAS)
-//            statistics.addColumnStatistics(output_node->children[0]->result_name, output_node_stats);
-//        else
-        statistics.addColumnStatistics(output_node->result_name, output_node_stats);
+        /// Output column contains multi-input node, for example: 'col1 + col2'
+        if (context[output_node].input_node_stats.size() > 1)
+        {
+            statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::unknown());
+        }
+        else
+        {
+            auto output_node_stats = context[output_node].get();
+            chassert(output_node_stats);
+            statistics.addColumnStatistics(output_node->result_name, output_node_stats->clone());
+        }
     }
 
     return statistics;
