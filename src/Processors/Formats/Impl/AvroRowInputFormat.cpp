@@ -1263,6 +1263,8 @@ void registerInputFormatAvro(FormatFactory & factory)
         return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
     });
 
+    factory.markFormatSupportsSubsetOfColumns("Avro");
+
     factory.registerInputFormat("AvroConfluent",[](
         ReadBuffer & buf,
         const Block & sample,

@@ -680,6 +680,14 @@ bool ColumnsDescription::hasDefaults() const
     return false;
 }
 
+bool ColumnsDescription::hasOnlyOrdinary() const
+{
+    for (const auto & column : columns)
+        if (column.default_desc.kind != ColumnDefaultKind::Default)
+            return false;
+    return true;
+}
+
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
