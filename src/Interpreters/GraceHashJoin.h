@@ -13,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class TableJoin;
 class HashJoin;
 
@@ -67,7 +73,11 @@ public:
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
+    void joinBlock(Block & /* block */, ExtraBlockPtr & /* not_processed */) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method joinBlock is not supported for {}, use joinBlockWithStreamOutput", getName());
+    }
+    IBlocksStreamPtr joinBlockWithStreamOutput(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
     void setTotals(const Block & block) override;
 
@@ -77,6 +87,7 @@ public:
 
     bool supportParallelJoin() const override { return true; }
     bool supportTotals() const override { return false; }
+    bool supportStreamJoin() const override { return true; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block_, const Block & result_sample_block_, UInt64 max_block_size) const override;

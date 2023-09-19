@@ -429,12 +429,11 @@ void GraceHashJoin::initialize(const Block & sample_block)
     initBuckets();
 }
 
-void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
+IBlocksStreamPtr GraceHashJoin::joinBlockWithStreamOutput(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
     if (block.rows() == 0)
     {
-        hash_join->joinBlockWithStreamOutput(block, not_processed);
-        return;
+        return hash_join->joinBlockWithStreamOutput(block, not_processed);
     }
 
     materializeBlockInplace(block);
@@ -451,6 +450,7 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
 
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
+    return stream_output;
 }
 
 void GraceHashJoin::setTotals(const Block & block)
