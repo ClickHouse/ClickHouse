@@ -11,6 +11,8 @@ It represents an unbiased estimate of the variance of a random variable if passe
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
-:::note    
+Alias: `VAR_SAMP`.
+
+:::note
 This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower but provides a lower computational error.
 :::
