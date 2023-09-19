@@ -815,6 +815,9 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     ASTPtr expression_ast;
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
+    if (virtual_columns_block.rows() == 0)
+        return {};
+
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
 
