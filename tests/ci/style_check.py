@@ -126,7 +126,7 @@ def commit_push_staged(pr_info: PRInfo) -> None:
     if not git_staged:
         return
     remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
-    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
+    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix' --fixup HEAD")
     push_cmd = (
         f"{GIT_PREFIX} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
     )
