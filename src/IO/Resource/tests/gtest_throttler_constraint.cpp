@@ -144,8 +144,7 @@ TEST(IOResourceThrottlerConstraint, PeekAndAvgLimits)
 TEST(IOResourceThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
-    EventQueue::TimePoint start;
-    start += EventQueue::Duration(1000000000);
+    EventQueue::TimePoint start = std::chrono::system_clock::now();
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", "<max_burst>100.0</max_burst><max_speed>10.0</max_speed>");
