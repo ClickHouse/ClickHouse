@@ -130,7 +130,8 @@ ReplicatedMergeTreeSinkImpl<async_insert>::ReplicatedMergeTreeSinkImpl(
     bool majority_quorum,
     ContextPtr context_,
     bool is_attach_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock(), IOutputChunkGenerator::createCopyRanges(context_))
+    : SinkToStorage(metadata_snapshot_->getSampleBlock(),
+                    IOutputChunkGenerator::createCopyRanges(context_->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , required_quorum_size(majority_quorum ? std::nullopt : std::make_optional<size_t>(quorum_size))

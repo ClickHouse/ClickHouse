@@ -3,6 +3,7 @@
 namespace DB
 {
 
+/// Default implementation. The new chunk received is forwarded as-is to the next stages of the query
 class ForwardEverythingGenerator : public IOutputChunkGenerator
 {
 public:
@@ -14,10 +15,10 @@ public:
         in_chunk = chunk.clone();
     }
 
-    void onRowsProcessed(size_t /*row_count*/, bool /*append*/)  override
+    void onRowsProcessed(size_t /*row_count*/, bool /*append*/) override
     {}
 
-    Chunk generateChunk()  override
+    Chunk generateChunk() override
     {
         return std::move(in_chunk);
     }
@@ -26,6 +27,10 @@ private:
     Chunk in_chunk;
 };
 
+/// Specific implementation which generates a chunk with just a subset of the rows received originally
+/// Rows are assumed to be processed in the same order than they appear in the original chunk
+/// Is up to the client to decide how many rows process at once, but after each range processed,
+/// onRowsProcessed() has to be called, indicating whether append that range to the output chunk or not
 class CopyRangesGenerator : public IOutputChunkGenerator
 {
 public:
@@ -39,7 +44,7 @@ public:
         final_chunk_rows = 0;
     }
 
-    void onRowsProcessed(size_t row_count, bool append)  override
+    void onRowsProcessed(size_t row_count, bool append) override
     {
         if (append)
         {
@@ -54,7 +59,7 @@ public:
         row_offset += row_count;
     }
 
-    Chunk generateChunk()  override
+    Chunk generateChunk() override
     {
         return Chunk(std::move(out_cols), final_chunk_rows);
     }
@@ -66,10 +71,11 @@ private:
     size_t final_chunk_rows = 0;
 };
 
-std::unique_ptr<IOutputChunkGenerator> IOutputChunkGenerator::createCopyRanges(ContextPtr context)
+std::unique_ptr<IOutputChunkGenerator> IOutputChunkGenerator::createCopyRanges(bool deduplicate_later)
 {
-    // If MV is responsible for deduplication, block is not considered duplicated.
-    if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+    // If MV is responsible for deduplication, block won't be considered duplicated.
+    // So default implementation, forwarding all the data, is used
+    if (deduplicate_later)
     {
         return createDefault();
     }
