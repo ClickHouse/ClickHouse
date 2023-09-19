@@ -132,7 +132,7 @@ void JoiningTransform::work()
         // Process the next chunk after all the current result set is output.
         if (!join->supportStreamJoin() || !blocks || blocks->isFinished())
             transform(input_chunk);
-        if (join->supportStreamJoin())
+        if (join->supportStreamJoin() && !on_totals)
         {
             auto block = blocks->next();
             output_chunk.setColumns(block.getColumns(), block.rows());
@@ -210,10 +210,7 @@ void JoiningTransform::transform(Chunk & chunk)
     else
         block = readExecute(chunk);
     auto num_rows = block.rows();
-    if (!join->supportStreamJoin())
-    {
-        chunk.setColumns(block.getColumns(), num_rows);
-    }
+    chunk.setColumns(block.getColumns(), num_rows);
 }
 
 void JoiningTransform::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed_block)
