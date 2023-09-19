@@ -139,9 +139,8 @@ def main():
 
     docker_image = get_image_with_version(reports_path, "clickhouse/libfuzzer")
 
-    fuzzers_path = Path(temp_path) / "fuzzers"
-    if not fuzzers_path.exists():
-        os.makedirs(fuzzers_path)
+    fuzzers_path = temp_path / "fuzzers"
+    fuzzers_path.mkdir(parents=True, exist_ok=True)
 
     download_fuzzers(check_name, reports_path, fuzzers_path)
 
@@ -152,9 +151,8 @@ def main():
             corpus_path = fuzzers_path / (file.removesuffix("_seed_corpus.zip") + ".in")
             zipfile.ZipFile(fuzzers_path / file, "r").extractall(corpus_path)
 
-    result_path = Path(temp_path) / "result_path"
-    if not result_path.exists():
-        os.makedirs(result_path)
+    result_path = temp_path / "result_path"
+    result_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = result_path / "run.log"
 
