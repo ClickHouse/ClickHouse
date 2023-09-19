@@ -6,23 +6,29 @@ ATTACH VIEW tables
     `table_type` String,
     `table_collation` Nullable(String),
     `table_comment` Nullable(String),
-    `TABLE_CATALOG` String ALIAS table_catalog,
-    `TABLE_SCHEMA` String ALIAS table_schema,
-    `TABLE_NAME` String ALIAS table_name,
-    `TABLE_TYPE` String ALIAS table_type,
-    `TABLE_COLLATION` Nullable(String) ALIAS table_collation,
-    `TABLE_COMMENT` Nullable(String) ALIAS table_comment
+    `TABLE_CATALOG` String,
+    `TABLE_SCHEMA` String,
+    `TABLE_NAME` String,
+    `TABLE_TYPE` String,
+    `TABLE_COLLATION` Nullable(String),
+    `TABLE_COMMENT` Nullable(String)
 ) AS
 SELECT
-    database  AS table_catalog,
-    database  AS table_schema,
-    name      AS table_name,
+    database             AS table_catalog,
+    database             AS table_schema,
+    name                 AS table_name,
     multiIf(is_temporary,          'LOCAL TEMPORARY', 
             engine LIKE '%View',   'VIEW', 
             engine LIKE 'System%', 'SYSTEM VIEW', 
             has_own_data = 0,      'FOREIGN TABLE', 
             'BASE TABLE'
-            ) AS table_type,
-    'utf8mb4' AS table_collation,
-    comment   AS table_comment
+            )            AS table_type,
+    'utf8mb4_0900_ai_ci' AS table_collation,
+    comment              AS table_comment,
+    table_catalog        AS TABLE_CATALOG,
+    table_schema         AS TABLE_SCHEMA,
+    table_name           AS TABLE_NAME,
+    table_type           AS TABLE_TYPE,
+    table_collation      AS TABLE_COLLATION,
+    table_comment        AS TABLE_COMMENT
 FROM system.tables

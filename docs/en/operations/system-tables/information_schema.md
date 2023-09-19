@@ -38,7 +38,7 @@ SHOW TABLES FROM information_schema;
 - [KEY_COLUMN_USAGE](#key_column_usage)
 - [REFERENTIAL_CONSTRAINTS](#referential_constraints)
 
-Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases.
+Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases. The same applies to all the columns in these views - both lowercase (for example, `table_name`) and uppercase (`TABLE_NAME`) variants are provided.
 
 ## COLUMNS {#columns}
 
@@ -75,7 +75,36 @@ Columns:
 Query:
 
 ``` sql
-SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE (table_schema=currentDatabase() OR table_schema='') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
+SELECT table_catalog,
+       table_schema,
+       table_name,
+       column_name,
+       ordinal_position,
+       column_default,
+       is_nullable,
+       data_type,
+       character_maximum_length,
+       character_octet_length,
+       numeric_precision,
+       numeric_precision_radix,
+       numeric_scale,
+       datetime_precision,
+       character_set_catalog,
+       character_set_schema,
+       character_set_name,
+       collation_catalog,
+       collation_schema,
+       collation_name,
+       domain_catalog,
+       domain_schema,
+       domain_name,
+       column_comment,
+       column_type
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE (table_schema = currentDatabase() OR table_schema = '')
+  AND table_name NOT LIKE '%inner%' 
+LIMIT 1 
+FORMAT Vertical;
 ```
 
 Result:
@@ -127,7 +156,17 @@ Columns:
 Query:
 
 ``` sql
-SELECT * FROM information_schema.schemata WHERE schema_name ILIKE 'information_schema' LIMIT 1 FORMAT Vertical;
+SELECT catalog_name,
+       schema_name,
+       schema_owner,
+       default_character_set_catalog,
+       default_character_set_schema,
+       default_character_set_name,
+       sql_path
+FROM information_schema.schemata
+WHERE schema_name ilike 'information_schema' 
+LIMIT 1 
+FORMAT Vertical;
 ```
 
 Result:
@@ -167,7 +206,17 @@ Columns:
 Query:
 
 ``` sql
-SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE (table_schema = currentDatabase() OR table_schema = '') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
+SELECT table_catalog, 
+       table_schema, 
+       table_name, 
+       table_type, 
+       table_collation, 
+       table_comment
+FROM INFORMATION_SCHEMA.TABLES
+WHERE (table_schema = currentDatabase() OR table_schema = '')
+  AND table_name NOT LIKE '%inner%'
+LIMIT 1 
+FORMAT Vertical;
 ```
 
 Result:
@@ -175,10 +224,12 @@ Result:
 ``` text
 Row 1:
 ──────
-table_catalog: default
-table_schema:  default
-table_name:    describe_example
-table_type:    BASE TABLE
+table_catalog:   default
+table_schema:    default
+table_name:      describe_example
+table_type:      BASE TABLE
+table_collation: utf8mb4_0900_ai_ci
+table_comment:   
 ```
 
 ## VIEWS {#views}
@@ -207,7 +258,20 @@ Query:
 ``` sql
 CREATE VIEW v (n Nullable(Int32), f Float64) AS SELECT n, f FROM t;
 CREATE MATERIALIZED VIEW mv ENGINE = Null AS SELECT * FROM system.one;
-SELECT * FROM information_schema.views WHERE table_schema = currentDatabase() LIMIT 1 FORMAT Vertical;
+SELECT table_catalog,
+       table_schema,
+       table_name,
+       view_definition,
+       check_option,
+       is_updatable,
+       is_insertable_into,
+       is_trigger_updatable,
+       is_trigger_deletable,
+       is_trigger_insertable_into
+FROM information_schema.views
+WHERE table_schema = currentDatabase() 
+LIMIT 1
+FORMAT Vertical;
 ```
 
 Result:
@@ -240,7 +304,7 @@ Columns:
 - `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the schema (database) to which the table belongs.
 - `table_name` ([String](../../sql-reference/data-types/string.md)) — The name of the table that has the constraint.
 - `column_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The name of the column that has the constraint.
-- `ordinal_position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The column's position within the constraint, not the column's position within the table. Column positions are numbered beginning with 1.
+- `ordinal_position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Currently unused. Always `1`.
 - `position_in_unique_constraint` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Currently unused. Always `NULL`.
 - `referenced_table_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
 - `referenced_table_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Currently unused. Always NULL.
@@ -250,7 +314,21 @@ Columns:
 
 ```sql
 CREATE TABLE test (i UInt32, s String) ENGINE MergeTree ORDER BY i;
-SELECT * FROM information_schema.key_column_usage WHERE table_name = 'test' FORMAT Vertical;
+SELECT constraint_catalog,
+       constraint_schema,
+       constraint_name,
+       table_catalog,
+       table_schema,
+       table_name,
+       column_name,
+       ordinal_position,
+       position_in_unique_constraint,
+       referenced_table_schema,
+       referenced_table_name,
+       referenced_column_name
+FROM information_schema.key_column_usage 
+WHERE table_name = 'test' 
+FORMAT Vertical;
 ```
 
 Result:
@@ -258,14 +336,18 @@ Result:
 ```
 Row 1:
 ──────
-referenced_table_schema: ᴺᵁᴸᴸ
-referenced_table_name:   ᴺᵁᴸᴸ
-referenced_column_name:  ᴺᵁᴸᴸ
-table_schema:            default
-table_name:              test
-column_name:             i
-ordinal_position:        1
-constraint_name:         PRIMARY
+constraint_catalog:            def
+constraint_schema:             default
+constraint_name:               PRIMARY
+table_catalog:                 def
+table_schema:                  default
+table_name:                    test
+column_name:                   i
+ordinal_position:              1
+position_in_unique_constraint: ᴺᵁᴸᴸ
+referenced_table_schema:       ᴺᵁᴸᴸ
+referenced_table_name:         ᴺᵁᴸᴸ
+referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
 ## REFERENTIAL_CONSTRAINTS (#referential_constraints)

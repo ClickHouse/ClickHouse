@@ -10,16 +10,16 @@ ATTACH VIEW views
     `is_trigger_updatable` Enum8('NO' = 0, 'YES' = 1),
     `is_trigger_deletable` Enum8('NO' = 0, 'YES' = 1),
     `is_trigger_insertable_into` Enum8('NO' = 0, 'YES' = 1),
-    `TABLE_CATALOG` String ALIAS table_catalog,
-    `TABLE_SCHEMA` String ALIAS table_schema,
-    `TABLE_NAME` String ALIAS table_name,
-    `VIEW_DEFINITION` String ALIAS view_definition,
-    `CHECK_OPTION` String ALIAS check_option,
-    `IS_UPDATABLE` Enum8('NO' = 0, 'YES' = 1) ALIAS is_updatable,
-    `IS_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1) ALIAS is_insertable_into,
-    `IS_TRIGGER_UPDATABLE` Enum8('NO' = 0, 'YES' = 1) ALIAS is_trigger_updatable,
-    `IS_TRIGGER_DELETABLE` Enum8('NO' = 0, 'YES' = 1) ALIAS is_trigger_deletable,
-    `IS_TRIGGER_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1) ALIAS is_trigger_insertable_into
+    `TABLE_CATALOG` String,
+    `TABLE_SCHEMA` String,
+    `TABLE_NAME` String,
+    `VIEW_DEFINITION` String,
+    `CHECK_OPTION` String,
+    `IS_UPDATABLE` Enum8('NO' = 0, 'YES' = 1),
+    `IS_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1),
+    `IS_TRIGGER_UPDATABLE` Enum8('NO' = 0, 'YES' = 1),
+    `IS_TRIGGER_DELETABLE` Enum8('NO' = 0, 'YES' = 1),
+    `IS_TRIGGER_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1)
 ) AS
 SELECT
     database AS table_catalog,
@@ -31,6 +31,16 @@ SELECT
     engine = 'MaterializedView' AS is_insertable_into,
     0 AS is_trigger_updatable,
     0 AS is_trigger_deletable,
-    0 AS is_trigger_insertable_into
+    0 AS is_trigger_insertable_into,
+    table_catalog AS TABLE_CATALOG,
+    table_schema AS TABLE_SCHEMA,
+    table_name AS TABLE_NAME,
+    view_definition AS VIEW_DEFINITION,
+    check_option AS CHECK_OPTION,
+    is_updatable AS IS_UPDATABLE,
+    is_insertable_into AS IS_INSERTABLE_INTO,
+    is_trigger_updatable AS IS_TRIGGER_UPDATABLE,
+    is_trigger_deletable AS IS_TRIGGER_DELETABLE,
+    is_trigger_insertable_into AS IS_TRIGGER_INSERTABLE_INTO
 FROM system.tables
 WHERE engine LIKE '%View'
