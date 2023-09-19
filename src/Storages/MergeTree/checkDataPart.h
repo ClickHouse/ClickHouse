@@ -14,5 +14,5 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
 bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(const Exception & e);
-bool isRetryableException(const std::exception_ptr exception_ptr);
+
 }
