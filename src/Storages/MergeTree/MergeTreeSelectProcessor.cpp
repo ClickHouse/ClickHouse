@@ -141,11 +141,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
     {
         try
         {
-            bool continue_reading = true;
-            if (!task || task->isFinished())
-                std::tie(task, continue_reading) = algorithm->getNewTask(*pool, task.get());
+            if (!task || algorithm->needNewTask(*task))
+                task = algorithm->getNewTask(*pool, task.get());
 
-            if (!continue_reading)
+            if (!task)
                 break;
         }
         catch (const Exception & e)
@@ -155,10 +154,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             throw;
         }
 
-        if (task && !task->getMainRangeReader().isInitialized())
+        if (!task->getMainRangeReader().isInitialized())
             initializeRangeReaders();
 
-        auto res = algorithm->readFromTask(task.get(), block_size_params);
+        auto res = algorithm->readFromTask(*task, block_size_params);
 
         if (res.row_count)
         {

@@ -71,7 +71,7 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 150.
+Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 

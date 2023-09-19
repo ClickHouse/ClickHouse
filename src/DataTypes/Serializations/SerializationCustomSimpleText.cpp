@@ -97,7 +97,7 @@ void SerializationCustomSimpleText::serializeTextXML(const IColumn & column, siz
 void SerializationCustomSimpleText::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.output_format_markdown_escape_special_characters)
+    if (settings.markdown.escape_special_characters)
         writeMarkdownEscapedString(serializeToString(*this, column, row_num, settings), ostr);
     else
         writeEscapedString(serializeToString(*this, column, row_num, settings), ostr);
