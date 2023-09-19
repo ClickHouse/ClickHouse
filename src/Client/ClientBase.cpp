@@ -1475,13 +1475,18 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
 
         /// Create temporary storage file, to support globs and parallel reading
+        /// StorageFile doesn't support ephemeral columns, change them all to ordinary.
+        ColumnsDescription columns_for_storage_file = columns_description_for_query;
+        for (const auto & [name, _] : columns_for_storage_file.getEphemeral())
+            columns_for_storage_file.modify(name, [](ColumnDescription & column){ column.default_desc.kind = ColumnDefaultKind::Default; });
+
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
             current_format,
             getFormatSettings(global_context),
             compression_method,
-            columns_description_for_query,
+            columns_for_storage_file,
             ConstraintsDescription{},
             String{},
             {},

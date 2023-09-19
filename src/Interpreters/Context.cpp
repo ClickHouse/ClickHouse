@@ -1592,7 +1592,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                               ->getInMemoryMetadataPtr()
                                               ->getColumns();
 
-            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getInsertable().getNames();
+            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -1626,6 +1626,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
                         column.name = identifier->name();
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
                         structure_hint.add(std::move(column));
                     }
 
@@ -1700,7 +1702,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     if (asterisk)
                     {
                         for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
-                            structure_hint.add(insert_columns.get(*insert_column_name_it));
+                        {
+                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                            /// Change ephemeral columns to default columns.
+                            column.default_desc.kind = ColumnDefaultKind::Default;
+
+                            structure_hint.add(std::move(column));
+                        }
                     }
 
                     if (!structure_hint.empty())
