@@ -41,6 +41,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
+    unsigned int s3_retry_attempts;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
@@ -64,6 +65,7 @@ private:
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
+        unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
