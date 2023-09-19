@@ -158,7 +158,7 @@ Also, results of queries with non-deterministic functions are not cached by defa
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
   [`queryID()`](../sql-reference/functions/other-functions.md#queryID),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
-To force caching of results of queries with non-deterministic functionsregardless, using setting
+To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
