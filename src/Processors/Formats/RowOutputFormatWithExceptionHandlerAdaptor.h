@@ -6,7 +6,6 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/PeekableWriteBuffer.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -76,7 +75,6 @@ public:
 
     void resetFormatterImpl() override
     {
-        LOG_DEBUG(&Poco::Logger::get("RowOutputFormatWithExceptionHandlerAdaptor"), "resetFormatterImpl");
         Base::resetFormatterImpl();
         if (peekable_out)
             peekable_out = std::make_unique<PeekableWriteBuffer>(*Base::getWriteBufferPtr());
