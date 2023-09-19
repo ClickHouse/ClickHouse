@@ -28,7 +28,6 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     , cleanup(cleanup_)
     , cleanedup_rows_count(cleanedup_rows_count_)
 {
-
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
     if (!version_column.empty())
@@ -84,7 +83,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                     if (!cleanup || !value)
                         insertRow();
                     else if (cleanup && cleanedup_rows_count != nullptr)
+                    {
                         *cleanedup_rows_count += current_row_sources.size();
+                        current_row_sources.resize(0);
+                    }
                 }
                 else
                     insertRow();
@@ -142,7 +144,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             if (!cleanup || !value)
                 insertRow();
             else if (cleanup && cleanedup_rows_count != nullptr)
+            {
                 *cleanedup_rows_count += current_row_sources.size();
+                current_row_sources.resize(0);
+            }
         }
         else
             insertRow();
