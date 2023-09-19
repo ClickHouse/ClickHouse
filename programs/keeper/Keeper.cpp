@@ -1,5 +1,6 @@
 #include "Keeper.h"
 
+#include "Common/ThreadPool_fwd.h"
 #include <Common/ClickHouseRevision.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/DNSResolver.h>
@@ -50,6 +51,13 @@
 
 #include <Disks/registerDisks.h>
 
+#include <boost/asio/detached.hpp>
+
+namespace CurrentMetrics
+{
+    extern const Metric RestoreThreads;
+    extern const Metric RestoreThreadsActive;
+}
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
@@ -373,7 +381,6 @@ try
     bool listen_try = config().getBool("listen_try", false);
     if (listen_hosts.empty())
     {
-        listen_hosts.emplace_back("::1");
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
@@ -390,25 +397,35 @@ try
     auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
     auto tcp_send_timeout = config().getInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC);
 
+    boost::asio::io_context io_context(10);
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
         const char * port_name = "keeper_server.tcp_port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-        {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
-            socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "Keeper (tcp): " + address.toString(),
-                std::make_unique<TCPServer>(
-                    new KeeperTCPHandlerFactory(
-                        config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
-        });
+        auto tcp_port = config_getter().getUInt(port_name);
+        std::cout << "Listening on " << tcp_port << std::endl;
+        co_spawn(
+            io_context,
+            KeeperSession::listener(
+                tcp::acceptor(io_context, {tcp::v4(), static_cast<uint16_t>(tcp_port)}), global_context->getKeeperDispatcher()),
+            boost::asio::detached);
+
+        //createServer(listen_host, port_name, listen_try, [&](UInt16 port)
+        //{
+        //    Poco::Net::ServerSocket socket;
+        //    auto address = socketBindListen(socket, listen_host, port);
+        //    socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
+        //    socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
+        //    servers->emplace_back(
+        //        listen_host,
+        //        port_name,
+        //        "Keeper (tcp): " + address.toString(),
+        //        std::make_unique<TCPServer>(
+        //            new KeeperTCPHandlerFactory(
+        //                config_getter, global_context->getKeeperDispatcher(),
+        //                tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
+        //});
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
         createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
@@ -460,6 +477,13 @@ try
     {
         server.start();
         LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
+
+    ThreadPool asio_pool(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        asio_pool.scheduleOrThrow([&] { io_context.run(); });
     }
 
     async_metrics.start();

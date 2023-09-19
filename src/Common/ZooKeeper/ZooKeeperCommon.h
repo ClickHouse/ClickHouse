@@ -19,9 +19,13 @@
 #include <optional>
 #include <functional>
 
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/ip/tcp.hpp>
 
 namespace Coordination
 {
+
+using boost::asio::ip::tcp;
 
 using LogElements = std::vector<ZooKeeperLogElement>;
 
@@ -35,8 +39,13 @@ struct ZooKeeperResponse : virtual Response
     ZooKeeperResponse(const ZooKeeperResponse &) = default;
     ~ZooKeeperResponse() override;
     virtual void readImpl(ReadBuffer &) = 0;
+
     virtual void writeImpl(WriteBuffer &) const = 0;
+    virtual boost::asio::awaitable<void> writeImpl(tcp::socket & socket) const;
+
     virtual void write(WriteBuffer & out) const;
+    virtual boost::asio::awaitable<void> write(tcp::socket & socket) const;
+
     virtual OpNum getOpNum() const = 0;
     virtual void fillLogElements(LogElements & elems, size_t idx) const;
     virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
@@ -70,7 +79,9 @@ struct ZooKeeperRequest : virtual Request
     std::string toString() const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
+
     virtual void readImpl(ReadBuffer &) = 0;
+    virtual boost::asio::awaitable<void> readImpl(tcp::socket & socket);
 
     virtual std::string toStringImpl() const { return ""; }
 
@@ -90,7 +101,13 @@ struct ZooKeeperHeartbeatRequest final : ZooKeeperRequest
     String getPath() const override { return {}; }
     OpNum getOpNum() const override { return OpNum::Heartbeat; }
     void writeImpl(WriteBuffer &) const override {}
+
     void readImpl(ReadBuffer &) override {}
+    boost::asio::awaitable<void> readImpl(tcp::socket &) override /// NOLINT
+    {
+        co_return;
+    }
+
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
 };
@@ -149,6 +166,11 @@ struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
+    boost::asio::awaitable<void> writeImpl(tcp::socket &) const override /// NOLINT
+    {
+        co_return;
+    }
+
     OpNum getOpNum() const override { return OpNum::Heartbeat; }
 };
 
@@ -204,6 +226,7 @@ struct ZooKeeperCloseRequest final : ZooKeeperRequest
     String getPath() const override { return {}; }
     OpNum getOpNum() const override { return OpNum::Close; }
     void writeImpl(WriteBuffer &) const override {}
+    boost::asio::awaitable<void> readImpl(tcp::socket &) override { co_return; } /// NOLINT
     void readImpl(ReadBuffer &) override {}
 
     ZooKeeperResponsePtr makeResponse() const override;
@@ -218,6 +241,10 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
     }
 
     void writeImpl(WriteBuffer &) const override {}
+    boost::asio::awaitable<void> writeImpl(tcp::socket &) const override /// NOLINT
+    {
+        co_return;
+    }
 
     OpNum getOpNum() const override { return OpNum::Close; }
 };
@@ -233,6 +260,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     OpNum getOpNum() const override { return OpNum::Create; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
     std::string toStringImpl() const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
@@ -248,6 +276,7 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
     void readImpl(ReadBuffer & in) override;
 
     void writeImpl(WriteBuffer & out) const override;
+    boost::asio::awaitable<void> writeImpl(tcp::socket & socket) const override;
 
     OpNum getOpNum() const override { return OpNum::Create; }
 
@@ -264,6 +293,8 @@ struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
     OpNum getOpNum() const override { return OpNum::Remove; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
+
     std::string toStringImpl() const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
@@ -278,6 +309,8 @@ struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
     void writeImpl(WriteBuffer &) const override {}
+    boost::asio::awaitable<void> writeImpl(tcp::socket &) const override { co_return; } /// NOLINT
+
     OpNum getOpNum() const override { return OpNum::Remove; }
 
     size_t bytesSize() const override { return RemoveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
@@ -318,6 +351,7 @@ struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
     OpNum getOpNum() const override { return OpNum::Get; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
     std::string toStringImpl() const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
@@ -330,6 +364,8 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
+    boost::asio::awaitable<void> writeImpl(tcp::socket & socket) const override;
+
     OpNum getOpNum() const override { return OpNum::Get; }
 
     size_t bytesSize() const override { return GetResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
@@ -344,7 +380,10 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
 
     OpNum getOpNum() const override { return OpNum::Set; }
     void writeImpl(WriteBuffer & out) const override;
+
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
+
     std::string toStringImpl() const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return false; }
@@ -357,7 +396,10 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
 struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
+
     void writeImpl(WriteBuffer & out) const override;
+    boost::asio::awaitable<void> writeImpl(tcp::socket & socket) const override;
+
     OpNum getOpNum() const override { return OpNum::Set; }
 
     size_t bytesSize() const override { return SetResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
@@ -373,6 +415,8 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     OpNum getOpNum() const override { return OpNum::List; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
+
     std::string toStringImpl() const override;
     ZooKeeperResponsePtr makeResponse() const override;
     bool isReadRequest() const override { return true; }
@@ -393,6 +437,8 @@ struct ZooKeeperFilteredListRequest final : ZooKeeperListRequest
     OpNum getOpNum() const override { return OpNum::FilteredList; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
+
     std::string toStringImpl() const override;
 
     size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
@@ -402,6 +448,7 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
+    boost::asio::awaitable<void> writeImpl(tcp::socket & socket) const override;
     OpNum getOpNum() const override { return OpNum::List; }
 
     size_t bytesSize() const override { return ListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
@@ -513,6 +560,8 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
+    boost::asio::awaitable<void> readImpl(tcp::socket & socket) override;
+
     std::string toStringImpl() const override;
 
     ZooKeeperResponsePtr makeResponse() const override;
@@ -551,6 +600,7 @@ struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
     void readImpl(ReadBuffer & in) override;
 
     void writeImpl(WriteBuffer & out) const override;
+    boost::asio::awaitable<void> writeImpl(tcp::socket & socket) const override;
 
     size_t bytesSize() const override { return MultiResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 

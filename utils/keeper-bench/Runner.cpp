@@ -244,12 +244,13 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...)
         {
+            std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
+
             if (!continue_on_error)
             {
                 shutdown = true;
                 throw;
             }
-            std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
 
             bool got_expired = false;
             for (const auto & connection : zookeepers)

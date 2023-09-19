@@ -6,15 +6,30 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <boost/asio/awaitable.hpp>
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
 #include <array>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+}
+
 namespace Coordination
 {
 
 using namespace DB;
+
+boost::asio::awaitable<void> ZooKeeperResponse::writeImpl(tcp::socket &) const
+{
+    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Write not implemented for {}", getOpNum());
+}
 
 void ZooKeeperResponse::write(WriteBuffer & out) const
 {
@@ -29,6 +44,17 @@ void ZooKeeperResponse::write(WriteBuffer & out) const
     out.next();
 }
 
+boost::asio::awaitable<void> ZooKeeperResponse::write(tcp::socket & socket) const /// NOLINT
+{
+    WriteBufferFromOwnString buf;
+    Coordination::write(xid, buf);
+    Coordination::write(zxid, buf);
+    Coordination::write(error, buf);
+    if (error == Error::ZOK)
+        writeImpl(buf);
+    co_await Coordination::write(buf.str(), socket);
+}
+
 std::string ZooKeeperRequest::toString() const
 {
     return fmt::format(
@@ -38,6 +64,11 @@ std::string ZooKeeperRequest::toString() const
         xid,
         getOpNum(),
         toStringImpl());
+}
+
+boost::asio::awaitable<void> ZooKeeperRequest::readImpl(tcp::socket &)
+{
+    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Read not implemented for {}", getOpNum());
 }
 
 void ZooKeeperRequest::write(WriteBuffer & out) const
@@ -186,6 +217,21 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_sequential = true;
 }
 
+boost::asio::awaitable<void> ZooKeeperCreateRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    co_await Coordination::read(path, socket);
+    co_await Coordination::read(data, socket);
+    co_await Coordination::read(acls, socket);
+
+    int32_t flags = 0;
+    co_await Coordination::read(flags, socket);
+
+    if (flags & 1)
+        is_ephemeral = true;
+    if (flags & 2)
+        is_sequential = true;
+}
+
 std::string ZooKeeperCreateRequest::toStringImpl() const
 {
     return fmt::format(
@@ -207,6 +253,11 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(path_created, out);
 }
 
+boost::asio::awaitable<void> ZooKeeperCreateResponse::writeImpl(tcp::socket & socket) const /// NOLINT
+{
+    co_await Coordination::write(path_created, socket);
+}
+
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
@@ -226,6 +277,12 @@ void ZooKeeperRemoveRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(version, in);
+}
+
+boost::asio::awaitable<void> ZooKeeperRemoveRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    co_await Coordination::read(path, socket);
+    co_await Coordination::read(version, socket);
 }
 
 void ZooKeeperExistsRequest::writeImpl(WriteBuffer & out) const
@@ -267,6 +324,12 @@ void ZooKeeperGetRequest::readImpl(ReadBuffer & in)
     Coordination::read(has_watch, in);
 }
 
+boost::asio::awaitable<void> ZooKeeperGetRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    co_await Coordination::read(path, socket);
+    co_await Coordination::read(has_watch, socket);
+}
+
 std::string ZooKeeperGetRequest::toStringImpl() const
 {
     return fmt::format("path = {}", path);
@@ -284,6 +347,12 @@ void ZooKeeperGetResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(stat, out);
 }
 
+boost::asio::awaitable<void> ZooKeeperGetResponse::writeImpl(tcp::socket & socket) const /// NOLINT
+{
+    co_await Coordination::write(data, socket);
+    co_await Coordination::write(stat, socket);
+}
+
 void ZooKeeperSetRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
@@ -296,6 +365,14 @@ void ZooKeeperSetRequest::readImpl(ReadBuffer & in)
     Coordination::read(path, in);
     Coordination::read(data, in);
     Coordination::read(version, in);
+}
+
+
+boost::asio::awaitable<void> ZooKeeperSetRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    co_await Coordination::read(path, socket);
+    co_await Coordination::read(data, socket);
+    co_await Coordination::read(version, socket);
 }
 
 std::string ZooKeeperSetRequest::toStringImpl() const
@@ -317,6 +394,11 @@ void ZooKeeperSetResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(stat, out);
 }
 
+boost::asio::awaitable<void> ZooKeeperSetResponse::writeImpl(tcp::socket & socket) const /// NOLINT
+{
+    co_await Coordination::write(stat, socket);
+}
+
 void ZooKeeperListRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
@@ -327,6 +409,12 @@ void ZooKeeperListRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(has_watch, in);
+}
+
+boost::asio::awaitable<void> ZooKeeperListRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    co_await Coordination::read(path, socket);
+    co_await Coordination::read(has_watch, socket);
 }
 
 std::string ZooKeeperListRequest::toStringImpl() const
@@ -351,6 +439,16 @@ void ZooKeeperFilteredListRequest::readImpl(ReadBuffer & in)
     list_request_type = static_cast<ListRequestType>(read_request_type);
 }
 
+boost::asio::awaitable<void> ZooKeeperFilteredListRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    co_await Coordination::read(path, socket);
+    co_await Coordination::read(has_watch, socket);
+
+    uint8_t read_request_type{0};
+    co_await Coordination::read(read_request_type, socket);
+    list_request_type = static_cast<ListRequestType>(read_request_type);
+}
+
 std::string ZooKeeperFilteredListRequest::toStringImpl() const
 {
     return fmt::format(
@@ -370,6 +468,12 @@ void ZooKeeperListResponse::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(names, out);
     Coordination::write(stat, out);
+}
+
+boost::asio::awaitable<void> ZooKeeperListResponse::writeImpl(tcp::socket & socket) const /// NOLINT
+{
+    co_await Coordination::write(names, socket);
+    co_await Coordination::write(stat, socket);
 }
 
 void ZooKeeperSimpleListResponse::readImpl(ReadBuffer & in)
@@ -591,6 +695,32 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
     }
 }
 
+boost::asio::awaitable<void> ZooKeeperMultiRequest::readImpl(tcp::socket & socket) /// NOLINT
+{
+    while (true)
+    {
+        OpNum op_num;
+        bool done;
+        int32_t error;
+        co_await Coordination::read(op_num, socket);
+        co_await Coordination::read(done, socket);
+        co_await Coordination::read(error, socket);
+
+        if (done)
+        {
+            if (op_num != OpNum::Error)
+                throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
+            if (error != -1)
+                throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
+            break;
+        }
+
+        ZooKeeperRequestPtr request = ZooKeeperRequestFactory::instance().get(op_num);
+        co_await request->readImpl(socket);
+        requests.push_back(request);
+    }
+}
+
 std::string ZooKeeperMultiRequest::toStringImpl() const
 {
     auto out = fmt::memory_buffer();
@@ -689,6 +819,34 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
         Coordination::write(op_num, out);
         Coordination::write(done, out);
         Coordination::write(error_read, out);
+    }
+}
+
+boost::asio::awaitable<void> ZooKeeperMultiResponse::writeImpl(tcp::socket & socket) const /// NOLINT
+{
+    for (const auto & response : responses)
+    {
+        const ZooKeeperResponse & zk_response = dynamic_cast<const ZooKeeperResponse &>(*response);
+        OpNum op_num = zk_response.getOpNum();
+        bool done = false;
+        Error op_error = zk_response.error;
+
+        co_await Coordination::write(op_num, socket);
+        co_await Coordination::write(done, socket);
+        co_await Coordination::write(op_error, socket);
+        if (op_error == Error::ZOK || op_num == OpNum::Error)
+            co_await zk_response.writeImpl(socket);
+    }
+
+    /// Footer.
+    {
+        OpNum op_num = OpNum::Error;
+        bool done = true;
+        int32_t error_read = - 1;
+
+        co_await Coordination::write(op_num, socket);
+        co_await Coordination::write(done, socket);
+        co_await Coordination::write(error_read, socket);
     }
 }
 

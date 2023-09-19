@@ -1,4 +1,9 @@
 #include <Server/KeeperTCPHandler.h>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/detached.hpp>
+#include "Common/Exception.h"
+#include "Core/Defines.h"
+#include "IO/BufferWithOwnMemory.h"
 
 #if USE_NURAFT
 
@@ -21,6 +26,10 @@
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
 #include <base/hex.h>
+
+#include <boost/asio/use_awaitable.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/write.hpp>
 
 
 #ifdef POCO_HAVE_FD_EPOLL
@@ -537,6 +546,35 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
     }
 }
 
+std::string KeeperSession::tryExecuteFourLetterWordCmd(int32_t command)
+{
+    if (!FourLetterCommandFactory::instance().isKnown(command))
+    {
+        LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
+        return "";
+    }
+    else if (!FourLetterCommandFactory::instance().isEnabled(command))
+    {
+        LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
+        return "";
+    }
+    else
+    {
+        auto command_ptr = FourLetterCommandFactory::instance().get(command);
+        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
+
+        try
+        {
+            return command_ptr->run();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+            return "";
+        }
+    }
+}
+
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
     int32_t length;
@@ -687,6 +725,256 @@ void KeeperTCPHandler::resetConnsStats()
     for (auto * conn : connections)
     {
         conn->resetStats();
+    }
+}
+
+std::mutex KeeperSession::conns_mutex;
+std::unordered_set<KeeperSessionPtr> KeeperSession::sessions;
+
+void KeeperSession::registerConnection(KeeperSessionPtr conn)
+{
+    std::lock_guard lock(conns_mutex);
+    sessions.insert(std::move(conn));
+}
+
+void KeeperSession::unregisterConnection(KeeperSessionPtr conn)
+{
+    std::lock_guard lock(conns_mutex);
+    sessions.erase(conn);
+}
+
+bool KeeperSession::isHandShake(int32_t handshake_length)
+{
+    return handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH
+    || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
+}
+
+boost::asio::awaitable<void> KeeperSession::listener(tcp::acceptor acceptor, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
+{
+    for (;;)
+    {
+        std::make_shared<KeeperSession>(co_await acceptor.async_accept(boost::asio::use_awaitable), keeper_dispatcher)->start();
+    }
+}
+
+KeeperSession::KeeperSession(tcp::socket socket_, std::shared_ptr<KeeperDispatcher> keeper_dispatcher_)
+    : keeper_dispatcher(std::move(keeper_dispatcher_))
+    , socket(std::move(socket_))
+    , min_session_timeout(0, Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS * 1000)
+    , max_session_timeout(0, Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS * 1000)
+    , strand(socket.get_executor())
+{}
+
+void KeeperSession::start()
+{
+    registerConnection(shared_from_this());
+    co_spawn(
+        strand, [self = shared_from_this()] { return self->requestReader(); }, boost::asio::detached);
+}
+
+void KeeperSession::stop()
+{
+    unregisterConnection(shared_from_this());
+    socket.close();
+}
+
+boost::asio::awaitable<Poco::Timespan> KeeperSession::receiveHandshake(int32_t handshake_length)
+{
+    int32_t protocol_version;
+    int64_t last_zxid_seen;
+    int32_t timeout_ms;
+    int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
+    std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
+
+    if (!isHandShake(handshake_length))
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected handshake length received: {}", toString(handshake_length));
+
+    co_await Coordination::read(protocol_version, socket);
+
+    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
+
+    co_await Coordination::read(last_zxid_seen, socket);
+    co_await Coordination::read(timeout_ms, socket);
+
+    /// TODO Stop ignoring this value
+    co_await Coordination::read(previous_session_id, socket);
+    co_await Coordination::read(passwd, socket);
+
+    int8_t readonly;
+    if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
+        co_await Coordination::read(readonly, socket);
+
+    co_return Poco::Timespan(timeout_ms * 1000);
+}
+
+boost::asio::awaitable<void> KeeperSession::sendHandshake(bool has_leader)
+{
+    co_await Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, socket);
+    if (has_leader)
+    {
+        co_await Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, socket);
+    }
+    else
+    {
+        /// Ignore connections if we are not leader, client will throw exception
+        /// and reconnect to another replica faster. ClickHouse client provide
+        /// clear message for such protocol version.
+        co_await Coordination::write(Coordination::KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, socket);
+    }
+
+    co_await Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), socket);
+    co_await Coordination::write(session_id, socket);
+    std::array<char, Coordination::PASSWORD_LENGTH> passwd{};
+    co_await Coordination::write(passwd, socket);
+
+}
+
+boost::asio::awaitable<std::pair<Coordination::OpNum, Coordination::XID>> KeeperSession::receiveRequest()
+{
+    int32_t length;
+    co_await Coordination::read(length, socket);
+    int32_t xid;
+    co_await Coordination::read(xid, socket);
+
+    Coordination::OpNum opnum;
+    co_await Coordination::read(opnum, socket);
+
+    Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request->xid = xid;
+    co_await request->readImpl(socket);
+
+    if (!keeper_dispatcher->putRequest(request, session_id))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
+    co_return std::make_pair(opnum, xid);
+}
+
+boost::asio::awaitable<void> KeeperSession::requestReader()
+{
+    SCOPE_EXIT(
+        stop();
+    );
+
+    int32_t header;
+    co_await Coordination::read(header, socket);
+
+    if (!isHandShake(header))
+    {
+        auto res = tryExecuteFourLetterWordCmd(header);
+        if (res.empty())
+        {
+            LOG_WARNING(log, "Failed to execute 4LW");
+            co_return;
+        }
+
+        co_await boost::asio::async_write(socket, boost::asio::buffer(res.data(), res.size()), boost::asio::use_awaitable);
+        co_return;
+    }
+
+    int32_t handshake_length = header;
+    auto client_timeout = co_await receiveHandshake(handshake_length);
+
+    if (client_timeout.totalMilliseconds() == 0)
+        client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
+
+    session_timeout = std::max(client_timeout, min_session_timeout);
+    session_timeout = std::min(session_timeout, max_session_timeout);
+
+    if (keeper_dispatcher->isServerActive())
+    {
+        bool failed = false;
+        try
+        {
+            LOG_INFO(log, "Requesting session ID for the new client");
+            session_id = keeper_dispatcher->getSessionID(session_timeout.totalMilliseconds());
+            LOG_INFO(log, "Received session ID {} for {}", session_id, socket.remote_endpoint().port());
+        }
+        catch (const Exception & e)
+        {
+            failed = true;
+            LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
+        }
+
+        co_await sendHandshake(!failed);
+
+        if (failed)
+            co_return;
+    }
+    else
+    {
+        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
+        co_await sendHandshake(false);
+        co_return;
+    }
+
+    auto response_callback = [&](const Coordination::ZooKeeperResponsePtr & response) /// NOLINT
+    {
+        {
+            std::lock_guard lock(response_mutex);
+            responses.push_back(response);
+
+            if (writing_response)
+                return;
+
+            writing_response = true;
+        }
+
+        co_spawn(
+            strand,
+            [&]() -> boost::asio::awaitable<void>
+            {
+                auto get_response = [&] -> Coordination::ZooKeeperResponsePtr
+                {
+                    std::lock_guard response_lock(response_mutex);
+                    if (responses.empty())
+                    {
+                        writing_response = false;
+                        return nullptr;
+                    }
+
+                    auto result = std::move(responses.front());
+                    responses.pop_front();
+                    return result;
+                };
+
+                try
+                {
+                    while (auto res = get_response())
+                        co_await res->write(socket);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                    throw;
+                }
+
+                co_return;
+            },
+            boost::asio::detached);
+    };
+
+    keeper_dispatcher->registerSession(session_id, response_callback);
+    LOG_WARNING(log, "Registered session");
+    try
+    {
+        while (true)
+        {
+            auto [received_op, received_xid] = co_await receiveRequest();
+
+            if (received_op == Coordination::OpNum::Close)
+            {
+                LOG_DEBUG(log, "Received close event with xid {} for session id #{}", received_xid, session_id);
+                break;
+            }
+            else if (received_op == Coordination::OpNum::Heartbeat)
+                LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
+            else
+                operations[received_xid] = Poco::Timestamp();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 }
 

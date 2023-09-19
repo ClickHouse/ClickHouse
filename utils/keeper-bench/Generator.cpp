@@ -541,7 +541,7 @@ std::string ListRequestGenerator::descriptionImpl()
 
 Coordination::ZooKeeperRequestPtr ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
-    auto request = std::make_shared<ZooKeeperFilteredListRequest>();
+    auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path.getPath();
     return request;
 }

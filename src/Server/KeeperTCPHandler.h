@@ -18,6 +18,12 @@
 #include <Coordination/KeeperConnectionStats.h>
 #include <Poco/Timestamp.h>
 
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/strand.hpp>
+#include <boost/asio/detached.hpp>
+
 namespace DB
 {
 
@@ -30,6 +36,64 @@ using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 struct LastOp;
 using LastOpMultiVersion = MultiVersion<LastOp>;
 using LastOpPtr = LastOpMultiVersion::Version;
+
+class KeeperSession;
+using KeeperSessionPtr = std::shared_ptr<KeeperSession>;
+using boost::asio::ip::tcp;
+
+class KeeperSession : public std::enable_shared_from_this<KeeperSession>
+{
+private:
+    static void registerConnection(KeeperSessionPtr conn);
+    static void unregisterConnection(KeeperSessionPtr conn);
+    /// dump all connections statistics
+    //static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
+    //static void resetConnsStats();
+
+    static std::mutex conns_mutex;
+    /// all connections
+    static std::unordered_set<KeeperSessionPtr> sessions;
+
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
+
+    tcp::socket socket;
+
+    std::mutex response_mutex;
+    bool writing_response = false;
+    std::list<Coordination::ZooKeeperResponsePtr> responses;
+
+    Poco::Timespan operation_timeout;
+    Poco::Timespan min_session_timeout;
+    Poco::Timespan max_session_timeout;
+    Poco::Timespan session_timeout;
+
+    int64_t session_id;
+
+    using Operations = std::unordered_map<Coordination::XID, Poco::Timestamp>;
+    Operations operations;
+
+    boost::asio::strand<boost::asio::any_io_executor> strand;
+
+    Poco::Logger * log = &Poco::Logger::get("KeeperSession");
+
+    boost::asio::awaitable<void> requestReader();
+
+    std::string tryExecuteFourLetterWordCmd(int32_t command);
+
+    boost::asio::awaitable<Poco::Timespan> receiveHandshake(int32_t handshake_length);
+    boost::asio::awaitable<void> sendHandshake(bool has_leader);
+
+    boost::asio::awaitable<std::pair<Coordination::OpNum, Coordination::XID>> receiveRequest();
+
+    static bool isHandShake(int32_t handshake_length);
+public:
+    static boost::asio::awaitable<void> listener(tcp::acceptor acceptor, std::shared_ptr<KeeperDispatcher> keeper_dispatcher);
+
+    KeeperSession(tcp::socket socket_, std::shared_ptr<KeeperDispatcher> keeper_dispatcher_);
+
+    void start();
+    void stop();
+};
 
 class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
@@ -90,6 +154,7 @@ private:
 
     static bool isHandShake(int32_t handshake_length);
     bool tryExecuteFourLetterWordCmd(int32_t command);
+    std::string tryExecuteFourLetterWordCmd2(int32_t command);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 
