@@ -1074,7 +1074,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// Save insertion table (not table function). TODO: support remote() table function.
                     auto table_id = insert_interpreter->getDatabaseTable();
                     if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id));
+                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
 
                     if (insert_data_buffer_holder)
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));

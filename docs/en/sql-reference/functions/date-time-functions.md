@@ -239,7 +239,7 @@ int32samoa: 1546300800
 
 **See Also**
 
-- [formatDateTime](#date_time_functions-formatDateTime) - supports non-constant timezone.
+- [formatDateTime](#formatDateTime) - supports non-constant timezone.
 - [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
 
 ## timeZoneOf
@@ -1274,7 +1274,7 @@ Alias: `SUBDATE`
 **See Also**
 - [date_sub](#date_sub)
 
-## now
+## now {#now}
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
@@ -1361,7 +1361,7 @@ Result:
 └─────────────────────────┴───────────────────────────────┘
 ```
 
-## nowInBlock
+## nowInBlock {#nowInBlock}
 
 Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
@@ -1405,14 +1405,14 @@ Result:
 └─────────────────────┴─────────────────────┴──────────┘
 ```
 
-## today
+## today {#today}
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
 
 Aliases: `curdate`, `current_date`.
 
-## yesterday
+## yesterday {#yesterday}
 
 Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
 The same as ‘today() - 1’.
@@ -1424,6 +1424,8 @@ Rounds the time to the half hour.
 ## toYYYYMM
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+This functions is the opposite of function `YYYYMMDDToDate()`.
 
 **Example**
 
@@ -1447,8 +1449,7 @@ Converts a date or date with time to a UInt32 number containing the year and mon
 **Example**
 
 ```sql
-SELECT
-    toYYYYMMDD(now(), 'US/Eastern')
+SELECT toYYYYMMDD(now(), 'US/Eastern')
 ```
 
 Result:
@@ -1466,8 +1467,7 @@ Converts a date or date with time to a UInt64 number containing the year and mon
 **Example**
 
 ```sql
-SELECT
-    toYYYYMMDDhhmmss(now(), 'US/Eastern')
+SELECT toYYYYMMDDhhmmss(now(), 'US/Eastern')
 ```
 
 Result:
@@ -1477,6 +1477,93 @@ Result:
 │                        20230302112209 │
 └───────────────────────────────────────┘
 ```
+
+## YYYYMMDDToDate
+
+Converts a number containing the year, month and day number to a [Date](../../sql-reference/data-types/date.md).
+
+This functions is the opposite of function `toYYYYMMDD()`.
+
+The output is undefined if the input does not encode a valid Date value.
+
+**Syntax**
+
+```sql
+YYYYMMDDToDate(yyyymmdd);
+```
+
+**Arguments**
+
+- `yyyymmdd` - A number representing the year, month and day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+
+**Returned value**
+
+- a date created from the arguments.
+
+Type: [Date](../../sql-reference/data-types/date.md).
+
+**Example**
+
+```sql
+SELECT YYYYMMDDToDate(20230911);
+```
+
+Result:
+
+```response
+┌─toYYYYMMDD(20230911)─┐
+│           2023-09-11 │
+└──────────────────────┘
+```
+
+## YYYYMMDDToDate32
+
+Like function `YYYYMMDDToDate()` but produces a [Date32](../../sql-reference/data-types/date32.md).
+
+## YYYYMMDDhhmmssToDateTime
+
+Converts a number containing the year, month, day, hours, minute and second number to a [DateTime](../../sql-reference/data-types/datetime.md).
+
+The output is undefined if the input does not encode a valid DateTime value.
+
+This functions is the opposite of function `toYYYYMMDDhhmmss()`.
+
+**Syntax**
+
+```sql
+YYYYMMDDhhmmssToDateTime(yyyymmddhhmmss[, timezone]);
+```
+
+**Arguments**
+
+- `yyyymmddhhmmss` - A number representing the year, month and day. [Integer](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `timezone` - [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional).
+
+**Returned value**
+
+- a date with time created from the arguments.
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+```sql
+SELECT YYYYMMDDToDateTime(20230911131415);
+```
+
+Result:
+
+```response
+┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                           2023-09-11 13:14:15 │
+└───────────────────────────────────────────────┘
+```
+
+## YYYYMMDDhhmmssToDateTime64
+
+Like function `YYYYMMDDhhmmssToDate()` but produces a [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
 
@@ -1541,7 +1628,7 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime {#date_time_functions-formatDateTime}
+## formatDateTime {#formatDateTime}
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
@@ -1666,7 +1753,7 @@ LIMIT 10
 - [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
 
 
-## formatDateTimeInJodaSyntax {#date_time_functions-formatDateTimeInJodaSyntax}
+## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
