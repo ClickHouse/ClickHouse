@@ -93,7 +93,7 @@ QueryPipeline buildJoinPipeline(
 
 std::shared_ptr<ISource> oneColumnSource(const std::vector<std::vector<UInt64>> & values)
 {
-    Block header = { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "x") };
+    Block header = { ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "x") };
     Chunks chunks;
     for (const auto & chunk_values : values)
     {
@@ -129,45 +129,46 @@ catch (Exception & e)
     throw;
 }
 
-std::shared_ptr<ISource> sourceFromRows(
-    const Block & header, const std::vector<std::vector<Field>> & values, double break_prob = 0.0)
+class SourceChunksBuilder
 {
+public:
+    explicit SourceChunksBuilder(const Block & header_)
+        : header(header_)
+    {
+        current_chunk = header.cloneEmptyColumns();
+        chassert(!current_chunk.empty());
+    }
+
+    SourceChunksBuilder & addRow(const std::vector<Field> & row)
+    {
+        chassert(row.size() == current_chunk.size());
+        for (size_t i = 0; i < current_chunk.size(); ++i)
+            current_chunk[i]->insert(row[i]);
+        return *this;
+    }
+
+    SourceChunksBuilder & addChunk()
+    {
+        if (current_chunk.front()->empty())
+            return *this;
+
+        size_t rows = current_chunk.front()->size();
+        chunks.emplace_back(std::move(current_chunk), rows);
+        current_chunk = header.cloneEmptyColumns();
+        return *this;
+    }
+
+    std::shared_ptr<ISource> build()
+    {
+        addChunk();
+        return std::make_shared<SourceFromChunks>(header, std::move(chunks));
+    }
+
+private:
+    Block header;
     Chunks chunks;
-    auto columns = header.cloneEmptyColumns();
-    chassert(!columns.empty());
-
-    std::uniform_real_distribution<> prob_dis(0.0, 1.0);
-
-    for (const auto & row : values)
-    {
-        if (!columns.front()->empty() && (row.empty() || prob_dis(rng) < break_prob))
-        {
-            size_t rows = columns.front()->size();
-            chunks.emplace_back(std::move(columns), rows);
-            columns = header.cloneEmptyColumns();
-            if (row.empty())
-                continue;
-        }
-
-        chassert(row.size() == columns.size());
-        for (size_t i = 0; i < columns.size(); ++i)
-            columns[i]->insert(row[i]);
-    }
-
-    if (!columns.front()->empty())
-    {
-        size_t rows = columns.front()->size();
-        chunks.emplace_back(std::move(columns), rows);
-    }
-
-    /// Check that code above is correct.
-    size_t total_result_rows = 0;
-    for (const auto & chunk : chunks)
-        total_result_rows += chunk.getNumRows();
-    chassert(total_result_rows == values.size());
-
-    return std::make_shared<SourceFromChunks>(header, std::move(chunks));
-}
+    MutableColumns current_chunk;
+};
 
 
 std::vector<std::vector<Field>> getValuesFromBlock(const Block & block, const Names & names)
@@ -203,32 +204,30 @@ Block executePipeline(QueryPipeline & pipeline)
 TEST(FullSortingJoin, Asof)
 try
 {
-    const std::vector<Field> chunk_break = {};
+    auto left_source = SourceChunksBuilder({
+        {std::make_shared<DataTypeString>(), "key"},
+        {std::make_shared<DataTypeUInt64>(), "t"},
+    })
+        .addRow({"AMZN", 3})
+        .addRow({"AMZN", 4})
+        .addRow({"AMZN", 6})
+        .build();
 
-    auto left_source = sourceFromRows({
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "key"),
-        ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "t"),
-    }, {
-        {"AMZN", 3},
-        {"AMZN", 4},
-        {"AMZN", 6},
-    });
-
-    auto right_source = sourceFromRows({
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "key"),
-        ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "t"),
-        ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "value"),
-    }, {
-        {"AAPL", 1, 97},
-        chunk_break,
-        {"AAPL", 2, 98},
-        {"AAPL", 3, 99},
-        {"AMZN", 1, 100},
-        {"AMZN", 2, 110},
-        chunk_break,
-        {"AMZN", 4, 130},
-        {"AMZN", 5, 140},
-    });
+    auto right_source = SourceChunksBuilder({
+        {std::make_shared<DataTypeString>(), "key"},
+        {std::make_shared<DataTypeUInt64>(), "t"},
+        {std::make_shared<DataTypeUInt64>(), "value"},
+    })
+        .addRow({"AAPL", 1, 97})
+        .addChunk()
+        .addRow({"AAPL", 2, 98})
+        .addRow({"AAPL", 3, 99})
+        .addRow({"AMZN", 1, 100})
+        .addRow({"AMZN", 2, 110})
+        .addChunk()
+        .addRow({"AMZN", 4, 130})
+        .addRow({"AMZN", 5, 140})
+        .build();
 
     auto pipeline = buildJoinPipeline(
         left_source, right_source, /* key_length = */ 2,
@@ -252,25 +251,24 @@ catch (Exception & e)
 TEST(FullSortingJoin, AsofOnlyColumn)
 try
 {
-    const std::vector<Field> chunk_break = {};
-
     auto left_source = oneColumnSource({ {3}, {3, 3, 3}, {3, 5, 5, 6}, {9, 9}, {10, 20} });
 
     UInt64 p = std::uniform_int_distribution<>(0, 2)(rng);
-    double break_prob = p == 0 ? 0.0 : (p == 1 ? 0.5 : 1.0);
 
-    auto right_source = sourceFromRows({
-        ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "t"),
-        ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "value"),
-    }, {
-        {1, 101},
-        {2, 102},
-        {4, 104},
-        {5, 105},
-        {11, 111},
-        {15, 115},
-    },
-    break_prob);
+    SourceChunksBuilder right_source_builder({
+        {std::make_shared<DataTypeUInt64>(), "t"},
+        {std::make_shared<DataTypeUInt64>(), "value"},
+    });
+
+    double break_prob = p == 0 ? 0.0 : (p == 1 ? 0.5 : 1.0);
+    std::uniform_real_distribution<> prob_dis(0.0, 1.0);
+    for (const auto & row : std::vector<std::vector<Field>>{ {1, 101}, {2, 102}, {4, 104}, {5, 105}, {11, 111}, {15, 115} })
+    {
+        right_source_builder.addRow(row);
+        if (prob_dis(rng) < break_prob)
+            right_source_builder.addChunk();
+    }
+    auto right_source = right_source_builder.build();
 
     auto pipeline = buildJoinPipeline(
         left_source, right_source, /* key_length = */ 1,
