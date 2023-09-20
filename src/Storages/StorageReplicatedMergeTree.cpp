@@ -197,6 +197,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType Cleanup;
 }
 
 
@@ -372,14 +373,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// to be manually deleted before retrying the CreateQuery.
         try
         {
-            if (zookeeper_name == default_zookeeper_name)
-            {
-                current_zookeeper = getContext()->getZooKeeper();
-            }
-            else
-            {
-                current_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
-            }
+            setZooKeeper();
         }
         catch (...)
         {
@@ -1635,7 +1629,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         }
 
         Coordination::Responses responses;
-        Coordination::Error e = zookeeper->tryMulti(ops, responses);
+        Coordination::Error e;
+        {
+
+            Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
+                                                     getSettings()->fault_probability_after_part_commit, "part commit");
+            e = zookeeper->tryMulti(ops, responses);
+        }
         if (e == Coordination::Error::ZOK)
         {
             LOG_DEBUG(log, "Part {} committed to zookeeper", part->name);
@@ -8233,6 +8233,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     if (action_type == ActionLocks::PullReplicationLog)
         return queue.pull_log_blocker.cancel();
 
+    if (action_type == ActionLocks::Cleanup)
+        return cleanup_thread.getCleanupLock();
+
     return {};
 }
 
@@ -8244,6 +8247,8 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
+    else if (action_type == ActionLocks::Cleanup)
+        cleanup_thread.wakeup();
 }
 
 bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)

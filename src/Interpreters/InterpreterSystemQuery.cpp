@@ -101,6 +101,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType Cleanup;
 }
 
 
@@ -156,6 +157,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_MOVES;
     else if (action_type == ActionLocks::PullReplicationLog)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
+    else if (action_type == ActionLocks::Cleanup)
+        return AccessType::SYSTEM_CLEANUP;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -571,6 +574,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_PULLING_REPLICATION_LOG:
             startStopAction(ActionLocks::PullReplicationLog, true);
+            break;
+        case Type::STOP_CLEANUP:
+            startStopAction(ActionLocks::Cleanup, false);
+            break;
+        case Type::START_CLEANUP:
+            startStopAction(ActionLocks::Cleanup, true);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -1138,6 +1147,15 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_PULLING_REPLICATION_LOG:
         case Type::START_PULLING_REPLICATION_LOG:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
