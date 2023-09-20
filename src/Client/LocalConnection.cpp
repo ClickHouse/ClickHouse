@@ -35,6 +35,18 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
 
 LocalConnection::~LocalConnection()
 {
+    /// Last query may not have been finished or cancelled due to exception on client side.
+    if (state && !state->is_finished && !state->is_cancelled)
+    {
+        try
+        {
+            LocalConnection::sendCancel();
+        }
+        catch (...)
+        {
+            /// Just ignore any exception.
+        }
+    }
     state.reset();
 }
 
@@ -73,8 +85,9 @@ void LocalConnection::sendQuery(
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
-    if (!query_parameters.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "clickhouse local does not support query parameters");
+    /// Last query may not have been finished or cancelled due to exception on client side.
+    if (state && !state->is_finished && !state->is_cancelled)
+        sendCancel();
 
     /// Suggestion comes without client_info.
     if (client_info)
@@ -90,6 +103,7 @@ void LocalConnection::sendQuery(
     if (!current_database.empty())
         query_context->setCurrentDatabase(current_database);
 
+    query_context->addQueryParameters(query_parameters);
 
     state.reset();
     state.emplace();
@@ -206,6 +220,10 @@ void LocalConnection::sendCancel()
     state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
+    if (state->pushing_executor)
+        state->pushing_executor->cancel();
+    if (state->pushing_async_executor)
+        state->pushing_async_executor->cancel();
 }
 
 bool LocalConnection::pullBlock(Block & block)
@@ -484,7 +502,7 @@ void LocalConnection::setDefaultDatabase(const String & database)
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    return DBMS_TCP_PROTOCOL_VERSION;
 }
 
 const String & LocalConnection::getServerTimezone(const ConnectionTimeouts &)

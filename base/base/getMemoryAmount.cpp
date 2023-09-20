@@ -28,13 +28,27 @@ uint64_t getMemoryAmountOrZero()
 
 #if defined(OS_LINUX)
     // Try to lookup at the Cgroup limit
-    std::ifstream cgroup_limit("/sys/fs/cgroup/memory/memory.limit_in_bytes");
-    if (cgroup_limit.is_open())
+
+    // CGroups v2
+    std::ifstream cgroupv2_limit("/sys/fs/cgroup/memory.max");
+    if (cgroupv2_limit.is_open())
     {
-        uint64_t memory_limit = 0; // in case of read error
-        cgroup_limit >> memory_limit;
+        uint64_t memory_limit = 0;
+        cgroupv2_limit >> memory_limit;
         if (memory_limit > 0 && memory_limit < memory_amount)
             memory_amount = memory_limit;
+    }
+    else
+    {
+        // CGroups v1
+        std::ifstream cgroup_limit("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+        if (cgroup_limit.is_open())
+        {
+            uint64_t memory_limit = 0; // in case of read error
+            cgroup_limit >> memory_limit;
+            if (memory_limit > 0 && memory_limit < memory_amount)
+                memory_amount = memory_limit;
+        }
     }
 #endif
 

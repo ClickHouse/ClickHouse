@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-s3-storage, no-upgrade-check
+# Tags: zookeeper, no-s3-storage
 
 # Because REPLACE PARTITION does not forces immediate removal of replaced data parts from local filesystem
 # (it tries to do it as quick as possible, but it still performed in separate thread asynchronously)
@@ -11,33 +11,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-function query_with_retry
-{
-    local query="$1" && shift
-
-    local retry=0
-    until [ $retry -ge 5 ]
-    do
-        local result
-        result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
-        if [ "$?" == 0 ]; then
-            echo -n "$result"
-            return
-        else
-            retry=$((retry + 1))
-            sleep 3
-        fi
-    done
-    echo "Query '$query' failed with '$result'"
-}
-
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS src;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r1;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS dst_r2;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r1 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst_1', '1') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
-$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r2 (p UInt64, k String, d UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst_1', '2') PARTITION BY p ORDER BY k SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r1 (p UInt64, k String, d UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst_1', '1') PARTITION BY p ORDER BY k
+SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;"
+$CLICKHOUSE_CLIENT --query="CREATE TABLE dst_r2 (p UInt64, k String, d UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/dst_1', '2') PARTITION BY p ORDER BY k
+SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (0, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"

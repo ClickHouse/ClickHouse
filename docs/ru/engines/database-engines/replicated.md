@@ -12,7 +12,7 @@ sidebar_label: Replicated
 
 ## Создание базы данных {#creating-a-database}
 ``` sql
-    CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
+CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
 ```
 
 **Параметры движка**
@@ -21,9 +21,9 @@ sidebar_label: Replicated
 -   `shard_name` — Имя шарда. Реплики базы данных группируются в шарды по имени.
 -   `replica_name` — Имя реплики. Имена реплик должны быть разными для всех реплик одного и того же шарда.
 
-    :::note "Предупреждение"
-    Для таблиц [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) если аргументы не заданы, то используются аргументы по умолчанию: `/clickhouse/tables/{uuid}/{shard}` и `{replica}`. Они могут быть изменены в серверных настройках: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Макрос `{uuid}` раскрывается в `UUID` таблицы, `{shard}` и `{replica}` — в значения из конфига сервера. В будущем появится возможность использовать значения `shard_name` и `replica_name` аргументов движка базы данных `Replicated`.
-    :::
+:::note Предупреждение
+Для таблиц [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) если аргументы не заданы, то используются аргументы по умолчанию: `/clickhouse/tables/{uuid}/{shard}` и `{replica}`. Они могут быть изменены в серверных настройках: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Макрос `{uuid}` раскрывается в `UUID` таблицы, `{shard}` и `{replica}` — в значения из конфига сервера. В будущем появится возможность использовать значения `shard_name` и `replica_name` аргументов движка базы данных `Replicated`.
+:::
 ## Особенности и рекомендации {#specifics-and-recommendations}
 
 DDL-запросы с базой данных `Replicated` работают похожим образом на [ON CLUSTER](../../sql-reference/distributed-ddl.md) запросы, но с небольшими отличиями.

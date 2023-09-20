@@ -1,26 +1,23 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <unordered_map>
+
 
 namespace DB
 {
@@ -31,7 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
+static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
     /// In case of Array field nested fields can have different types.
@@ -42,7 +39,7 @@ static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFro
     return {res, type};
 }
 
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
+std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -70,7 +67,9 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
+    auto syntax_result = TreeRewriter(context, no_throw).analyze(ast, source_columns);
+    if (!syntax_result)
+        return {};
 
     /// AST potentially could be transformed to literal during TreeRewriter analyze.
     /// For example if we have SQL user defined function that return literal AS subquery.
@@ -94,23 +93,35 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
     if (!result_column)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Logical error: empty result column after evaluation "
-                        "of constant expression for IN, VALUES or LIMIT or aggregate function parameter");
+                        "of constant expression for IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument");
 
     /// Expressions like rand() or now() are not constant
     if (!isColumnConst(*result_column))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column is not const): {}", result_name);
 
     return std::make_pair((*result_column)[0], result_type);
 }
 
+std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
+{
+    return evaluateConstantExpressionImpl(node, context, true);
+}
+
+EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
+{
+    auto res = evaluateConstantExpressionImpl(node, context, false);
+    if (!res)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
+    return *res;
+}
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {

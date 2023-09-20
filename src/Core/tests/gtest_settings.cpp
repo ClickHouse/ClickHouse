@@ -121,7 +121,7 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetString)
     ASSERT_EQ(Field("decimal,datetime64"), setting);
 
     // comma with spaces
-    setting = " datetime64 ,    decimal ";
+    setting = " datetime64 ,    decimal "; /// bad punctuation is ok here
     ASSERT_TRUE(setting.changed);
     ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DECIMAL));
     ASSERT_TRUE(setting.value.isSet(MySQLDataTypesSupport::DATETIME64));
@@ -166,4 +166,3 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetInvalidString)
     ASSERT_TRUE(setting.changed);
     ASSERT_EQ(0, setting.value.getValue());
 }
-

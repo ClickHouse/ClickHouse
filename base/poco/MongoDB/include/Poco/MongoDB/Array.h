@@ -33,7 +33,7 @@ namespace MongoDB
     /// This class represents a BSON Array.
     {
     public:
-        typedef SharedPtr<Array> Ptr;
+        using Ptr = SharedPtr<Array>;
 
         Array();
         /// Creates an empty Array.
@@ -41,8 +41,31 @@ namespace MongoDB
         virtual ~Array();
         /// Destroys the Array.
 
+        // Document template functions available for backward compatibility
+        using Document::add;
+        using Document::get;
+
         template <typename T>
-        T get(int pos) const
+        Document & add(T value)
+        /// Creates an element with the name from the current pos and value and
+        /// adds it to the array document.
+        ///
+        /// The active document is returned to allow chaining of the add methods.
+        {
+            return Document::add<T>(Poco::NumberFormatter::format(size()), value);
+        }
+
+        Document & add(const char * value)
+        /// Creates an element with a name from the current pos and value and
+        /// adds it to the array document.
+        ///
+        /// The active document is returned to allow chaining of the add methods.
+        {
+            return Document::add(Poco::NumberFormatter::format(size()), value);
+        }
+
+        template <typename T>
+        T get(std::size_t pos) const
         /// Returns the element at the given index and tries to convert
         /// it to the template type. If the element is not found, a
         /// Poco::NotFoundException will be thrown. If the element cannot be
@@ -52,7 +75,7 @@ namespace MongoDB
         }
 
         template <typename T>
-        T get(int pos, const T & deflt) const
+        T get(std::size_t pos, const T & deflt) const
         /// Returns the element at the given index and tries to convert
         /// it to the template type. If the element is not found, or
         /// has the wrong type, the deflt argument will be returned.
@@ -60,12 +83,12 @@ namespace MongoDB
             return Document::get<T>(Poco::NumberFormatter::format(pos), deflt);
         }
 
-        Element::Ptr get(int pos) const;
+        Element::Ptr get(std::size_t pos) const;
         /// Returns the element at the given index.
         /// An empty element will be returned if the element is not found.
 
         template <typename T>
-        bool isType(int pos) const
+        bool isType(std::size_t pos) const
         /// Returns true if the type of the element equals the TypeId of ElementTrait,
         /// otherwise false.
         {
@@ -74,6 +97,9 @@ namespace MongoDB
 
         std::string toString(int indent = 0) const;
         /// Returns a string representation of the Array.
+
+    private:
+        friend void BSONReader::read<Array::Ptr>(Array::Ptr & to);
     };
 
 

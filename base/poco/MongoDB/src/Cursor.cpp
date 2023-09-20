@@ -33,6 +33,12 @@ Cursor::Cursor(const std::string& fullCollectionName, QueryRequest::Flags flags)
 }
 
 
+Cursor::Cursor(const Document& aggregationResponse) :
+    _query(aggregationResponse.get<Poco::MongoDB::Document::Ptr>("cursor")->get<std::string>("ns")),
+    _response(aggregationResponse.get<Poco::MongoDB::Document::Ptr>("cursor")->get<Int64>("id"))
+{
+}
+
 Cursor::~Cursor()
 {
 	try

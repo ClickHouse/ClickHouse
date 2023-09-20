@@ -57,7 +57,7 @@ private:
 
         PacketReceiver & receiver;
 
-        void run(AsyncCallback async_callback, ResumeCallback suspend_callback) override;
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
     /// When epoll file descriptor is ready, check if it's an expired timeout.

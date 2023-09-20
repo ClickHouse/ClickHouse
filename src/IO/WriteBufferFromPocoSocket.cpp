@@ -10,7 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/AsyncTaskExecutor.h>
-
+#include <Common/checkSSLReturnCode.h>
 
 namespace ProfileEvents
 {
@@ -23,7 +23,6 @@ namespace CurrentMetrics
     extern const Metric NetworkSend;
 }
 
-
 namespace DB
 {
 
@@ -34,7 +33,6 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int LOGICAL_ERROR;
 }
-
 
 void WriteBufferFromPocoSocket::nextImpl()
 {
@@ -62,13 +60,36 @@ void WriteBufferFromPocoSocket::nextImpl()
             if (size > INT_MAX)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
-            /// If async_callback is specified, and write will block, run async_callback and try again later.
+            /// If async_callback is specified, set socket to non-blocking mode
+            /// and try to write data to it, if socket is not ready for writing,
+            /// run async_callback and try again later.
             /// It is expected that file descriptor may be polled externally.
             /// Note that send timeout is not checked here. External code should check it while polling.
-            while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
-                async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
+            if (async_callback)
+            {
+                socket.setBlocking(false);
+                /// Set socket to blocking mode at the end.
+                SCOPE_EXIT(socket.setBlocking(true));
+                bool secure = socket.secure();
+                res = socket.impl()->sendBytes(pos, static_cast<int>(size));
 
-            res = socket.impl()->sendBytes(pos, static_cast<int>(size));
+                /// Check EAGAIN and ERR_SSL_WANT_WRITE/ERR_SSL_WANT_READ for secure socket (writing to secure socket can read too).
+                while (res < 0 && (errno == EAGAIN || (secure && (checkSSLWantRead(res) || checkSSLWantWrite(res)))))
+                {
+                    /// In case of ERR_SSL_WANT_READ we should wait for socket to be ready for reading, otherwise - for writing.
+                    if (secure && checkSSLWantRead(res))
+                        async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+                    else
+                        async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
+
+                    /// Try to write again.
+                    res = socket.impl()->sendBytes(pos, static_cast<int>(size));
+                }
+            }
+            else
+            {
+                res = socket.impl()->sendBytes(pos, static_cast<int>(size));
+            }
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -106,7 +127,14 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    finalize();
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

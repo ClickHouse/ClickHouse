@@ -317,7 +317,7 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
   Make sure that you set **SSL** on when connecting to ClickHouse Cloud or other ClickHouse systems that enforce the use of SSL.
 :::
 
-  ![Add ClickHouse as a Superset datasource](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
+  ![Add ClickHouse as a Superset data source](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
 
 ### Add the table **cell_towers** as a Superset **dataset**
 
@@ -364,5 +364,5 @@ The data is also available for interactive queries in the [Playground](https://p
 
 This [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=) will populate the username and even the query for you.
 
-Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the hostname and port number).
+Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the host name and port number).
 :::

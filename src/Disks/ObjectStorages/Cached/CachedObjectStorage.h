@@ -43,7 +43,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
@@ -72,7 +71,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -109,11 +108,9 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const override;
+    const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
-    WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
-
-    static bool canUseReadThroughCache();
+    static bool canUseReadThroughCache(const ReadSettings & settings);
 
 private:
     FileCache::Key getCacheKey(const std::string & path) const;

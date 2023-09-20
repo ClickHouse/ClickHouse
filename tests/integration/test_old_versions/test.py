@@ -10,6 +10,7 @@ node18_14 = cluster.add_instance(
     tag="18.14.19",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 node19_1 = cluster.add_instance(
     "node19_1",
@@ -17,6 +18,7 @@ node19_1 = cluster.add_instance(
     tag="19.1.16",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 node19_4 = cluster.add_instance(
     "node19_4",
@@ -24,6 +26,7 @@ node19_4 = cluster.add_instance(
     tag="19.4.5.35",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 node19_8 = cluster.add_instance(
     "node19_8",
@@ -31,6 +34,7 @@ node19_8 = cluster.add_instance(
     tag="19.8.3.8",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 node19_11 = cluster.add_instance(
     "node19_11",
@@ -38,6 +42,7 @@ node19_11 = cluster.add_instance(
     tag="19.11.13.74",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 node19_13 = cluster.add_instance(
     "node19_13",
@@ -45,6 +50,7 @@ node19_13 = cluster.add_instance(
     tag="19.13.7.57",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 node19_16 = cluster.add_instance(
     "node19_16",
@@ -52,6 +58,7 @@ node19_16 = cluster.add_instance(
     tag="19.16.2.2",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
+    allow_analyzer=False,
 )
 old_nodes = [node18_14, node19_1, node19_4, node19_8, node19_11, node19_13, node19_16]
 new_node = cluster.add_instance("node_new")

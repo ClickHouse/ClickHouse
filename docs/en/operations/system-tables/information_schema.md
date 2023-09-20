@@ -3,12 +3,13 @@ slug: /en/operations/system-tables/information_schema
 ---
 # INFORMATION_SCHEMA
 
-`INFORMATION_SCHEMA` (`information_schema`) is a system database that contains views. Using these views, you can get information about the metadata of database objects. These views read data from the columns of the [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md) system tables.
-
-The structure and composition of system tables may change in different versions of the product, but the support of the `information_schema` makes it possible to change the structure of system tables without changing the method of access to metadata. Metadata requests do not depend on the DBMS used.
+`INFORMATION_SCHEMA` (or: `information_schema`) is a system database which provides a (somewhat) standardized, [DBMS-agnostic view](https://en.wikipedia.org/wiki/Information_schema) on metadata of database objects. The views in `INFORMATION_SCHEMA` are generally inferior to normal system tables but tools can use them to obtain basic information in a cross-DBMS manner. The structure and content of views in `INFORMATION_SCHEMA` is supposed to evolves in a backwards-compatible way, i.e. only new functionality is added but existing functionality is not changed or removed. In terms of internal implementation, views in `INFORMATION_SCHEMA` usually map to to normal system tables like [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md).
 
 ``` sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
+
+-- or:
+SHOW TABLES FROM information_schema;
 ```
 
 ``` text
@@ -17,6 +18,10 @@ SHOW TABLES FROM INFORMATION_SCHEMA;
 │ SCHEMATA │
 │ TABLES   │
 │ VIEWS    │
+│ columns  │
+│ schemata │
+│ tables   │
+│ views    │
 └──────────┘
 ```
 
@@ -26,6 +31,8 @@ SHOW TABLES FROM INFORMATION_SCHEMA;
 - [SCHEMATA](#schemata)
 - [TABLES](#tables)
 - [VIEWS](#views)
+
+Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases.
 
 ## COLUMNS {#columns}
 
@@ -43,7 +50,7 @@ Columns:
 - `data_type` ([String](../../sql-reference/data-types/string.md)) — Column type.
 - `character_maximum_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for `FixedString` data type. Otherwise, the `NULL` value is returned.
 - `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for `FixedString` data type. Otherwise, the `NULL` value is returned.
-- `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse it is bitness for integer types and decimal precision for `Decimal` types. Otherwise, the `NULL` value is returned.
+- `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse it is bit width for integer types and decimal precision for `Decimal` types. Otherwise, the `NULL` value is returned.
 - `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. In ClickHouse it's 2 for integer types and 10 for `Decimal` types. Otherwise, the `NULL` value is returned.
 - `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for `Decimal` types. Otherwise, the `NULL` value is returned.
 - `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Decimal precision of `DateTime64` data type. For other data types, the `NULL` value is returned.

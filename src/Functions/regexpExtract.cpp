@@ -8,7 +8,7 @@
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <base/StringRef.h>
-#include <Common/Documentation.h>
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {
@@ -132,7 +132,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         if (index < 0 || index >= capture + 1)
             throw Exception(
@@ -172,7 +172,7 @@ private:
         res_data.reserve(data.size() / 5);
         res_offsets.reserve(offsets.size());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
 
         OptimizedRegularExpression::MatchVec matches;
@@ -217,7 +217,7 @@ private:
         ColumnString::Chars padded_str;
         padded_str.insert(str.begin(), str.end());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(capture + 1);
@@ -244,7 +244,7 @@ private:
 REGISTER_FUNCTION(RegexpExtract)
 {
     factory.registerFunction<FunctionRegexpExtract>(
-        Documentation{"Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
+        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index."});
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::CaseInsensitive);

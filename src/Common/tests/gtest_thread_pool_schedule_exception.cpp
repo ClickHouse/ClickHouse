@@ -1,4 +1,3 @@
-#include <iostream>
 #include <stdexcept>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
@@ -56,8 +55,17 @@ static bool check2()
 {
     ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, 2);
 
-    pool.scheduleOrThrowOnError([&]{ throw std::runtime_error("Hello, world!"); });
-    pool.scheduleOrThrowOnError([]{});
+    try
+    {
+        pool.scheduleOrThrowOnError([&]{ throw std::runtime_error("Hello, world!"); });
+        pool.scheduleOrThrowOnError([]{});
+    }
+    catch (const std::runtime_error &)
+    {
+        /// Sometimes exception may be thrown from schedule.
+        /// Just retry test in that case.
+        return true;
+    }
 
     try
     {

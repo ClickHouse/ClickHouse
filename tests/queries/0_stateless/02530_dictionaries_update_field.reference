@@ -4,13 +4,13 @@ flat
 SELECT key, value FROM dict_flat ORDER BY key ASC;
 1	First
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_flat ORDER BY key ASC;
 1	First
 2	Second
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
 INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_flat ORDER BY key ASC;
 1	First
 2	SecondUpdated
@@ -21,13 +21,13 @@ flat/custom
 SELECT key, value FROM dict_flat_custom ORDER BY key ASC;
 1	First
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_flat_custom ORDER BY key ASC;
 1	First
 2	Second
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
 INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_flat_custom ORDER BY key ASC;
 1	First
 2	SecondUpdated
@@ -38,13 +38,13 @@ hashed
 SELECT key, value FROM dict_hashed ORDER BY key ASC;
 1	First
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_hashed ORDER BY key ASC;
 1	First
 2	Second
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
 INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_hashed ORDER BY key ASC;
 1	First
 2	SecondUpdated
@@ -55,13 +55,13 @@ hashed/custom
 SELECT key, value FROM dict_hashed_custom ORDER BY key ASC;
 1	First
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_hashed_custom ORDER BY key ASC;
 1	First
 2	Second
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
 INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_hashed_custom ORDER BY key ASC;
 1	First
 2	SecondUpdated
@@ -72,13 +72,13 @@ complex_key_hashed
 SELECT key, value FROM dict_complex_key_hashed ORDER BY key ASC;
 1	First
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_complex_key_hashed ORDER BY key ASC;
 1	First
 2	Second
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
 INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_complex_key_hashed ORDER BY key ASC;
 1	First
 2	SecondUpdated
@@ -89,13 +89,13 @@ complex_key_hashed/custom
 SELECT key, value FROM dict_complex_key_hashed_custom ORDER BY key ASC;
 1	First
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_complex_key_hashed_custom ORDER BY key ASC;
 1	First
 2	Second
 INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
 INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 SELECT key, value FROM dict_complex_key_hashed_custom ORDER BY key ASC;
 1	First
 2	SecondUpdated

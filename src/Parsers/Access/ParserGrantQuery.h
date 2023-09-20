@@ -14,11 +14,14 @@ class ParserGrantQuery : public IParserBase
 public:
     ParserGrantQuery & useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; return *this; }
 
+    ParserGrantQuery & setParseWithoutGrantees(bool allow_no_grantees_ = true) { allow_no_grantees = allow_no_grantees_; return *this; }
+
 protected:
     const char * getName() const override { return "GRANT or REVOKE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
     bool attach_mode = false;
+    bool allow_no_grantees = false;  /// if set, the parser will allow grant queries without any grantees.
 };
 }

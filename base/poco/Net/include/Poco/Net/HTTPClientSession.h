@@ -127,6 +127,9 @@ namespace Net
 
         void setResolvedHost(std::string resolved_host) { _resolved_host.swap(resolved_host); }
 
+        std::string getResolvedHost() const { return _resolved_host; }
+        /// Returns the resolved IP address of the target HTTP server.
+
         Poco::UInt16 getPort() const;
         /// Returns the port number of the target HTTP server.
 
@@ -303,7 +306,7 @@ namespace Net
             DEFAULT_KEEP_ALIVE_TIMEOUT = 8
         };
 
-        void reconnect();
+        virtual void reconnect();
         /// Connects the underlying socket to the HTTP server.
 
         int write(const char * buffer, std::streamsize length);

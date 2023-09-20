@@ -41,6 +41,15 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
+    auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
+            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
+            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
+            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
+        });
+
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto array_low_cardinality_string = std::make_shared<DataTypeArray>(low_cardinality_string);
 
@@ -70,6 +79,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"databases", array_low_cardinality_string},
         {"tables", array_low_cardinality_string},
         {"columns", array_low_cardinality_string},
+        {"partitions", array_low_cardinality_string},
         {"projections", array_low_cardinality_string},
         {"views", array_low_cardinality_string},
         {"exception_code", std::make_shared<DataTypeInt32>()},
@@ -108,6 +118,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"log_comment", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
         {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string)},
 
@@ -124,6 +135,8 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_row_policies", array_low_cardinality_string},
 
         {"transaction_id", getTransactionIDDataType()},
+
+        {"query_cache_usage", std::move(query_cache_usage_datatype)},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
     };
@@ -176,6 +189,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
 
@@ -194,6 +208,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_databases, column_databases);
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
+        fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);
     }
@@ -215,6 +230,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
             threads_array.emplace_back(thread_id);
         columns[i++]->insert(threads_array);
     }
+
+    columns[i++]->insert(peak_threads_usage);
 
     if (profile_counters)
     {
@@ -273,6 +290,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
+
+    columns[i++]->insert(query_cache_usage);
 
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());
