@@ -1,12 +1,14 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
+#include <chrono>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <optional>
 #include <base/types.h>
+#include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -23,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-struct NetworkInterfaces
+struct NetworkInterfaces : public boost::noncopyable
 {
     ifaddrs * ifaddr;
     NetworkInterfaces()
@@ -32,6 +34,12 @@ struct NetworkInterfaces
         {
             throwFromErrno("Cannot getifaddrs", ErrorCodes::SYSTEM_ERROR);
         }
+    }
+
+    void swap(NetworkInterfaces && other)
+    {
+        ifaddr = other.ifaddr;
+        other.ifaddr = nullptr;
     }
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
@@ -80,24 +88,24 @@ struct NetworkInterfaces
 
     static const NetworkInterfaces & instance()
     {
-        static constexpr int NET_INTERFACE_VALID_PERIOD_SECONDS = 30;
-        static std::unique_ptr<NetworkInterfaces> nf = std::make_unique<NetworkInterfaces>();
-        static time_t last_updated_time = time(nullptr);
+        static constexpr int NET_INTERFACE_VALID_PERIOD_MS = 30000;
+        static NetworkInterfaces nf;
+        static auto last_updated_time = std::chrono::steady_clock::now();
         static std::shared_mutex nf_mtx;
 
-        time_t now = time(nullptr);
+        auto now = std::chrono::steady_clock::now();
 
-        if (now - last_updated_time > NET_INTERFACE_VALID_PERIOD_SECONDS)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_updated_time).count() > NET_INTERFACE_VALID_PERIOD_MS)
         {
             std::unique_lock lock(nf_mtx);
-            nf = std::make_unique<NetworkInterfaces>();
+            nf.swap(NetworkInterfaces());
             last_updated_time = now;
-            return *nf;
+            return nf;
         }
         else
         {
             std::shared_lock lock(nf_mtx);
-            return *nf;
+            return nf;
         }
     }
 };
