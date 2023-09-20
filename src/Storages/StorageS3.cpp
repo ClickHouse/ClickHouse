@@ -1212,6 +1212,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
         auth_settings.region,
         context->getRemoteHostFilter(),
         static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
+        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
         context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
@@ -1225,9 +1226,6 @@ void StorageS3::Configuration::connect(ContextPtr context)
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
 
     client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
-
-    client_configuration.retryStrategy
-        = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
 
     auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
     client = S3::ClientFactory::instance().create(
