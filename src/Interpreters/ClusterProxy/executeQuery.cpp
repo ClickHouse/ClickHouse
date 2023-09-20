@@ -193,7 +193,7 @@ void executeQuery(
 
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
-    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
+    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
         && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
            != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
     {
