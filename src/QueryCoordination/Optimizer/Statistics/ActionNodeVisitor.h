@@ -6,13 +6,13 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/ActionsDAG.h>
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 enum class ActionFuncType
 {

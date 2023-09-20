@@ -11,8 +11,8 @@ class DeriveStatistics : public PlanStepVisitor<Statistics>
 public:
     using Base = PlanStepVisitor<Statistics>;
 
-    explicit DeriveStatistics(const StatisticsList & input_statistics_)
-        : input_statistics(input_statistics_), log(&Poco::Logger::get("DeriveStatistics"))
+    explicit DeriveStatistics(const StatisticsList & input_statistics_, ContextPtr context_)
+        : input_statistics(input_statistics_), context(context_), log(&Poco::Logger::get("DeriveStatistics"))
     {
     }
 
@@ -44,6 +44,8 @@ public:
 
 private:
     const StatisticsList & input_statistics;
+
+    ContextPtr context;
     Poco::Logger * log;
 };
 

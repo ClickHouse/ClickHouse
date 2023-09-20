@@ -4,15 +4,21 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <QueryCoordination/Optimizer/Statistics/ExpressionStatsCalculator.h>
 #include <QueryCoordination/Optimizer/Statistics/PredicateStatsCalculator.h>
+#include <QueryCoordination/Optimizer/Statistics/IStatisticsStorage.h>
 #include <QueryCoordination/Optimizer/Statistics/Utils.h>
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    ActionsDAGPtr buildActionDAGForJoin(std::vector<TableJoin::JoinOnClause>);
+};
 
 Statistics DeriveStatistics::visit(QueryPlanStepPtr step)
 {
@@ -65,34 +71,30 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
 
 Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
 {
-    Statistics statistics;
-//    statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
-    statistics.setOutputRowSize(10000);
 
-    //    if (step.getStorageID().table_name == "student")
-    //    {
-    //        statistics.addColumnStatistics("id", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
-    //        statistics.addColumnStatistics("name", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 5.0, std::make_shared<DataTypeString>()));
-    //        statistics.addColumnStatistics("event_time", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 8.0, std::make_shared<DataTypeDateTime>()));
-    //        statistics.addColumnStatistics("city", std::make_shared<ColumnStatistics>(0.0, 0.0, 3.0, 14.0, std::make_shared<DataTypeString>()));
-    //        statistics.addColumnStatistics("city_code", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
-    //
-    //    }
-    //    else
-    //    {
-    //        statistics.addColumnStatistics("id", std::make_shared<ColumnStatistics>(1.0, 5.0, 5.0, 4.0, std::make_shared<DataTypeInt32>()));
-    //        statistics.addColumnStatistics("event_time", std::make_shared<ColumnStatistics>(0.0, 0.0, 5.0, 8.0, std::make_shared<DataTypeDateTime>()));
-    //        statistics.addColumnStatistics("score", std::make_shared<ColumnStatistics>(50.0, 96.0, 8.0, 8.0, std::make_shared<DataTypeInt32>()));
-    //    }
+    chassert(input_statistics.empty());
 
-    /// Step output column names who column statistics name must be equal to.
+    auto storage_id = step.getStorageID();
+    auto cluster_name = context->getQueryCoordinationMetaInfo().cluster_name;
+
+    /// 1. init by statistics storage
+    auto input = context->getStatisticsStorage()->get(storage_id, cluster_name);
+    if (!input)
+    {
+        input = std::make_shared<Statistics>();
+    }
+
+    Statistics statistics = *input;
+
+    /// Final statistics output column names.
     const auto & output_columns = step.getOutputStream().header.getNames();
 
-    /// add column statistics
-    for (const auto & column : output_columns)
-    {
-        statistics.addColumnStatistics(column, ColumnStatistics::unknown());
-    }
+    /// Remove the additional columns and add missing ones.
+    adjustStatisticsByColumns(statistics, output_columns);
+
+    /// 2. calculate row count
+    auto row_count = step.getAnalysisResult().selected_rows * context->getCluster(cluster_name)->getShardCount();
+    statistics.setOutputRowSize(row_count);
 
     /// For action_dags in prewhere do not contains all output nodes,
     /// we should append other nodes to statistics
@@ -105,7 +107,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         }
     };
 
-    /// 1. calculate for prewhere filters
+    /// 3. calculate for prewhere filters
     if (step.getPrewhereInfo())
     {
         auto prewhere_info = step.getPrewhereInfo();
@@ -129,7 +131,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         }
     }
 
-    /// 2. calculate for pushed down filters
+    /// 4. calculate for pushed down filters
     for (size_t i = 0; i < step.getFilters().size(); i++)
     {
         auto & predicate = step.getFilters()[i];
@@ -137,6 +139,7 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics, output_columns);
     }
 
+    statistics.adjustStatistics();
     return statistics;
 }
 
@@ -287,48 +290,53 @@ Statistics DeriveStatistics::visit(JoinStep & step)
 
         for (auto & on_clause : on_clauses)
         {
-            for (const auto & column : on_clause.key_names_left)
-            {
-                if (statistics.getColumnStatistics(column)->isUnKnown())
-                    has_unknown_column = true;
-            }
-            for (const auto & column : on_clause.key_names_right)
-            {
-                if (statistics.getColumnStatistics(column)->isUnKnown())
-                    has_unknown_column = true;
-            }
+            if (statistics.hasUnknownColumn(on_clause.key_names_left))
+                has_unknown_column = true;
+
+            if (statistics.hasUnknownColumn(on_clause.key_names_right))
+                has_unknown_column = true;
         }
 
         if (has_unknown_column)
         {
-            switch (join_kind)
-            {
-                case JoinKind::Left:
-                    row_count = left_stats.getOutputRowSize();
-                    break;
-                case JoinKind::Right:
-                    row_count = right_stats.getOutputRowSize();
-                    break;
-                case JoinKind::Inner:
-                    row_count = std::min(left_stats.getOutputRowSize(), right_stats.getOutputRowSize());
-                    break;
-                case JoinKind::Full:
-                    row_count = std::max(left_stats.getOutputRowSize(), right_stats.getOutputRowSize());
-                    break;
-                default:
-                    row_count = cross_join_row_count;
-            }
-            row_count = std::max(1.0, row_count);
-        }
-        else
-        {
             Float64 selectivity = 1.0;
             for (size_t i = 0; i < on_clauses.size(); i++)
             {
-                selectivity *= 0.5; /// TODO add to settings
+                selectivity *= 0.1; /// TODO add to settings
             }
             row_count = cross_join_row_count * selectivity;
         }
+        else
+        {
+            /// TODO calculate by overlap ratio of [min, max] and ndv
+            Float64 selectivity = 1.0;
+            for (size_t i = 0; i < on_clauses.size(); i++)
+            {
+                selectivity *= 0.1; /// TODO add to settings
+            }
+            row_count = cross_join_row_count * selectivity;
+        }
+
+        auto strictness = join.getTableJoin().strictness;
+        switch (join_kind)
+        {
+            case JoinKind::Left:
+                if (strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi)
+                row_count = left_stats.getOutputRowSize();
+                break;
+            case JoinKind::Right:
+                row_count = right_stats.getOutputRowSize();
+                break;
+            case JoinKind::Inner:
+                row_count = std::min(left_stats.getOutputRowSize(), right_stats.getOutputRowSize());
+                break;
+            case JoinKind::Full:
+                row_count = std::max(left_stats.getOutputRowSize(), right_stats.getOutputRowSize());
+                break;
+            default:
+                row_count = cross_join_row_count;
+        }
+        row_count = std::max(1.0, row_count);
 
     }
 
@@ -345,7 +353,7 @@ Statistics DeriveStatistics::visit(JoinStep & step)
     for (const auto & on_clause : join.getClauses())
     {
         chassert(on_clause.key_names_left.size() == on_clause.key_names_right.size());
-        for (size_t i = 0; i < on_clause.key_names_left.size(); i++)
+        for (size_t i = 0; i < on_clause.key_names_left.size(); i++)  ///  TODO inner join with equal
         {
             const auto & left_key = on_clause.key_names_left[i];
             const auto & right_key = on_clause.key_names_right[i];

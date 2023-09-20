@@ -5,10 +5,6 @@
 #include <QueryCoordination/Optimizer/Statistics/Utils.h>
 #include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
 
 namespace
 {
@@ -33,6 +29,11 @@ DB::ActionsDAG::NodeRawConstPtrs findNodesByColumns(const DB::Names & names, DB:
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {

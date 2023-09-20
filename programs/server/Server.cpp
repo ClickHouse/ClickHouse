@@ -1435,6 +1435,9 @@ try
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
         FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
+        if (server_settings.ebable_background_statistics)
+            global_context->initializeStatisticsStorage(server_settings.background_statistics_refresh_period_sec);
+
         auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
         {
             return global_context->getConfigRef();

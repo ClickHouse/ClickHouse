@@ -27,4 +27,21 @@ bool isAlwaysFalse(const ASTPtr & ast)
     return false;
 }
 
+
+void adjustStatisticsByColumns(Statistics & statistics, const Names & output_columns)
+{
+    /// remove additional
+    for (const auto & column : statistics.getColumnNames())
+    {
+        if (std::find(output_columns.begin(), output_columns.end(), column) == output_columns.end())
+            statistics.removeColumnStatistics(column);
+    }
+    /// add missing
+    for (const auto & column : output_columns)
+    {
+        if (!statistics.containsColumnStatistics(column))
+            statistics.addColumnStatistics(column, ColumnStatistics::unknown());
+    }
+}
+
 }

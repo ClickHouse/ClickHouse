@@ -106,6 +106,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/find_symbols.h>
 #include <QueryCoordination/Coordinator.h>
+#include <QueryCoordination/Optimizer/Statistics/IStatisticsStorage.h>
+#include <QueryCoordination/Optimizer/Statistics/CachedStatisticsStorage.h>
 
 
 namespace fs = std::filesystem;
@@ -324,6 +326,9 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
+    mutable std::mutex statistics_storage_mutex;
+    IStatisticsStoragePtr statistics_storage;
+
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::shared_ptr<Clusters> clusters;
@@ -480,6 +485,9 @@ struct ContextSharedPart : boost::noncopyable
         if (shutdown_called)
             return;
         shutdown_called = true;
+
+        /// Stop background table statistics refreshing task.
+        statistics_storage->shutdown();
 
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
@@ -3560,6 +3568,22 @@ StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) con
     /// (We can assume that tables with the same `disk` setting are on the same storage policy).
 
     return storage_policy;
+}
+
+IStatisticsStoragePtr & Context::getStatisticsStorage() const
+{
+    std::lock_guard lock(shared->statistics_storage_mutex);
+    if (!shared->statistics_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics storage must be initialized before requests");
+
+    return shared->statistics_storage;
+}
+
+void Context::initializeStatisticsStorage(UInt64 refresh_interval)
+{
+    std::lock_guard lock(shared->statistics_storage_mutex);
+    if (!shared->statistics_storage)
+        shared->statistics_storage = std::make_shared<CachedStatisticsStorage>(refresh_interval);
 }
 
 DisksMap Context::getDisksMap() const

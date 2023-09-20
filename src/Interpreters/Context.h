@@ -209,6 +209,9 @@ class SessionTracker;
 
 struct ServerSettings;
 
+class IStatisticsStorage;
+using IStatisticsStoragePtr = std::shared_ptr<IStatisticsStorage>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -1091,6 +1094,9 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
+
+    IStatisticsStoragePtr & getStatisticsStorage() const;
+    void initializeStatisticsStorage(UInt64 refresh_interval);
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;

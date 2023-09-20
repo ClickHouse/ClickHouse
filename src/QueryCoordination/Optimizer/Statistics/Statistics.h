@@ -15,7 +15,12 @@ class Statistics
 {
 public:
     static Statistics unknown(const Names & column_names);
+
+    Statistics() = default;
+    Statistics(Float64 row_count, ColumnStatisticsMap column_stats) : output_row_size(row_count), columns_stats_map(column_stats) {}
+
     Statistics clone() const;
+    StatisticsPtr clonePtr() const;
 
     void setOutputRowSize(Float64 row_size);
     Float64 getOutputRowSize() const;
@@ -32,6 +37,8 @@ public:
     Names getColumnNames() const;
 
     bool hasUnknownColumn() const;
+    bool hasUnknownColumn(const Names & columns) const;
+
     void adjustStatistics();
 
     void mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other);

@@ -5,7 +5,7 @@
 #include <QueryCoordination/Optimizer/GroupStep.h>
 #include <QueryCoordination/Optimizer/Memo.h>
 #include <Common/typeid_cast.h>
-#include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
+#include <QueryCoordination/Optimizer/Statistics/DeriveStatistics.h>
 
 
 namespace DB
@@ -42,7 +42,7 @@ Group & Memo::buildGroup(const QueryPlan::Node & node)
     Group & group = groups.back();
 
     GroupNodePtr group_node = std::make_shared<GroupNode>(node.step, child_groups);
-    group.addGroupNode(group_node,  ++group_node_id_counter);
+    group.addGroupNode(group_node, ++group_node_id_counter);
     all_group_nodes.insert(group_node);
     return group;
 }

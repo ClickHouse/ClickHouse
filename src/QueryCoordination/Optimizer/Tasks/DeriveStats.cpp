@@ -51,7 +51,7 @@ void DeriveStats::deriveStats()
         child_statistics.emplace_back(stat);
     }
 
-    DeriveStatistics visitor(child_statistics);
+    DeriveStatistics visitor(child_statistics, getQueryContext());
     Statistics stat = group_node->accept(visitor);
 
     group_node->setDerivedStat();

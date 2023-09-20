@@ -1,12 +1,12 @@
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 Statistics Statistics::unknown(const Names & column_names)
 {
@@ -28,6 +28,19 @@ Statistics Statistics::clone() const
     for (const auto & column_stats : columns_stats_map)
     {
         statistics.addColumnStatistics(column_stats.first, column_stats.second->clone());
+    }
+
+    return statistics;
+}
+
+StatisticsPtr Statistics::clonePtr() const
+{
+    auto statistics = std::make_shared<Statistics>();
+    statistics->setOutputRowSize(output_row_size);
+
+    for (const auto & column_stats : columns_stats_map)
+    {
+        statistics->addColumnStatistics(column_stats.first, column_stats.second->clone());
     }
 
     return statistics;
@@ -93,6 +106,16 @@ bool Statistics::hasUnknownColumn() const
     return false;
 }
 
+bool Statistics::hasUnknownColumn(const Names & columns) const
+{
+    for (auto column : columns)
+    {
+        if (getColumnStatistics(column)->isUnKnown())
+            return true;
+    }
+    return false;
+}
+
 void Statistics::adjustStatistics()
 {
     for (auto column_stats_entry : columns_stats_map)
@@ -105,7 +128,8 @@ void Statistics::adjustStatistics()
 
 void Statistics::mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other)
 {
-    chassert(other);
+    if (!other)
+        return;
     auto my = getColumnStatistics(column_name);
     my->mergeColumnByUnion(other);
 }

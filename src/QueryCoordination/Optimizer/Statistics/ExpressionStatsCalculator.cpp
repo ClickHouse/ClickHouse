@@ -3,14 +3,14 @@
 #include <QueryCoordination/Optimizer/Statistics/getInputNodes.h>
 #include <Common/logger_useful.h>
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-extern const int LOGICAL_ERROR;
-}
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+}
 
 ActionNodeStatistics ExpressionNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {
