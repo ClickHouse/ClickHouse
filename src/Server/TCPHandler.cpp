@@ -166,7 +166,6 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
@@ -1272,10 +1271,9 @@ void TCPHandler::receiveHello()
     String user;
     String password;
     String default_db;
-    /// Receive `hello` packet.
+
     readVarUInt(packet_type, *in);
 
-    /// Sanity check
     if (packet_type != Protocol::Client::Hello)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,

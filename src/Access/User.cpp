@@ -27,8 +27,8 @@ void User::setName(const String & name_)
     /// Also it was possible to create a user with empty name for some reason.
     if (name_.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name is empty");
-    if (startsWith(name_, EncodedUserInfo::USER_INTERSERVER_MARKER))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", EncodedUserInfo::USER_INTERSERVER_MARKER);
+    if (name_ == EncodedUserInfo::USER_INTERSERVER_MARKER)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", name_);
     if (startsWith(name_, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "User name '{}' is reserved", name_);
     name = name_;

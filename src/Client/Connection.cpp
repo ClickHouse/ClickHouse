@@ -194,17 +194,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello(timeouts.handshake_timeout);
 
-#if USE_SSL
-        // You may want to ask a server for a challenge if you want to authenticate using ssh keys
-        if (!ssh_private_key.isEmpty())
-        {
-            if (server_revision < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Authentication using SSH keys is not supported by the server");
-
-            performHandshakeForSSHAuth();
-        }
-#endif
-
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -337,6 +326,8 @@ void Connection::sendHello()
 
         writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, data.encodeBase64()), *out);
         writeStringBinary(password, *out);
+
+        performHandshakeForSSHAuth();
     }
 #endif
     else
