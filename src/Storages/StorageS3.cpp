@@ -484,7 +484,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     : callback(callback_)
 {
     ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, max_threads_count);
-    auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "ReadTaskIteratorPrefetch");
+    auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "S3ReadTaskItr");
 
     std::vector<std::future<String>> keys;
     for (size_t i = 0; i < max_threads_count; ++i)
@@ -1070,6 +1070,7 @@ Pipe StorageS3::read(
 
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
     num_streams = std::min(num_streams, estimated_keys_count);
+    LOG_INFO(&Poco::Logger::get("StorageS3"), "adjusting num_streams={}", num_streams);
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
