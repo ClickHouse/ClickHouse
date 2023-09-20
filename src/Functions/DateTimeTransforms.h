@@ -953,10 +953,6 @@ public:
     {
         return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t.whole));
     }
-    static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
-    {
-        return {time_zone.toDate(t.whole), 0};
-    }
 
     static constexpr bool hasPreimage() { return false; }
 
