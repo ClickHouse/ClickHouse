@@ -352,9 +352,11 @@ Each region will have a regional leader and multiple followers. During replicati
 1. A region leader can fetch part from any replica (inside and outside of the region)
 2. A follower can only fetch part from replicas within the region
 
-If the target part is not ready on any replica within the region, followers will defer execution of the log entry (default 10 seconds). If a follower waits for a leader for too long (default 300 seconds), it will stop waiting and try to fetch on any replica (or check if the part is broken).
+If the target part is not ready on any replica within the region, followers will defer execution of the log entry (default 5 seconds). If a follower waits for a leader for too long (default 300 seconds), it will stop waiting and try to fetch on any replica (or check if the part is broken). The defer time and timeout can be changed by modifying `geo_replication_control_leader_wait` and `geo_replication_control_leader_wait_timeout`.
 
 Above constrains apply for `FETCH_PART` and `ATTACH_PART`. If an entry of type `MERGE_PART` or `MUTATE_PART` also requires fetching, by default it only allows to fetch within region, unless the local merge or mutate results in inconsistent part and need to fetch from somewhere to bring all replicas to a consistent state. To enable fetching merged or mutated parts from different region for a table, set `fetch_merged_part_within_region_only` to `0`.
+
+When fetching from replica outside of the region, by default it only allows to fetch the exact part (not covering part), unless the exact part cannot be found in any replica. This is to avoid repeated data transmission across regions. To enable fetching covering parts across region, set `fetch_covered_part_within_region_only` to `0`.
 
 The leader is per-table. After being elected, the leader will maintain a _lease_ in ZooKeeper, so other node know that there is a leader. All replicas within a region will run leader election if leader is absented (currently leader election is done with ZooKeeper).
 
