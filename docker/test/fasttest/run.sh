@@ -28,6 +28,12 @@ FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/bui
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
 PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+# Work around for non-existent user
+if [ "$HOME" == "/" ]; then
+    HOME="$FASTTEST_WORKSPACE/user-home"
+    mkdir -p "$HOME"
+    export HOME
+fi
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
