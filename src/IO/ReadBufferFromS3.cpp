@@ -231,6 +231,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
         std::optional<Aws::S3::Model::GetObjectResult> result;
+        /// Connection is reusable if we've read the full response.
         bool session_is_reusable = false;
         SCOPE_EXIT(
         {
@@ -266,6 +267,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
+            /// Read remaining bytes after the end of the payload, see HTTPSessionReuseTag.
             istr.ignore(INT64_MAX);
             session_is_reusable = true;
         }
