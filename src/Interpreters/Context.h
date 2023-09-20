@@ -265,7 +265,13 @@ private:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
-    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
+    struct InsertionTableInfo
+    {
+        StorageID table = StorageID::createEmpty();
+        std::optional<Names> column_names;
+    };
+
+    InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -713,9 +719,11 @@ public:
 
     void killCurrentQuery() const;
 
-    bool hasInsertionTable() const { return !insertion_table.empty(); }
-    void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
-    const StorageID & getInsertionTable() const { return insertion_table; }
+    bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
+    bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
+    const StorageID & getInsertionTable() const { return insertion_table_info.table; }
+    const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -1174,6 +1182,7 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    bool canUseParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
 
