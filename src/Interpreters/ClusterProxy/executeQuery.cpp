@@ -199,7 +199,7 @@ void executeQuery(
     {
         LOG_TRACE(
             log,
-            "Parallel reading from replicas is disabled for cluster. There are no shards with more then 1 replica: cluster={}",
+            "Parallel reading from replicas is disabled for cluster. There are no shards with more than 1 replica: cluster={}",
             cluster->getName());
     }
 
