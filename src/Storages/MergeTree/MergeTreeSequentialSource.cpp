@@ -176,7 +176,7 @@ try
             current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
 
             if (should_evaluate_missing_defaults)
             {
