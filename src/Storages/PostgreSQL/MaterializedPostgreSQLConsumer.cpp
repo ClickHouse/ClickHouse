@@ -269,6 +269,20 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 insertDefaultValue(buffer, column_idx);
                 break;
             }
+            case 'b': /// Binary data.
+            {
+                LOG_WARNING(log, "We do not yet process this format of data, will insert default value");
+                insertDefaultValue(buffer, column_idx);
+                break;
+            }
+            default:
+            {
+                LOG_WARNING(log, "Unexpected identifier: {}. This is a bug! Please report an issue on github", identifier);
+                chassert(false);
+
+                insertDefaultValue(buffer, column_idx);
+                break;
+            }
         }
     };
 
@@ -281,6 +295,10 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
         catch (...)
         {
+            LOG_ERROR(log,
+                      "Got error while receiving value for column {}, will insert default value. Error: {}",
+                      column_idx, getCurrentExceptionMessage(true));
+
             insertDefaultValue(buffer, column_idx);
             /// Let's collect only the first exception.
             /// This delaying of error throw is needed because
