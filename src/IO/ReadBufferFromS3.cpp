@@ -99,6 +99,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & version_id_,
     const S3Settings::RequestSettings & request_settings_,
     const ReadSettings & settings_,
+    String buffer_creator_name_,
     bool use_external_buffer_,
     size_t offset_,
     size_t read_until_position_,
@@ -115,10 +116,12 @@ ReadBufferFromS3::ReadBufferFromS3(
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
+    , buffer_creator_name(buffer_creator_name_)
 {
 }
 
 bool ReadBufferFromS3::nextImpl()
+try
 {
     if (read_until_position)
     {
@@ -217,7 +220,11 @@ bool ReadBufferFromS3::nextImpl()
 
     return true;
 }
-
+catch (S3Exception & e)
+{
+    e.addMessage("read buffer created by {}", buffer_creator_name);
+    throw;
+}
 
 size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback)
 {

@@ -169,6 +169,7 @@ bool WebObjectStorage::exists(const std::string & path) const
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
+    const String & /* read_caller_name */,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const

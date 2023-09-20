@@ -30,7 +30,8 @@ S3DataLakeMetadataReadHelper::createReadBuffer(const String & key, ContextPtr co
         key,
         base_configuration.url.version_id,
         request_settings,
-        context->getReadSettings());
+        context->getReadSettings(),
+        "S3DataLakeMetadataReadHelper::createReadBuffer");
 }
 
 bool S3DataLakeMetadataReadHelper::exists(const String & key, const StorageS3::Configuration & configuration)

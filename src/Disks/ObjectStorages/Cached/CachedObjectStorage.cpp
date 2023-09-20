@@ -70,11 +70,12 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
+    const String & read_caller_name,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
+    return object_storage->readObjects(objects, read_caller_name, patchSettings(read_settings), read_hint, file_size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT

@@ -52,6 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
     const StoredObjects & objects,
+    const String & /* read_caller_name */,
     const ReadSettings & read_settings,
     std::optional<size_t>,
     std::optional<size_t>) const
