@@ -4,7 +4,6 @@
 #include <random>
 
 
-
 namespace DB
 {
     namespace ErrorCodes
@@ -55,7 +54,6 @@ Exception::Exception(const Error code_)
 }
 
 Exception::Exception(const Exception & exc) = default;
-
 
 
 SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_)
