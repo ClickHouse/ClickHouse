@@ -160,7 +160,6 @@ void expandSelector(const std::string & path_for_ls,
             << common_suffix;
         listFilesWithRegexpMatchingImpl(path_for_ls, oss.str(), total_bytes_to_read, result, recursive);
     }
-
 }
 
 /* Recursive directory listing with matched paths as a result.
