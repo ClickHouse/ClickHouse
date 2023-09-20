@@ -2,6 +2,7 @@
 #include <set>
 #include <optional>
 #include <memory>
+#include <Poco/Net/NameValueCollection.h>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/Macros.h>
@@ -85,6 +86,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include "Disks/ObjectStorages/S3/diskSettings.h"
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -4008,12 +4010,18 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
+    
+    if (!http_headers.empty())
+    {
+        for (const auto & http_header : http_headers) 
+            client_info.headers.set(http_header.first, http_header.second);
+    }
 }
 
 void Context::setForwardedFor(const String & forwarded_for)
