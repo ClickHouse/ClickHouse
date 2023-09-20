@@ -687,10 +687,9 @@ namespace JSONUtils
         return names_and_types;
     }
 
-    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header)
+    void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header)
     {
-        auto names_and_types = JSONUtils::readMetadata(in);
-        for (const auto & [name, type] : names_and_types)
+        for (const auto & [name, type] : names_and_types_from_metadata)
         {
             if (!header.has(name))
                 continue;
@@ -698,10 +697,16 @@ namespace JSONUtils
             auto header_type = header.getByName(name).type;
             if (!type->equals(*header_type))
                 throw Exception(
-                                ErrorCodes::INCORRECT_DATA,
-                                "Type {} of column '{}' from metadata is not the same as type in header {}",
-                                type->getName(), name, header_type->getName());
+                    ErrorCodes::INCORRECT_DATA,
+                    "Type {} of column '{}' from metadata is not the same as type in header {}",
+                    type->getName(), name, header_type->getName());
         }
+    }
+
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header)
+    {
+        auto names_and_types = JSONUtils::readMetadata(in);
+        validateMetadataByHeader(names_and_types, header);
         return names_and_types;
     }
 
