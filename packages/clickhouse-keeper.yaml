@@ -32,10 +32,10 @@ contents:
   dst: /usr/bin/clickhouse-keeper
 - src: clickhouse-keeper.service
   dst: /lib/systemd/system/clickhouse-keeper.service
-- src: clickhouse
+- src: clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper-client
   type: symlink
-- src: clickhouse
+- src: clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper-converter
   type: symlink
 # docs
