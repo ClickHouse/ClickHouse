@@ -73,7 +73,7 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
 {
     func = func_;
     version = version_;
