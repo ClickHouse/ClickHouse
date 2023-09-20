@@ -104,7 +104,8 @@ static const size_t signal_pipe_buf_size =
     + sizeof(ucontext_t*)
     + sizeof(StackTrace)
     + sizeof(UInt32)
-    + sizeof(void*);
+    + sizeof(void*)
+    + sizeof(UInt64);
 
 using signal_function = void(int, siginfo_t*, void*);
 
