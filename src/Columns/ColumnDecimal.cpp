@@ -80,7 +80,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
         res.data = pos;
     }
     memcpy(pos, &data[n], sizeof(T));
-    return StringRef(pos, sizeof(T));
+    return res;
 }
 
 template <is_decimal T>

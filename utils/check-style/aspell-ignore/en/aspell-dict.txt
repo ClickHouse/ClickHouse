@@ -969,6 +969,8 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDDToDate
+YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -987,6 +989,7 @@ acos
 acosh
 activecube
 activerecord
+addDate
 addDays
 addHours
 addMinutes
@@ -1808,6 +1811,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -2255,6 +2259,7 @@ structureToProtobufSchema
 studentTTest
 studentttest
 subBitmap
+subDate
 subarray
 subarrays
 subcolumn

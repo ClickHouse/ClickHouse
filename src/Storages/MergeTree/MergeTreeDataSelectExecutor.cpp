@@ -46,7 +46,7 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
@@ -329,7 +329,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.min_count_to_compile_aggregate_expression,
                 settings.max_block_size,
                 settings.enable_software_prefetch_in_aggregation,
-                only_merge);
+                only_merge,
+                settings.optimize_group_by_constant_keys);
 
             return std::make_pair(params, only_merge);
         };
@@ -1228,6 +1229,10 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
+        {
+            virt_column_names.push_back(name);
+        }
+        else if (name == BlockNumberColumn::name)
         {
             virt_column_names.push_back(name);
         }
