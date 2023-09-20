@@ -281,3 +281,15 @@ ORDER BY L2Distance(vector, (9000.0, 0.0, 0.0, 0.0))
 LIMIT 1;
 
 DROP TABLE tab;
+
+SELECT '--- Bugs ---';
+
+-- Arrays with default values are rejected, issue #52258
+CREATE TABLE tab (`uuid` String, `vector` Array(Float32), `version` UInt32, INDEX idx vector TYPE annoy()) ENGINE = MergeTree() ORDER BY (uuid);
+INSERT INTO tab (uuid, version) VALUES ('1', 3); -- { serverError INCORRECT_DATA }
+DROP TABLE tab;
+
+-- Tuples with default value work
+CREATE TABLE tab (`uuid` String, `vector` Tuple(Float32, Float32), `version` UInt32, INDEX idx vector TYPE annoy()) ENGINE = MergeTree() ORDER BY (uuid);
+INSERT INTO tab (uuid, version) VALUES ('1', 3); -- works fine
+DROP TABLE tab;
