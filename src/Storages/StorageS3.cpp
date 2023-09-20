@@ -487,6 +487,7 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     auto pool_scheduler = threadPoolCallbackRunner<String>(pool, "S3ReadTaskItr");
 
     std::vector<std::future<String>> keys;
+    keys.reserve(max_threads_count);
     for (size_t i = 0; i < max_threads_count; ++i)
         keys.push_back(pool_scheduler([this] { return callback(); }, Priority{}));
 
