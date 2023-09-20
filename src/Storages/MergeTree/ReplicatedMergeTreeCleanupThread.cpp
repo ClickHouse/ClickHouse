@@ -32,6 +32,12 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
+    if (cleanup_blocker.isCancelled())
+    {
+        LOG_TRACE(LogFrequencyLimiter(log, 30), "Cleanup is cancelled, exiting");
+        return;
+    }
+
     SCOPE_EXIT({ is_running.store(false, std::memory_order_relaxed); });
     is_running.store(true, std::memory_order_relaxed);
 
