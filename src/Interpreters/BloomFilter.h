@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 #include <base/types.h>
 #include <Core/Field.h>
@@ -26,7 +27,6 @@ struct BloomFilterParameters
 
 class BloomFilter
 {
-
 public:
     using UnderType = UInt64;
     using Container = std::vector<UnderType>;
@@ -55,6 +55,10 @@ public:
     UInt64 isEmpty() const;
 
     friend bool operator== (const BloomFilter & a, const BloomFilter & b);
+
+    size_t getSize() const { return size; }
+    size_t getHashes() const { return hashes; }
+    size_t getSeed() const { return seed; }
 private:
 
     size_t size;
