@@ -6,6 +6,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include "DataTypes/IDataType.h"
+#include "Functions/TransformDateTime64.h"
 
 
 namespace DB
@@ -23,6 +25,7 @@ namespace
 class FunctionToDaysSinceYearZero : public IFunction
 {
     using ResultType = DataTypeUInt32;
+    using Transformer = TransformDateTime64<ToDaysSinceYearZeroImpl>;
 public:
     static constexpr auto name = "toDaysSinceYearZero";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToDaysSinceYearZero>(context); }
@@ -37,8 +40,12 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"date", &isDateOrDate32<IDataType>, nullptr, "Date or Date32"}
-        };
+            {"date",
+             [](const IDataType & dt) {
+                return isDateOrDate32<IDataType>(dt) || isDateTime<IDataType>(dt) || isDateTime64<IDataType>(dt);
+             },
+             nullptr,
+             "Date, Date32, DateTime or DateTime64"}};
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args);
 
@@ -54,6 +61,14 @@ public:
             return DateTimeTransformImpl<DataTypeDate, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
             return DateTimeTransformImpl<DataTypeDate32, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
+        else if (which.isDateTime())
+            return DateTimeTransformImpl<DataTypeDateTime, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
+        else if (which.isDateTime64())
+        {
+            const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
+            const Transformer transformer(scale);
+            return DateTimeTransformImpl<DataTypeDateTime64, ResultType, Transformer>::execute(arguments, result_type, input_rows_count, transformer);
+        }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}",
