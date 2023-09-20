@@ -43,7 +43,7 @@ LIMIT 2
 
 -   `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
 -   `?` — Заменяет ровно один любой символ.
--   `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`. В случае, если в какой-либо из строк содержится `/`, то ошибки доступа (permission denied) к существующим, но недоступным директориям/файлам могут быть проигнорированы при помощи настройки [ignore_access_denied_multidirectory_globs](/docs/ru/operations/settings/settings.md#ignore_access_denied_multidirectory_globs).
+-   `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`. Эти строки также могут содержать символ `/`.
 -   `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно (может содержать ведущие нули).
 
 Конструкция с `{}` аналогична табличной функции [remote](remote.md).
@@ -62,5 +62,4 @@ LIMIT 2
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   Параметр [ignore_access_denied_multidirectory_globs](/docs/ru/operations/settings/settings.md#ignore_access_denied_multidirectory_globs)
 
