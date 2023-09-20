@@ -928,9 +928,7 @@ struct ToDayOfYearImpl
 struct ToDaysSinceYearZeroImpl
 {
 private:
-    /// Constant calculated from MySQL's TO_DAYS() implementation.
-    /// https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/mysys/my_time.cc#L1042
-    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1900 = 693'961; /// 01 January, each
+    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528;
 
 public:
     static constexpr auto name = "toDaysSinceYearZero";
@@ -939,18 +937,27 @@ public:
     {
         throwDateTimeIsNotSupported(name);
     }
-    static UInt32 execute(UInt32, const DateLUTImpl &)
+    static UInt32 execute(UInt32 d, const DateLUTImpl &)
     {
-        throwDateTimeIsNotSupported(name);
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + (d / 86400);
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1900 + d;
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + d;
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1900 + d;
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + d;
     }
+    static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t.whole));
+    }
+    static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return {time_zone.toDate(t.whole), 0};
+    }
+
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
