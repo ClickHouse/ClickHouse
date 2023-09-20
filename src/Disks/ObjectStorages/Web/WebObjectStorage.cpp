@@ -110,7 +110,7 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
 WebObjectStorage::WebObjectStorage(
     const String & url_,
     ContextPtr context_)
-    : WithContext(context_->getGlobalContext())
+    : WithContext(context_->getBufferContext())
     , url(url_)
     , log(&Poco::Logger::get("WebObjectStorage"))
 {

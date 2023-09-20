@@ -90,8 +90,6 @@ void ProgressValues::writeJSON(WriteBuffer & out, bool add_braces) const
     writeText(result_rows, out);
     writeCString("\",\"result_bytes\":\"", out);
     writeText(result_bytes, out);
-    writeCString("\",\"elapsed_ns\":\"", out);
-    writeText(elapsed_ns, out);
     writeCString("\"", out);
     if (add_braces)
         writeCString("}", out);
@@ -239,11 +237,6 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
 void Progress::writeJSON(WriteBuffer & out, bool add_braces) const
 {
     getValues().writeJSON(out, add_braces);
-}
-
-void Progress::incrementElapsedNs(UInt64 elapsed_ns_)
-{
-    elapsed_ns.fetch_add(elapsed_ns_, std::memory_order_relaxed);
 }
 
 }

@@ -138,9 +138,8 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, query.columns);
     Names names;
-    names.reserve(columns_ast->children.size());
+    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, query.columns);
     for (const auto & identifier : columns_ast->children)
     {
         std::string current_name = identifier->getColumnName();
@@ -148,25 +147,6 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return getSampleBlock(names, table, metadata_snapshot);
-}
-
-std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
-{
-    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
-    if (!insert_query || !insert_query->columns)
-        return std::nullopt;
-
-    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
-    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
-    Names names;
-    names.reserve(columns_ast->children.size());
-    for (const auto & identifier : columns_ast->children)
-    {
-        std::string current_name = identifier->getColumnName();
-        names.emplace_back(std::move(current_name));
-    }
-
-    return names;
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -476,7 +456,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
-                new_context->setInsertionTable(getContext()->getInsertionTable(), getContext()->getInsertionTableColumnNames());
+                new_context->setInsertionTable(getContext()->getInsertionTable());
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 

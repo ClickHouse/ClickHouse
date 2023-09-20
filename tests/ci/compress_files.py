@@ -7,11 +7,10 @@ from typing import Optional
 
 
 PIGZ = Path("/usr/bin/pigz")
-SUFFIX = ".zst"
 
 
 def compress_file_fast(path: Path, archive_path: Path) -> None:
-    if archive_path.suffix == SUFFIX:
+    if archive_path.suffix == ".zst":
         subprocess.check_call(f"zstd < {path} > {archive_path}", shell=True)
     elif PIGZ.exists():
         subprocess.check_call(f"pigz < {path} > {archive_path}", shell=True)
@@ -23,7 +22,7 @@ def compress_fast(
     path: Path, archive_path: Path, exclude: Optional[Path] = None
 ) -> None:
     program_part = ""
-    if archive_path.suffix == SUFFIX:
+    if archive_path.suffix == ".zst":
         logging.info("zstd will be used for compression")
         program_part = "--use-compress-program='zstd --threads=0'"
     elif PIGZ.exists():
@@ -40,7 +39,6 @@ def compress_fast(
     else:
         exclude_part = f"--exclude {exclude}"
 
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
     fname = path.name
 
     cmd = (
@@ -52,7 +50,7 @@ def compress_fast(
 
 def decompress_fast(archive_path: Path, result_path: Optional[Path] = None) -> None:
     program_part = ""
-    if archive_path.suffix == SUFFIX:
+    if archive_path.suffix == ".zst":
         logging.info(
             "zstd will be used for decompression ('%s' -> '%s')",
             archive_path,
@@ -77,7 +75,6 @@ def decompress_fast(archive_path: Path, result_path: Optional[Path] = None) -> N
     if result_path is None:
         subprocess.check_call(f"tar {program_part} -xf {archive_path}", shell=True)
     else:
-        result_path.mkdir(parents=True, exist_ok=True)
         subprocess.check_call(
             f"tar {program_part} -xf {archive_path} -C {result_path}",
             shell=True,

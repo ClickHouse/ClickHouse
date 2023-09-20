@@ -61,27 +61,10 @@ std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
     return res;
 }
 
-size_t ThreadGroup::getPeakThreadsUsage() const
+void ThreadGroup::linkThread(UInt64 thread_it)
 {
     std::lock_guard lock(mutex);
-    return peak_threads_usage;
-}
-
-
-void ThreadGroup::linkThread(UInt64 thread_id)
-{
-    std::lock_guard lock(mutex);
-    thread_ids.insert(thread_id);
-
-    ++active_thread_count;
-    peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
-}
-
-void ThreadGroup::unlinkThread()
-{
-    std::lock_guard lock(mutex);
-    chassert(active_thread_count > 0);
-    --active_thread_count;
+    thread_ids.insert(thread_it);
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -259,8 +242,6 @@ void ThreadStatus::detachFromGroup()
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
-
-    thread_group->unlinkThread();
 
     thread_group.reset();
 

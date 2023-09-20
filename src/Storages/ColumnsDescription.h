@@ -98,7 +98,7 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<>
+class ColumnsDescription : public IHints<1, ColumnsDescription>
 {
 public:
     ColumnsDescription() = default;

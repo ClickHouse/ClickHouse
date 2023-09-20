@@ -221,12 +221,13 @@ bool ReadBufferFromS3::nextImpl()
 
 size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback)
 {
-    size_t initial_n = n;
+    if (n == 0)
+        return 0;
+
     size_t sleep_time_with_backoff_milliseconds = 100;
-    for (size_t attempt = 0; n > 0; ++attempt)
+    for (size_t attempt = 0;; ++attempt)
     {
         bool last_attempt = attempt + 1 >= request_settings.max_single_read_retries;
-        size_t bytes_copied = 0;
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
 
@@ -235,12 +236,14 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             auto result = sendRequest(range_begin, range_begin + n - 1);
             std::istream & istr = result.GetBody();
 
-            copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied);
+            size_t bytes = copyFromIStreamWithProgressCallback(istr, to, n, progress_callback);
 
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes);
 
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_copied, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+                read_settings.remote_throttler->add(bytes, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+
+            return bytes;
         }
         catch (Poco::Exception & e)
         {
@@ -250,13 +253,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
         }
-
-        range_begin += bytes_copied;
-        to += bytes_copied;
-        n -= bytes_copied;
     }
-
-    return initial_n;
 }
 
 bool ReadBufferFromS3::processException(Poco::Exception & e, size_t read_offset, size_t attempt) const

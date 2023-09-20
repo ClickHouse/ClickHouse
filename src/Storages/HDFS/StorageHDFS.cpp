@@ -42,18 +42,12 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Poco/URI.h>
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
 
 #include <filesystem>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace fs = std::filesystem;
 
@@ -79,8 +73,7 @@ namespace
     /// Forward-declared to use in LSWithFoldedRegexpMatching w/o circular dependency.
     std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(const String & path_for_ls,
                                                                 const HDFSFSPtr & fs,
-                                                                const String & for_match,
-                                                                bool ignore_access_denied_multidirectory_globs);
+                                                                const String & for_match);
 
     /*
      * When `{...}` has any `/`s, it must be processed in a different way:
@@ -96,8 +89,7 @@ namespace
         const String & suffix_with_globs,
         re2::RE2 & matcher,
         const size_t max_depth,
-        const size_t next_slash_after_glob_pos,
-        bool ignore_access_denied_multidirectory_globs)
+        const size_t next_slash_after_glob_pos)
     {
         /// We don't need to go all the way in every directory if max_depth is reached
         /// as it is upper limit of depth by simply counting `/`s in curly braces
@@ -108,12 +100,9 @@ namespace
         ls.file_info = hdfsListDirectory(fs.get(), path_for_ls.data(), &ls.length);
         if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
         {
-            // ignore file not found (as in LSWithRegexpMatching)
-            // keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
-            // ignore permission denied if ignore_access_denied_multidirectory_globs is true
-            if (!(ignore_access_denied_multidirectory_globs && errno == EACCES))
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path_for_ls, String(hdfsGetLastError()));
+            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", path_for_ls, String(hdfsGetLastError()));
         }
 
         std::vector<StorageHDFS::PathWithInfo> result;
@@ -139,16 +128,15 @@ namespace
                 else
                 {
                     std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(
-                        fs::path(full_path) / "" , fs, suffix_with_globs.substr(next_slash_after_glob_pos),
-                        ignore_access_denied_multidirectory_globs);
+                        fs::path(full_path) / "" , fs, suffix_with_globs.substr(next_slash_after_glob_pos));
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
             }
             else if (is_directory)
             {
                 std::vector<StorageHDFS::PathWithInfo> result_part = LSWithFoldedRegexpMatching(
-                    fs::path(full_path), fs, processed_suffix + dir_or_file_name, suffix_with_globs,
-                    matcher, max_depth - 1, next_slash_after_glob_pos, ignore_access_denied_multidirectory_globs);
+                    fs::path(full_path), fs, processed_suffix + dir_or_file_name,
+                    suffix_with_globs, matcher, max_depth - 1, next_slash_after_glob_pos);
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -161,8 +149,7 @@ namespace
     std::vector<StorageHDFS::PathWithInfo> LSWithRegexpMatching(
         const String & path_for_ls,
         const HDFSFSPtr & fs,
-        const String & for_match,
-        bool ignore_access_denied_multidirectory_globs)
+        const String & for_match)
     {
         const size_t first_glob_pos = for_match.find_first_of("*?{");
         const bool has_glob = first_glob_pos != std::string::npos;
@@ -204,8 +191,8 @@ namespace
 
         if (slashes_in_glob)
         {
-            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs, matcher,
-                                              slashes_in_glob, next_slash_after_glob_pos, ignore_access_denied_multidirectory_globs);
+            return LSWithFoldedRegexpMatching(fs::path(prefix_without_globs), fs, "", suffix_with_globs,
+                                              matcher, slashes_in_glob, next_slash_after_glob_pos);
         }
 
         HDFSFileInfo ls;
@@ -238,8 +225,7 @@ namespace
             {
                 if (re2::RE2::FullMatch(file_name, matcher))
                 {
-                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs,
-                        suffix_with_globs.substr(next_slash_after_glob_pos), ignore_access_denied_multidirectory_globs);
+                    std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash_after_glob_pos));
                     /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                     std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                 }
@@ -267,7 +253,7 @@ namespace
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
 
-        auto res = LSWithRegexpMatching("/", fs, path_from_uri, context->getSettingsRef().ignore_access_denied_multidirectory_globs);
+        auto res = LSWithRegexpMatching("/", fs, path_from_uri);
         return res;
     }
 }

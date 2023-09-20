@@ -48,7 +48,6 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
-    accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
     writeHeaderProgressImpl("X-ClickHouse-Summary: ");
 }
 
@@ -165,7 +164,6 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, In
     peak_memory_usage = peak_memory_usage_;
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
-        accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
         /// Send all common headers before our special progress headers.

@@ -5,6 +5,11 @@ test_distributed_ddl/test.py::test_default_database[configs_secure]
 test_distributed_ddl/test.py::test_on_server_fail[configs]
 test_distributed_ddl/test.py::test_on_server_fail[configs_secure]
 test_distributed_insert_backward_compatibility/test.py::test_distributed_in_tuple
+test_distributed_load_balancing/test.py::test_distributed_replica_max_ignored_errors
+test_distributed_load_balancing/test.py::test_load_balancing_default
+test_distributed_load_balancing/test.py::test_load_balancing_priority_round_robin[dist_priority]
+test_distributed_load_balancing/test.py::test_load_balancing_priority_round_robin[dist_priority_negative]
+test_distributed_load_balancing/test.py::test_load_balancing_round_robin
 test_mask_sensitive_info/test.py::test_encryption_functions
 test_merge_table_over_distributed/test.py::test_global_in
 test_merge_table_over_distributed/test.py::test_select_table_name_from_merge_over_distributed
@@ -90,4 +95,3 @@ test_odbc_interaction/test.py::test_postgres_insert
 test_zookeeper_config/test.py::test_chroot_with_different_root
 test_zookeeper_config/test.py::test_chroot_with_same_root
 test_merge_tree_azure_blob_storage/test.py::test_table_manipulations
-test_parallel_replicas_skip_shards/test.py::test_skip_unavailable_shards

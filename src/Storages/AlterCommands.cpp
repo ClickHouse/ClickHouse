@@ -1350,14 +1350,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::hasNonReplicatedAlterCommand() const
+bool AlterCommands::hasSettingsAlterCommand() const
 {
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
-}
-
-bool AlterCommands::areNonReplicatedAlterCommands() const
-{
-    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const

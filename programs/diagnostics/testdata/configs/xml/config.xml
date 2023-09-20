@@ -1209,6 +1209,8 @@
                 <single_read_retries>4</single_read_retries>
                 <min_bytes_for_seek>1000</min_bytes_for_seek>
                 <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+                <cache_enabled>true</cache_enabled>
+                <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </s3>
         </disks>

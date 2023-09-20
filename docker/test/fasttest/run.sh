@@ -120,7 +120,7 @@ function clone_submodules
             contrib/libxml2
             contrib/libunwind
             contrib/fmtlib
-            contrib/aklomp-base64
+            contrib/base64
             contrib/cctz
             contrib/libcpuid
             contrib/libdivide

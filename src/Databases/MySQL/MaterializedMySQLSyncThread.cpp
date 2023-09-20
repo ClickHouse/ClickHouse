@@ -6,7 +6,6 @@
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
 #include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
-#include <Databases/MySQL/tryConvertStringLiterals.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -392,9 +391,7 @@ static inline void dumpDataForTables(
             CurrentThread::QueryScope query_scope(query_context);
 
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-            String create_query = iterator->second;
-            tryConvertStringLiterals(create_query);
-            tryToExecuteQuery(query_prefix + " " + create_query, query_context, database_name, comment); /// create table.
+            tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
             auto pipeline = getTableOutput(database_name, table_name, query_context);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
@@ -819,8 +816,7 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         CurrentThread::QueryScope query_scope(query_context);
 
         String query = query_event.query;
-        tryQuoteUnrecognizedTokens(query);
-        tryConvertStringLiterals(query);
+        tryQuoteUnrecognizedTokens(query, query);
         if (!materialized_tables_list.empty())
         {
             auto table_id = tryParseTableIDFromDDL(query, query_event.schema);

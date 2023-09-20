@@ -149,9 +149,6 @@ public:
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 
-    /** See IColumn::shrinkToFit() */
-    Block shrinkToFit() const;
-
     void clear();
     void swap(Block & other) noexcept;
 

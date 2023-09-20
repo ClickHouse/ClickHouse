@@ -67,7 +67,6 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
-    size_t peak_threads_usage;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;

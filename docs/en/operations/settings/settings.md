@@ -4644,14 +4644,6 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
-## partial_result_update_duration_ms
-
-Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
-
-## max_rows_in_partial_result
-
-Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
-
 ## validate_tcp_client_information {#validate-tcp-client-information}
 
 Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
@@ -4666,45 +4658,4 @@ The default value is `false`.
 
 ``` xml
 <validate_tcp_client_information>true</validate_tcp_client_information>
-```
-
-## ignore_access_denied_multidirectory_globs {#ignore_access_denied_multidirectory_globs}
-
-Allows to ignore 'permission denied' errors when using multi-directory `{}` globs for [File](../../sql-reference/table-functions/file.md#globs_in_path) and [HDFS](../../sql-reference/table-functions/hdfs.md) storages.
-This setting is only applicable to multi directory `{}` globs.
-
-Possible values: `0`, `1`.
-
-Default value: `0`.
-
-### Example
-
-Having the following structure in `user_files`:
-```
-my_directory/
-├── data1
-│   ├── f1.csv
-├── data2
-│   ├── f2.csv
-└── test_root
-```
-where `data1`, `data2` directories are accessible, but one has no rights to read `test_root` directories.
-
-For a query like `SELECT *, _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV)` an exception will be thrown:
-`Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied`.  
-It happens because a multi-directory glob requires a recursive search in _all_ available directories under `my_directory`.
-
-If this setting is on, all inaccessible directories will be silently skipped, even if they are explicitly specified inside `{}`.
-
-```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 0;
-
-Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied
-```
-```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 1;
-
-┌─_path───────────────────┬─_file───────┐
-│ <full path to file>     │ <file name> │
-└─────────────────────────┴─────────────┘
 ```

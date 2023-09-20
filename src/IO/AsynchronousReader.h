@@ -74,7 +74,6 @@ public:
     /// or destroy the whole reader before destroying the buffer for request.
     /// The method can be called concurrently from multiple threads.
     virtual std::future<Result> submit(Request request) = 0;
-    virtual Result execute(Request request) = 0;
 
     virtual void wait() = 0;
 

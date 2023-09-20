@@ -143,9 +143,6 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     if (rows_read == 0)
         return;
 
-    if (rows_read > std::numeric_limits<uint32_t>::max())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than 4B rows per index granule.");
-
     if (index_sample_block.columns() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
 
