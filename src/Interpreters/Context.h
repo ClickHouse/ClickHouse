@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/NameValueCollection.h>
-#include "Core/Types.h"
+#include <Core/Types.h>
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
@@ -806,10 +806,6 @@ public:
     /// Storage of forbidden HTTP headers from config.xml
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
-    const Poco::Net::NameValueCollection & getHttpHeaders() const
-    {
-        return client_info.headers; 
-    }
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;

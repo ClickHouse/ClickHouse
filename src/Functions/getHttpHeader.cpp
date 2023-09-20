@@ -4,9 +4,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
-#include "Common/CurrentThread.h"
-#include <Common/Macros.h>
-#include "Interpreters/ClientInfo.h"
+#include <Common/CurrentThread.h>
+#include "Disks/DiskType.h"
 #include "Interpreters/Context_fwd.h"
 #include <Core/Field.h>
 #include <Poco/Net/NameValueCollection.h>
@@ -18,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace
@@ -28,18 +26,18 @@ namespace
   * If there no such parameter or the method of request is not
   * http, the function will return empty string.
   */
-class FunctionGetHttpHeader : public IFunction
+class FunctionGetHttpHeader : public IFunction, WithContext
 {
 private:
 
 public:
-    FunctionGetHttpHeader() = default;
+    explicit FunctionGetHttpHeader(ContextPtr context_): WithContext(context_) {}
 
     static constexpr auto name = "getHttpHeader";
 
-     static FunctionPtr create(ContextPtr /*context*/)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionGetHttpHeader>();
+        return std::make_shared<FunctionGetHttpHeader>(context_);
     }
 
 
@@ -64,8 +62,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const auto & query_context = DB::CurrentThread::getQueryContext();
-        const auto & method = query_context->getClientInfo().http_method; 
+        const auto & client_info = getContext()->getClientInfo();
+        const auto & method = client_info.http_method;
 
         const auto & headers = DB::CurrentThread::getQueryContext()->getClientInfo().headers;
 

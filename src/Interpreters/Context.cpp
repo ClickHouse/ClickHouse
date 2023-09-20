@@ -86,7 +86,6 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include "Disks/ObjectStorages/S3/diskSettings.h"
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -4016,12 +4015,9 @@ void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
-    
+
     if (!http_headers.empty())
-    {
-        for (const auto & http_header : http_headers) 
-            client_info.headers.set(http_header.first, http_header.second);
-    }
+        client_info.headers = http_headers;
 }
 
 void Context::setForwardedFor(const String & forwarded_for)

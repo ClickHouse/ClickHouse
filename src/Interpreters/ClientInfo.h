@@ -98,7 +98,6 @@ public:
     /// For mysql and postgresql
     UInt64 connection_id = 0;
     Poco::Net::NameValueCollection headers;
-    void setHttpHeaders(const Poco::Net::NameValueCollection & _headers) { headers = _headers; }
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
