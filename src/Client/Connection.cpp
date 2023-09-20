@@ -60,7 +60,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 Connection::~Connection() = default;

@@ -5,7 +5,7 @@
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Common/SSH/Wrappers.h"
+#include <Common/SSH/Wrappers.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>

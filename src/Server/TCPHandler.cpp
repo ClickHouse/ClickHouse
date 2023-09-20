@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <exception>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -1242,7 +1243,7 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
-String createChallenge()
+[[ maybe_unused ]] String createChallenge()
 {
 #if USE_SSL
     pcg64_fast rng(randomSeed());
@@ -1371,9 +1372,9 @@ void TCPHandler::receiveHello()
     }
 
     /// Perform handshake for SSH authentication
-    if (session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
+    if (is_ssh_based_auth)
     {
-        if (!is_ssh_based_auth)
+        if (session->getAuthenticationTypeOrLogInFailure(user) != AuthenticationType::SSH_KEY)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
