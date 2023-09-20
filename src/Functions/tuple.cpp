@@ -5,7 +5,8 @@ namespace DB
 
 REGISTER_FUNCTION(Tuple)
 {
-    factory.registerFunction<FunctionTuple>();
+    factory.registerFunction<FunctionTuple<false>>();
+    factory.registerFunction<FunctionTuple<true>>();
 }
 
 }
