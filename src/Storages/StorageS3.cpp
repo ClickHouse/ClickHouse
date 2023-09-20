@@ -182,9 +182,7 @@ public:
 
     size_t objectsCount()
     {
-        assert(outcome_future.valid());
-        first_outcome = outcome_future.get();
-        return first_outcome->GetResult().GetContents().size();
+        return buffer.size();
     }
 
     ~Impl()
@@ -231,18 +229,8 @@ private:
     void fillInternalBufferAssumeLocked()
     {
         buffer.clear();
-
-        ListObjectsOutcome outcome;
-        if (unlikely(first_outcome))
-        {
-            outcome = std::move(*first_outcome);
-            first_outcome = std::nullopt;
-        }
-        else
-        {
-            assert(outcome_future.valid());
-            outcome = outcome_future.get();
-        }
+        assert(outcome_future.valid());
+        auto outcome = outcome_future.get();
 
         if (!outcome.IsSuccess())
         {
@@ -359,7 +347,6 @@ private:
     ThreadPool list_objects_pool;
     ThreadPoolCallbackRunner<ListObjectsOutcome> list_objects_scheduler;
     std::future<ListObjectsOutcome> outcome_future;
-    std::optional<ListObjectsOutcome> first_outcome;  /// the result will be set by `estimatedKeysCount`
     std::function<void(FileProgress)> file_progress_callback;
 };
 
