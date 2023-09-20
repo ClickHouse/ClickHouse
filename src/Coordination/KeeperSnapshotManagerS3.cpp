@@ -80,6 +80,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto headers = auth_settings.headers;
 
         static constexpr size_t s3_max_redirects = 10;
+        static constexpr size_t s3_retry_attempts = 10;
         static constexpr bool enable_s3_requests_logging = false;
 
         if (!new_uri.key.empty())
@@ -90,7 +91,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings.region,
-            RemoteHostFilter(), s3_max_redirects,
+            RemoteHostFilter(), s3_max_redirects, s3_retry_attempts,
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
             new_uri.uri.getScheme());
