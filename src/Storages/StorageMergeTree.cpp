@@ -2231,10 +2231,13 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
 
                 results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
-            catch (const Exception & ex)
+            catch (...)
             {
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + getCurrentExceptionMessage(false) + "'");
             }
         }
         else
@@ -2244,9 +2247,12 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
                 checkDataPart(part, true);
                 results.emplace_back(part->name, true, "");
             }
-            catch (const Exception & ex)
+            catch (...)
             {
-                results.emplace_back(part->name, false, ex.message());
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
+                results.emplace_back(part->name, false, getCurrentExceptionMessage(false));
             }
         }
     }
