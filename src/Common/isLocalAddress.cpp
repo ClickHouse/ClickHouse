@@ -38,8 +38,9 @@ struct NetworkInterfaces : public boost::noncopyable
 
     void swap(NetworkInterfaces && other)
     {
+        auto * tmp = ifaddr;
         ifaddr = other.ifaddr;
-        other.ifaddr = nullptr;
+        other.ifaddr = tmp;
     }
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
