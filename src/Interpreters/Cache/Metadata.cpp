@@ -563,6 +563,9 @@ void CacheMetadata::downloadThreadFunc()
 
 void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)
 {
+    FileSegment::setCallerId(cache_user_id);
+    SCOPE_EXIT({ FileSegment::resetCallerId(); });
+
     chassert(file_segment.assertCorrectness());
 
     if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
