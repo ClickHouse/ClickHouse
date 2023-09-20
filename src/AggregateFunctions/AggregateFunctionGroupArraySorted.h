@@ -65,8 +65,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const auto & row_values = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
-        const auto & row_value = row_values[row_num];
+        const auto & row_value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
         auto & cur_elems = this->data(place);
 
         cur_elems.value.push_back(row_value, arena);
@@ -90,8 +89,10 @@ public:
 
         if (rhs_elems.value.size())
             cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
+        if (cur_elems.value.size() < max_elems)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
 
-        std::sort(cur_elems.value.begin(), cur_elems.value.end());
+        RadixSort<RadixSortNumTraits<T>>::executeLSD(cur_elems.value.data(), cur_elems.value.size());
         if (limit_num_elems)
             cur_elems.value.resize(max_elems, arena);
     }
@@ -136,17 +137,21 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * a) const override
+    static void checkArraySize(size_t elems, size_t max_elems)
+    {
+        if (unlikely(elems > max_elems))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size {} (maximum: {})", elems, max_elems);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         auto& value = this->data(place).value;
-
+        if (value.size() < max_elems)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
         RadixSort<RadixSortNumTraits<T>>::executeLSD(value.data(), value.size());
         if (limit_num_elems)
-        {
-            if (value.size() < max_elems)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
-            value.resize(max_elems, a);
-        }
+            value.resize(max_elems, arena);
         size_t size = value.size();
 
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
@@ -247,7 +252,11 @@ public:
 
         std::sort(cur_elems.value.begin(), cur_elems.value.end());
         if (limit_num_elems)
+        {
+            if (cur_elems.value.size() < max_elems)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The max size of result array is bigger than the actual array size");
             cur_elems.value.resize(max_elems, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -294,8 +303,8 @@ public:
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
         auto & value = data(place).value;
-        std::sort(value.begin(), value.end());
 
+        std::sort(value.begin(), value.end());
         if (limit_num_elems)
         {
             if (value.size() < max_elems)
