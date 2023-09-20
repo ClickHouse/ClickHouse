@@ -247,7 +247,7 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #define NORETURN [[noreturn]]
 #else
 #define NORETURN

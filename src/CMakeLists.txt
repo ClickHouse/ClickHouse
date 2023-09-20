@@ -169,6 +169,10 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
+if (TARGET ch_contrib::azure_sdk)
+    target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::azure_sdk)
+endif()
+
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
 
 add_subdirectory(Access/Common)
@@ -312,7 +316,6 @@ target_link_libraries(clickhouse_common_io
             boost::context
             ch_contrib::cityhash
             ch_contrib::re2
-            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation

@@ -919,11 +919,17 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-
         PullingPipelineExecutor executor(pipeline);
+        update_field_loaded_block.reset();
         Block block;
+
         while (executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
+            convertToFullIfSparse(block);
+
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
