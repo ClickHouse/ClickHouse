@@ -4,7 +4,7 @@
 SYSTEM DROP QUERY CACHE;
 
 -- rand() is non-deterministic, the query is rejected by default
-SELECT COUNT(rand(1)) SETTINGS use_query_cache = true; -- { serverError 703 }
+SELECT COUNT(rand(1)) SETTINGS use_query_cache = true; -- { serverError CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT COUNT(*) FROM system.query_cache;
 
 SELECT '---';
