@@ -115,6 +115,7 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     bool recursive = false);
 
+/// Process {a,b,c...} globs separately: don't match it against regex, but generate a,b,c strings instead.
 void expandSelector(const std::string & path_for_ls,
                     const std::string & for_match,
                     size_t & total_bytes_to_read,
