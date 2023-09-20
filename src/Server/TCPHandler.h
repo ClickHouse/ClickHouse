@@ -266,7 +266,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);

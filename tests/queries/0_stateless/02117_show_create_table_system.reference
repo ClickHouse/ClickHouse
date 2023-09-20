@@ -145,6 +145,7 @@ CREATE TABLE system.detached_parts
     `partition_id` Nullable(String),
     `name` String,
     `bytes_on_disk` UInt64,
+    `modification_time` DateTime,
     `disk` String,
     `path` String,
     `reason` Nullable(String),

@@ -36,6 +36,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/BackupLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -86,6 +87,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int ABORTED;
 }
 
 
@@ -682,12 +684,15 @@ void InterpreterSystemQuery::restoreReplica()
     table_replicated_ptr->restoreMetadataInZooKeeper();
 }
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
-    auto table_ddl_guard = need_ddl_guard
-        ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
-        : nullptr;
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+
+    auto restart_replica_lock = DatabaseCatalog::instance().tryGetLockForRestartReplica(replica.getDatabaseName());
+    if (!restart_replica_lock)
+        throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
+                        backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
@@ -766,21 +771,13 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     if (replica_names.empty())
         return;
 
-    TableGuards guards;
-
-    for (const auto & name : replica_names)
-        guards.emplace(UniqueTableName{name.database_name, name.table_name}, nullptr);
-
-    for (auto & guard : guards)
-        guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
-
     size_t threads = std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size());
     LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), threads);
     ThreadPool pool(CurrentMetrics::RestartReplicaThreads, CurrentMetrics::RestartReplicaThreadsActive, threads);
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
     }
     pool.wait();
 }

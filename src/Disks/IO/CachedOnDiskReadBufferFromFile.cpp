@@ -1205,13 +1205,6 @@ off_t CachedOnDiskReadBufferFromFile::getPosition()
     return file_offset_of_buffer_end - available();
 }
 
-void CachedOnDiskReadBufferFromFile::assertCorrectness() const
-{
-    if (!CachedObjectStorage::canUseReadThroughCache(settings)
-        && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
-}
-
 String CachedOnDiskReadBufferFromFile::getInfoForLog()
 {
     String current_file_segment_info;

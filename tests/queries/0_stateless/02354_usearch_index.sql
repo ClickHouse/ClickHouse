@@ -8,8 +8,8 @@ SELECT '--- Negative tests ---';
 
 DROP TABLE IF EXISTS tab;
 
--- must have at most 1 arguments
-CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('too', 'many')) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
+-- must have at most 2 arguments
+CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('too', 'many', 'args')) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
 
 -- first argument (distance_function) must be String
 CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch(3)) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
@@ -19,6 +19,9 @@ CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index (vector, i
 
 -- reject unsupported distance functions
 CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('wormholeDistance')) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_DATA }
+
+-- reject unsupported distance functions
+CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('L2Distance', 'invalid')) ENGINE = MergeTree ORDER BY id; -- { serverError INCORRECT_DATA }
 
 -- must be created on Array/Tuple(Float32) columns
 SET allow_suspicious_low_cardinality_types = 1;
@@ -259,4 +262,29 @@ FROM tab
 ORDER BY L2Distance(vector, (9000.0, 0.0, 0.0, 0.0))
 LIMIT 1;
 
+DROP TABLE tab;
+
+SELECT '--- Test quantization ---';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab(id Int32, vector Array(Float32), INDEX usearch_index vector TYPE usearch('L2Distance', 'f16')) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab VALUES (1, [0.0, 0.0, 10.0]), (2, [0.0, 0.0, 10.5]), (3, [0.0, 0.0, 9.5]), (4, [0.0, 0.0, 9.7]), (5, [0.0, 0.0, 10.2]), (6, [10.0, 0.0, 0.0]), (7, [9.5, 0.0, 0.0]), (8, [9.7, 0.0, 0.0]), (9, [10.2, 0.0, 0.0]), (10, [10.5, 0.0, 0.0]), (11, [0.0, 10.0, 0.0]), (12, [0.0, 9.5, 0.0]), (13, [0.0, 9.7, 0.0]), (14, [0.0, 10.2, 0.0]), (15, [0.0, 10.5, 0.0]);
+
+SELECT *
+FROM tab
+WHERE L2Distance(vector, [0.0, 0.0, 10.0]) < 1.0
+LIMIT 3;
+
+DROP TABLE tab;
+
+SELECT '--- Bugs ---';
+
+-- Arrays with default values are rejected, issue #52258
+CREATE TABLE tab (`uuid` String, `vector` Array(Float32), `version` UInt32, INDEX idx vector TYPE usearch()) ENGINE = MergeTree() ORDER BY (uuid);
+INSERT INTO tab (uuid, version) VALUES ('1', 3); -- { serverError INCORRECT_DATA }
+DROP TABLE tab;
+
+-- Tuples with default value work
+CREATE TABLE tab (`uuid` String, `vector` Tuple(Float32, Float32), `version` UInt32, INDEX idx vector TYPE usearch()) ENGINE = MergeTree() ORDER BY (uuid);
+INSERT INTO tab (uuid, version) VALUES ('1', 3); -- works fine
 DROP TABLE tab;
