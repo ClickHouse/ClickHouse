@@ -18,4 +18,6 @@
 283
 282
 281
-read_rows=ok
+read_rows:ok
+ReadFromMergeTree (default.table1)
+ReadType: InReverseOrder
