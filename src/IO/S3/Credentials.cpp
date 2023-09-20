@@ -485,6 +485,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
+                configuration.s3_retry_attempts,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
@@ -494,6 +495,19 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
 
+        {
+            DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                configuration.region,
+                configuration.remote_host_filter,
+                configuration.s3_max_redirects,
+                configuration.s3_retry_attempts,
+                configuration.enable_s3_requests_logging,
+                configuration.for_disk_s3,
+                configuration.get_request_throttler,
+                configuration.put_request_throttler);
+            AddProvider(std::make_shared<SSOCredentialsProvider>(
+                std::move(aws_client_configuration), credentials_configuration.expiration_window_seconds));
+        }
 
         /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
         const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
@@ -529,6 +543,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.region,
                 configuration.remote_host_filter,
                 configuration.s3_max_redirects,
+                configuration.s3_retry_attempts,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
