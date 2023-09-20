@@ -209,7 +209,7 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    // Instead of creating a new generator for each row, we can reuse the same one.
+                    /// Instead of creating a new generator for each row, we can reuse the same one.
                     generator_json_path.reinitialize();
                     added_to_column = impl.insertResultToColumn(*to, document, generator_json_path, context);
                 }
