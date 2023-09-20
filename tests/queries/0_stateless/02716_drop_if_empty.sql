@@ -18,5 +18,5 @@ TRUNCATE TABLE data_02716_1;
 DROP TABLE IF EMPTY data_02716_1;
 DROP DATABASE IF EMPTY {CLICKHOUSE_DATABASE_1:Identifier}; -- { serverError NOT_IMPLEMENTED }
 
-SELECT count() FROM system.tables WHERE database = '{CLICKHOUSE_DATABASE_1:Identifier}';
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
 SELECT count() FROM system.tables WHERE database = 'default' AND name IN ('data_02716_1', 'data_02716_2');
