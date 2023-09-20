@@ -42,6 +42,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
@@ -884,6 +885,8 @@ try
         }
     }
 
+    FailPointInjection::enableFromGlobalConfig(config());
+
     int default_oom_score = 0;
 
 #if !defined(NDEBUG)
@@ -1390,7 +1393,7 @@ try
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
     const auto listen_try = getListenTry(config());
 
-    if (config().has("keeper_server"))
+    if (config().has("keeper_server.server_id"))
     {
 #if USE_NURAFT
         //// If we don't have configured connection probably someone trying to use clickhouse-server instead

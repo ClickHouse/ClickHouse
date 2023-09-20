@@ -31,6 +31,12 @@ std::string DataTypeDecimal<T>::doGetName() const
 template <is_decimal T>
 std::string DataTypeDecimal<T>::getSQLCompatibleName() const
 {
+    /// See https://dev.mysql.com/doc/refman/8.0/en/precision-math-decimal-characteristics.html
+    /// DECIMAL(M,D)
+    /// M is the maximum number of digits (the precision). It has a range of 1 to 65.
+    /// D is the number of digits to the right of the decimal point (the scale). It has a range of 0 to 30 and must be no larger than M.
+    if (this->precision > 65 || this->scale > 30)
+        return "TEXT";
     return fmt::format("DECIMAL({}, {})", this->precision, this->scale);
 }
 
@@ -74,21 +80,30 @@ SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Decimal data type family must have exactly two arguments: precision and scale");
+    UInt64 precision = 10;
+    UInt64 scale = 0;
+    if (arguments)
+    {
+        if (arguments->children.empty() || arguments->children.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Decimal data type family must have precision and optional scale arguments");
 
-    const auto * precision = arguments->children[0]->as<ASTLiteral>();
-    const auto * scale = arguments->children[1]->as<ASTLiteral>();
+        const auto * precision_arg = arguments->children[0]->as<ASTLiteral>();
+        if (!precision_arg || precision_arg->value.getType() != Field::Types::UInt64)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal argument precision is invalid");
+        precision = precision_arg->value.get<UInt64>();
 
-    if (!precision || precision->value.getType() != Field::Types::UInt64 ||
-        !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal data type family must have two numbers as its arguments");
+        if (arguments->children.size() == 2)
+        {
+            const auto * scale_arg = arguments->children[1]->as<ASTLiteral>();
+            if (!scale_arg || !isInt64OrUInt64FieldType(scale_arg->value.getType()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Decimal argument scale is invalid");
+            scale = scale_arg->value.get<UInt64>();
+        }
+    }
 
-    UInt64 precision_value = precision->value.get<UInt64>();
-    UInt64 scale_value = scale->value.get<UInt64>();
-
-    return createDecimal<DataTypeDecimal>(precision_value, scale_value);
+    return createDecimal<DataTypeDecimal>(precision, scale);
 }
 
 template <typename T>
