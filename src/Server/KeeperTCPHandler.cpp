@@ -382,7 +382,7 @@ void KeeperTCPHandler::runImpl()
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
-    auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
+    auto response_callback = [responses = this->responses, response_fd](const Coordination::ZooKeeperResponsePtr & response)
     {
         if (!responses->push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
