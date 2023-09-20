@@ -1255,65 +1255,6 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     return res;
 }
 
-void TCPHandler::authenticate()
-{
-    UInt64 packet_type = 0;
-    session = makeSession();
-    const auto & client_info = session->getClientInfo();
-
-    /// Perform handshake for SSH authentication
-    if (session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
-    {
-        if (!is_ssh_based_auth)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
-
-        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
-
-        readVarUInt(packet_type, *in);
-        if (packet_type != Protocol::Client::SSHChallengeRequest)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
-
-        auto challenge = createChallenge();
-        writeVarUInt(Protocol::Server::SSHChallenge, *out);
-        writeStringBinary(challenge, *out);
-        out->next();
-
-        String signature;
-        readVarUInt(packet_type, *in);
-        if (packet_type != Protocol::Client::SSHChallengeResponse)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
-        readStringBinary(signature, *in);
-
-        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
-        session->authenticate(cred, getClientAddress(client_info));
-        return;
-    }
-#if USE_SSL
-    /// Authentication with SSL user certificate
-    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
-    {
-        Poco::Net::SecureStreamSocket secure_socket(socket());
-        if (secure_socket.havePeerCertificate())
-        {
-            try
-            {
-                session->authenticate(
-                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
-                    getClientAddress(client_info));
-                return;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
-            }
-        }
-    }
-#endif
-
-    session->authenticate(user, password, getClientAddress(client_info));
-}
-
 String TCPHandler::prepareStringForSshValidation(String username, String challenge)
 {
     String output;
@@ -1326,7 +1267,11 @@ String TCPHandler::prepareStringForSshValidation(String username, String challen
 
 void TCPHandler::receiveHello()
 {
+    /// Receive `hello` packet.
     UInt64 packet_type = 0;
+    String user;
+    String password;
+    String default_db;
     /// Receive `hello` packet.
     readVarUInt(packet_type, *in);
 
@@ -1351,7 +1296,6 @@ void TCPHandler::receiveHello()
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
-    String default_db;
     readStringBinary(default_db, *in);
     if (!default_db.empty())
         default_database = default_db;
@@ -1388,10 +1332,61 @@ void TCPHandler::receiveHello()
         user = data.user;
     }
 
-    authenticate();
+    session = makeSession();
+    const auto & client_info = session->getClientInfo();
 
-    /// TODO: Receive new packet from Client with authentication method
-    /// If it is not SSH perform authentication right here. It will break compatibility: new client and old server ??
+#if USE_SSL
+    /// Authentication with SSL user certificate
+    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
+    {
+        Poco::Net::SecureStreamSocket secure_socket(socket());
+        if (secure_socket.havePeerCertificate())
+        {
+            try
+            {
+                session->authenticate(
+                    SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                    getClientAddress(client_info));
+                return;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
+            }
+        }
+    }
+
+    /// Perform handshake for SSH authentication
+    if (session->getAuthenticationTypeOrLogInFailure(user) == AuthenticationType::SSH_KEY)
+    {
+        if (!is_ssh_based_auth)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
+
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeRequest)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
+
+        auto challenge = createChallenge();
+        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeStringBinary(challenge, *out);
+        out->next();
+
+        String signature;
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeResponse)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
+        readStringBinary(signature, *in);
+
+        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
+        session->authenticate(cred, getClientAddress(client_info));
+        return;
+    }
+#endif
+
+    session->authenticate(user, password, getClientAddress(client_info));
 }
 
 void TCPHandler::receiveAddendum()

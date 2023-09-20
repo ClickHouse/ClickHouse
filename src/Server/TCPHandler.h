@@ -180,8 +180,6 @@ private:
     UInt64 unknown_packet_in_send_data = 0;
     Poco::Timespan sleep_after_receiving_query;
 
-    String user;
-    String password;
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
     ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
@@ -226,7 +224,6 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
-    void authenticate();
     String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
