@@ -134,26 +134,37 @@ std::shared_ptr<ISource> sourceFromRows(
 {
     Chunks chunks;
     auto columns = header.cloneEmptyColumns();
+    chassert(!columns.empty());
 
     std::uniform_real_distribution<> prob_dis(0.0, 1.0);
 
-
-    for (auto row : values)
+    for (const auto & row : values)
     {
-        if (!columns.empty() && (row.empty() || prob_dis(rng) < break_prob))
+        if (!columns.front()->empty() && (row.empty() || prob_dis(rng) < break_prob))
         {
             size_t rows = columns.front()->size();
             chunks.emplace_back(std::move(columns), rows);
             columns = header.cloneEmptyColumns();
-            continue;
+            if (row.empty())
+                continue;
         }
 
+        chassert(row.size() == columns.size());
         for (size_t i = 0; i < columns.size(); ++i)
             columns[i]->insert(row[i]);
     }
 
-    if (!columns.empty())
-        chunks.emplace_back(std::move(columns), columns.front()->size());
+    if (!columns.front()->empty())
+    {
+        size_t rows = columns.front()->size();
+        chunks.emplace_back(std::move(columns), rows);
+    }
+
+    /// Check that code above is correct.
+    size_t total_result_rows = 0;
+    for (const auto & chunk : chunks)
+        total_result_rows += chunk.getNumRows();
+    chassert(total_result_rows == values.size());
 
     return std::make_shared<SourceFromChunks>(header, std::move(chunks));
 }
@@ -225,9 +236,11 @@ try
 
     Block result_block = executePipeline(pipeline);
     auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
-    ASSERT_EQ(values.size(), 2);
-    ASSERT_EQ(values[0], (std::vector<Field>{"AMZN", 3u, 4u, 130u}));
-    ASSERT_EQ(values[1], (std::vector<Field>{"AMZN", 4u, 4u, 130u}));
+
+    ASSERT_EQ(values, (std::vector<std::vector<Field>>{
+        {"AMZN", 3u, 4u, 130u},
+        {"AMZN", 4u, 4u, 130u},
+    }));
 }
 catch (Exception & e)
 {
@@ -272,12 +285,12 @@ try
 
     ASSERT_EQ(
         assert_cast<const ColumnUInt64 *>(result_block.getByName("t2.t").column.get())->getData(),
-        (ColumnUInt64::Container{4, 4, 4, 4, 4, 5, 5, 11, 11, 11, 15})
+        (ColumnUInt64::Container{4, 4, 4, 4, 4, 5, 5, 11, 11, 11, 11})
     );
 
     ASSERT_EQ(
         assert_cast<const ColumnUInt64 *>(result_block.getByName("t2.value").column.get())->getData(),
-        (ColumnUInt64::Container{104, 104, 104, 104, 104, 105, 105, 111, 111, 111, 115})
+        (ColumnUInt64::Container{104, 104, 104, 104, 104, 105, 105, 111, 111, 111, 111})
     );
 }
 catch (Exception & e)
