@@ -2,6 +2,9 @@
 
 #include <ifaddrs.h>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <optional>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -74,6 +77,29 @@ struct NetworkInterfaces
     {
         freeifaddrs(ifaddr);
     }
+
+    static NetworkInterfaces & instance()
+    {
+        static constexpr int NET_INTERFACE_VALID_PERIOD_SECONDS = 30;
+        static std::unique_ptr<NetworkInterfaces> nf = std::make_unique<NetworkInterfaces>();
+        static time_t last_updated_time = time(nullptr);
+        static std::shared_mutex nf_mtx;
+
+        time_t now = time(nullptr);
+
+        if (now - last_updated_time > NET_INTERFACE_VALID_PERIOD_SECONDS)
+        {
+            std::unique_lock lock(nf_mtx);
+            nf = std::make_unique<NetworkInterfaces>();
+            last_updated_time = now;
+            return *nf;
+        }
+        else
+        {
+            std::shared_lock lock(nf_mtx);
+            return *nf;
+        }
+    }
 };
 
 }
@@ -111,8 +137,7 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
         }
     }
 
-    NetworkInterfaces interfaces;
-    return interfaces.hasAddress(address);
+    return NetworkInterfaces::instance().hasAddress(address);
 }
 
 
