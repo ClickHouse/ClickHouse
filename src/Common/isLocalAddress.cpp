@@ -78,7 +78,7 @@ struct NetworkInterfaces
         freeifaddrs(ifaddr);
     }
 
-    static NetworkInterfaces & instance()
+    static const NetworkInterfaces & instance()
     {
         static constexpr int NET_INTERFACE_VALID_PERIOD_SECONDS = 30;
         static std::unique_ptr<NetworkInterfaces> nf = std::make_unique<NetworkInterfaces>();
