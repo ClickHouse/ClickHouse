@@ -16,6 +16,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int DICTIONARIES_WAS_NOT_LOADED;
+    extern const int FUNCTION_NOT_ALLOWED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
+};
+
 enum class FunctionOrigin : Int8
 {
     SYSTEM = 0,
@@ -134,10 +142,18 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         {
             is_deterministic = functions_factory.tryGet(function_name, context)->isDeterministic();
         }
-        catch (...)
+        catch (const Exception & e)
         {
             /// Some functions throw because they need special configuration or setup before use.
-            /// Ignore the exception and simply show is_deterministic = NULL.
+            if (e.code() == ErrorCodes::DICTIONARIES_WAS_NOT_LOADED
+                || e.code() == ErrorCodes::FUNCTION_NOT_ALLOWED
+                || e.code() == ErrorCodes::NOT_IMPLEMENTED
+                || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
+            {
+                /// Ignore exception, show is_deterministic = NULL.
+            }
+            else
+                throw;
         }
 
         fillRow(res_columns, function_name, 0, is_deterministic, "", FunctionOrigin::SYSTEM, functions_factory);
