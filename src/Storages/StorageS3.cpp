@@ -1071,7 +1071,6 @@ Pipe StorageS3::read(
 
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
     num_streams = std::min(num_streams, estimated_keys_count);
-    LOG_INFO(&Poco::Logger::get("StorageS3"), "adjusting num_streams={}", num_streams);
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
@@ -1079,6 +1078,7 @@ Pipe StorageS3::read(
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+    LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
 
     pipes.reserve(num_streams);
     for (size_t i = 0; i < num_streams; ++i)

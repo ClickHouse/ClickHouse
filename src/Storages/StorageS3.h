@@ -62,6 +62,8 @@ public:
 
         /// Estimates how many streams we need to process all files.
         /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
+        /// Intended to be called before any next() calls, may underestimate otherwise
+        /// fixme: May underestimate if the glob has a strong filter, so there are few matches among the first 1000 ListObjects results.
         virtual size_t estimatedKeysCount() = 0;
 
         KeyWithInfo operator ()() { return next(); }
