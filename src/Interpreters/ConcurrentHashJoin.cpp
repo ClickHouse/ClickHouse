@@ -97,17 +97,22 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
 {
     Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, block);
     block = {};
+    Blocks blocks;
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
         std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
-        hash_join->data->joinBlock(dispatched_block, none_extra_block);
+        auto stream_output = hash_join->data->joinBlockWithStreamOutput(dispatched_block, none_extra_block);
+        while (!stream_output->isFinished())
+        {
+            blocks.emplace_back(stream_output->next());
+        }
         if (none_extra_block && !none_extra_block->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
 
-    block = concatenateBlocks(dispatched_blocks);
+    block = concatenateBlocks(blocks);
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const
