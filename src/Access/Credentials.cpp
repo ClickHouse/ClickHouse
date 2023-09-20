@@ -29,7 +29,7 @@ bool Credentials::isReady() const
 
 void Credentials::throwNotReady()
 {
-    throw Exception("Credentials are not ready", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Credentials are not ready");
 }
 
 AlwaysAllowCredentials::AlwaysAllowCredentials()

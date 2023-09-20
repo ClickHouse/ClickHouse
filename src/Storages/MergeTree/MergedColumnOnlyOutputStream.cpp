@@ -11,8 +11,7 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    DataPartStorageBuilderPtr data_part_storage_builder_,
-    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
@@ -20,7 +19,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(std::move(data_part_storage_builder_), data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -30,11 +29,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         global_settings,
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
-        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */false);
+        index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
+        /* rewrite_primary_key = */ false);
 
     writer = data_part->getWriter(
-        data_part_storage_builder,
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
@@ -44,7 +42,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
     if (!writer_on_disk)
-        throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergedColumnOnlyOutputStream supports only parts stored on disk");
 
     writer_on_disk->setWrittenOffsetColumns(offset_columns_);
 }
@@ -81,14 +79,13 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     for (const String & removed_file : removed_files)
     {
-        data_part_storage_builder->removeFileIfExists(removed_file);
+        new_part->getDataPartStorage().removeFileIfExists(removed_file);
 
         if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);
     }
 
-    new_part->setColumns(columns, serialization_infos);
-
+    new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     return checksums;
 }
 

@@ -36,15 +36,7 @@ struct SettingsProfilesInfo
     friend bool operator ==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs);
     friend bool operator !=(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs) { return !(lhs == rhs); }
 
-    Strings getProfileNames() const
-    {
-        Strings result;
-        result.reserve(profiles.size());
-        for (const auto & profile_id : profiles)
-            result.push_back(names_of_profiles.at(profile_id));
-
-        return result;
-    }
+    Strings getProfileNames() const;
 
 private:
     const AccessControl & access_control;

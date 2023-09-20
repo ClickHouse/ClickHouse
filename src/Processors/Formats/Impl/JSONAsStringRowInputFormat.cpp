@@ -12,13 +12,14 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
 }
 
-JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : JSONAsRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_) {}
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    : JSONAsRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_) {}
 
-JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_) :
-    IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_))
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_) :
+    JSONEachRowRowInputFormat(*buf_, header_, std::move(params_), format_settings_, false), buf(std::move(buf_))
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -28,39 +29,10 @@ JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_pt
 
 void JSONAsRowInputFormat::resetParser()
 {
-    IRowInputFormat::resetParser();
+    JSONEachRowRowInputFormat::resetParser();
     buf->reset();
 }
 
-void JSONAsRowInputFormat::readPrefix()
-{
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(*buf);
-
-    skipWhitespaceIfAny(*buf);
-    if (!buf->eof() && *buf->position() == '[')
-    {
-        ++buf->position();
-        data_in_square_brackets = true;
-    }
-}
-
-void JSONAsRowInputFormat::readSuffix()
-{
-    skipWhitespaceIfAny(*buf);
-    if (data_in_square_brackets)
-    {
-        assertChar(']', *buf);
-        skipWhitespaceIfAny(*buf);
-        data_in_square_brackets = false;
-    }
-    if (!buf->eof() && *buf->position() == ';')
-    {
-        ++buf->position();
-        skipWhitespaceIfAny(*buf);
-    }
-    assertEOF(*buf);
-}
 
 bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
@@ -98,14 +70,13 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_)
-    : JSONAsRowInputFormat(header_, in_, params_)
+    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
     if (!isString(removeNullable(removeLowCardinality(header_.getByPosition(0).type))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -120,7 +91,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     bool quotes = false;
 
     if (*buf->position() != '{')
-        throw Exception("JSON object must begin with '{'.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{'.");
 
     ++buf->position();
     ++balance;
@@ -130,7 +101,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     while (balance)
     {
         if (buf->eof())
-            throw Exception("Unexpected end of file while parsing JSON object.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing JSON object.");
 
         if (quotes)
         {
@@ -193,8 +164,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
 JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, in_, params_)
-    , format_settings(format_settings_)
+    : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
 {
     if (!isObject(header_.getByPosition(0).type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -207,15 +177,31 @@ void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
     serializations[0]->deserializeTextJSON(column, *buf, format_settings);
 }
 
+Chunk JSONAsObjectRowInputFormat::getChunkForCount(size_t rows)
+{
+    auto object_type = getPort().getHeader().getDataTypes()[0];
+    ColumnPtr column = object_type->createColumnConst(rows, Field(Object()));
+    return Chunk({std::move(column)}, rows);
+}
+
+JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings)
+{
+    if (!settings.json.allow_object_type)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot infer the data structure in JSONAsObject format because experimental Object type is not allowed. Set setting "
+            "allow_experimental_object_type = 1 in order to allow it");
+}
+
 void registerInputFormatJSONAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
-            const FormatSettings &)
+            const FormatSettings & format_settings)
     {
-        return std::make_shared<JSONAsStringRowInputFormat>(sample, buf, params);
+        return std::make_shared<JSONAsStringRowInputFormat>(sample, buf, params, format_settings);
     });
 }
 
@@ -261,9 +247,9 @@ void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 
 void registerJSONAsObjectSchemaReader(FormatFactory & factory)
 {
-    factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings &)
+    factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings & settings)
     {
-        return std::make_shared<JSONAsObjectExternalSchemaReader>();
+        return std::make_shared<JSONAsObjectExternalSchemaReader>(settings);
     });
 }
 

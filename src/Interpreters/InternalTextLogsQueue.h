@@ -2,7 +2,15 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/OvercommitTracker.h>
 #include <Core/Block.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -24,7 +32,7 @@ public:
     void pushBlock(Block && log_block);
 
     /// Converts priority from Poco::Message::Priority to a string
-    static const char * getPriorityName(int priority);
+    static std::string_view getPriorityName(int priority);
 
     void setSourceRegexp(const String & regexp);
 private:

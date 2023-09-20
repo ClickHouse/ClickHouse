@@ -20,12 +20,12 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
-        if (!isUInt8(arguments.back()))
-            throw Exception("Illegal type " + arguments.back()->getName() + " of last argument for aggregate function with " + getName() + " suffix",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of last argument for "
+                            "aggregate function with {} suffix", arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
@@ -52,6 +52,7 @@ class AggregateFunctionIfNullUnary final
 private:
     size_t num_arguments;
     bool filter_is_nullable = false;
+    bool filter_is_only_null = false;
 
     /// The name of the nested function, including combinators (i.e. *If)
     ///
@@ -84,10 +85,8 @@ private:
 
             return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num] && !filter_null_map[row_num];
         }
-        else
-        {
-            return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num];
-        }
+
+        return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num];
     }
 
 public:
@@ -106,10 +105,14 @@ public:
                 "Aggregate function {} require at least one argument", getName());
 
         filter_is_nullable = arguments[num_arguments - 1]->isNullable();
+        filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        if (filter_is_only_null)
+            return;
+
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
         if (!column->isNullAt(row_num) && singleFilter(columns, row_num))
@@ -127,6 +130,9 @@ public:
         Arena * arena,
         ssize_t) const override
     {
+        if (filter_is_only_null)
+            return;
+
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const UInt8 * null_map = column->getNullMapData().data();
         const IColumn * columns_param[] = {&column->getNestedColumn()};
@@ -177,18 +183,23 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    bool isCompilable() const override
+    {
+        return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        const auto & nullable_type = arguments_types[0];
-        const auto & nullable_value = argument_values[0];
+        const auto & nullable_type = arguments[0].type;
+        const auto & nullable_value = arguments[0].value;
 
         auto * wrapped_value = b.CreateExtractValue(nullable_value, {0});
         auto * is_null_value = b.CreateExtractValue(nullable_value, {1});
 
-        const auto & predicate_type = arguments_types[argument_values.size() - 1];
-        auto * predicate_value = argument_values[argument_values.size() - 1];
+        const auto & predicate_type = arguments.back().type;
+        auto * predicate_value = arguments.back().value;
         auto * is_predicate_true = nativeBoolCast(b, predicate_type, predicate_value);
 
         auto * head = b.GetInsertBlock();
@@ -207,8 +218,8 @@ public:
         if constexpr (result_is_nullable)
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
 
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
+        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
+        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { ValueWithType(wrapped_value, removeNullable(nullable_type)) });
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);
@@ -218,11 +229,15 @@ public:
 
 };
 
-template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
-class AggregateFunctionIfNullVariadic final
-    : public AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>
+template <bool result_is_nullable, bool serialize_flag>
+class AggregateFunctionIfNullVariadic final : public AggregateFunctionNullBase<
+                                                  result_is_nullable,
+                                                  serialize_flag,
+                                                  AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag>>
 {
+private:
+    bool filter_is_only_null = false;
+
 public:
 
     String getName() const override
@@ -234,14 +249,16 @@ public:
         : Base(std::move(nested_function_), arguments, params), number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
-            throw Exception("Logical error: single argument is passed to AggregateFunctionIfNullVariadic", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: single argument is passed to AggregateFunctionIfNullVariadic");
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Maximum number of arguments for aggregate function with Nullable types is {}", toString(MAX_ARGS));
 
         for (size_t i = 0; i < number_of_arguments; ++i)
             is_nullable[i] = arguments[i]->isNullable();
+
+        filter_is_only_null = arguments.back()->onlyNull();
     }
 
     static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
@@ -259,7 +276,7 @@ public:
             if (is_nullable[i])
             {
                 const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[i]);
-                if (null_is_skipped && nullable_col.isNullAt(row_num))
+                if (nullable_col.isNullAt(row_num))
                 {
                     /// If at least one column has a null value in the current row,
                     /// we don't process this row.
@@ -278,42 +295,106 @@ public:
         }
     }
 
+    void addBatchSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena, ssize_t) const final
+    {
+        if (filter_is_only_null)
+            return;
+
+        std::unique_ptr<UInt8[]> final_null_flags = std::make_unique<UInt8[]>(row_end);
+        const size_t filter_column_num = number_of_arguments - 1;
+
+        if (is_nullable[filter_column_num])
+        {
+            const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(columns[filter_column_num]);
+            const IColumn & filter_column = nullable_column->getNestedColumn();
+            const UInt8 * filter_null_map = nullable_column->getNullMapColumn().getData().data();
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(filter_column).getData().data();
+
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                final_null_flags[i] = filter_null_map[i] || !filter_values[i];
+            }
+        }
+        else
+        {
+            const IColumn * filter_column = columns[filter_column_num];
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
+            for (size_t i = row_begin; i < row_end; i++)
+                final_null_flags[i] = !filter_values[i];
+        }
+
+        const IColumn * nested_columns[number_of_arguments];
+        for (size_t arg = 0; arg < number_of_arguments; arg++)
+        {
+            if (is_nullable[arg])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                if (arg != filter_column_num)
+                {
+                    const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
+                    const UInt8 * col_null_map = nullmap_column.getData().data();
+                    for (size_t r = row_begin; r < row_end; r++)
+                    {
+                        final_null_flags[r] |= col_null_map[r];
+                    }
+                }
+                nested_columns[arg] = &nullable_col.getNestedColumn();
+            }
+            else
+                nested_columns[arg] = columns[arg];
+        }
+
+        bool at_least_one = false;
+        for (size_t i = row_begin; i < row_end; i++)
+        {
+            if (!final_null_flags[i])
+            {
+                at_least_one = true;
+                break;
+            }
+        }
+
+        if (at_least_one)
+        {
+            this->setFlag(place);
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), nested_columns, final_null_flags.get(), arena, -1);
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
+    bool isCompilable() const override
     {
-        /// TODO: Check
+        return canBeNativeType(*this->argument_types.back()) && this->nested_function->isCompilable();
+    }
 
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        size_t arguments_size = arguments_types.size();
+        size_t arguments_size = arguments.size();
 
-        DataTypes non_nullable_types;
-        std::vector<llvm::Value * > wrapped_values;
+        ValuesWithType wrapped_arguments;
+        wrapped_arguments.reserve(arguments_size);
+
         std::vector<llvm::Value * > is_null_values;
-
-        non_nullable_types.resize(arguments_size);
-        wrapped_values.resize(arguments_size);
-        is_null_values.resize(arguments_size);
 
         for (size_t i = 0; i < arguments_size; ++i)
         {
-            const auto & argument_value = argument_values[i];
+            const auto & argument_value = arguments[i].value;
+            const auto & argument_type = arguments[i].type;
 
             if (is_nullable[i])
             {
                 auto * wrapped_value = b.CreateExtractValue(argument_value, {0});
-
-                if constexpr (null_is_skipped)
-                    is_null_values[i] = b.CreateExtractValue(argument_value, {1});
-
-                wrapped_values[i] = wrapped_value;
-                non_nullable_types[i] = removeNullable(arguments_types[i]);
+                is_null_values.emplace_back(b.CreateExtractValue(argument_value, {1}));
+                wrapped_arguments.emplace_back(wrapped_value, removeNullable(argument_type));
             }
             else
             {
-                wrapped_values[i] = argument_value;
-                non_nullable_types[i] = arguments_types[i];
+                wrapped_arguments.emplace_back(argument_value, argument_type);
             }
         }
 
@@ -322,27 +403,21 @@ public:
         auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
         auto * join_block_after_null_checks = llvm::BasicBlock::Create(head->getContext(), "join_block_after_null_checks", head->getParent());
 
-        if constexpr (null_is_skipped)
+        auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
+        b.CreateStore(b.getInt1(false), values_have_null_ptr);
+
+        for (auto * is_null_value : is_null_values)
         {
-            auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
-            b.CreateStore(b.getInt1(false), values_have_null_ptr);
-
-            for (auto * is_null_value : is_null_values)
-            {
-                if (!is_null_value)
-                    continue;
-
-                auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
-                b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
-            }
-
-            b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), join_block, join_block_after_null_checks);
+            auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
+            b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
         }
+
+        b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), join_block, join_block_after_null_checks);
 
         b.SetInsertPoint(join_block_after_null_checks);
 
-        const auto & predicate_type = arguments_types[argument_values.size() - 1];
-        auto * predicate_value = argument_values[argument_values.size() - 1];
+        const auto & predicate_type = arguments.back().type;
+        auto * predicate_value = arguments.back().value;
         auto * is_predicate_true = nativeBoolCast(b, predicate_type, predicate_value);
 
         auto * if_true = llvm::BasicBlock::Create(head->getContext(), "if_true", head->getParent());
@@ -358,8 +433,8 @@ public:
         if constexpr (result_is_nullable)
             b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
 
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, non_nullable_types, wrapped_values);
+        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, this->prefix_size);
+        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, wrapped_arguments);
         b.CreateBr(join_block);
 
         b.SetInsertPoint(join_block);
@@ -368,8 +443,10 @@ public:
 #endif
 
 private:
-    using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
-        AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
+    using Base = AggregateFunctionNullBase<
+        result_is_nullable,
+        serialize_flag,
+        AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag>>;
 
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
@@ -385,7 +462,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
-    bool return_type_is_nullable = !properties.returns_default_when_only_null && getReturnType()->canBeInsideNullable()
+    bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
         && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
@@ -408,14 +485,14 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     {
         if (return_type_is_nullable)
         {
-            return std::make_shared<AggregateFunctionIfNullVariadic<true, true, true>>(nested_function, arguments, params);
+            return std::make_shared<AggregateFunctionIfNullVariadic<true, true>>(nested_function, arguments, params);
         }
         else
         {
             if (need_to_serialize_flag)
-                return std::make_shared<AggregateFunctionIfNullVariadic<false, true, true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, true>>(nested_function, arguments, params);
             else
-                return std::make_shared<AggregateFunctionIfNullVariadic<false, false, true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
         }
     }
 }

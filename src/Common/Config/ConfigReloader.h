@@ -22,23 +22,21 @@ class Context;
 /** Every two seconds checks configuration files for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
   *  and the reloaded config will be applied via Updater functor.
-  * It doesn't take into account changes of --config-file, <users_config> and <include_from> parameters.
+  * It doesn't take into account changes of --config-file and <users_config>.
   */
 class ConfigReloader
 {
 public:
     using Updater = std::function<void(ConfigurationPtr, bool)>;
 
-    /** include_from_path is usually /etc/metrika.xml (i.e. value of <include_from> tag)
-      */
     ConfigReloader(
-            const std::string & path,
-            const std::string & include_from_path,
-            const std::string & preprocessed_dir,
-            zkutil::ZooKeeperNodeCache && zk_node_cache,
-            const zkutil::EventPtr & zk_changed_event,
-            Updater && updater,
-            bool already_loaded);
+        std::string_view path_,
+        const std::vector<std::string>& extra_paths_,
+        const std::string & preprocessed_dir,
+        zkutil::ZooKeeperNodeCache && zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
+        Updater && updater,
+        bool already_loaded);
 
     ~ConfigReloader();
 
@@ -73,8 +71,9 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("ConfigReloader");
 
-    std::string path;
-    std::string include_from_path;
+    std::string config_path;
+    std::vector<std::string> extra_paths;
+
     std::string preprocessed_dir;
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;

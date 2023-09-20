@@ -10,11 +10,13 @@ node1 = cluster.add_instance(
     "node1", main_configs=["configs/keeper.xml"], stay_alive=True
 )
 
+
 # test that server is able to start
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+
         yield cluster
     finally:
         cluster.shutdown()

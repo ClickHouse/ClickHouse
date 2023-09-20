@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
+#include <IO/WriteBuffer.h>
 
 
 namespace DB
@@ -12,10 +13,10 @@ class WriteBuffer;
 
 /// Base class for Columnar JSON output formats.
 /// It buffers all data and outputs it as a single block in writeSuffix() method.
-class JSONColumnsBlockOutputFormatBase : public IOutputFormat
+class JSONColumnsBlockOutputFormatBase : public OutputFormatWithUTF8ValidationAdaptor
 {
 public:
-    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8);
 
     String getName() const override { return "JSONColumnsBlockOutputFormatBase"; }
 
@@ -34,9 +35,9 @@ protected:
     const FormatSettings format_settings;
     const Serializations serializations;
 
-    WriteBuffer * ostr;
-
     Chunk mono_chunk;
+
+    size_t written_rows = 0;
 };
 
 }

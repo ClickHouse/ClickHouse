@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/CacheBase.h>
@@ -19,7 +19,7 @@ public:
 
     size_t getCompiledExpressionSize() const { return compiled_expression_size; }
 
-    virtual ~CompiledExpressionCacheEntry() {}
+    virtual ~CompiledExpressionCacheEntry() = default;
 
 private:
 

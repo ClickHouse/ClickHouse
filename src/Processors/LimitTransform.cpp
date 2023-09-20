@@ -1,5 +1,5 @@
 #include <Processors/LimitTransform.h>
-
+#include <Processors/Transforms/LimitPartialResultTransform.h>
 
 namespace DB
 {
@@ -19,7 +19,7 @@ LimitTransform::LimitTransform(
     , with_ties(with_ties_), description(std::move(description_))
 {
     if (num_streams != 1 && with_ties)
-        throw Exception("Cannot use LimitTransform with multiple ports and ties", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");
 
     ports_data.resize(num_streams);
 
@@ -125,8 +125,7 @@ IProcessor::Status LimitTransform::prepare(
 LimitTransform::Status LimitTransform::prepare()
 {
     if (ports_data.size() != 1)
-        throw Exception("prepare without arguments is not supported for multi-port LimitTransform",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port LimitTransform");
 
     return prepare({0}, {0});
 }
@@ -181,10 +180,9 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         return Status::NeedData;
 
     data.current_chunk = input.pull(true);
-
     auto rows = data.current_chunk.getNumRows();
 
-    if (rows_before_limit_at_least)
+    if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(rows);
 
     /// Skip block (for 'always_read_till_end' case).
@@ -366,6 +364,12 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
         if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
             return false;
     return true;
+}
+
+ProcessorPtr LimitTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    const auto & header = inputs.front().getHeader();
+    return std::make_shared<LimitPartialResultTransform>(header, partial_result_limit, partial_result_duration_ms, limit, offset);
 }
 
 }

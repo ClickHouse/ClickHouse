@@ -48,13 +48,15 @@ public:
               const Settings * settings,
               bool force_connected) override; /// From IConnectionPool
 
-    Int64 getPriority() const override; /// From IConnectionPool
+    Priority getPriority() const override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
     std::vector<Entry> getMany(const ConnectionTimeouts & timeouts,
-                               const Settings * settings, PoolMode pool_mode);
+                               const Settings * settings, PoolMode pool_mode,
+                               AsyncCallback async_callback = {},
+                               std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
@@ -69,7 +71,9 @@ public:
             const ConnectionTimeouts & timeouts,
             const Settings * settings,
             PoolMode pool_mode,
-            const QualifiedTableName & table_to_check);
+            const QualifiedTableName & table_to_check,
+            AsyncCallback async_callback = {},
+            std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
     struct NestedPoolStatus
     {
@@ -96,7 +100,8 @@ private:
     std::vector<TryResult> getManyImpl(
             const Settings * settings,
             PoolMode pool_mode,
-            const TryGetEntryFunc & try_get_entry);
+            const TryGetEntryFunc & try_get_entry,
+            std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
@@ -106,7 +111,8 @@ private:
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings * settings,
-            const QualifiedTableName * table_to_check = nullptr);
+            const QualifiedTableName * table_to_check = nullptr,
+            AsyncCallback async_callback = {});
 
     GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 

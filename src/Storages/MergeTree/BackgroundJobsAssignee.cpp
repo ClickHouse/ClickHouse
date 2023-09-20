@@ -42,10 +42,11 @@ void BackgroundJobsAssignee::postpone()
     no_work_done_count += 1;
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
-    size_t next_time_to_execute = 1000 * (std::min(
+    size_t next_time_to_execute = static_cast<size_t>(
+        1000 * (std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
             sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
-        + random_addition);
+        + random_addition));
 
     holder->scheduleAfter(next_time_to_execute, false);
 }
@@ -89,7 +90,7 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Moving:
             return "Moving";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void BackgroundJobsAssignee::start()

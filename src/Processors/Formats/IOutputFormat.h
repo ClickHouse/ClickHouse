@@ -23,9 +23,9 @@ class WriteBuffer;
 class IOutputFormat : public IProcessor
 {
 public:
-    enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
+    enum PortKind { Main = 0, Totals = 1, Extremes = 2, PartialResult = 3 };
 
-    IOutputFormat(const Block & header_, WriteBuffer & out_);
+    IOutputFormat(const Block & header_, WriteBuffer & out_, bool is_partial_result_protocol_active_ = false);
 
     Status prepare() override;
     void work() override;
@@ -39,7 +39,7 @@ public:
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit_counter.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
 
     /// Notify about progress. Method could be called from different threads.
     /// Passed value are delta, that must be summarized.
@@ -54,6 +54,7 @@ public:
     /// TODO: separate formats and processors.
 
     void write(const Block & block);
+    void writePartialResult(const Block & block);
 
     void finalize();
 
@@ -61,13 +62,13 @@ public:
 
     void setTotals(const Block & totals)
     {
-        writeSuffixIfNot();
+        writeSuffixIfNeeded();
         consumeTotals(Chunk(totals.getColumns(), totals.rows()));
         are_totals_written = true;
     }
     void setExtremes(const Block & extremes)
     {
-        writeSuffixIfNot();
+        writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
 
@@ -76,17 +77,24 @@ public:
 
     void doNotWritePrefix() { need_write_prefix = false; }
 
-protected:
-    friend class ParallelFormattingOutputFormat;
+    void resetFormatter()
+    {
+        need_write_prefix = true;
+        need_write_suffix = true;
+        finalized = false;
+        resetFormatterImpl();
+    }
 
-    virtual void consume(Chunk) = 0;
-    virtual void consumeTotals(Chunk) {}
-    virtual void consumeExtremes(Chunk) {}
-    virtual void finalizeImpl() {}
-    virtual void writePrefix() {}
-    virtual void writeSuffix() {}
+    /// Reset the statistics watch to a specific point in time
+    /// If set to not running it will stop on the call (elapsed = now() - given start)
+    void setStartTime(UInt64 start, bool is_running)
+    {
+        statistics.watch = Stopwatch(CLOCK_MONOTONIC, start, true);
+        if (!is_running)
+            statistics.watch.stop();
+    }
 
-    void writePrefixIfNot()
+    void writePrefixIfNeeded()
     {
         if (need_write_prefix)
         {
@@ -95,7 +103,11 @@ protected:
         }
     }
 
-    void writeSuffixIfNot()
+protected:
+    friend class ParallelFormattingOutputFormat;
+
+
+    void writeSuffixIfNeeded()
     {
         if (need_write_suffix)
         {
@@ -103,6 +115,16 @@ protected:
             need_write_suffix = false;
         }
     }
+
+    virtual void consume(Chunk) = 0;
+    virtual void consumeTotals(Chunk) {}
+    virtual void consumeExtremes(Chunk) {}
+    virtual void consumePartialResult(Chunk) {}
+    virtual void finalizeImpl() {}
+    virtual void finalizeBuffers() {}
+    virtual void writePrefix() {}
+    virtual void writeSuffix() {}
+    virtual void resetFormatterImpl() {}
 
     /// Methods-helpers for parallel formatting.
 
@@ -132,9 +154,6 @@ protected:
         Chunk extremes;
     };
 
-    void setOutsideStatistics(Statistics statistics_) { statistics = std::make_shared<Statistics>(std::move(statistics_)); }
-    std::shared_ptr<Statistics> getOutsideStatistics() const { return statistics; }
-
     /// In some formats the way we print extremes depends on
     /// were totals printed or not. In this case in parallel formatting
     /// we should notify underling format if totals were printed.
@@ -149,6 +168,7 @@ protected:
 
     Chunk current_chunk;
     PortKind current_block_kind = PortKind::Main;
+    bool main_input_activated = false;
     bool has_input = false;
     bool finished = false;
     bool finalized = false;
@@ -160,11 +180,17 @@ protected:
     bool need_write_suffix = true;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
+    Statistics statistics;
 
 private:
+    void setCurrentChunk(InputPort & input, PortKind kind);
+    IOutputFormat::Status prepareMainAndPartialResult();
+    IOutputFormat::Status prepareTotalsAndExtremes();
+
     size_t rows_read_before = 0;
-    std::shared_ptr<Statistics> statistics = nullptr;
     bool are_totals_written = false;
+
+    bool is_partial_result_protocol_active = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;

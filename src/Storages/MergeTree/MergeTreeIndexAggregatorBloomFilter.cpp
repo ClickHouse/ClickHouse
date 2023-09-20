@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexAggregatorBloomFilter.h>
 
-#include <base/bit_cast.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
@@ -20,7 +19,7 @@ namespace ErrorCodes
 
 MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
     size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_)
+    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
     assert(bits_per_row != 0);
     assert(hash_functions != 0);
@@ -33,32 +32,34 @@ bool MergeTreeIndexAggregatorBloomFilter::empty() const
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilter::getGranuleAndReset()
 {
-    const auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, total_rows, granule_index_blocks);
+    const auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, column_hashes);
     total_rows = 0;
-    granule_index_blocks.clear();
+    column_hashes.clear();
     return granule;
 }
 
 void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception("The provided position is not less than the number of block rows. Position: " + toString(*pos) + ", Block rows: " +
-                        toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+                        "Position: {}, Block rows: {}.", *pos, block.rows());
 
     Block granule_index_block;
     size_t max_read_rows = std::min(block.rows() - *pos, limit);
 
-    for (const auto & index_column_name : index_columns_name)
+    for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
-        const auto & column_and_type = block.getByName(index_column_name);
+        const auto & column_and_type = block.getByName(index_columns_name[column]);
         auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
-        granule_index_block.insert({index_column, std::make_shared<DataTypeUInt64>(), column_and_type.name});
+        const auto & index_col = checkAndGetColumn<ColumnUInt64>(index_column.get());
+        const auto & index_data = index_col->getData();
+        for (const auto & hash: index_data)
+            column_hashes[column].insert(hash);
     }
 
     *pos += max_read_rows;
     total_rows += max_read_rows;
-    granule_index_blocks.push_back(granule_index_block);
 }
 
 }

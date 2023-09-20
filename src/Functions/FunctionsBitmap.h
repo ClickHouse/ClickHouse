@@ -20,12 +20,13 @@
 // inside.
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Bitmap functions.
@@ -110,9 +111,9 @@ public:
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
-            throw Exception(
-                "First argument for function " + getName() + " must be an array but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be an array but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         auto nested_type = array_type->getNestedType();
         DataTypes argument_types = {nested_type};
@@ -145,8 +146,8 @@ public:
             bitmap_function = AggregateFunctionFactory::instance().get(
                 AggregateFunctionGroupBitmapData<Int64>::name(), argument_types, params_row, properties);
         else
-            throw Exception(
-                "Unexpected type " + array_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                array_type->getName(), getName());
 
         return std::make_shared<DataTypeAggregateFunction>(bitmap_function, argument_types, params_row);
     }
@@ -179,8 +180,8 @@ public:
         else if (which.isInt64())
             return executeBitmapData<Int64>(argument_types, arguments);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -210,7 +211,7 @@ private:
                 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             for (; pos < offsets[i]; ++pos)
             {
-                bitmap_data.rbs.add(input_data[pos]);
+                bitmap_data.roaring_bitmap_with_small_set.add(input_data[pos]);
             }
         }
         return col_to;
@@ -237,9 +238,9 @@ public:
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() =="groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         const DataTypePtr data_type = bitmap_type->getArgumentsDataTypes()[0];
 
@@ -278,8 +279,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, res_data, res_offsets);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return res_ptr;
     }
@@ -302,7 +303,7 @@ private:
         {
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_1
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(column->getData()[i]);
-            UInt64 count = bitmap_data_1.rbs.rb_to_array(res_data);
+            UInt64 count = bitmap_data_1.roaring_bitmap_with_small_set.rb_to_array(res_data);
             res_offset += count;
             res_offsets.emplace_back(res_offset);
         }
@@ -329,18 +330,19 @@ public:
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         for (size_t i = 1; i < 3; ++i)
         {
             WhichDataType which(arguments[i].get());
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
             {
-                throw Exception(
-                    "The second and third arguments for function " + getName() + " must be one of [UInt8, UInt16, UInt32, UInt64] but one of them has type " + arguments[1]->getName() + ".",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The second and third arguments for function {} must be one "
+                                "of [UInt8, UInt16, UInt32, UInt64] but one of them has type {}.",
+                                getName(), arguments[1]->getName());
             }
         }
         return arguments[0];
@@ -370,8 +372,8 @@ public:
         else if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -402,19 +404,19 @@ private:
         }
 
         if (is_column_const[0])
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*typeid_cast<const ColumnConst &>(*column_ptrs[0]).getDataColumnPtr());
         else
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*column_ptrs[0]);
 
         container0 = &col_agg_func->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*column_ptrs[1]).getDataColumn()).getData();
         else
-            container1 = &typeid_cast<const ColumnUInt64*>(column_ptrs[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[1]).getData();
         if (is_column_const[2])
-            container2 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get())->getData();
+            container2 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*column_ptrs[2]).getDataColumn()).getData();
         else
-            container2 = &typeid_cast<const ColumnUInt64*>(column_ptrs[2])->getData();
+            container2 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[2]).getData();
 
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
@@ -447,7 +449,7 @@ public:
         UInt64 range_end,
         AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_0.rbs.rb_range(range_start, range_end, bitmap_data_2.rbs);
+        bitmap_data_0.roaring_bitmap_with_small_set.rb_range(range_start, range_end, bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -462,7 +464,7 @@ public:
         UInt64 range_end,
         AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_0.rbs.rb_limit(range_start, range_end, bitmap_data_2.rbs);
+        bitmap_data_0.roaring_bitmap_with_small_set.rb_limit(range_start, range_end, bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -477,7 +479,7 @@ public:
         UInt64 range_end,
         AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
         {
-        bitmap_data_0.rbs.rb_offset_limit(range_start, range_end, bitmap_data_2.rbs);
+        bitmap_data_0.roaring_bitmap_with_small_set.rb_offset_limit(range_start, range_end, bitmap_data_2.roaring_bitmap_with_small_set);
         }
 };
 
@@ -504,21 +506,23 @@ public:
     {
         const DataTypeAggregateFunction * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}.",
+                            getName(), arguments[0]->getName());
         for (size_t i = 0; i < 2; ++i)
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
-            String msg = "The second and third arguments for function " + getName() + " must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] but one of them has type " + arguments[i + 1]->getName() + ".";
+            auto exception = Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second and third arguments for function {} "
+                                       "must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] "
+                                       "but one of them has type {}.", getName(), arguments[i + 1]->getName());
 
             if (!array_type)
-                throw Exception(msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw exception;
 
             auto nested_type = array_type->getNestedType();
             WhichDataType which(nested_type);
             if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                throw Exception(msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw exception;
         }
         return arguments[0];
     }
@@ -547,8 +551,8 @@ public:
         else if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -583,29 +587,29 @@ private:
 
         if (is_column_const[0])
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*typeid_cast<const ColumnConst &>(*column_ptrs[0]).getDataColumnPtr());
         }
         else
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*column_ptrs[0]);
         }
         container0 = &col_agg_func->getData();
 
         if (is_column_const[1])
-            array1 = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get());
+            array1 = &typeid_cast<const ColumnArray &>(*typeid_cast<const ColumnConst &>(*column_ptrs[1]).getDataColumnPtr());
         else
-            array1 = typeid_cast<const ColumnArray *>(column_ptrs[1]);
+            array1 = &typeid_cast<const ColumnArray &>(*column_ptrs[1]);
 
         const ColumnArray::Offsets & from_offsets = array1->getOffsets();
-        const ColumnVector<UInt64>::Container & from_container = typeid_cast<const ColumnVector<UInt64> *>(&array1->getData())->getData();
+        const ColumnVector<UInt64>::Container & from_container = typeid_cast<const ColumnVector<UInt64> &>(array1->getData()).getData();
 
         if (is_column_const[2])
-            array2 = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get());
+            array2 = &typeid_cast<const ColumnArray &>(*typeid_cast<const ColumnConst &>(*column_ptrs[2]).getDataColumnPtr());
         else
-            array2 = typeid_cast<const ColumnArray *>(column_ptrs[2]);
+            array2 = &typeid_cast<const ColumnArray &>(*column_ptrs[2]);
 
         const ColumnArray::Offsets & to_offsets = array2->getOffsets();
-        const ColumnVector<UInt64>::Container & to_container = typeid_cast<const ColumnVector<UInt64> *>(&array2->getData())->getData();
+        const ColumnVector<UInt64>::Container & to_container = typeid_cast<const ColumnVector<UInt64> &>(array2->getData()).getData();
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
 
@@ -640,13 +644,13 @@ private:
             }
 
             if (from_end - from_start != to_end - to_start)
-                throw Exception("From array size and to array size mismatch", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "From array size and to array size mismatch");
 
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data_2
                 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
-            bitmap_data_2.rbs.merge(bitmap_data_0.rbs);
-            bitmap_data_2.rbs.rb_replace(&from_container[from_start], &to_container[to_start], from_end - from_start);
+            bitmap_data_2.roaring_bitmap_with_small_set.merge(bitmap_data_0.roaring_bitmap_with_small_set);
+            bitmap_data_2.roaring_bitmap_with_small_set.rb_replace(&from_container[from_start], &to_container[to_start], from_end - from_start);
         }
         return col_to;
     }
@@ -672,9 +676,9 @@ public:
     {
         const auto * bitmap_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type && bitmap_type->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}.",
+                            getName(), arguments[0]->getName());
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
@@ -705,8 +709,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return col_to;
     }
@@ -736,7 +740,7 @@ public:
     template <typename T>
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data)
     {
-        return bitmap_data.rbs.size();
+        return bitmap_data.roaring_bitmap_with_small_set.size();
     }
 };
 
@@ -747,7 +751,7 @@ public:
     template <typename T>
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data)
     {
-        return bitmap_data.rbs.rb_min();
+        return bitmap_data.roaring_bitmap_with_small_set.rb_min();
     }
 };
 
@@ -758,7 +762,7 @@ public:
     template <typename T>
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data)
     {
-        return bitmap_data.rbs.rb_max();
+        return bitmap_data.roaring_bitmap_with_small_set.rb_max();
     }
 };
 
@@ -769,7 +773,7 @@ struct BitmapAndCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // roaring_bitmap_and_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_and_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_and_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -781,7 +785,7 @@ struct BitmapOrCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // return roaring_bitmap_or_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_or_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_or_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -792,7 +796,7 @@ struct BitmapXorCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // return roaring_bitmap_xor_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_xor_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_xor_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -803,7 +807,7 @@ struct BitmapAndnotCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // roaring_bitmap_andnot_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_andnot_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_andnot_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -813,7 +817,7 @@ struct BitmapHasAllImpl
     using ReturnType = UInt8;
     static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        return bitmap_data_1.rbs.rb_is_subset(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_is_subset(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -823,7 +827,7 @@ struct BitmapHasAnyImpl
     using ReturnType = UInt8;
     static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        return bitmap_data_1.rbs.rb_intersect(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_intersect(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -846,15 +850,15 @@ public:
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}",
+                            getName(), arguments[0]->getName());
 
         WhichDataType which(arguments[1].get());
         if (!which.isNativeInt() && !which.isNativeUInt())
-            throw Exception(
-                "Second argument for function " + getName() + " must be an native integer type but it has type " + arguments[1]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument for function {} must be an native integer type but it has type {}",
+                            getName(), arguments[1]->getName());
 
         return std::make_shared<DataTypeNumber<UInt8>>();
     }
@@ -886,8 +890,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return col_to;
     }
@@ -907,9 +911,9 @@ private:
         is_column_const[0] = isColumnConst(*column_ptrs[0]);
 
         if (is_column_const[0])
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get())->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction &>(typeid_cast<const ColumnConst &>(*column_ptrs[0]).getDataColumn()).getData();
         else
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0])->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction &>(*column_ptrs[0]).getData();
 
         // we can always cast the second column to ColumnUInt64
         auto uint64_column = castColumn(arguments[1], std::make_shared<DataTypeUInt64>());
@@ -917,9 +921,9 @@ private:
         is_column_const[1] = isColumnConst(*column_ptrs[1]);
 
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*column_ptrs[1]).getDataColumn()).getData();
         else
-            container1 = &typeid_cast<const ColumnUInt64*>(column_ptrs[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[1]).getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -927,7 +931,7 @@ private:
             const UInt64 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
-            vec_to[i] = bitmap_data_0.rbs.rb_contains(data1);
+            vec_to[i] = bitmap_data_0.roaring_bitmap_with_small_set.rb_contains(data1);
         }
     }
 };
@@ -952,21 +956,21 @@ public:
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}",
+                            getName(), arguments[0]->getName());
 
         const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
         if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument for function {} must be a bitmap but it has type {}",
+                            getName(), arguments[1]->getName());
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
-            throw Exception(
-                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
-                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The nested type in bitmaps must be the same, but one is {}, and the other is {}",
+                            bitmap_type0->getArgumentsDataTypes()[0]->getName(),
+                            bitmap_type1->getArgumentsDataTypes()[0]->getName());
 
         return std::make_shared<DataTypeNumber<ToType>>();
     }
@@ -998,8 +1002,8 @@ public:
         else if (which.isInt64())
             executeIntType<Int64>(arguments, input_rows_count, vec_to);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
 
         return col_to;
     }
@@ -1046,7 +1050,7 @@ struct BitmapAndImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_and(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_and(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1055,7 +1059,7 @@ struct BitmapOrImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_or(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_or(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1064,7 +1068,7 @@ struct BitmapXorImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_xor(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_xor(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1073,7 +1077,7 @@ struct BitmapAndnotImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_andnot(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_andnot(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1102,21 +1106,21 @@ public:
     {
         const auto * bitmap_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
         if (!(bitmap_type0 && bitmap_type0->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "First argument for function " + getName() + " must be a bitmap but it has type " + arguments[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a bitmap but it has type {}",
+                            getName(), arguments[0]->getName());
 
         const auto * bitmap_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
         if (!(bitmap_type1 && bitmap_type1->getFunctionName() == "groupBitmap"))
-            throw Exception(
-                "Second argument for function " + getName() + " must be a bitmap but it has type " + arguments[1]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument for function {} must be a bitmap but it has type {}",
+                            getName(), arguments[1]->getName());
 
         if (bitmap_type0->getArgumentsDataTypes()[0]->getTypeId() != bitmap_type1->getArgumentsDataTypes()[0]->getTypeId())
-            throw Exception(
-                "The nested type in bitmaps must be the same, but one is " + bitmap_type0->getArgumentsDataTypes()[0]->getName()
-                    + ", and the other is " + bitmap_type1->getArgumentsDataTypes()[0]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The nested type in bitmaps must be the same, but one is {}, and the other is {}",
+                            bitmap_type0->getArgumentsDataTypes()[0]->getName(),
+                            bitmap_type1->getArgumentsDataTypes()[0]->getName());
 
         return arguments[0];
     }
@@ -1145,8 +1149,8 @@ public:
         else if (which.isInt64())
             return executeBitmapData<Int64>(arguments, input_rows_count);
         else
-            throw Exception(
-                "Unexpected type " + from_type->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
+                from_type->getName(), getName());
     }
 
 private:
@@ -1186,7 +1190,7 @@ private:
             auto * bm_2 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
 
             // check the name of operation (bitmapAnd) and check if it is the situation mentioned above
-            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->rbs.isLarge() && bm_2->rbs.isSmall();
+            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->roaring_bitmap_with_small_set.isLarge() && bm_2->roaring_bitmap_with_small_set.isSmall();
             col_to->insertFrom(need_exchange ? data_ptr_1 : data_ptr_0);
             AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2

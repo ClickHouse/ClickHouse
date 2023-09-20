@@ -2,7 +2,6 @@
 
 #include <variant>
 #include <optional>
-#include <shared_mutex>
 #include <deque>
 #include <vector>
 
@@ -17,7 +16,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Storages/TableLockHolder.h>
-#include <Common/logger_useful.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -148,18 +146,22 @@ public:
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    HashJoin(
+        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false, size_t reserve_num = 0);
 
+    ~HashJoin() override;
+
+    std::string getName() const override { return "HashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
     void checkTypesOfKeys(const Block & block) const override;
 
-    /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
+    /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
@@ -187,7 +189,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(
+    IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
@@ -217,6 +219,15 @@ public:
         M(keys256)                     \
         M(hashed)
 
+    /// Only for maps using hash table.
+    #define APPLY_FOR_HASH_JOIN_VARIANTS(M) \
+        M(key32)                            \
+        M(key64)                            \
+        M(key_string)                       \
+        M(key_fixed_string)                 \
+        M(keys128)                          \
+        M(keys256)                          \
+        M(hashed)
 
     /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -266,6 +277,22 @@ public:
             }
         }
 
+        void reserve(Type which, size_t num)
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
+                case Type::key8:             break;
+                case Type::key16:            break;
+
+            #define M(NAME) \
+                case Type::NAME: NAME->reserve(num); break;
+                APPLY_FOR_HASH_JOIN_VARIANTS(M)
+            #undef M
+            }
+        }
+
         size_t getTotalRowCount(Type which) const
         {
             switch (which)
@@ -279,7 +306,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -295,7 +322,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -311,7 +338,7 @@ public:
             #undef M
             }
 
-            __builtin_unreachable();
+            UNREACHABLE();
         }
     };
 
@@ -336,6 +363,9 @@ public:
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
+
+        size_t blocks_allocated_size = 0;
+        size_t blocks_nullmaps_allocated_size = 0;
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -350,9 +380,20 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
+    BlocksList releaseJoinedBlocks(bool restructure = false);
+
+    /// Modify right block (update structure according to sample block) to save it in block list
+    static Block prepareRightBlock(const Block & block, const Block & saved_block_sample_);
+    Block prepareRightBlock(const Block & block) const;
+
+    const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
+
+    void debugKeys() const;
+
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
 private:
     template<bool> friend class NotJoinedHash;
@@ -360,15 +401,15 @@ private:
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
-    JoinKind kind;
-    JoinStrictness strictness;
+    const JoinKind kind;
+    const JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
-    ASOFJoinInequality asof_inequality;
+    const ASOFJoinInequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.
@@ -391,18 +432,18 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
+    /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
+    bool shrink_blocks = false;
+    Int64 memory_usage_before_adding_blocks = 0;
+
     Poco::Logger * log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
-    /// If set HashJoin instance is not available for modification (addJoinedBlock)
+    /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    void dataMapInit(MapsVariant &);
+    void dataMapInit(MapsVariant &, size_t);
 
-    const Block & savedBlockSample() const { return data->sample_block; }
-
-    /// Modify (structure) right block to save it in block list
-    Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>

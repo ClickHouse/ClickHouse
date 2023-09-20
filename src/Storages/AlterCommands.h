@@ -196,8 +196,11 @@ public:
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
-    /// At least one command modify settings.
-    bool hasSettingsAlterCommand() const;
+    /// At least one command modify settings or comments.
+    bool hasNonReplicatedAlterCommand() const;
+
+    /// All commands modify settings or comments.
+    bool areNonReplicatedAlterCommands() const;
 
     /// All commands modify settings only.
     bool isSettingsAlter() const;
@@ -209,7 +212,10 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
+
+    /// Check if commands have any inverted index
+    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

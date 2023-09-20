@@ -48,9 +48,8 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception("Argument for function " + getName() + " must be array but it "
-                " has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
+                getName(), arguments[0]->getName());
 
         auto nested_type = removeNullable(array_type->getNestedType());
 
@@ -269,10 +268,9 @@ void FunctionArrayDistinct::executeHashed(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            UInt128 hash;
             SipHash hash_function;
             src_data.updateHashWithValue(j, hash_function);
-            hash_function.get128(hash);
+            const auto hash = hash_function.get128();
 
             if (!set.find(hash))
             {

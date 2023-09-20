@@ -125,7 +125,7 @@ SELECT max2(-1, 2);
 **语法**
 
 ```sql
-max2(value1, value2)
+min2(value1, value2)
 ```
 
 **参数**
@@ -154,5 +154,3 @@ SELECT min2(-1, 2);
 │          -1 │
 └─────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

@@ -20,9 +20,12 @@ private:
     bool readField(IColumn & column, size_t column_idx);
     void skipField();
 
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
     String table_name;
     DataTypes types;
-    std::unordered_map<String, size_t> column_indexes_by_names;
+    Block::NameMap column_indexes_by_names;
     const FormatSettings format_settings;
 };
 
@@ -33,7 +36,7 @@ public:
 
 private:
     NamesAndTypesList readSchema() override;
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     String table_name;
 };

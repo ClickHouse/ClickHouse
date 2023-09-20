@@ -66,12 +66,15 @@ public:
 
     virtual ReservationPtr reserve(UInt64 bytes) override = 0;
 
+    /// This is a volume.
+    bool isVolume() const override { return true; }
+
     /// Volume name from config
     const String & getName() const override { return name; }
     virtual VolumeType getType() const = 0;
 
     /// Return biggest unreserved space across all disks
-    UInt64 getMaxUnreservedFreeSpace() const;
+    std::optional<UInt64> getMaxUnreservedFreeSpace() const;
 
     DiskPtr getDisk() const { return getDisk(0); }
     virtual DiskPtr getDisk(size_t i) const { return disks[i]; }

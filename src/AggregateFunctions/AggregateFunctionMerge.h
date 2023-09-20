@@ -30,7 +30,7 @@ private:
 
 public:
     AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
         , nested_func(nested_)
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
@@ -45,9 +45,9 @@ public:
         return nested_func->getName() + "Merge";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
     {
-        return nested_func->getReturnType();
+        return nested_->getResultType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -80,6 +80,11 @@ public:
         nested_func->destroy(place);
     }
 
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_func->destroyUpToState(place);
+    }
+
     bool hasTrivialDestructor() const override
     {
         return nested_func->hasTrivialDestructor();
@@ -105,6 +110,13 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
+    bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
+    {
+        nested_func->merge(place, rhs, thread_pool, arena);
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
@@ -126,6 +138,11 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
 };
 
 }

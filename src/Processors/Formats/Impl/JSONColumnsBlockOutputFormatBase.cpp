@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferValidUTF8.h>
 #include <Formats/JSONUtils.h>
 
 
@@ -7,11 +8,10 @@ namespace DB
 {
 
 JSONColumnsBlockOutputFormatBase::JSONColumnsBlockOutputFormatBase(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8)
+    : OutputFormatWithUTF8ValidationAdaptor(validate_utf8, header_, out_)
     , format_settings(format_settings_)
     , serializations(header_.getSerializations())
-    , ostr(&out)
 {
 }
 
@@ -28,7 +28,6 @@ void JSONColumnsBlockOutputFormatBase::consume(Chunk chunk)
 
 void JSONColumnsBlockOutputFormatBase::writeSuffix()
 {
-
     writeChunk(mono_chunk);
     mono_chunk.clear();
 }
@@ -43,6 +42,7 @@ void JSONColumnsBlockOutputFormatBase::writeChunk(Chunk & chunk)
         writeColumn(*columns[i], *serializations[i]);
         writeColumnEnd(i == columns.size() - 1);
     }
+    written_rows += chunk.getNumRows();
     writeChunkEnd();
 }
 

@@ -1,3 +1,4 @@
+-- Tags: distributed
 drop table if exists table_1;
 drop table if exists table_2;
 drop table if exists v_numbers;
@@ -5,6 +6,8 @@ drop table if exists mv_table;
 
 create table table_1 (x UInt32, y String) engine = MergeTree order by x;
 insert into table_1 values (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
+
+CREATE TABLE distr_table (x UInt32, y String) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), 'table_1');
 
 -- { echoOn }
 
@@ -28,6 +31,9 @@ select x from table_1 prewhere x != 2 where x != 2 settings additional_table_fil
 
 select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy = 0'};
 select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy != 0'};
+
+select * from distr_table settings additional_table_filters={'distr_table' : 'x = 2'};
+select * from distr_table settings additional_table_filters={'distr_table' : 'x != 2 and x != 3'};
 
 select * from system.numbers limit 5;
 select * from system.numbers as t limit 5 settings additional_table_filters={'t' : 'number % 2 != 0'};

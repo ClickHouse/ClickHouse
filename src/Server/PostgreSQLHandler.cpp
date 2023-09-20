@@ -11,7 +11,7 @@
 #include <base/scope_guard.h>
 #include <random>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -58,7 +58,7 @@ void PostgreSQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->getClientInfo().connection_id = connection_id;
+    session->setClientConnectionId(connection_id);
 
     try
     {
@@ -282,7 +282,7 @@ void PostgreSQLHandler::processQuery()
             settings.max_parser_depth,
             settings.allow_settings_after_format_in_insert);
         if (!parse_res.second)
-            throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -317,6 +317,9 @@ void PostgreSQLHandler::processQuery()
 bool PostgreSQLHandler::isEmptyQuery(const String & query)
 {
     if (query.empty())
+        return true;
+    /// golang driver pgx sends ";"
+    if (query == ";")
         return true;
 
     Poco::RegularExpression regex(R"(\A\s*\z)");

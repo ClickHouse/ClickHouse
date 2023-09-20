@@ -44,8 +44,8 @@ protected:
 public:
     using Impl = ImplTable;
 
-    static constexpr size_t NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
-    static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
+    static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
+    static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
     size_t hash(const Key & x) const { return Hash::operator()(x); }
 
@@ -159,14 +159,16 @@ public:
 
     class const_iterator /// NOLINT
     {
-        Self * container{};
+        const Self * container{};
         size_t bucket{};
         typename Impl::const_iterator current_it{};
 
         friend class TwoLevelHashTable;
 
-        const_iterator(Self * container_, size_t bucket_, typename Impl::const_iterator current_it_)
-            : container(container_), bucket(bucket_), current_it(current_it_) {}
+        const_iterator(const Self * container_, size_t bucket_, typename Impl::const_iterator current_it_)
+            : container(container_), bucket(bucket_), current_it(current_it_)
+        {
+        }
 
     public:
         const_iterator() = default;
@@ -222,11 +224,19 @@ public:
         emplace(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
-            insertSetMapped(res.first->getMapped(), x);
+            res.first->setMapped(x);
 
         return res;
     }
 
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
+    {
+        const auto & key = keyHolderGetKey(key_holder);
+        const auto key_hash = hash(key);
+        const auto bucket = getBucketFromHash(key_hash);
+        impls[bucket].prefetchByHash(key_hash);
+    }
 
     /** Insert the key,
       * return an iterator to a position that can be used for `placement new` of value,
@@ -278,13 +288,13 @@ public:
 
     void write(DB::WriteBuffer & wb) const
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].write(wb);
     }
 
     void writeText(DB::WriteBuffer & wb) const
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
         {
             if (i != 0)
                 DB::writeChar(',', wb);
@@ -294,13 +304,13 @@ public:
 
     void read(DB::ReadBuffer & rb)
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].read(rb);
     }
 
     void readText(DB::ReadBuffer & rb)
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
         {
             if (i != 0)
                 DB::assertChar(',', rb);
@@ -312,7 +322,7 @@ public:
     size_t size() const
     {
         size_t res = 0;
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].size();
 
         return res;
@@ -320,7 +330,7 @@ public:
 
     bool empty() const
     {
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             if (!impls[i].empty())
                 return false;
 
@@ -330,7 +340,7 @@ public:
     size_t getBufferSizeInBytes() const
     {
         size_t res = 0;
-        for (size_t i = 0; i < NUM_BUCKETS; ++i)
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].getBufferSizeInBytes();
 
         return res;

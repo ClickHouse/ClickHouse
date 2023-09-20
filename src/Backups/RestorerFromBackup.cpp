@@ -19,8 +19,8 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
 #include <boost/algorithm/string/join.hpp>
 #include <filesystem>
@@ -96,6 +96,7 @@ RestorerFromBackup::RestorerFromBackup(
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
+    , tables_dependencies("RestorerFromBackup")
 {
 }
 
@@ -133,6 +134,7 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
     /// Create tables using the create queries read from the backup.
     setStage(Stage::CREATING_TABLES);
+    removeUnresolvedDependencies();
     createTables();
 
     /// All what's left is to insert data to tables.
@@ -143,16 +145,16 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
     if (restore_coordination)
     {
-        restore_coordination->setStage(restore_settings.host_id, new_stage, message);
+        restore_coordination->setStage(new_stage, message);
         if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
-            restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+            restore_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
         else
-            restore_coordination->waitForStage(all_hosts, new_stage);
+            restore_coordination->waitForStage(new_stage);
     }
 }
 
@@ -314,12 +316,13 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
             = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
     }
 
-    auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
+    auto read_buffer = backup->readFile(*metadata_path);
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
     ParserCreateQuery create_parser;
     ASTPtr create_table_query = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
 
     QualifiedTableName table_name = renaming_map.getNewTableName(table_name_in_backup);
@@ -341,9 +344,10 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
     res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
     res_table_info.has_data = backup->hasFiles(data_path_in_backup);
     res_table_info.data_path_in_backup = data_path_in_backup;
+
+    tables_dependencies.addDependencies(table_name, getDependenciesFromCreateQuery(context, table_name, create_table_query));
 
     if (partitions)
     {
@@ -407,7 +411,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 
     if (metadata_path)
     {
-        auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
+        auto read_buffer = backup->readFile(*metadata_path);
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -567,12 +571,14 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
     if (database_info.is_predefined_database)
         return;
 
-    auto create_database_query = database_info.create_database_query;
-    if (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists)
-    {
-        create_database_query = create_database_query->clone();
-        create_database_query->as<ASTCreateQuery &>().if_not_exists = true;
-    }
+    auto create_database_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_info.create_database_query->clone());
+
+    /// Generate a new UUID for a database.
+    /// The generated UUID will be ignored if the database does not support UUIDs.
+    restore_coordination->generateUUIDForTable(*create_database_query);
+
+    /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
+    create_database_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
     LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
 
@@ -601,17 +607,17 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
         if (!restore_settings.allow_different_database_def && !database_info.is_predefined_database)
         {
             /// Check that the database's definition is the same as expected.
-            ASTPtr create_database_query = database->getCreateDatabaseQuery();
-            adjustCreateQueryForBackup(create_database_query, context->getGlobalContext(), nullptr);
-            ASTPtr expected_create_query = database_info.create_database_query;
-            if (serializeAST(*create_database_query) != serializeAST(*expected_create_query))
+
+            ASTPtr existing_database_def = database->getCreateDatabaseQuery();
+            ASTPtr database_def_from_backup = database_info.create_database_query;
+            if (!compareRestoredDatabaseDef(*existing_database_def, *database_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
                     "The database has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    serializeAST(*create_database_query),
-                    serializeAST(*expected_create_query));
+                    serializeAST(*existing_database_def),
+                    serializeAST(*database_def_from_backup));
             }
         }
     }
@@ -622,21 +628,81 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
+void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)
+{
+    constexpr auto setting_name = "storage_policy";
+    if (query_ptr && restore_settings.storage_policy.has_value())
+    {
+        ASTStorage * storage = query_ptr->as<ASTCreateQuery &>().storage;
+        if (storage && storage->settings)
+        {
+            if (restore_settings.storage_policy.value().empty())
+                /// it has been set to "" deliberately, so the source storage policy is erased
+                storage->settings->changes.removeSetting(setting_name);
+            else
+                /// it has been set to a custom value, so it either overwrites the existing value or is added as a new one
+                storage->settings->changes.setSetting(setting_name, restore_settings.storage_policy.value());
+        }
+    }
+}
+
+void RestorerFromBackup::removeUnresolvedDependencies()
+{
+    auto need_exclude_dependency = [this](const StorageID & table_id)
+    {
+        /// Table will be restored.
+        if (table_infos.contains(table_id.getQualifiedName()))
+            return false;
+
+        /// Table exists and it already exists
+        if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+        {
+            LOG_WARNING(
+                log,
+                "Tables {} in backup depend on {}, but seems like {} is not in the backup and does not exist. "
+                "Will try to ignore that and restore tables",
+                fmt::join(tables_dependencies.getDependents(table_id), ", "),
+                table_id,
+                table_id);
+        }
+
+        size_t num_dependencies, num_dependents;
+        tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
+        if (num_dependencies || !num_dependents)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
+                table_id);
+
+        return true; /// Exclude this dependency.
+    };
+
+    tables_dependencies.removeTablesIf(need_exclude_dependency);
+
+    if (tables_dependencies.getNumberOfTables() != table_infos.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");
+
+    if (tables_dependencies.hasCyclicDependencies())
+    {
+        LOG_WARNING(
+            log,
+            "Tables {} in backup have cyclic dependencies: {}. Will try to ignore that and restore tables",
+            fmt::join(tables_dependencies.getTablesWithCyclicDependencies(), ", "),
+            tables_dependencies.describeCyclicDependencies());
+    }
+}
+
 void RestorerFromBackup::createTables()
 {
-    while (true)
+    /// We need to create tables considering their dependencies.
+    tables_dependencies.log();
+    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
+    for (const auto & table_id : tables_to_create)
     {
-        /// We need to create tables considering their dependencies.
-        auto tables_to_create = findTablesWithoutDependencies();
-        if (tables_to_create.empty())
-            break; /// We've already created all the tables.
-
-        for (const auto & table_name : tables_to_create)
-        {
-            createTable(table_name);
-            checkTable(table_name);
-            insertDataToTable(table_name);
-        }
+        auto table_name = table_id.getQualifiedName();
+        createTable(table_name);
+        checkTable(table_name);
+        insertDataToTable(table_name);
     }
 }
 
@@ -650,20 +716,23 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
     if (table_info.is_predefined_table)
         return;
 
-    auto create_table_query = table_info.create_table_query;
-    if (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists)
-    {
-        create_table_query = create_table_query->clone();
-        create_table_query->as<ASTCreateQuery &>().if_not_exists = true;
-    }
+    auto create_table_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(table_info.create_table_query->clone());
+
+    /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
+    /// The generated UUID will be ignored if the database does not support UUIDs.
+    restore_coordination->generateUUIDForTable(*create_table_query);
+
+    /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
+    create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
     LOG_TRACE(
         log, "Creating {}: {}", tableNameWithTypeToString(table_name.database, table_name.table, false), serializeAST(*create_table_query));
 
     try
     {
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_name.database);
-        table_info.database = database;
+        if (!table_info.database)
+            table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
+        DatabasePtr database = table_info.database;
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
@@ -683,19 +752,16 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 {
     auto & table_info = table_infos.at(table_name);
-    auto database = table_info.database;
 
     try
     {
-        if (!database)
-        {
-            database = DatabaseCatalog::instance().getDatabase(table_name.database);
-            table_info.database = database;
-        }
-
         auto resolved_id = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
             ? context->resolveStorageID(StorageID{"", table_name.table}, Context::ResolveExternal)
             : context->resolveStorageID(StorageID{table_name.database, table_name.table}, Context::ResolveGlobal);
+
+        if (!table_info.database)
+            table_info.database = DatabaseCatalog::instance().getDatabase(table_name.database);
+        DatabasePtr database = table_info.database;
 
         StoragePtr storage = database->getTable(resolved_id.table_name, context);
         table_info.storage = storage;
@@ -703,17 +769,16 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 
         if (!restore_settings.allow_different_table_def && !table_info.is_predefined_table)
         {
-            ASTPtr create_table_query = database->getCreateTableQuery(resolved_id.table_name, context);
-            adjustCreateQueryForBackup(create_table_query, context->getGlobalContext(), nullptr);
-            ASTPtr expected_create_query = table_info.create_table_query;
-            if (serializeAST(*create_table_query) != serializeAST(*expected_create_query))
+            ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
+            ASTPtr table_def_from_backup = table_info.create_table_query;
+            if (!compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
             {
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "The table has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    serializeAST(*create_table_query),
-                    serializeAST(*expected_create_query));
+                    serializeAST(*existing_table_def),
+                    serializeAST(*table_def_from_backup));
             }
         }
     }
@@ -750,62 +815,6 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         e.addMessage("While restoring data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
-}
-
-/// Returns the list of tables without dependencies or those which dependencies have been created before.
-std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencies() const
-{
-    std::vector<QualifiedTableName> tables_without_dependencies;
-    bool all_tables_created = true;
-
-    for (const auto & [key, table_info] : table_infos)
-    {
-        if (table_info.storage)
-            continue;
-
-        /// Found a table which is not created yet.
-        all_tables_created = false;
-
-        /// Check if all dependencies have been created before.
-        bool all_dependencies_met = true;
-        for (const auto & dependency : table_info.dependencies)
-        {
-            auto it = table_infos.find(dependency);
-            if ((it != table_infos.end()) && !it->second.storage)
-            {
-                all_dependencies_met = false;
-                break;
-            }
-        }
-
-        if (all_dependencies_met)
-            tables_without_dependencies.push_back(key);
-    }
-
-    if (!tables_without_dependencies.empty())
-        return tables_without_dependencies;
-
-    if (all_tables_created)
-        return {};
-
-    /// Cyclic dependency? We'll try to create those tables anyway but probably it's going to fail.
-    std::vector<QualifiedTableName> tables_with_cyclic_dependencies;
-    for (const auto & [key, table_info] : table_infos)
-    {
-        if (!table_info.storage)
-            tables_with_cyclic_dependencies.push_back(key);
-    }
-
-    /// Only show a warning here, proper exception will be thrown later on creating those tables.
-    LOG_WARNING(
-        log,
-        "Some tables have cyclic dependency from each other: {}",
-        boost::algorithm::join(
-            tables_with_cyclic_dependencies
-                | boost::adaptors::transformed([](const QualifiedTableName & table_name) -> String { return table_name.getFullName(); }),
-            ", "));
-
-    return tables_with_cyclic_dependencies;
 }
 
 void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)

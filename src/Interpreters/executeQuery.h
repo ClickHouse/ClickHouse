@@ -1,17 +1,31 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <QueryPipeline/BlockIO.h>
-#include <Interpreters/Context_fwd.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/QueryLog.h>
+#include <QueryPipeline/BlockIO.h>
+
+#include <memory>
+#include <optional>
 
 namespace DB
 {
 
+class IInterpreter;
 class ReadBuffer;
 class WriteBuffer;
+struct QueryStatusInfo;
 
-using SetResultDetailsFunc = std::function<void(const String &, const String &, const String &, const String &)>;
+struct QueryResultDetails
+{
+    String query_id;
+    std::optional<String> content_type = {};
+    std::optional<String> format = {};
+    std::optional<String> timezone = {};
+};
+
+using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 
 /// Parse and execute a query.
 void executeQuery(
@@ -58,4 +72,42 @@ BlockIO executeQuery(
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context);
 
+/// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
+QueryLogElement logQueryStart(
+    const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
+    const ContextMutablePtr & context,
+    const String & query_for_logging,
+    const ASTPtr & query_ast,
+    const QueryPipeline & pipeline,
+    const std::unique_ptr<IInterpreter> & interpreter,
+    bool internal,
+    const String & query_database,
+    const String & query_table,
+    bool async_insert);
+
+void logQueryFinish(
+    QueryLogElement & elem,
+    const ContextMutablePtr & context,
+    const ASTPtr & query_ast,
+    const QueryPipeline & query_pipeline,
+    bool pulling_pipeline,
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    QueryCache::Usage query_cache_usage,
+    bool internal);
+
+void logQueryException(
+    QueryLogElement & elem,
+    const ContextMutablePtr & context,
+    const Stopwatch & start_watch,
+    const ASTPtr & query_ast,
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    bool internal,
+    bool log_error);
+
+void logExceptionBeforeStart(
+    const String & query_for_logging,
+    ContextPtr context,
+    ASTPtr ast,
+    const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
+    UInt64 elapsed_millliseconds);
 }

@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
-    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
@@ -21,7 +20,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     UInt32 version;
     readIntText(version, buf);
 
-    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
+    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_INLINE_DATA)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
@@ -55,7 +54,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         assertChar('\n', buf);
 
         storage_objects[i].relative_path = object_relative_path;
-        storage_objects[i].bytes_size = object_size;
+        storage_objects[i].metadata.size_bytes = object_size;
     }
 
     readIntText(ref_count, buf);
@@ -66,14 +65,12 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         readBoolText(read_only, buf);
         assertChar('\n', buf);
     }
-}
 
-void DiskObjectStorageMetadata::createFromSingleObject(const std::string & relative_path, size_t bytes_size, size_t ref_count_, bool read_only_)
-{
-    storage_objects.emplace_back(relative_path, bytes_size);
-    total_size = bytes_size;
-    ref_count = ref_count_;
-    read_only = read_only_;
+    if (version >= VERSION_INLINE_DATA)
+    {
+        readEscapedString(inline_data, buf);
+        assertChar('\n', buf);
+    }
 }
 
 void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
@@ -84,7 +81,11 @@ void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    writeIntText(VERSION_READ_ONLY_FLAG, buf);
+    if (inline_data.empty())
+        writeIntText(VERSION_READ_ONLY_FLAG, buf);
+    else
+        writeIntText(VERSION_INLINE_DATA, buf);
+
     writeChar('\n', buf);
 
     writeIntText(storage_objects.size(), buf);
@@ -92,9 +93,9 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeIntText(total_size, buf);
     writeChar('\n', buf);
 
-    for (const auto & [object_relative_path, object_size] : storage_objects)
+    for (const auto & [object_relative_path, object_metadata] : storage_objects)
     {
-        writeIntText(object_size, buf);
+        writeIntText(object_metadata.size_bytes, buf);
         writeChar('\t', buf);
         writeEscapedString(object_relative_path, buf);
         writeChar('\n', buf);
@@ -105,6 +106,12 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     writeBoolText(read_only, buf);
     writeChar('\n', buf);
+
+    if (!inline_data.empty())
+    {
+        writeEscapedString(inline_data, buf);
+        writeChar('\n', buf);
+    }
 
     buf.finalize();
     if (sync)
@@ -131,11 +138,8 @@ DiskObjectStorageMetadata::DiskObjectStorageMetadata(
 
 void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
 {
-    if (!object_storage_root_path.empty() && path.starts_with(object_storage_root_path))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected relative path");
-
     total_size += size;
-    storage_objects.emplace_back(path, size);
+    storage_objects.emplace_back(path, ObjectMetadata{size, {}, {}});
 }
 
 

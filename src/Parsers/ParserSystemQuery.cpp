@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
     /// Better form for user: SYSTEM <ACTION> table ON CLUSTER cluster
@@ -68,10 +68,10 @@ enum class SystemQueryTargetType
 {
     Model,
     Function,
-    Disk
+    Disk,
 };
 
-static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
+[[nodiscard]] static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, SystemQueryTargetType target_type)
 {
     /// Better form for user: SYSTEM <ACTION> target_name ON CLUSTER cluster
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster target_name
@@ -136,7 +136,7 @@ static bool parseQueryWithOnClusterAndTarget(std::shared_ptr<ASTSystemQuery> & r
     return true;
 }
 
-static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+[[nodiscard]] static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                     Expected & expected)
 {
     String cluster_str;
@@ -146,6 +146,57 @@ static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IPars
             return false;
     }
     res->cluster = cluster_str;
+
+    return true;
+}
+
+[[nodiscard]] static bool parseDropReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected, bool database)
+{
+    if (!parseQueryWithOnCluster(res, pos, expected))
+        return false;
+
+    ASTPtr ast;
+    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+        return false;
+    res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (ParserKeyword{"FROM SHARD"}.ignore(pos, expected))
+    {
+        if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            return false;
+        res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
+    }
+
+    if (ParserKeyword{"FROM"}.ignore(pos, expected))
+    {
+        // way 1. parse replica database
+        // way 2. parse replica table
+        // way 3. parse replica zkpath
+        if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
+        {
+            ParserIdentifier database_parser;
+            if (!database_parser.parse(pos, res->database, expected))
+                return false;
+        }
+        else if (!database && ParserKeyword{"TABLE"}.ignore(pos, expected))
+        {
+            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
+        }
+        else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
+        {
+            ASTPtr path_ast;
+            if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                return false;
+            String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+            if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
+                zk_path.pop_back();
+            res->replica_zk_path = zk_path;
+        }
+        else
+            return false;
+    }
+    else
+        res->is_drop_whole_replica = true;
 
     return true;
 }
@@ -194,72 +245,64 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+
         case Type::DROP_REPLICA:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
-            ASTPtr ast;
-            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+            if (!parseDropReplica(res, pos, expected, /* database */ false))
                 return false;
-            res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
-            if (ParserKeyword{"FROM"}.ignore(pos, expected))
-            {
-                // way 1. parse replica database
-                // way 2. parse replica tables
-                // way 3. parse replica zkpath
-                if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
-                {
-                    ParserIdentifier database_parser;
-                    if (!database_parser.parse(pos, res->database, expected))
-                        return false;
-                }
-                else if (ParserKeyword{"TABLE"}.ignore(pos, expected))
-                {
-                    parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
-                }
-                else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
-                {
-                    ASTPtr path_ast;
-                    if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
-                        return false;
-                    String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-                    if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
-                        zk_path.pop_back();
-                    res->replica_zk_path = zk_path;
-                }
-                else
-                    return false;
-            }
+            break;
+        }
+        case Type::DROP_DATABASE_REPLICA:
+        {
+            if (!parseDropReplica(res, pos, expected, /* database */ true))
+                return false;
+            break;
+        }
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->fail_point_name = ast->as<ASTIdentifier &>().name();
             else
-                res->is_drop_whole_replica = true;
-
+                return false;
             break;
         }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
+        case Type::WAIT_LOADING_PARTS:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
+            if (res->type == Type::SYNC_REPLICA)
+            {
+                if (ParserKeyword{"STRICT"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::STRICT;
+                else if (ParserKeyword{"LIGHTWEIGHT"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::LIGHTWEIGHT;
+                else if (ParserKeyword{"PULL"}.ignore(pos, expected))
+                    res->sync_replica_mode = SyncReplicaMode::PULL;
+            }
             break;
         }
 
         case Type::SYNC_DATABASE_REPLICA:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             if (!parseDatabaseAsAST(pos, expected, res->database))
                 return false;
             break;
         }
-
         case Type::RESTART_DISK:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }
-
         /// FLUSH DISTRIBUTED requires table
         /// START/STOP DISTRIBUTED SENDS does not require table
         case Type::STOP_DISTRIBUTED_SENDS:
@@ -310,7 +353,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             else
             {
-                parseQueryWithOnCluster(res, pos, expected);
+                if (!parseQueryWithOnCluster(res, pos, expected))
+                    return false;
                 if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
                 {
                     if (!parse_on_volume())
@@ -335,13 +379,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-            parseQueryWithOnCluster(res, pos, expected);
+        case Type::STOP_PULLING_REPLICATION_LOG:
+        case Type::START_PULLING_REPLICATION_LOG:
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
         case Type::SUSPEND:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
 
             ASTPtr seconds;
             if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
@@ -359,8 +407,27 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral path_parser;
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
-                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            parseQueryWithOnCluster(res, pos, expected);
+            {
+                res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
+                if (ParserKeyword{"KEY"}.ignore(pos, expected) && ParserIdentifier().parse(pos, ast, expected))
+                {
+                    res->key_to_drop = ast->as<ASTIdentifier>()->name();
+                    if (ParserKeyword{"OFFSET"}.ignore(pos, expected) && ParserLiteral().parse(pos, ast, expected))
+                        res->offset_to_drop = ast->as<ASTLiteral>()->value.safeGet<UInt64>();
+                }
+            }
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            break;
+        }
+        case Type::SYNC_FILESYSTEM_CACHE:
+        {
+            ParserLiteral path_parser;
+            ASTPtr ast;
+            if (path_parser.parse(pos, ast, expected))
+                res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -375,6 +442,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->schema_cache_storage = "HDFS";
                 else if (ParserKeyword{"URL"}.ignore(pos, expected))
                     res->schema_cache_storage = "URL";
+                else if (ParserKeyword{"AZURE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "AZURE";
                 else
                     return false;
             }
@@ -395,9 +464,85 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            auto parse_server_type = [&](ServerType::Type & type, std::string & custom_name) -> bool
+            {
+                type = ServerType::Type::END;
+                custom_name = "";
+
+                for (const auto & cur_type : magic_enum::enum_values<ServerType::Type>())
+                {
+                    if (ParserKeyword{ServerType::serverTypeToString(cur_type)}.ignore(pos, expected))
+                    {
+                        type = cur_type;
+                        break;
+                    }
+                }
+
+                if (type == ServerType::Type::END)
+                    return false;
+
+                if (type == ServerType::CUSTOM)
+                {
+                    ASTPtr ast;
+
+                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                        return false;
+
+                    custom_name = ast->as<ASTLiteral &>().value.get<const String &>();
+                }
+
+                return true;
+            };
+
+            ServerType::Type base_type;
+            std::string base_custom_name;
+
+            ServerType::Types exclude_type;
+            ServerType::CustomNames exclude_custom_names;
+
+            if (!parse_server_type(base_type, base_custom_name))
+                return false;
+
+            if (ParserKeyword{"EXCEPT"}.ignore(pos, expected))
+            {
+                if (base_type != ServerType::Type::QUERIES_ALL &&
+                    base_type != ServerType::Type::QUERIES_DEFAULT &&
+                    base_type != ServerType::Type::QUERIES_CUSTOM)
+                    return false;
+
+                ServerType::Type current_type;
+                std::string current_custom_name;
+
+                while (true)
+                {
+                    if (!exclude_type.empty() && !ParserToken(TokenType::Comma).ignore(pos, expected))
+                        break;
+
+                    if (!parse_server_type(current_type, current_custom_name))
+                        return false;
+
+                    exclude_type.insert(current_type);
+
+                    if (current_type == ServerType::Type::CUSTOM)
+                        exclude_custom_names.insert(current_custom_name);
+                }
+            }
+
+            res->server_type = ServerType(base_type, base_custom_name, exclude_type, exclude_custom_names);
+
+            break;
+        }
+
         default:
         {
-            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             break;
         }
     }

@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
@@ -78,7 +79,7 @@ protected:
         if (block_size == 0)
             return {};
 
-        UInt64 curr = state->counter.fetch_add(block_size, std::memory_order_acquire);
+        UInt64 curr = state->counter.fetch_add(block_size, std::memory_order_relaxed);
 
         if (curr >= max_counter)
             return {};
@@ -125,11 +126,11 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
 Pipe StorageSystemNumbers::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo &,
+    SelectQueryInfo & query_info,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -154,7 +155,12 @@ Pipe StorageSystemNumbers::read(
             auto source = std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter);
 
             if (i == 0)
-                source->addTotalRowsApprox(*limit);
+            {
+                auto rows_appr = *limit;
+                if (query_info.limit > 0 && query_info.limit < rows_appr)
+                    rows_appr = query_info.limit;
+                source->addTotalRowsApprox(rows_appr);
+            }
 
             pipe.addSource(std::move(source));
         }
@@ -167,7 +173,12 @@ Pipe StorageSystemNumbers::read(
         auto source = std::make_shared<NumbersSource>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
         if (limit && i == 0)
-            source->addTotalRowsApprox(*limit);
+        {
+            auto rows_appr = *limit;
+            if (query_info.limit > 0 && query_info.limit < rows_appr)
+                rows_appr = query_info.limit;
+            source->addTotalRowsApprox(rows_appr);
+        }
 
         pipe.addSource(std::move(source));
     }

@@ -40,8 +40,9 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be an array but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
@@ -60,7 +61,7 @@ public:
             for (auto off : offsets)
             {
                 for (ColumnArray::Offset j = prev_off; j < off; ++j)
-                    res_values[j] = j - prev_off + 1;
+                    res_values[j] = static_cast<UInt32>(j - prev_off + 1);
                 prev_off = off;
             }
 
@@ -68,9 +69,8 @@ public:
         }
         else
         {
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
     }
 };

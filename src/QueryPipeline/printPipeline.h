@@ -10,7 +10,6 @@ namespace DB
   * You can render it with:
   *  dot -T png < pipeline.dot > pipeline.png
   */
-
 template <typename Processors, typename Statuses>
 void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out)
 {
@@ -70,5 +69,4 @@ void printPipeline(const Processors & processors, WriteBuffer & out)
 /// If QueryPlanStep wasn't set for processor, representation may be not correct.
 /// If with_header is set, prints block header for each edge.
 void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool with_header);
-
 }

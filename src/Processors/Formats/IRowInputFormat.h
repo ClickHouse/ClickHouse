@@ -52,6 +52,13 @@ protected:
       */
     virtual bool readRow(MutableColumns & columns, RowReadExtension & extra) = 0;
 
+    /// Count some rows. Called in a loop until it returns 0, and the return values are added up.
+    /// `max_block_size` is the recommended number of rows after which to stop, if the implementation
+    /// involves scanning the data. If the implementation just takes the count from metadata,
+    /// `max_block_size` can be ignored.
+    virtual size_t countRows(size_t max_block_size);
+    virtual bool supportsCountRows() const { return false; }
+
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
 
@@ -65,10 +72,16 @@ protected:
     ///  and collect as much as possible diagnostic information about error.
     /// If not implemented, returns empty string.
     virtual std::string getDiagnosticInfo() { return {}; }
+    /// Get diagnostic info and raw data for a row
+    virtual std::pair<std::string, std::string> getDiagnosticAndRawData() { return std::make_pair("", ""); }
+
+    void logError();
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getTotalRows() const { return total_rows; }
+
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
     Serializations serializations;
 
@@ -79,6 +92,7 @@ private:
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 }

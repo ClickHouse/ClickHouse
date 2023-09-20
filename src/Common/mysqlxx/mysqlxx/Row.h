@@ -44,9 +44,9 @@ public:
     /** Получить значение по индексу.
       * Здесь используется int, а не unsigned, чтобы не было неоднозначности с тем же методом, принимающим const char *.
       */
-    Value operator[] (int n) const
+    Value operator[] (size_t n) const
     {
-        if (unlikely(static_cast<size_t>(n) >= res->getNumFields()))
+        if (unlikely(n >= res->getNumFields()))
             throw Exception("Index of column is out of range.");
         return Value(row[n], lengths[n], res);
     }

@@ -28,8 +28,11 @@ protected:
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
 
+    void clearLastLines(size_t lines_number);
+    void consumePartialResult(Chunk) override;
+
     size_t total_rows = 0;
-    size_t terminal_width = 0;
+    size_t prev_partial_block_rows = 0;
 
     size_t row_number_width = 7; // "10000. "
 
@@ -54,6 +57,12 @@ protected:
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         size_t value_width, size_t pad_to_width, bool align_right);
 
+    void resetFormatterImpl() override
+    {
+        total_rows = 0;
+        prev_partial_block_rows = 0;
+    }
+
 private:
     bool mono_block;
     /// For mono_block == true only
@@ -68,7 +77,6 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
         fact.registerOutputFormat(name, [no_escapes, mono_block](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
         {
             if (no_escapes)

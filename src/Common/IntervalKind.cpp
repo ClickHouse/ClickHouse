@@ -10,6 +10,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+Int64 IntervalKind::toAvgNanoseconds() const
+{
+    static constexpr Int64 NANOSECONDS_PER_MICROSECOND = 1000;
+    static constexpr auto NANOSECONDS_PER_MILLISECOND = NANOSECONDS_PER_MICROSECOND * 1000;
+    static constexpr auto NANOSECONDS_PER_SECOND = NANOSECONDS_PER_MILLISECOND * 1000;
+
+    switch (kind)
+    {
+        case IntervalKind::Millisecond:
+            return NANOSECONDS_PER_MILLISECOND;
+        case IntervalKind::Microsecond:
+            return NANOSECONDS_PER_MICROSECOND;
+        case IntervalKind::Nanosecond:
+            return 1;
+        default:
+            return toAvgSeconds() * NANOSECONDS_PER_SECOND;
+    }
+
+    UNREACHABLE();
+}
+
 Int32 IntervalKind::toAvgSeconds() const
 {
     switch (kind)
@@ -26,7 +47,7 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Quarter: return 7889238; /// Exactly 1/4 of a year.
         case IntervalKind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 Float64 IntervalKind::toSeconds() const
@@ -50,9 +71,9 @@ Float64 IntervalKind::toSeconds() const
         case IntervalKind::Week:
             return 604800;
         default:
-            throw Exception("Not possible to get precise number of seconds in non-precise interval", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 bool IntervalKind::isFixedLength() const
@@ -71,7 +92,7 @@ bool IntervalKind::isFixedLength() const
         case IntervalKind::Quarter:
         case IntervalKind::Year: return false;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
@@ -113,7 +134,7 @@ const char * IntervalKind::toKeyword() const
         case IntervalKind::Quarter: return "QUARTER";
         case IntervalKind::Year: return "YEAR";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -133,7 +154,7 @@ const char * IntervalKind::toLowercasedKeyword() const
         case IntervalKind::Quarter: return "quarter";
         case IntervalKind::Year: return "year";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -164,7 +185,7 @@ const char * IntervalKind::toDateDiffUnit() const
         case IntervalKind::Year:
             return "year";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -195,7 +216,7 @@ const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
         case IntervalKind::Year:
             return "toIntervalYear";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -221,7 +242,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
             // else if (ParserKeyword("WEEK").ignore(pos, expected))
             //    function_name = "toRelativeWeekNum";
-            throw Exception("The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week");
         case IntervalKind::Month:
             return "toMonth";
         case IntervalKind::Quarter:
@@ -229,7 +250,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
         case IntervalKind::Year:
             return "toYear";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 

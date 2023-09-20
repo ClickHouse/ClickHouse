@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
-#include <Processors/DelayedPortsProcessor.h>
 
 
 namespace DB
@@ -35,6 +34,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     SetWithStatePtr getSet() const { return own_set; }
+
+    bool isColumnPartOfSetKey(const String & column_name) const;
 
     /// Set for another stream.
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }

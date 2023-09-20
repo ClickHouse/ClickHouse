@@ -14,8 +14,6 @@ class WriteBuffer;
   * Column data could be nullptr - to represent just 'header' of column.
   * Name could be either name from a table or some temporary generated name during expression evaluation.
   */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnull-dereference"
 struct ColumnWithTypeAndName
 {
     ColumnPtr column;
@@ -37,6 +35,5 @@ struct ColumnWithTypeAndName
     void dumpStructure(WriteBuffer & out) const;
     String dumpStructure() const;
 };
-#pragma GCC diagnostic pop
 
 }

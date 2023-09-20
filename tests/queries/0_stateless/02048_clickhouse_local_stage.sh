@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+opts=(
+    "--allow_experimental_analyzer=1"
+)
+
 function execute_query()
 {
     if [ $# -eq 0 ]; then
@@ -15,8 +19,8 @@ function execute_query()
     ${CLICKHOUSE_LOCAL} "$@" --format CSVWithNames -q "SELECT 1 AS foo"
 }
 
-execute_query # default -- complete
-execute_query --stage fetch_columns
-execute_query --stage with_mergeable_state
-execute_query --stage with_mergeable_state_after_aggregation
-execute_query --stage complete
+execute_query "${opts[@]}" # default -- complete
+execute_query "${opts[@]}" --stage fetch_columns
+execute_query "${opts[@]}" --stage with_mergeable_state
+execute_query "${opts[@]}" --stage with_mergeable_state_after_aggregation
+execute_query "${opts[@]}" --stage complete

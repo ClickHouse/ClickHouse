@@ -9,7 +9,10 @@ namespace DB
 class NotFoundHandler : public HTTPRequestHandler
 {
 public:
+    NotFoundHandler(std::vector<std::string> hints_) : hints(std::move(hints_)) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+private:
+    std::vector<std::string> hints;
 };
 
 }

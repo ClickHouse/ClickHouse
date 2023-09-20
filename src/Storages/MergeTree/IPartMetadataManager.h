@@ -9,6 +9,7 @@ namespace DB
 
 class IMergeTreeDataPart;
 
+class ReadBuffer;
 class SeekableReadBuffer;
 
 class IDisk;
@@ -19,7 +20,6 @@ using DiskPtr = std::shared_ptr<IDisk>;
 /// - PartMetadataManagerOrdinary: manage metadata from disk directly. deleteAll/assertAllDeleted/updateAll/check
 ///   are all empty implementations because they are not needed for PartMetadataManagerOrdinary(those operations
 ///   are done implicitly when removing or renaming part directory).
-/// - PartMetadataManagerWithCache: manage metadata from RocksDB cache and disk.
 class IPartMetadataManager
 {
 public:
@@ -29,8 +29,8 @@ public:
 
     virtual ~IPartMetadataManager() = default;
 
-    /// Read metadata content and return SeekableReadBuffer object.
-    virtual std::unique_ptr<SeekableReadBuffer> read(const String & file_name) const = 0;
+    /// Read metadata content and return ReadBuffer object.
+    virtual std::unique_ptr<ReadBuffer> read(const String & file_name) const = 0;
 
     /// Return true if metadata exists in part.
     virtual bool exists(const String & file_name) const = 0;
@@ -49,6 +49,9 @@ public:
 
     /// Check all metadatas in part.
     virtual std::unordered_map<String, uint128> check() const = 0;
+
+    /// Determine whether to compress by file extension
+    static bool isCompressedFromFileName(const String & file_name);
 
 protected:
     const IMergeTreeDataPart * part;

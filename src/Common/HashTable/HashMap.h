@@ -3,11 +3,14 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/Prefetching.h>
 
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
   * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
+  *
+  * Please keep in sync with PackedHashMap.h
   */
 
 namespace DB
@@ -52,13 +55,13 @@ PairNoInit<std::decay_t<First>, std::decay_t<Second>> makePairNoInit(First && fi
 }
 
 
-template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
+template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState, typename Pair = PairNoInit<Key, TMapped>>
 struct HashMapCell
 {
     using Mapped = TMapped;
     using State = TState;
 
-    using value_type = PairNoInit<Key, Mapped>;
+    using value_type = Pair;
     using mapped_type = Mapped;
     using key_type = Key;
 
@@ -150,14 +153,14 @@ struct HashMapCell
 namespace std
 {
 
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
+    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
+    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState, Pair>> : std::integral_constant<size_t, 2> { };
 
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState>> { using type = Key; };
+    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
+    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = Key; };
 
-    template <typename Key, typename TMapped, typename Hash, typename TState>
-    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState>> { using type = TMapped; };
+    template <typename Key, typename TMapped, typename Hash, typename TState, typename Pair>
+    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState, Pair>> { using type = TMapped; };
 }
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
@@ -189,8 +192,10 @@ public:
     using Self = HashMapTable;
     using Base = HashTable<Key, Cell, Hash, Grower, Allocator>;
     using LookupResult = typename Base::LookupResult;
+    using Iterator = typename Base::iterator;
 
     using Base::Base;
+    using Base::prefetch;
 
     /// Merge every cell's value of current map into the destination map via emplace.
     ///  Func should have signature void(Mapped & dst, Mapped & src, bool emplaced).
@@ -198,11 +203,32 @@ public:
     ///  have a key equals to the given cell, a new cell gets emplaced into that map,
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
-    template <typename Func>
+    template <typename Func, bool prefetch = false>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
+
+        size_t i = 0;
+        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
+
+        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
         {
+            if constexpr (prefetch)
+            {
+                if (i == prefetching.iterationsToMeasure())
+                {
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
+                }
+
+                if (prefetch_it != end)
+                {
+                    that.prefetchByHash(prefetch_it.getHash());
+                    ++prefetch_it;
+                }
+            }
+
             typename Self::LookupResult res_it;
             bool inserted;
             that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
@@ -274,7 +300,19 @@ public:
     {
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
-        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find element in HashMap::at method");
+    }
+
+private:
+    Iterator advanceIterator(Iterator it, size_t n)
+    {
+        size_t i = 0;
+        while (i < n && it != this->end())
+        {
+            ++i;
+            ++it;
+        }
+        return it;
     }
 };
 

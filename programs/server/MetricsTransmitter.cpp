@@ -1,6 +1,6 @@
 #include "MetricsTransmitter.h"
 
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetrics.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -87,7 +87,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 
     if (send_events)
     {
-        for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
             const auto counter_increment = counter - prev_counters[i];
@@ -100,7 +100,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 
     if (send_events_cumulative)
     {
-        for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
             std::string key{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
@@ -110,7 +110,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
 
     if (send_metrics)
     {
-        for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+        for (CurrentMetrics::Metric i = CurrentMetrics::Metric(0), end = CurrentMetrics::end(); i < end; ++i)
         {
             const auto value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
@@ -123,7 +123,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (const auto & name_value : async_metrics_values)
         {
-            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
+            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
         }
     }
 

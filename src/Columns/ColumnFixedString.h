@@ -115,7 +115,7 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -198,6 +198,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnFixedString>();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

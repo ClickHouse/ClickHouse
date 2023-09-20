@@ -7,7 +7,7 @@ namespace DB
 {
 class ASTStorage;
 
-#define NATS_RELATED_SETTINGS(M) \
+#define NATS_RELATED_SETTINGS(M, ALIAS) \
     M(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
     M(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     M(String, nats_format, "", "The message format.", 0) \
@@ -24,11 +24,13 @@ class ASTStorage;
     M(Milliseconds, nats_flush_interval_ms, 0, "Timeout for flushing data from NATS.", 0) \
     M(String, nats_username, "", "NATS username", 0) \
     M(String, nats_password, "", "NATS password", 0) \
-    M(String, nats_token, "", "NATS token", 0)
+    M(String, nats_token, "", "NATS token", 0) \
+    M(UInt64, nats_startup_connect_tries, 5, "Number of connect tries at startup", 0) \
+    M(UInt64, nats_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
 
-#define LIST_OF_NATS_SETTINGS(M) \
-    NATS_RELATED_SETTINGS(M) \
-    FORMAT_FACTORY_SETTINGS(M)
+#define LIST_OF_NATS_SETTINGS(M, ALIAS) \
+    NATS_RELATED_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
 

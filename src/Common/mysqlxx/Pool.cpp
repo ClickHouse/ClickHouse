@@ -10,20 +10,8 @@
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <ctime>
-
-
-namespace
-{
-
-inline uint64_t clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return uint64_t(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-}
-
-}
 
 
 namespace mysqlxx
@@ -33,6 +21,7 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
+
     /// First reference, initialize thread
     if (data->ref_count.fetch_add(1) == 0)
         mysql_thread_init();
@@ -44,9 +33,19 @@ void Pool::Entry::decrementRefCount()
     if (!data)
         return;
 
-    /// We were the last user of this thread, deinitialize it
-    if (data->ref_count.fetch_sub(1) == 1)
+    const auto ref_count = data->ref_count.fetch_sub(1);
+    if (ref_count == 1)
+    {
+        /// We were the last user of this thread, deinitialize it
         mysql_thread_end();
+        /// In Pool::Entry::disconnect() we remove connection from the list of pool's connections.
+        /// So now we must deallocate the memory.
+        if (data->removed_from_pool)
+        {
+            data->conn.disconnect();
+            ::delete data;
+        }
+    }
 }
 
 
@@ -130,7 +129,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
 Pool::~Pool()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     for (auto & connection : connections)
         delete static_cast<Connection *>(connection);
@@ -154,7 +153,10 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
         for (auto & connection : connections)
         {
             if (connection->ref_count == 0)
+            {
+                logger.test("Found free connection in pool, returning it to the caller");
                 return Entry(connection, this);
+            }
         }
 
         logger.trace("(%s): Trying to allocate a new connection.", getDescription());
@@ -187,7 +189,7 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
 
 Pool::Entry Pool::tryGet()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     initialize();
 
@@ -229,21 +231,18 @@ void Pool::removeConnection(Connection* connection)
 {
     logger.trace("(%s): Removing connection.", getDescription());
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (connection)
     {
-        if (connection->ref_count > 0)
-        {
-            connection->conn.disconnect();
-            connection->ref_count = 0;
-        }
         connections.remove(connection);
+        connection->removed_from_pool = true;
     }
 }
 
 
 void Pool::Entry::disconnect()
 {
+    // Remove the Entry from the Pool. Actual disconnection is delayed until refcount == 0.
     pool->removeConnection(data);
 }
 

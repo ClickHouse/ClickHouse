@@ -32,8 +32,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -76,7 +76,7 @@ public:
             out_vec.resize(pos - begin);
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
-                throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
             col_res = std::move(col_str);
             return true;
@@ -122,7 +122,7 @@ public:
             out_vec.resize(pos - begin);
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
-                throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
             col_res = std::move(col_str);
             return true;
@@ -141,9 +141,8 @@ public:
         if (tryExecuteFixedString(column, res_column) || tryExecuteString(column, res_column))
             return res_column;
 
-        throw Exception("Illegal column " + arguments[0].column->getName()
-                        + " of argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                        arguments[0].column->getName(), getName());
     }
 };
 

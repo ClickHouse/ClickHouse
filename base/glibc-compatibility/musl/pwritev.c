@@ -9,3 +9,8 @@ ssize_t pwritev(int fd, const struct iovec *iov, int count, off_t ofs)
     /// There was cancellable syscall (syscall_cp), but I don't care.
 	return syscall(SYS_pwritev, fd, iov, count, (long)(ofs), (long)(ofs>>32));
 }
+
+ssize_t pwritev64(int fd, const struct iovec *iov, int count, off_t ofs)
+{
+	return pwritev(fd, iov, count, ofs);
+}

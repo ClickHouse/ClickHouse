@@ -61,6 +61,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"memory_usage", std::make_shared<DataTypeInt64>()},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"query", std::make_shared<DataTypeString>()},
+        {"query_kind", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
@@ -119,7 +120,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.quota_key);
         res_columns[i++]->insert(process.client_info.distributed_depth);
 
-        res_columns[i++]->insert(process.elapsed_seconds);
+        res_columns[i++]->insert(static_cast<double>(process.elapsed_microseconds) / 1'000'000.0);
         res_columns[i++]->insert(process.is_cancelled);
         res_columns[i++]->insert(process.is_all_data_sent);
         res_columns[i++]->insert(process.read_rows);
@@ -130,6 +131,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
+        res_columns[i++]->insert(magic_enum::enum_name(process.query_kind));
 
         {
             Array threads_array;

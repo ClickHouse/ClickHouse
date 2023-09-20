@@ -2,7 +2,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Disks/IVolume.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB
 {
@@ -11,18 +11,35 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
+    enum class Type
+    {
+        Full,
+        FinishSorting,
+        MergingSorted,
+    };
+
+    struct Settings
+    {
+        size_t max_block_size;
+        SizeLimits size_limits;
+        size_t max_bytes_before_remerge = 0;
+        double remerge_lowered_memory_bytes_ratio = 0;
+        size_t max_bytes_before_external_sort = 0;
+        TemporaryDataOnDiskScopePtr tmp_data = nullptr;
+        size_t min_free_disk_space = 0;
+        UInt64 partial_result_limit = 0;
+        UInt64 partial_result_duration_ms = 0;
+
+        explicit Settings(const Context & context);
+        explicit Settings(size_t max_block_size_);
+    };
+
     /// Full
     SortingStep(
         const DataStream & input_stream,
         SortDescription description_,
-        size_t max_block_size_,
         UInt64 limit_,
-        SizeLimits size_limits_,
-        size_t max_bytes_before_remerge_,
-        double remerge_lowered_memory_bytes_ratio_,
-        size_t max_bytes_before_external_sort_,
-        VolumePtr tmp_volume_,
-        size_t min_free_disk_space_,
+        const Settings & settings_,
         bool optimize_sorting_by_input_stream_properties_);
 
     /// Full with partitioning
@@ -30,14 +47,8 @@ public:
         const DataStream & input_stream,
         const SortDescription & description_,
         const SortDescription & partition_by_description_,
-        size_t max_block_size_,
         UInt64 limit_,
-        SizeLimits size_limits_,
-        size_t max_bytes_before_remerge_,
-        double remerge_lowered_memory_bytes_ratio_,
-        size_t max_bytes_before_external_sort_,
-        VolumePtr tmp_volume_,
-        size_t min_free_disk_space_,
+        const Settings & settings_,
         bool optimize_sorting_by_input_stream_properties_);
 
     /// FinishSorting
@@ -53,7 +64,9 @@ public:
         const DataStream & input_stream,
         SortDescription sort_description_,
         size_t max_block_size_,
-        UInt64 limit_ = 0);
+        UInt64 limit_ = 0,
+        bool always_read_till_end_ = false
+    );
 
     String getName() const override { return "Sorting"; }
 
@@ -62,6 +75,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    UInt64 getLimit() const { return limit; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
@@ -69,12 +83,24 @@ public:
 
     void convertToFinishSorting(SortDescription prefix_description);
 
+    Type getType() const { return type; }
+    const Settings & getSettings() const { return sort_settings; }
+
+    static void fullSortStreams(
+        QueryPipelineBuilder & pipeline,
+        const Settings & sort_settings,
+        const SortDescription & result_sort_desc,
+        UInt64 limit_,
+        bool skip_partial_sort = false);
+
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputStream() override;
 
+    static void
+    mergeSorting(QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_);
+
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
-    void mergeSorting(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
     void finishSorting(
         QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, UInt64 limit_);
     void fullSort(
@@ -83,13 +109,6 @@ private:
         UInt64 limit_,
         bool skip_partial_sort = false);
 
-    enum class Type
-    {
-        Full,
-        FinishSorting,
-        MergingSorted,
-    };
-
     Type type;
 
     SortDescription prefix_description;
@@ -97,15 +116,11 @@ private:
 
     SortDescription partition_by_description;
 
-    const size_t max_block_size;
     UInt64 limit;
-    SizeLimits size_limits;
+    bool always_read_till_end = false;
 
-    size_t max_bytes_before_remerge = 0;
-    double remerge_lowered_memory_bytes_ratio = 0;
-    size_t max_bytes_before_external_sort = 0;
-    VolumePtr tmp_volume;
-    size_t min_free_disk_space = 0;
+    Settings sort_settings;
+
     const bool optimize_sorting_by_input_stream_properties = false;
 };
 

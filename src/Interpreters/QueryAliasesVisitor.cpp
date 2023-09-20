@@ -20,15 +20,10 @@ namespace
 
     constexpr auto dummy_subquery_name_prefix = "_subquery";
 
-    String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
+    PreformattedMessage wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
     {
-        WriteBufferFromOwnString message;
-        message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";
-        formatAST(*ast, message, false, true);
-        message << "\nand\n";
-        formatAST(*prev_ast, message, false, true);
-        message << '\n';
-        return message.str();
+        return PreformattedMessage::create("Different expressions with the same alias {}:\n{}\nand\n{}\n",
+                                           backQuoteIfNeed(alias), serializeAST(*ast), serializeAST(*prev_ast));
     }
 
 }

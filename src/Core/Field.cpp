@@ -11,8 +11,11 @@
 #include <Common/FieldVisitorWriteBinary.h>
 
 
+using namespace std::literals;
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
@@ -49,6 +52,18 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         {
             UUID value;
             readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::IPv4:
+        {
+            IPv4 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::IPv6:
+        {
+            IPv6 value;
+            readBinary(value.toUnderType(), buf);
             return value;
         }
         case Field::Types::Int64:
@@ -248,6 +263,17 @@ void writeText(const Object & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
+void writeBinary(const CustomType & x, WriteBuffer & buf)
+{
+    writeBinary(std::string_view(x.getTypeName()), buf);
+    writeBinary(x.toString(), buf);
+}
+
+void writeText(const CustomType & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
+}
+
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
@@ -261,7 +287,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     {
         scale = 0;
         if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
     else
         scale = -exponent;
@@ -290,7 +316,7 @@ Field Field::restoreFromDump(std::string_view dump_)
 {
     auto show_error = [&dump_]
     {
-        throw Exception("Couldn't restore Field from dump: " + String{dump_}, ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP);
+        throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump_});
     };
 
     std::string_view dump = dump_;
@@ -492,7 +518,7 @@ Field Field::restoreFromDump(std::string_view dump_)
     }
 
     show_error();
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -559,31 +585,41 @@ String toString(const Field & x)
         x);
 }
 
-String fieldTypeToString(Field::Types::Which type)
+std::string_view fieldTypeToString(Field::Types::Which type)
 {
     switch (type)
     {
-        case Field::Types::Which::Null: return "Null";
-        case Field::Types::Which::Array: return "Array";
-        case Field::Types::Which::Tuple: return "Tuple";
-        case Field::Types::Which::Map: return "Map";
-        case Field::Types::Which::Object: return "Object";
-        case Field::Types::Which::AggregateFunctionState: return "AggregateFunctionState";
-        case Field::Types::Which::Bool: return "Bool";
-        case Field::Types::Which::String: return "String";
-        case Field::Types::Which::Decimal32: return "Decimal32";
-        case Field::Types::Which::Decimal64: return "Decimal64";
-        case Field::Types::Which::Decimal128: return "Decimal128";
-        case Field::Types::Which::Decimal256: return "Decimal256";
-        case Field::Types::Which::Float64: return "Float64";
-        case Field::Types::Which::Int64: return "Int64";
-        case Field::Types::Which::Int128: return "Int128";
-        case Field::Types::Which::Int256: return "Int256";
-        case Field::Types::Which::UInt64: return "UInt64";
-        case Field::Types::Which::UInt128: return "UInt128";
-        case Field::Types::Which::UInt256: return "UInt256";
-        case Field::Types::Which::UUID: return "UUID";
+        case Field::Types::Which::Null: return "Null"sv;
+        case Field::Types::Which::Array: return "Array"sv;
+        case Field::Types::Which::Tuple: return "Tuple"sv;
+        case Field::Types::Which::Map: return "Map"sv;
+        case Field::Types::Which::Object: return "Object"sv;
+        case Field::Types::Which::AggregateFunctionState: return "AggregateFunctionState"sv;
+        case Field::Types::Which::Bool: return "Bool"sv;
+        case Field::Types::Which::String: return "String"sv;
+        case Field::Types::Which::Decimal32: return "Decimal32"sv;
+        case Field::Types::Which::Decimal64: return "Decimal64"sv;
+        case Field::Types::Which::Decimal128: return "Decimal128"sv;
+        case Field::Types::Which::Decimal256: return "Decimal256"sv;
+        case Field::Types::Which::Float64: return "Float64"sv;
+        case Field::Types::Which::Int64: return "Int64"sv;
+        case Field::Types::Which::Int128: return "Int128"sv;
+        case Field::Types::Which::Int256: return "Int256"sv;
+        case Field::Types::Which::UInt64: return "UInt64"sv;
+        case Field::Types::Which::UInt128: return "UInt128"sv;
+        case Field::Types::Which::UInt256: return "UInt256"sv;
+        case Field::Types::Which::UUID: return "UUID"sv;
+        case Field::Types::Which::IPv4: return "IPv4"sv;
+        case Field::Types::Which::IPv6: return "IPv6"sv;
+        case Field::Types::Which::CustomType: return "CustomType"sv;
     }
 }
+
+/// Keep in mind, that "magic_enum" is very expensive for compiler, that's why we don't use it.
+std::string_view Field::getTypeName() const
+{
+    return fieldTypeToString(which);
+}
+
 
 }

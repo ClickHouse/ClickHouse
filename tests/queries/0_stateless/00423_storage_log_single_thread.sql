@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS log;
 CREATE TABLE log (s String) ENGINE = Log;
 

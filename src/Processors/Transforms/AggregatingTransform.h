@@ -5,6 +5,15 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DestroyAggregatesThreads;
+    extern const Metric DestroyAggregatesThreadsActive;
+}
 
 namespace DB
 {
@@ -14,6 +23,7 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
+    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -82,7 +92,10 @@ struct ManyAggregatedData
             // Aggregation states destruction may be very time-consuming.
             // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
             // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(variants.size());
+            const auto pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::DestroyAggregatesThreads,
+                CurrentMetrics::DestroyAggregatesThreadsActive,
+                variants.size());
 
             for (auto && variant : variants)
             {
@@ -94,10 +107,14 @@ struct ManyAggregatedData
                 {
                     // variant is moved here and will be destroyed in the destructor of the lambda function.
                     pool->trySchedule(
-                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
+                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
                             if (thread_group)
-                                CurrentThread::attachToIfDetached(thread_group);
+                                CurrentThread::attachToGroupIfDetached(thread_group);
 
                             setThreadName("AggregDestruct");
                         });
@@ -143,7 +160,9 @@ public:
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t max_threads,
-        size_t temporary_data_merge_threads);
+        size_t temporary_data_merge_threads,
+        bool should_produce_results_in_order_of_bucket_number_ = true,
+        bool skip_merging_ = false);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -151,8 +170,22 @@ public:
     void work() override;
     Processors expandPipeline() override;
 
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override
+    {
+        /// Currently AggregatingPartialResultTransform support only single-thread aggregation without key.
+
+        /// TODO: check that insert results from aggregator.prepareBlockAndFillWithoutKey return values without
+        /// changing of the aggregator state when aggregation with keys will be supported in AggregatingPartialResultTransform.
+        bool is_partial_result_supported = params->params.keys_size == 0 /// Aggregation without key.
+                                    && many_data->variants.size() == 1; /// Use only one stream for aggregation.
+
+        return is_partial_result_supported ? PartialResultStatus::FullSupported : PartialResultStatus::NotSupported;
+    }
+
 protected:
     void consume(Chunk chunk);
+
+    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
 
 private:
     /// To read the data that was flushed into the temporary data file.
@@ -175,6 +208,8 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
+    bool should_produce_results_in_order_of_bucket_number = true;
+    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -190,6 +225,13 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    friend class AggregatingPartialResultTransform;
+    /// The mutex protects variables that are used for creating a snapshot of the current processor.
+    /// The current implementation of AggregatingPartialResultTransform uses the 'is_generate_initialized' variable to check
+    /// whether the processor has started sending data through the main pipeline, and the corresponding partial result processor should stop creating snapshots.
+    /// Additionally, the mutex protects the 'params->aggregator' and 'many_data->variants' variables, which are used to get data from them for a snapshot.
+    std::mutex snapshot_mutex;
 
     void initGenerate();
 };

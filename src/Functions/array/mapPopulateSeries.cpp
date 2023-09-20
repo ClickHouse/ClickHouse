@@ -80,7 +80,7 @@ private:
         if (!(max_key_data_type.isInt() || max_key_data_type.isUInt()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} max key should be of signed or unsigned integer type. Actual type {}.",
+                "Function {} max key should be of signed or unsigned integer type. Actual type {}, max type {}.",
                 getName(),
                 key_type->getName(),
                 max_key_type->getName());
@@ -102,17 +102,13 @@ private:
 
         if (key_argument_data_type.isArray())
         {
-            DataTypePtr value_type;
-            if (1 < arguments.size())
-                value_type = arguments[1];
-
-            if (arguments.size() < 2 || (value_type && !isArray(value_type)))
+            if (arguments.size() < 2 || !arguments[1] || !isArray(arguments[1]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {} if array argument is passed as key, additional array argument as value must be passed",
                     getName());
 
             const auto & key_array_type = assert_cast<const DataTypeArray &>(*arguments[0]);
-            const auto & value_array_type = assert_cast<const DataTypeArray &>(*value_type);
+            const auto & value_array_type = assert_cast<const DataTypeArray &>(*arguments[1]);
 
             key_argument_series_type = key_array_type.getNestedType();
             value_argument_series_type = value_array_type.getNestedType();
