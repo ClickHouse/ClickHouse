@@ -78,6 +78,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/BlockNumberColumn.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -3730,7 +3731,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & part_columns = part->getColumns();
     for (const auto & part_column : part_columns)
     {
-        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name)
+        if (part_column.name == LightweightDeleteDescription::FILTER_COLUMN.name || part_column.name == BlockNumberColumn::name)
             continue;
 
         auto storage_column = columns.getPhysical(part_column.name);
@@ -8269,6 +8270,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         LightweightDeleteDescription::FILTER_COLUMN,
+        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
     };
 }
 
