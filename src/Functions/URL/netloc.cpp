@@ -1,7 +1,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/URL/FunctionsURL.h>
+#include <Functions/StringHelpers.h>
 
 
 namespace DB
@@ -154,4 +154,3 @@ REGISTER_FUNCTION(Netloc)
 }
 
 }
-

@@ -70,10 +70,13 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
     {
         if (columns_size == 1)
         {
-            auto field = convertFieldToType(value, *block_types[0]);
+            auto field = convertFieldToTypeStrict(value, *block_types[0]);
+            if (!field)
+                continue;
+
             bool need_insert_null = transform_null_in && block_types[0]->isNullable();
-            if (!field.isNull() || need_insert_null)
-                columns[0]->insert(std::move(field));
+            if (!field->isNull() || need_insert_null)
+                columns[0]->insert(*field);
 
             continue;
         }
@@ -98,7 +101,11 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
         size_t i = 0;
         for (; i < tuple_size; ++i)
         {
-            tuple_values[i] = convertFieldToType(tuple[i], *block_types[i]);
+            auto converted_field = convertFieldToTypeStrict(tuple[i], *block_types[i]);
+            if (!converted_field)
+                break;
+            tuple_values[i] = std::move(*converted_field);
+
             bool need_insert_null = transform_null_in && block_types[i]->isNullable();
             if (tuple_values[i].isNull() && !need_insert_null)
                 break;
@@ -118,7 +125,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes &
 
 }
 
-SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, const Settings & settings)
+Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
 {
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
@@ -135,9 +142,6 @@ SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field 
     size_t lhs_type_depth = getCompoundTypeDepth(*expression_type);
     size_t rhs_type_depth = getCompoundTypeDepth(*value_type);
 
-    SizeLimits size_limits_for_set = {settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode};
-    bool tranform_null_in = settings.transform_null_in;
-
     Block result_block;
 
     if (lhs_type_depth == rhs_type_depth)
@@ -145,7 +149,7 @@ SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field 
         /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
 
         Array array{value};
-        result_block = createBlockFromCollection(array, set_element_types, tranform_null_in);
+        result_block = createBlockFromCollection(array, set_element_types, transform_null_in);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
@@ -154,9 +158,9 @@ SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field 
         WhichDataType rhs_which_type(value_type);
 
         if (rhs_which_type.isArray())
-            result_block = createBlockFromCollection(value.get<const Array &>(), set_element_types, tranform_null_in);
+            result_block = createBlockFromCollection(value.get<const Array &>(), set_element_types, transform_null_in);
         else if (rhs_which_type.isTuple())
-            result_block = createBlockFromCollection(value.get<const Tuple &>(), set_element_types, tranform_null_in);
+            result_block = createBlockFromCollection(value.get<const Tuple &>(), set_element_types, transform_null_in);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Unsupported type at the right-side of IN. Expected Array or Tuple. Actual {}",
@@ -170,13 +174,7 @@ SetPtr makeSetForConstantValue(const DataTypePtr & expression_type, const Field 
             value_type->getName());
     }
 
-    auto set = std::make_shared<Set>(size_limits_for_set, true /*fill_set_elements*/, tranform_null_in);
-
-    set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
-    set->insertFromBlock(result_block.getColumnsWithTypeAndName());
-    set->finishInsert();
-
-    return set;
+    return result_block;
 }
 
 }

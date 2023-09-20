@@ -61,7 +61,7 @@ INSERT INTO test_replicated SELECT 3;"
 wait_for_number_of_parts 'test_replicated' 1 100
 
 $CLICKHOUSE_CLIENT -nmq "
-SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null; -- Sleep for 9 seconds and verify that we keep the old part because it's the only one
+SELECT sleepEachRow(1) FROM numbers(9) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null; -- Sleep for 9 seconds and verify that we keep the old part because it's the only one
 SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
 DROP TABLE test_replicated;"

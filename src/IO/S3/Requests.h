@@ -94,6 +94,42 @@ using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
 using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
 using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
 
+
+class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
+{
+public:
+    inline const char * GetServiceRequestName() const override { return "ComposeObject"; }
+
+    AWS_S3_API Aws::String SerializePayload() const override;
+
+    AWS_S3_API void AddQueryStringParameters(Aws::Http::URI & uri) const override;
+
+    AWS_S3_API Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
+
+    AWS_S3_API EndpointParameters GetEndpointContextParams() const override;
+
+    const Aws::String & GetBucket() const;
+    bool BucketHasBeenSet() const;
+    void SetBucket(const Aws::String & value);
+    void SetBucket(Aws::String && value);
+    void SetBucket(const char* value);
+
+    const Aws::String & GetKey() const;
+    bool KeyHasBeenSet() const;
+    void SetKey(const Aws::String & value);
+    void SetKey(Aws::String && value);
+    void SetKey(const char * value);
+
+    void SetComponentNames(std::vector<Aws::String> component_names_);
+
+    void SetContentType(Aws::String value);
+private:
+    Aws::String bucket;
+    Aws::String key;
+    std::vector<Aws::String> component_names;
+    Aws::String content_type;
+};
+
 }
 
 #endif

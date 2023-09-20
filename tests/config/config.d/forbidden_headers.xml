@@ -1,0 +1,6 @@
+<clickhouse>
+    <http_forbid_headers>
+        <header>exact_header</header>
+        <header_regexp>(?i)(case_insensitive_header)</header_regexp>
+    </http_forbid_headers>
+</clickhouse>

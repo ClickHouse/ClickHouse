@@ -77,10 +77,12 @@ BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
+    const ReadSettings & read_settings_,
     const ContextPtr & context_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
+    , read_settings(read_settings_)
     , context(context_)
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
@@ -470,17 +472,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     const auto & database_info = database_infos.at(database_name);
     const auto & database = database_info.database;
 
-    auto filter_by_table_name = [database_info = &database_info](const String & table_name)
+    auto filter_by_table_name = [my_database_info = &database_info](const String & table_name)
     {
         /// We skip inner tables of materialized views.
         if (table_name.starts_with(".inner_id."))
             return false;
 
-        if (database_info->tables.contains(table_name))
+        if (my_database_info->tables.contains(table_name))
             return true;
 
-        if (database_info->all_tables)
-            return !database_info->except_table_names.contains(table_name);
+        if (my_database_info->all_tables)
+            return !my_database_info->except_table_names.contains(table_name);
 
         return false;
     };

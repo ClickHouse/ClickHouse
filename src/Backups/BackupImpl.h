@@ -35,14 +35,15 @@ public:
     };
 
     BackupImpl(
-        const String & backup_name_for_logging_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        bool use_same_s3_credentials_for_base_backup_);
 
     BackupImpl(
-        const String & backup_name_for_logging_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
@@ -50,7 +51,8 @@ public:
         bool is_internal_backup_,
         const std::shared_ptr<IBackupCoordination> & coordination_,
         const std::optional<UUID> & backup_uuid_,
-        bool deduplicate_files_);
+        bool deduplicate_files_,
+        bool use_same_s3_credentials_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -76,10 +78,8 @@ public:
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
     std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
-    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
-                          WriteMode write_mode, const WriteSettings & write_settings) const override;
-    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
-                          WriteMode write_mode, const WriteSettings & write_settings) const override;
+    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
+    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     void finalizeWriting() override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
@@ -109,6 +109,9 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
+    std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
+
+    BackupInfo backup_info;
     const String backup_name_for_logging;
     const bool use_archive;
     const ArchiveParams archive_params;
@@ -141,9 +144,11 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+    std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
     bool deduplicate_files = true;
+    bool use_same_s3_credentials_for_base_backup = false;
     const Poco::Logger * log;
 };
 

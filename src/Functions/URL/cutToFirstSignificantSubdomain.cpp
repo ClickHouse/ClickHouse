@@ -44,32 +44,32 @@ using FunctionCutToFirstSignificantSubdomainWithWWWRFC = FunctionStringToString<
 REGISTER_FUNCTION(CutToFirstSignificantSubdomain)
 {
     factory.registerFunction<FunctionCutToFirstSignificantSubdomain>(
-        {
-        R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain" (see documentation of the `firstSignificantSubdomain`).)",
-        Documentation::Examples{
-            {"cutToFirstSignificantSubdomain1", "SELECT cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/')"},
-            {"cutToFirstSignificantSubdomain2", "SELECT cutToFirstSignificantSubdomain('www.tr')"},
-            {"cutToFirstSignificantSubdomain3", "SELECT cutToFirstSignificantSubdomain('tr')"},
+        FunctionDocumentation{
+        .description=R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain" (see documentation of the `firstSignificantSubdomain`).)",
+        .examples{
+            {"cutToFirstSignificantSubdomain1", "SELECT cutToFirstSignificantSubdomain('https://news.clickhouse.com.tr/')", ""},
+            {"cutToFirstSignificantSubdomain2", "SELECT cutToFirstSignificantSubdomain('www.tr')", ""},
+            {"cutToFirstSignificantSubdomain3", "SELECT cutToFirstSignificantSubdomain('tr')", ""},
         },
-        Documentation::Categories{"URL"}
+        .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWW>(
-        {
-            R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping "www".)",
-            Documentation::Examples{},
-            Documentation::Categories{"URL"}
+        FunctionDocumentation{
+            .description=R"(Returns the part of the domain that includes top-level subdomains up to the "first significant subdomain", without stripping "www".)",
+            .examples{},
+            .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainRFC>(
-        {
-            R"(Similar to `cutToFirstSignificantSubdomain` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
-            Documentation::Examples{},
-            Documentation::Categories{"URL"}
+        FunctionDocumentation{
+            .description=R"(Similar to `cutToFirstSignificantSubdomain` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
+            .examples{},
+            .categories{"URL"}
         });
     factory.registerFunction<FunctionCutToFirstSignificantSubdomainWithWWWRFC>(
-        {
-            R"(Similar to `cutToFirstSignificantSubdomainWithWWW` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
-            Documentation::Examples{},
-            Documentation::Categories{"URL"}
+        FunctionDocumentation{
+            .description=R"(Similar to `cutToFirstSignificantSubdomainWithWWW` but follows stricter rules to be compatible with RFC 3986 and less performant.)",
+            .examples{},
+            .categories{"URL"}
         });
 }
 

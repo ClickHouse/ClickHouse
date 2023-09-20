@@ -25,7 +25,7 @@ function execute_query()
     #   clickhouse-client 2> >(wc -l)
     #
     # May dump output of "wc -l" after some other programs.
-    $CLICKHOUSE_CLIENT "${opts[@]}" --query "select * from remote('$hosts', system.one)" 2>"$stderr"
+    $CLICKHOUSE_CLIENT "${opts[@]}" --query "select * from remote('$hosts', system.one) settings use_hedged_requests=0" 2>"$stderr"
     process_log_safe "$stderr"
 }
 execute_query 255.255.255.255

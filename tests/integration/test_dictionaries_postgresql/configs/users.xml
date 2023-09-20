@@ -1,0 +1,10 @@
+<clickhouse>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <use_named_collections>1</use_named_collections>
+        </default>
+    </users>
+</clickhouse>

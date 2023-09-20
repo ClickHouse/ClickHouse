@@ -16,6 +16,7 @@ def started_cluster(request):
             main_configs=[
                 "configs_secure/config.d/ssl_conf.xml",
             ],
+            user_configs=["configs/users.xml"],
             with_mongo_secure=request.param,
         )
         cluster.start()

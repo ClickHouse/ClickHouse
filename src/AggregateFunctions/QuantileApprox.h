@@ -233,35 +233,35 @@ public:
 
     void write(WriteBuffer & buf) const
     {
-        writeIntBinary<size_t>(compress_threshold, buf);
-        writeFloatBinary<double>(relative_error, buf);
-        writeIntBinary<size_t>(count, buf);
-        writeIntBinary<size_t>(sampled.size(), buf);
+        writeBinaryLittleEndian(compress_threshold, buf);
+        writeBinaryLittleEndian(relative_error, buf);
+        writeBinaryLittleEndian(count, buf);
+        writeBinaryLittleEndian(sampled.size(), buf);
 
         for (const auto & stats : sampled)
         {
-            writeFloatBinary<T>(stats.value, buf);
-            writeIntBinary<Int64>(stats.g, buf);
-            writeIntBinary<Int64>(stats.delta, buf);
+            writeBinaryLittleEndian(stats.value, buf);
+            writeBinaryLittleEndian(stats.g, buf);
+            writeBinaryLittleEndian(stats.delta, buf);
         }
     }
 
     void read(ReadBuffer & buf)
     {
-        readIntBinary<size_t>(compress_threshold, buf);
-        readFloatBinary<double>(relative_error, buf);
-        readIntBinary<size_t>(count, buf);
+        readBinaryLittleEndian(compress_threshold, buf);
+        readBinaryLittleEndian(relative_error, buf);
+        readBinaryLittleEndian(count, buf);
 
         size_t sampled_len = 0;
-        readIntBinary<size_t>(sampled_len, buf);
+        readBinaryLittleEndian(sampled_len, buf);
         sampled.resize(sampled_len);
 
         for (size_t i = 0; i < sampled_len; ++i)
         {
             auto stats = sampled[i];
-            readFloatBinary<T>(stats.value, buf);
-            readIntBinary<Int64>(stats.g, buf);
-            readIntBinary<Int64>(stats.delta, buf);
+            readBinaryLittleEndian(stats.value, buf);
+            readBinaryLittleEndian(stats.g, buf);
+            readBinaryLittleEndian(stats.delta, buf);
         }
     }
 

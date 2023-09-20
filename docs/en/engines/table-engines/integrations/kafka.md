@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/kafka
-sidebar_position: 8
+sidebar_position: 110
 sidebar_label: Kafka
 ---
 
@@ -14,13 +14,13 @@ Kafka lets you:
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
-## Creating a Table {#table_engine-kafka-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1],
-    name2 [type2],
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
     ...
 ) ENGINE = Kafka()
 SETTINGS
@@ -173,6 +173,7 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
+	<statistics_interval_ms>600</statistics_interval_ms>
 
     <!-- Configuration specific to topics "logs" and "stats" -->
 
@@ -260,3 +261,4 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 - [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)
+- [system.kafka_consumers](../../../operations/system-tables/kafka_consumers.md)

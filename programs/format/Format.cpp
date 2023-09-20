@@ -151,6 +151,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
             obfuscateQueries(query, out, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
+            out.finalize();
         }
         else
         {
@@ -162,20 +163,22 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 ASTPtr res = parseQueryAndMovePosition(
                     parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
-                /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
-                /// should throw exception early and make exception message more readable.
+
+                /// For insert query with data(INSERT INTO ... VALUES ...), that will lead to the formatting failure,
+                /// we should throw an exception early, and make exception message more readable.
                 if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
                     throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
                         "Can't format ASTInsertQuery with data, since data will be lost");
                 }
+
                 if (!quiet)
                 {
                     if (!backslash)
                     {
                         WriteBufferFromOStream res_buf(std::cout, 4096);
                         formatAST(*res, res_buf, hilite, oneline);
-                        res_buf.next();
+                        res_buf.finalize();
                         if (multiple)
                             std::cout << "\n;\n";
                         std::cout << std::endl;
@@ -199,7 +202,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                             res_cout.write(*s_pos++);
                         }
 
-                        res_cout.next();
+                        res_cout.finalize();
                         if (multiple)
                             std::cout << " \\\n;\n";
                         std::cout << std::endl;

@@ -24,7 +24,6 @@ public:
     ArrowColumnToCHColumn(
         const Block & header_,
         const std::string & format_name_,
-        bool import_nested_,
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false);
@@ -53,7 +52,6 @@ public:
 private:
     const Block & header;
     const std::string format_name;
-    bool import_nested;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;

@@ -86,11 +86,28 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     memset(chars.data() + old_size + length, 0, n - length);
 }
 
-StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
+StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 * null_bit) const
 {
-    auto * pos = arena.allocContinue(n, begin);
+    constexpr size_t null_bit_size = sizeof(UInt8);
+    StringRef res;
+    char * pos;
+    if (null_bit)
+    {
+        res.size = * null_bit ? null_bit_size : null_bit_size + n;
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+        memcpy(pos, null_bit, null_bit_size);
+        if (*null_bit) return res;
+        pos += null_bit_size;
+    }
+    else
+    {
+        res.size = n;
+        pos = arena.allocContinue(res.size, begin);
+        res.data = pos;
+    }
     memcpy(pos, &chars[n * index], n);
-    return StringRef(pos, n);
+    return res;
 }
 
 const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
@@ -393,13 +410,13 @@ ColumnPtr ColumnFixedString::compress() const
     const size_t column_size = size();
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(column_size, compressed_size,
-        [compressed = std::move(compressed), column_size, n = n]
+        [my_compressed = std::move(compressed), column_size, my_n = n]
         {
-            size_t chars_size = n * column_size;
-            auto res = ColumnFixedString::create(n);
+            size_t chars_size = my_n * column_size;
+            auto res = ColumnFixedString::create(my_n);
             res->getChars().resize(chars_size);
             ColumnCompressed::decompressBuffer(
-                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+                my_compressed->data(), res->getChars().data(), my_compressed->size(), chars_size);
             return res;
         });
 }
