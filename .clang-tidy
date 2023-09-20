@@ -108,6 +108,7 @@ Checks: '*,
     -openmp-*,
 
     -misc-const-correctness,
+    -misc-include-cleaner, # useful but far too many occurrences
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
     -misc-confusable-identifiers, # useful but slooow
