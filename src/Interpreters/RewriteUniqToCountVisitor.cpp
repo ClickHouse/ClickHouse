@@ -49,7 +49,7 @@ bool expressionEquals(const ASTPtr & lhs, const ASTPtr & rhs, const Aliases & al
             if (alias.find(rhs_idf->shortName()) != alias.end())
                 rhs_idf = alias.find(rhs_idf->shortName())->second->as<ASTIdentifier>();
 
-            if (lhs_idf->shortName() == rhs_idf->shortName())
+            if (lhs_idf && rhs_idf && lhs_idf->shortName() == rhs_idf->shortName())
                 return true;
         }
     }
