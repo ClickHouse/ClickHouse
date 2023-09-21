@@ -120,11 +120,10 @@ namespace
         std::string common_suffix = for_match.substr(anchor_positions[anchor_positions.size()-1] + 1);
         for (size_t i = 1; i < anchor_positions.size(); ++i)
         {
-            std::ostringstream oss;
-            oss << common_prefix
-                << for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
-                << common_suffix;
-            std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(path_for_ls, fs, oss.str());
+            std::string expanded_matcher = common_prefix
+                + for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
+                + common_suffix;
+            std::vector<StorageHDFS::PathWithInfo> result_part = LSWithRegexpMatching(path_for_ls, fs, expanded_matcher);
             ret.insert(ret.end(), result_part.begin(), result_part.end());
         }
         return ret;
