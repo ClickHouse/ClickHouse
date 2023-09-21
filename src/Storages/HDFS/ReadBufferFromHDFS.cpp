@@ -42,8 +42,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     off_t file_offset = 0;
     off_t read_until_position = 0;
-
-    std::optional<size_t> file_size;
+    off_t file_size;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
@@ -59,7 +58,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , builder(createHDFSBuilder(hdfs_uri_, config_))
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
-        , file_size(file_size_)
     {
         fs = createHDFSFS(builder.get());
         fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
@@ -68,6 +66,22 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
                 "Unable to open HDFS file: {}. Error: {}",
                 hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
+
+        if (file_size_.has_value())
+        {
+            file_size = file_size_.value();
+        }
+        else
+        {
+            auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
+            if (!file_info)
+            {
+                hdfsCloseFile(fs.get(), fin);
+                throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
+            }
+            file_size = static_cast<size_t>(file_info->mSize);
+            hdfsFreeFileInfo(file_info, 1);
+        }
     }
 
     ~ReadBufferFromHDFSImpl() override
@@ -75,16 +89,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    size_t getFileSize()
+    size_t getFileSize() const
     {
-        if (file_size)
-            return *file_size;
-
-        auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
-        if (!file_info)
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", hdfs_file_path);
-        file_size = static_cast<size_t>(file_info->mSize);
-        return *file_size;
+        return file_size;
     }
 
     bool nextImpl() override
@@ -103,6 +110,10 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         else
         {
             num_bytes_to_read = internal_buffer.size();
+        }
+        if (file_size != 0 && file_offset >= file_size)
+        {
+            return false;
         }
 
         ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
@@ -237,20 +248,6 @@ off_t ReadBufferFromHDFS::getPosition()
 size_t ReadBufferFromHDFS::getFileOffsetOfBufferEnd() const
 {
     return impl->getPosition();
-}
-
-IAsynchronousReader::Result ReadBufferFromHDFS::readInto(char * data, size_t size, size_t offset, size_t /*ignore*/)
-{
-    /// TODO: we don't need to copy if there is no pending data
-    seek(offset, SEEK_SET);
-    if (eof())
-        return {0, 0, nullptr};
-
-    /// Make sure returned size no greater than available bytes in working_buffer
-    size_t count = std::min(size, available());
-    memcpy(data, position(), count);
-    position() += count;
-    return {count, 0, nullptr};
 }
 
 String ReadBufferFromHDFS::getFileName() const

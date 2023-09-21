@@ -8,7 +8,7 @@ create table null_01293 (key Int) engine=Null();
 create table dist_01293 as null_01293 engine=Distributed(test_cluster_two_shards, currentDatabase(), null_01293, key);
 
 -- no rows, since no active monitor
-select * from system.distribution_queue;
+select * from system.distribution_queue where database = currentDatabase();
 
 select 'INSERT';
 system stop distributed sends dist_01293;

@@ -90,7 +90,7 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
     const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try

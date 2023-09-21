@@ -17,7 +17,7 @@ select 'test detach';
 drop table if exists 02681_undrop_detach sync;
 create table 02681_undrop_detach (id Int32, num Int32) Engine=MergeTree() order by id;
 insert into 02681_undrop_detach values (1, 1);
-detach table 02681_undrop_detach;
+detach table 02681_undrop_detach sync;
 undrop table 02681_undrop_detach; -- { serverError 57 }
 attach table 02681_undrop_detach;
 alter table 02681_undrop_detach update num = 2 where id = 1;

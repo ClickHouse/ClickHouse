@@ -51,8 +51,8 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
     if (line_size > 0 && buf.position()[line_size - 1] == '\r')
         --line_to_match;
 
-    bool match = re2_st::RE2::FullMatchN(
-        re2_st::StringPiece(buf.position(), line_to_match),
+    bool match = re2::RE2::FullMatchN(
+        re2::StringPiece(buf.position(), line_to_match),
         regexp,
         re2_arguments_ptrs.data(),
         static_cast<int>(re2_arguments_ptrs.size()));
@@ -143,7 +143,7 @@ RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & 
 {
 }
 
-DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> RegexpSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};

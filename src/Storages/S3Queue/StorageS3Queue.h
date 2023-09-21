@@ -93,7 +93,6 @@ private:
     std::shared_ptr<S3QueueFilesMetadata> files_metadata;
     Configuration configuration;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
     UInt64 reschedule_processing_interval_ms;
 
     std::optional<FormatSettings> format_settings;
@@ -126,7 +125,7 @@ private:
     };
     std::shared_ptr<TaskContext> task;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     const UInt32 zk_create_table_retries = 1000;
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);

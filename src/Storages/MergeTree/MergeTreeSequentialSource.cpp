@@ -151,7 +151,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         mark_ranges.emplace(MarkRanges{MarkRange(0, data_part->getMarksCount())});
 
     reader = data_part->getReader(
-        columns_for_reader, storage_snapshot->metadata,
+        columns_for_reader, storage_snapshot,
         *mark_ranges, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), alter_conversions, reader_settings, {}, {});
 }
@@ -176,7 +176,7 @@ try
             current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
 
             if (should_evaluate_missing_defaults)
             {
