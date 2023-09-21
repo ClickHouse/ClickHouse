@@ -878,7 +878,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
         for (auto & col : rcols)
             result.addColumn(std::move(col));
     }
-    UNUSED(asof_inequality);
+
     return Status(std::move(result));
 }
 
