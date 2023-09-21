@@ -53,5 +53,3 @@ default	default	v	f	2		0	Float64	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N		F
 def	default	PRIMARY	def	default	kcu	i	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu	i	1	\N	\N	\N	\N
 def	default	PRIMARY	def	default	kcu2	d	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu2	d	1	\N	\N	\N	\N
 def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N
-def	default	PRIMARY	def	default	kcu2	d	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu2	d	1	\N	\N	\N	\N
-def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N	def	default	PRIMARY	def	default	kcu2	u	1	\N	\N	\N	\N
