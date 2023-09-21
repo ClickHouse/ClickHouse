@@ -291,6 +291,18 @@ Chunk NativeORCBlockInputFormat::generate()
     if (!file_reader)
         prepareFileReader();
 
+    if (need_only_count)
+    {
+        ++current_stripe;
+        for (; current_stripe < total_stripes && skip_stripes.contains(current_stripe); ++current_stripe)
+            ;
+
+        if (current_stripe >= total_stripes)
+            return {};
+
+        return getChunkForCount(file_reader->getStripe(current_stripe)->getNumberOfRows());
+    }
+
     if (!stripe_reader)
     {
         if (!prepareStripeReader())
@@ -837,14 +849,6 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             auto value_column = readColumnFromORCColumn(orc_value_column, orc_value_type, "value", false, value_type_hint);
             if (skipped)
                 return {};
-
-            if (value_type_hint && !value_type_hint->equals(*value_column.type))
-            {
-                /// Cast value column to target type, because it can happen
-                /// that parsed type cannot be ClickHouse Map value type.
-                value_column.column = castColumn(value_column, value_type_hint);
-                value_column.type = value_type_hint;
-            }
 
             auto offsets_column = readOffsetsFromORCListColumn(orc_map_column);
             auto map_column = ColumnMap::create(key_column.column, value_column.column, offsets_column);

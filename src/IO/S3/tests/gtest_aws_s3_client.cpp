@@ -26,17 +26,19 @@
 #include <IO/S3/Client.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/StorageS3Settings.h>
+#include <Poco/Util/ServerApplication.h>
 
 #include "TestPocoHTTPServer.h"
 
+/*
+ * When all tests are executed together, `Context::getGlobalContextInstance()` is not null. Global context is used by
+ * ProxyResolvers to get proxy configuration (used by S3 clients). If global context does not have a valid ConfigRef, it relies on
+ * Poco::Util::Application::instance() to grab the config. However, at this point, the application is not yet initialized and
+ * `Poco::Util::Application::instance()` returns nullptr. This causes the test to fail. To fix this, we create a dummy application that takes
+ * care of initialization.
+ * */
+[[maybe_unused]] static Poco::Util::ServerApplication app;
 
-class NoRetryStrategy : public Aws::Client::StandardRetryStrategy
-{
-    bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long /* NOLINT */) const override { return false; }
-
-public:
-    ~NoRetryStrategy() override = default;
-};
 
 String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
@@ -113,6 +115,7 @@ void testServerSideEncryption(
 
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
+    unsigned int s3_retry_attempts = 0;
     DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
@@ -122,14 +125,15 @@ void testServerSideEncryption(
         region,
         remote_host_filter,
         s3_max_redirects,
+        s3_retry_attempts,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {}
+        /* put_request_throttler = */ {},
+        uri.uri.getScheme()
     );
 
     client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
     DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
