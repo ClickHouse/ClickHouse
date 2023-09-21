@@ -481,6 +481,7 @@ void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     bool allow_empty_sorting_key,
+    bool allow_nullable_key_,
     ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
@@ -598,12 +599,12 @@ void MergeTreeData::checkProperties(
 
             /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
-            checkProperties(*projection.metadata, *projection.metadata, attach, is_aggregate, local_context);
+            checkProperties(*projection.metadata, *projection.metadata, attach, is_aggregate, true /* allow_nullable_key */, local_context);
             projections_names.insert(projection.name);
         }
     }
 
-    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
+    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
 }
 
 void MergeTreeData::setProperties(
@@ -612,7 +613,7 @@ void MergeTreeData::setProperties(
     bool attach,
     ContextPtr local_context)
 {
-    checkProperties(new_metadata, old_metadata, attach, false, local_context);
+    checkProperties(new_metadata, old_metadata, attach, false, allow_nullable_key, local_context);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -3350,7 +3351,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    checkProperties(new_metadata, old_metadata, false, false, local_context);
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
