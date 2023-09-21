@@ -311,21 +311,23 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 
     for (auto & pipe : pipes)
     {
+        if (res.isPartialResultActive() && pipe.isPartialResultActive())
+        {
+            res.partial_result_ports.insert(res.partial_result_ports.end(), pipe.partial_result_ports.begin(), pipe.partial_result_ports.end());
+        }
+        else
+        {
+            if (pipe.isPartialResultActive())
+                pipe.dropPartialResult();
+            if (res.isPartialResultActive())
+                res.dropPartialResult();
+        }
+
         if (!allow_empty_header || pipe.header)
             assertCompatibleHeader(pipe.header, res.header, "Pipe::unitePipes");
 
         res.processors->insert(res.processors->end(), pipe.processors->begin(), pipe.processors->end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
-
-        if (res.isPartialResultActive() && pipe.isPartialResultActive())
-        {
-            res.partial_result_ports.insert(
-                res.partial_result_ports.end(),
-                pipe.partial_result_ports.begin(),
-                pipe.partial_result_ports.end());
-        }
-        else
-            res.dropPartialResult();
 
         res.max_parallel_streams += pipe.max_parallel_streams;
 
@@ -994,5 +996,11 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
+
+OutputPort * Pipe::getPartialResultPort(size_t pos) const
+{
+    return partial_result_ports.empty() ? nullptr : partial_result_ports[pos];
+}
+
 
 }
