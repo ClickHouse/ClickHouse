@@ -928,7 +928,8 @@ struct ToDayOfYearImpl
 struct ToDaysSinceYearZeroImpl
 {
 private:
-    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528;
+    /// Constant is taken from Java LocalDate implementation
+    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each
 
 public:
     static constexpr auto name = "toDaysSinceYearZero";
