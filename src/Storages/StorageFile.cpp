@@ -154,11 +154,10 @@ void expandSelector(const std::string & path_for_ls,
     std::string common_suffix = for_match.substr(anchor_positions[anchor_positions.size()-1] + 1);
     for (size_t i = 1; i < anchor_positions.size(); ++i)
     {
-        std::ostringstream oss;
-        oss << common_prefix
-            << for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
-            << common_suffix;
-        listFilesWithRegexpMatchingImpl(path_for_ls, oss.str(), total_bytes_to_read, result, recursive);
+        std::string expanded_matcher = common_prefix
+            + for_match.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1))
+            + common_suffix;
+        listFilesWithRegexpMatchingImpl(path_for_ls, expanded_matcher, total_bytes_to_read, result, recursive);
     }
 }
 
@@ -178,28 +177,33 @@ void listFilesWithRegexpMatchingImpl(
     const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    /// slashes_in_glob counter is a upper-bound estimate of recursion depth
-    /// needed to process complex cases when `/` is included into glob, e.g. /pa{th1/a,th2/b}.csv
-    bool has_curly_braces = false;
+    bool has_generator = false;
+    bool range_generator = false;
+
     const size_t next_slash_after_glob_pos = [&]()
     {
         if (!has_glob)
             return suffix_with_globs.find('/', 1);
 
+        bool prev_is_dot = false;
+
         for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
         {
             if (*it == '{')
-            {
-                has_curly_braces = true;
-                return size_t(0);
-            }
+                has_generator = true;
             else if (*it == '/')
                 return size_t(std::distance(suffix_with_globs.begin(), it));
+            else if (*it == '.')
+            {
+                if (prev_is_dot)
+                    range_generator = true;
+                prev_is_dot = true;
+            }
         }
         return std::string::npos;
     }();
 
-    if (has_curly_braces)
+    if (has_generator && !range_generator)
     {
         expandSelector(path_for_ls, for_match, total_bytes_to_read, result, recursive);
         return;
