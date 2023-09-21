@@ -264,7 +264,7 @@ void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, std::optional<ObjectAttributes>) // NOLINT
+void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
 {
     throwNotAllowed();
 }

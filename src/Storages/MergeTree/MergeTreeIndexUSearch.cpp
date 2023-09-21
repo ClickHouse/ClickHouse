@@ -173,23 +173,32 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
 
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
-        const auto & data = column_array->getData();
-        const auto & array = typeid_cast<const ColumnFloat32 &>(data).getData();
+        const auto & column_array_data = column_array->getData();
+        const auto & column_array_data_float_data = typeid_cast<const ColumnFloat32 &>(column_array_data).getData();
 
-        if (array.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
+        const auto & column_array_offsets = column_array->getOffsets();
+        const size_t num_rows = column_array_offsets.size();
 
-        const auto & offsets = column_array->getOffsets();
-        const size_t num_rows = offsets.size();
+        /// The Usearch algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
+        /// are INSERTed into an Usearch-indexed column or if no value was specified at all in which case the arrays take on their default
+        /// values which is also empty.
+        if (column_array->isDefaultAt(0))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
         /// Check all sizes are the same
-        size_t size = offsets[0];
+        size_t dimension = column_array_offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
-            if (offsets[i + 1] - offsets[i] != size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
+            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
+
+        /// Also check that previously inserted blocks have the same size as this block.
+        /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
+        /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
+        if (index && index->getDimensions() != dimension)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
         if (!index)
-            index = std::make_shared<USearchIndexWithSerialization<Metric>>(size, scalar_kind);
+            index = std::make_shared<USearchIndexWithSerialization<Metric>>(dimension, scalar_kind);
 
         /// Add all rows of block
         if (!index->reserve(unum::usearch::ceil2(index->size() + num_rows)))
@@ -197,7 +206,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
 
         for (size_t current_row = 0; current_row < num_rows; ++current_row)
         {
-            auto rc = index->add(static_cast<uint32_t>(index->size()), &array[offsets[current_row - 1]]);
+            auto rc = index->add(static_cast<uint32_t>(index->size()), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
             if (!rc)
                 throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
@@ -208,9 +217,9 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
-        const auto & columns = column_tuple->getColumns();
-        std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-        for (const auto & column : columns)
+        const auto & column_tuple_columns = column_tuple->getColumns();
+        std::vector<std::vector<Float32>> data(column_tuple->size(), std::vector<Float32>());
+        for (const auto & column : column_tuple_columns)
         {
             const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
             for (size_t i = 0; i < pod_array.size(); ++i)
@@ -413,7 +422,8 @@ void usearchIndexValidator(const IndexDescription & index, bool /* attach */)
     auto throw_unsupported_underlying_column_exception = []()
     {
         throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "USearch indexes can only be created on columns of type Array(Float32) and Tuple(Float32)");
+            ErrorCodes::ILLEGAL_COLUMN,
+            "USearch can only be created on columns of type Array(Float32) and Tuple(Float32[, Float32[, ...]])");
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];

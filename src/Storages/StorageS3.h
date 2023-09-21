@@ -60,6 +60,12 @@ public:
         virtual ~IIterator() = default;
         virtual KeyWithInfo next() = 0;
 
+        /// Estimates how many streams we need to process all files.
+        /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
+        /// Intended to be called before any next() calls, may underestimate otherwise
+        /// fixme: May underestimate if the glob has a strong filter, so there are few matches among the first 1000 ListObjects results.
+        virtual size_t estimatedKeysCount() = 0;
+
         KeyWithInfo operator ()() { return next(); }
     };
 
@@ -77,6 +83,7 @@ public:
             std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfo next() override;
+        size_t estimatedKeysCount() override;
 
     private:
         class Impl;
@@ -100,6 +107,7 @@ public:
             std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfo next() override;
+        size_t estimatedKeysCount() override;
 
     private:
         class Impl;
@@ -110,11 +118,15 @@ public:
     class ReadTaskIterator : public IIterator
     {
     public:
-        explicit ReadTaskIterator(const ReadTaskCallback & callback_) : callback(callback_) {}
+        explicit ReadTaskIterator(const ReadTaskCallback & callback_, const size_t max_threads_count);
 
-        KeyWithInfo next() override { return {callback(), {}}; }
+        KeyWithInfo next() override;
+        size_t estimatedKeysCount() override;
 
     private:
+        KeysWithInfo buffer;
+        std::atomic_size_t index = 0;
+
         ReadTaskCallback callback;
     };
 
