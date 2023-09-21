@@ -1,9 +1,12 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCluster.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ZooKeeper/Types.h>
+#include <Common/Stopwatch.h>
 #include <Common/thread_local_rng.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <base/sleep.h>
 #include <base/defines.h>
 #include <algorithm>
 #include <filesystem>
@@ -35,8 +38,15 @@ ReplicatedMergeTreeCluster::~ReplicatedMergeTreeCluster()
 
 void ReplicatedMergeTreeCluster::addCreateOps(Coordination::Requests & ops)
 {
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path / "cluster", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path / "cluster" / "balancer", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(cluster_path, "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(cluster_path / "balancer", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(cluster_path / "replicas", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(cluster_path / "replicas" / replica_name, "", zkutil::CreateMode::Persistent));
+}
+
+void ReplicatedMergeTreeCluster::addCreateReplicaOps(Coordination::Requests & ops)
+{
+    ops.emplace_back(zkutil::makeCreateRequest(cluster_path / "replicas" / replica_name, "", zkutil::CreateMode::Persistent));
 }
 
 void ReplicatedMergeTreeCluster::addRemoveReplicaOps(const zkutil::ZooKeeperPtr & zookeeper, Coordination::Requests & ops)
@@ -44,7 +54,7 @@ void ReplicatedMergeTreeCluster::addRemoveReplicaOps(const zkutil::ZooKeeperPtr 
     loadFromCoordinator(zookeeper);
 
     Coordination::Stat balancer_stat;
-    fs::path balancer_path = zookeeper_path / "cluster" / "balancer";
+    fs::path balancer_path = cluster_path / "balancer";
     zookeeper->get(balancer_path, &balancer_stat);
 
     {
@@ -62,13 +72,52 @@ void ReplicatedMergeTreeCluster::addRemoveReplicaOps(const zkutil::ZooKeeperPtr 
     }
     LOG_TRACE(log, "Removing replica from the cluster. {} partitions affected", ops.size());
 
+    ops.emplace_back(zkutil::makeRemoveRequest(cluster_path / "replicas" / replica_name, -1));
     ops.emplace_back(zkutil::makeSetRequest(balancer_path, "", balancer_stat.version));
 }
 
-void ReplicatedMergeTreeCluster::addDropOps(const fs::path & zookeeper_path, Coordination::Requests & ops)
+void ReplicatedMergeTreeCluster::addDropOps(Coordination::Requests & ops)
 {
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path / "cluster" / "balancer", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path / "cluster", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(cluster_path / "replicas", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(cluster_path / "balancer", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(cluster_path, -1));
+}
+
+void ReplicatedMergeTreeCluster::waitReplicaRemoved(const zkutil::ZooKeeperPtr & zookeeper)
+{
+    balancer.shutdown();
+
+    const auto & active_replicas = getActiveReplicasImpl(zookeeper).size();
+    const auto cluster_replication_factor = storage.getSettings()->cluster_replication_factor;
+    /// Current replica still has not been removed => not strict comparison
+    if (active_replicas <= cluster_replication_factor)
+    {
+        LOG_INFO(log, "Do not wait for partitions migration to other replicas in cluster, since there is only {} replicas (cluster_replication_factor: {})",
+            active_replicas, cluster_replication_factor);
+        return;
+    }
+    else
+        LOG_INFO(log, "Waiting while all partitions will be migrated from this replica to other replicas in cluster");
+
+    const String is_remove_path = cluster_path / "replicas" / replica_name / "is_removing";
+    zookeeper->create(is_remove_path, "", zkutil::CreateMode::Ephemeral);
+    LOG_INFO(log, "Marking replica as removed in the cluster");
+    zkutil::EphemeralNodeHolderPtr remove_node = zkutil::EphemeralNodeHolder::existing(is_remove_path, *zookeeper);
+
+    Stopwatch watch;
+    while (true)
+    {
+        loadFromCoordinator(zookeeper);
+        std::lock_guard lock(partitions_mutex);
+        auto it = std::find_if(partitions.begin(), partitions.end(), [this](const auto & pair)
+        {
+            return pair.second.hasReplica(replica_name);
+        });
+        if (it == partitions.end())
+            break;
+        sleepForSeconds(1);
+    }
+    LOG_INFO(log, "Cluster partitions had been migrated out from this replica in {} ms.", watch.elapsedMilliseconds());
 }
 
 void ReplicatedMergeTreeCluster::loadFromCoordinatorImpl(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids)
@@ -258,6 +307,10 @@ Strings ReplicatedMergeTreeCluster::getActiveReplicasImpl(const zkutil::ZooKeepe
     {
         return zookeeper->exists(zookeeper_path / "replicas" / replica / "is_active") == false;
     });
+    // std::erase_if(active_replicas, [this, &zookeeper](const auto & replica)
+    // {
+    //     return zookeeper->get(zookeeper_path / "replicas" / replica / "is_lost") == "1";
+    // });
     /// NOTE: Or just go through replicas and check is_lost?
     return active_replicas;
 }

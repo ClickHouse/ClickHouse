@@ -201,7 +201,7 @@ void ReplicatedMergeTreeClusterPartition::removeReplica(const String & replica)
     if (state != UP_TO_DATE)
         revert();
     if (!std::erase(all_replicas, replica))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No {} in all replicas ({})", replica, fmt::join(all_replicas, ", "));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No replica {} in all replicas ({})", replica, fmt::join(all_replicas, ", "));
     std::erase(active_replicas, replica);
 }
 
@@ -247,10 +247,10 @@ void ReplicatedMergeTreeClusterPartition::finish()
             size_t n;
             n = std::erase(all_replicas, source_replica);
             if (!n)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No {} in all replicas ({})", source_replica, fmt::join(all_replicas, ", "));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No replica {} in all replicas ({})", source_replica, fmt::join(all_replicas, ", "));
             n = std::erase(active_replicas, source_replica);
             if (!n)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No {} in active replicas ({})", source_replica, fmt::join(active_replicas, ", "));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No replica {} in active replicas ({})", source_replica, fmt::join(active_replicas, ", "));
 
             active_replicas.push_back(new_replica);
             break;

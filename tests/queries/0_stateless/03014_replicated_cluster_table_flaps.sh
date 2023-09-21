@@ -27,6 +27,9 @@ function backup_replicas_thread()
     #
     # I guess some option do migrate partitions back to other replicas on DROP
     # should be introduced?
+    #
+    # NOTE: it will wait at least 60 seconds because old local partitions
+    # should be removed from the old replicas, to be allowed for migration.
     for i in {0..20}; do
         $CLICKHOUSE_CLIENT -nm -q "
             drop table if exists data_r3;

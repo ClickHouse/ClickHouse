@@ -110,6 +110,7 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Poco/DirectoryIterator.h>
+#include <Poco/String.h>
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
@@ -1016,18 +1017,11 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
                 "Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
                 zookeeper_path);
 
-        Coordination::Requests ops;
-
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
-        String is_lost_value = "0";
-        if (replicas_stat.numChildren)
-        {
-            is_lost_value = "1";
-            if (cluster.has_value())
-                cluster->addRemoveReplicaOps(zookeeper, ops);
-        }
+        const String is_lost_value = replicas_stat.numChildren ? "1" : "0";
 
+        Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/host", "",
@@ -1059,6 +1053,9 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", creator_info,
             zkutil::CreateMode::Persistent));
+
+        if (cluster.has_value())
+            cluster->addCreateReplicaOps(ops);
 
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name, replicas_stat.version));
@@ -1188,6 +1185,7 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
 
         if (cluster)
             cluster->addRemoveReplicaOps(zookeeper, ops);
+            /// NOTE: we should retry on ZBADVERSION instead of simply recursive removal
 
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/columns", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/is_lost", -1));
@@ -1240,8 +1238,8 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     Coordination::Responses responses;
     String drop_lock_path = zookeeper_path + "/dropped/lock";
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/replicas", -1));
-    if (table_settings->cluster)
-        ReplicatedMergeTreeCluster::addDropOps(zookeeper_path, ops);
+    if (cluster)
+        cluster->addDropOps(ops);
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
@@ -5296,6 +5294,17 @@ void StorageReplicatedMergeTree::shutdown(bool)
         queue.pull_log_blocker.cancelForever();
     }
     background_moves_assignee.finish();
+
+    /// Only for DROP TABLE
+    bool is_from_query = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr;
+    /// FIXME: remove this ugly hack
+    bool is_from_detach = is_from_query && Poco::toLower(CurrentThread::get().getQueryForLog()).contains("detach");
+    if (is_from_query && !is_from_detach)
+    {
+        /// Need to wait for partitions to be migrated back to other replicas.
+        if (cluster)
+            cluster->waitReplicaRemoved(getZooKeeperIfTableShutDown());
+    }
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)

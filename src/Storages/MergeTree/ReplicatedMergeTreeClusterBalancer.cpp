@@ -82,10 +82,15 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced()
     /// - cleanup non is_active replicas (ephemeral node)
     /// - cleanup when is_lost sets to 1
 
-    while (!is_stopped)
+    while (true)
     {
         runStep();
+        /// Always process REVERT regardless of is_stopped.
+        if (state.step == REVERT)
+            continue;
         if (state.step == NOTHING_TODO)
+            break;
+        if (is_stopped)
             break;
     }
 
@@ -184,8 +189,6 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY)
-                    throw;
-                if (e.code() == ErrorCodes::ABORTED)
                     throw;
 
                 state.step = REVERT;
@@ -308,7 +311,7 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
     /// The order of the following three actions is important.
 
     Coordination::Stat source_is_lost_stat;
-    zookeeper->get(source_path / "is_lost", &source_is_lost_stat);
+    bool source_is_lost = zookeeper->get(source_path / "is_lost", &source_is_lost_stat) == "1";
 
     Coordination::Stat source_log_pointer_stat;
     String source_log_pointer_raw = zookeeper->get(source_path / "log_pointer", &source_log_pointer_stat);
@@ -324,7 +327,7 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
             last_log_entry = parse<UInt64>(std::max_element(log_entries.begin(), log_entries.end())->substr(strlen("log-")));
     }
     LOG_DEBUG(log, "Trying to clone partition {} from replica {} (log_pointer: {}, last_log_entry: {})", partition, source_replica, source_log_pointer, last_log_entry);
-    if (last_log_entry > source_log_pointer)
+    if (!source_is_lost && last_log_entry > source_log_pointer)
         throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Source replica {} did not processed all log entries", source_replica);
 
     auto source_queue_names = storage.getSourceQueueEntries(source_replica, source_is_lost_stat, zookeeper, /* update_source_replica_log_pointer= */ false);

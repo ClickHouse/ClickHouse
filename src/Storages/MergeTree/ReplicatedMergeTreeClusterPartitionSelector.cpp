@@ -20,6 +20,7 @@ public:
     ReplicatedMergeTreeClusterPartitionSelectorImpl(ReplicatedMergeTreeCluster & cluster, const StorageReplicatedMergeTree & storage, Poco::Logger * log);
 
     std::optional<ReplicatedMergeTreeClusterPartition> select();
+    std::optional<ReplicatedMergeTreeClusterPartition> selectPartitionToMigrateFromRemoved();
     std::optional<ReplicatedMergeTreeClusterPartition> selectPartitionToMigrate();
     std::optional<ReplicatedMergeTreeClusterPartition> selectPartitionToClone();
 
@@ -31,9 +32,12 @@ private:
 
     /// <replica_name, partitions>
     std::unordered_map<String, std::vector<String>> replicas_partitions;
+    NameSet removing_replicas;
+    ReplicatedMergeTreeClusterPartitions all_partitions;
     ReplicatedMergeTreeClusterPartitions partitions;
-    std::unordered_set<String> local_partitions;
-    double partitions_per_replica = 0.;
+    size_t partitions_per_replica = 0;
+
+    void reset();
 };
 ReplicatedMergeTreeClusterPartitionSelectorImpl::ReplicatedMergeTreeClusterPartitionSelectorImpl(ReplicatedMergeTreeCluster & cluster_, const StorageReplicatedMergeTree & storage_, Poco::Logger * log_)
     : cluster(cluster_)
@@ -42,19 +46,28 @@ ReplicatedMergeTreeClusterPartitionSelectorImpl::ReplicatedMergeTreeClusterParti
     , replica_name(storage.getReplicaName())
 {
 }
+void ReplicatedMergeTreeClusterPartitionSelectorImpl::reset()
+{
+    replicas_partitions.clear();
+    removing_replicas.clear();
+    all_partitions.clear();
+    partitions.clear();
+    partitions_per_replica = 0;
+}
 std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPartitionSelectorImpl::select()
 {
+    reset();
     cluster.loadFromCoordinator();
 
-    partitions = cluster.getClusterPartitions();
-    if (partitions.empty())
+    all_partitions = cluster.getClusterPartitions();
+    if (all_partitions.empty())
     {
         LOG_TEST(log, "No partitions");
         return std::nullopt;
     }
 
     std::unordered_set<String> unique_partitions;
-    for (const auto & partition : partitions)
+    for (const auto & partition : all_partitions)
     {
         const auto & replicas = partition.getActiveNonMigrationReplicas();
         for (const auto & replica : replicas)
@@ -83,26 +96,25 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
         max_partitions_per_replica = std::max(max_partitions_per_replica, replica_partitions.size());
     }
 
-    size_t replicas = replicas_partitions.size();
-    UInt64 cluster_replication_factor = storage.getSettings()->cluster_replication_factor;
-    if (replicas <= cluster_replication_factor)
+    for (const auto & [replica, _] : replicas_partitions)
     {
-        LOG_TEST(log, "No spare replicas (replicas: {}, cluster_replication_factor: {})", replicas, cluster_replication_factor);
-        return std::nullopt;
+        if (cluster.getZooKeeper()->exists(cluster.cluster_path / "replicas" / replica / "is_removing"))
+            removing_replicas.emplace(replica);
     }
+    size_t alive_replicas = replicas_partitions.size() - removing_replicas.size();
+    UInt64 cluster_replication_factor = storage.getSettings()->cluster_replication_factor;
+    partitions_per_replica = static_cast<size_t>(unique_partitions.size() / (static_cast<double>(alive_replicas) / cluster_replication_factor));
+    LOG_TEST(log, "Cluster (replicas: {}, of them removing: {}, partitions: {}, expected partitions per replica: {}, min {}/max {} partitions per replica), replica (cluster partitions: {}, local partitions: {})",
+        replicas_partitions.size(), removing_replicas.size(), unique_partitions.size(), partitions_per_replica, min_partitions_per_replica, max_partitions_per_replica,
+        replicas_partitions[replica_name].size(), storage.getActivePartsCount());
 
-    local_partitions = storage.getAllPartitionIds();
-    partitions_per_replica = unique_partitions.size() / (static_cast<double>(replicas) / cluster_replication_factor);
-    LOG_TEST(log, "Cluster (replicas: {}, partitions: {}, expected partitions per replica: {:.2}, min {}/max {} partitions per replica), replica (cluster partitions: {}, local partitions: {})",
-        replicas_partitions.size(), unique_partitions.size(), partitions_per_replica, min_partitions_per_replica, max_partitions_per_replica,
-        replicas_partitions[replica_name].size(), local_partitions.size());
-
-    if (replicas_partitions[replica_name].size() >= partitions_per_replica)
+    if (removing_replicas.empty() && replicas_partitions[replica_name].size() >= partitions_per_replica)
     {
         LOG_TEST(log, "Replica is in sync");
         return std::nullopt;
     }
 
+    partitions = all_partitions;
     std::erase_if(partitions, [this](const auto & partition)
     {
         if (partition.isUnderReSharding())
@@ -123,18 +135,11 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
             return true;
         }
 
-        /// Due to background DROP_RANGE it is possible that some partition may
-        /// still exists (even if it replica is not included into the cluster
-        /// partition information)
-        if (local_partitions.contains(partition.getPartitionId()))
-        {
-            LOG_WARNING(log, "Partition {} still exists on replica {}", partition.getPartitionId(), replica_name);
-            return true;
-        }
-
         return false;
     });
 
+    if (auto task = selectPartitionToMigrateFromRemoved())
+        return task;
     if (auto task = selectPartitionToMigrate())
         return task;
     /// TODO: add delay after which we should clone parts initially, since we
@@ -144,6 +149,38 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
         return task;
     return std::nullopt;
 }
+std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPartitionSelectorImpl::selectPartitionToMigrateFromRemoved()
+{
+    for (const auto & lost_replica : removing_replicas)
+    {
+        const auto & lost_replica_partitions = replicas_partitions[lost_replica];
+        if (lost_replica_partitions.empty())
+            continue;
+
+        const auto & partition_id = lost_replica_partitions.front();
+        const auto partition_it = std::find_if(all_partitions.begin(), all_partitions.end(), [&](const auto & p) { return p.getPartitionId() == partition_id; });
+        if (partition_it == all_partitions.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot find partition {} for removing replica {}", partition_id, lost_replica);
+        }
+
+        const auto & partition = *partition_it;
+
+        auto new_partition = partition;
+        new_partition.replaceReplica(lost_replica, replica_name);
+
+        LOG_INFO(log, "Migrating partition {} from lost replica ({} source parts, {} local parts)",
+            new_partition.toStringForLog(),
+            replicas_partitions[new_partition.getSourceReplica()].size(),
+            replicas_partitions[replica_name].size());
+
+        return new_partition;
+    }
+
+    return std::nullopt;
+}
+
 std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPartitionSelectorImpl::selectPartitionToMigrate()
 {
     for (const auto & partition : partitions)
@@ -210,6 +247,12 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
             size_t max = 0;
             for (const auto & partition_replica : partition_replicas)
             {
+                if (removing_replicas.contains(partition_replica))
+                {
+                    source_replica = partition_replica;
+                    break;
+                }
+
                 if (replicas_partitions[partition_replica].size() > max)
                 {
                     max = replicas_partitions[partition_replica].size();

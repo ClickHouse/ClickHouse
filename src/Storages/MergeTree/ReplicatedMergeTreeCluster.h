@@ -37,9 +37,11 @@ public:
     ~ReplicatedMergeTreeCluster();
 
     void addCreateOps(Coordination::Requests & ops);
+    void addCreateReplicaOps(Coordination::Requests & ops);
     void addRemoveReplicaOps(const zkutil::ZooKeeperPtr & zookeeper, Coordination::Requests & ops);
+    void addDropOps(Coordination::Requests & ops);
 
-    static void addDropOps(const fs::path & zookeeper_path, Coordination::Requests & ops);
+    void waitReplicaRemoved(const zkutil::ZooKeeperPtr & zookeeper);
 
     void initialize();
     void startDistributor();
