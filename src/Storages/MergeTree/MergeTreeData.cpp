@@ -398,7 +398,7 @@ MergeTreeData::MergeTreeData(
                               settings->check_sample_column_is_correct && !attach);
     }
 
-    checkColumnFilenamesForCollision(*settings, !attach);
+    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, !attach);
     checkTTLExpressions(metadata_, metadata_);
 
     String reason;
@@ -3350,6 +3350,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
     checkProperties(new_metadata, old_metadata, false, false, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -3530,7 +3531,6 @@ void MergeTreeData::changeSettings(
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
         copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount());
-        checkColumnFilenamesForCollision(*copy, /*throw_on_error=*/ true);
 
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -7445,12 +7445,24 @@ bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
     return decision;
 }
 
-void MergeTreeData::checkColumnFilenamesForCollision(const MergeTreeSettings & settings, bool throw_on_error) const
+void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
+{
+    auto settings = getDefaultSettings();
+    if (metadata.settings_changes)
+    {
+        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        settings->applyChanges(changes);
+    }
+
+    checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
+}
+
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
+    auto columns_list = Nested::collect(columns.getAllPhysical());
 
-    for (const auto & column : Nested::collect(columns_list))
+    for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
 
@@ -7482,14 +7494,14 @@ void MergeTreeData::checkColumnFilenamesForCollision(const MergeTreeSettings & s
             if (!inserted)
             {
                 const auto & [other_full_name, other_column_name] = it->second;
-                auto other_type = getInMemoryMetadataPtr()->getColumns().getPhysical(other_column_name).type;
+                auto other_type = columns.getPhysical(other_column_name).type;
 
                 auto message = fmt::format(
                     "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
                     column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
 
                 if (settings.replace_long_file_name_to_hash)
-                    message += ". It may be a a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
+                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
 
                 if (throw_on_error)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
