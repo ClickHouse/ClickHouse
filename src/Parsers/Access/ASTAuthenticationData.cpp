@@ -67,6 +67,12 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 password = true;
                 break;
             }
+            case AuthenticationType::ONE_TIME_PASSWORD:
+            {
+                prefix = "BY";
+                password = true;
+                break;
+            }
             case AuthenticationType::SHA256_PASSWORD:
             {
                 if (contains_hash)
