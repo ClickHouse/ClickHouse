@@ -142,7 +142,7 @@ public:
         chassert(!current_chunk.empty());
     }
 
-    SourceChunksBuilder & addRow(const std::vector<Field> & row)
+    void addRow(const std::vector<Field> & row)
     {
         chassert(row.size() == current_chunk.size());
         for (size_t i = 0; i < current_chunk.size(); ++i)
@@ -150,25 +150,29 @@ public:
 
         if (break_prob > 0.0 && std::uniform_real_distribution<>(0.0, 1.0)(rng) < break_prob)
             addChunk();
-
-        return *this;
     }
 
-    SourceChunksBuilder & addChunk()
+    void addChunk()
     {
         if (current_chunk.front()->empty())
-            return *this;
+            return;
 
         size_t rows = current_chunk.front()->size();
         chunks.emplace_back(std::move(current_chunk), rows);
         current_chunk = header.cloneEmptyColumns();
-        return *this;
+        return;
     }
 
     std::shared_ptr<ISource> build()
     {
         addChunk();
-        return std::make_shared<SourceFromChunks>(header, std::move(chunks));
+
+        /// copy chunk to allow reusing same builder
+        Chunks chunks_copy;
+        chunks_copy.reserve(chunks.size());
+        for (const auto & chunk : chunks)
+            chunks_copy.emplace_back(chunk.clone());
+        return std::make_shared<SourceFromChunks>(header, std::move(chunks_copy));
     }
 
 private:
@@ -219,42 +223,54 @@ void checkColumn(const typename ColumnVector<T>::Container & expected, const Blo
 TEST(FullSortingJoin, Asof)
 try
 {
-    auto left_source = SourceChunksBuilder({
+    SourceChunksBuilder left_source({
         {std::make_shared<DataTypeString>(), "key"},
         {std::make_shared<DataTypeUInt64>(), "t"},
-    })
-        .addRow({"AMZN", 3})
-        .addRow({"AMZN", 4})
-        .addRow({"AMZN", 6})
-        .build();
+    });
 
-    auto right_source = SourceChunksBuilder({
+    left_source.addRow({"AMZN", 3});
+    left_source.addRow({"AMZN", 4});
+    left_source.addRow({"AMZN", 6});
+
+    SourceChunksBuilder right_source({
         {std::make_shared<DataTypeString>(), "key"},
         {std::make_shared<DataTypeUInt64>(), "t"},
         {std::make_shared<DataTypeUInt64>(), "value"},
-    })
-        .addRow({"AAPL", 1, 97})
-        .addChunk()
-        .addRow({"AAPL", 2, 98})
-        .addRow({"AAPL", 3, 99})
-        .addRow({"AMZN", 1, 100})
-        .addRow({"AMZN", 2, 110})
-        .addChunk()
-        .addRow({"AMZN", 4, 130})
-        .addRow({"AMZN", 5, 140})
-        .build();
+    });
+    right_source.addRow({"AAPL", 1, 97});
+    right_source.addChunk();
+    right_source.addRow({"AAPL", 2, 98});
+    right_source.addRow({"AAPL", 3, 99});
+    right_source.addRow({"AMZN", 1, 100});
+    right_source.addRow({"AMZN", 2, 110});
+    right_source.addChunk();
+    right_source.addRow({"AMZN", 4, 130});
+    right_source.addRow({"AMZN", 5, 140});
 
-    auto pipeline = buildJoinPipeline(
-        left_source, right_source, /* key_length = */ 2,
-        JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::LessOrEquals);
+    {
+        Block result_block = executePipeline(buildJoinPipeline(
+            left_source.build(), right_source.build(), /* key_length = */ 2,
+            JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::LessOrEquals));
+        auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
 
-    Block result_block = executePipeline(std::move(pipeline));
-    auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
+        ASSERT_EQ(values, (std::vector<std::vector<Field>>{
+            {"AMZN", 3u, 4u, 130u},
+            {"AMZN", 4u, 4u, 130u},
+        }));
+    }
 
-    ASSERT_EQ(values, (std::vector<std::vector<Field>>{
-        {"AMZN", 3u, 4u, 130u},
-        {"AMZN", 4u, 4u, 130u},
-    }));
+    {
+        Block result_block = executePipeline(buildJoinPipeline(
+            left_source.build(), right_source.build(), /* key_length = */ 2,
+            JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::GreaterOrEquals));
+        auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
+
+        ASSERT_EQ(values, (std::vector<std::vector<Field>>{
+            {"AMZN", 3u, 2u, 110u},
+            {"AMZN", 4u, 4u, 130u},
+            {"AMZN", 6u, 5u, 140u},
+        }));
+    }
 }
 catch (Exception & e)
 {
@@ -314,23 +330,23 @@ catch (Exception & e)
 TEST(FullSortingJoin, AsofGeneratedTestData)
 try
 {
-    std::vector<JoinKind> join_kinds = {JoinKind::Inner, JoinKind::Left};
+    std::array join_kinds{JoinKind::Inner, JoinKind::Left};
     auto join_kind = join_kinds[std::uniform_int_distribution<size_t>(0, join_kinds.size() - 1)(rng)];
 
-    std::vector<ASOFJoinInequality> asof_inequalities = {
+    std::array asof_inequalities{
         ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals,
         // ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals,
     };
     auto asof_inequality = asof_inequalities[std::uniform_int_distribution<size_t>(0, asof_inequalities.size() - 1)(rng)];
 
-    auto left_source_builder = SourceChunksBuilder({
+    SourceChunksBuilder left_source_builder({
         {std::make_shared<DataTypeUInt64>(), "k1"},
         {std::make_shared<DataTypeString>(), "k2"},
         {std::make_shared<DataTypeUInt64>(), "t"},
         {std::make_shared<DataTypeInt64>(), "attr"},
     });
 
-    auto right_source_builder = SourceChunksBuilder({
+    SourceChunksBuilder right_source_builder({
         {std::make_shared<DataTypeUInt64>(), "k1"},
         {std::make_shared<DataTypeString>(), "k2"},
         {std::make_shared<DataTypeUInt64>(), "t"},
