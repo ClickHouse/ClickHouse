@@ -131,3 +131,22 @@ void sort(RandomIt first, RandomIt last)
     using comparator = std::less<value_type>;
     ::sort(first, last, comparator());
 }
+
+template <typename RandomIt, typename Compare>
+bool trySort(RandomIt first, RandomIt last, Compare compare)
+{
+#ifndef NDEBUG
+    ::shuffle(first, last);
+#endif
+
+    ComparatorWrapper<Compare> compare_wrapper = compare;
+    return ::pdqsort_try_sort(first, last, compare_wrapper);
+}
+
+template <typename RandomIt>
+bool trySort(RandomIt first, RandomIt last)
+{
+    using value_type = typename std::iterator_traits<RandomIt>::value_type;
+    using comparator = std::less<value_type>;
+    return ::pdqsort_try_sort(first, last, comparator());
+}
