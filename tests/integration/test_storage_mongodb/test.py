@@ -496,7 +496,19 @@ def test_schema_inference(started_cluster):
                 "string": str(i + 1),
                 "uuid": "f0e77736-91d1-48ce-8f01-15123ca1c7ed",
                 "bool": True,
-                "nullable": None,
+                "arr_float64": [i + 1.125, i + 2.5, i + 3.750],
+                "arr_datetime": [
+                    datetime.datetime(2023, 3, 31, 6, 3, 12),
+                    datetime.datetime(1999, 2, 28, 12, 46, 34),
+                ],
+                "tuple": {
+                    "float": i + 3.750,
+                    "tuple": {
+                        "datetime": datetime.datetime(2023, 3, 31, 6, 3, 12),
+                        "string": str(i + 1),
+                    },
+                    "array": [True, False, True],
+                },
             }
         )
 
@@ -508,7 +520,7 @@ def test_schema_inference(started_cluster):
         "CREATE TABLE inference_mongo_table ENGINE = MongoDB('mongo1:27017', 'test', 'inference_table', 'root', 'clickhouse')"
     )
 
-    expected = "CREATE TABLE default.inference_mongo_table (`_id` String, `key` Int32, `int64` Int32, `int32` Int32, `int16` Int32, `int8` Int32, `uint64` Int32, `uint32` Int32, `uint16` Int32, `uint8` Int32, `float32` Float64, `float64` Float64, `date` DateTime, `datetime` DateTime, `string` String, `uuid` String, `bool` UInt8, `nullable` Nothing) ENGINE = MongoDB(\\'mongo1:27017\\', \\'test\\', \\'inference_table\\', \\'root\\', \\'[HIDDEN]\\')\n"
+    expected = "CREATE TABLE default.inference_mongo_table (`_id` String, `key` Int32, `int64` Int32, `int32` Int32, `int16` Int32, `int8` Int32, `uint64` Int32, `uint32` Int32, `uint16` Int32, `uint8` Int32, `float32` Float64, `float64` Float64, `date` DateTime, `datetime` DateTime, `string` String, `uuid` String, `bool` Bool, `arr_float64` Array(Float64), `arr_datetime` Array(DateTime), `tuple` Tuple(float Float64, tuple Tuple(datetime DateTime, string String), array Array(Bool))) ENGINE = MongoDB(\\'mongo1:27017\\', \\'test\\', \\'inference_table\\', \\'root\\', \\'[HIDDEN]\\')\n"
 
     assert expected == node.query(
         "select create_table_query from system.tables where name = 'inference_mongo_table'"

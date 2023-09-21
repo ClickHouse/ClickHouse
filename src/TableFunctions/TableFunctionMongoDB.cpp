@@ -14,6 +14,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ColumnsDescription.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
@@ -29,19 +30,23 @@ namespace ErrorCodes
 StoragePtr TableFunctionMongoDB::executeImpl(const ASTPtr & /*ast_function*/,
         ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
+    FormatSettings format_settings = getFormatSettings(context);
+
     auto columns = getActualTableStructure(context);
     auto storage = std::make_shared<StorageMongoDB>(
-    StorageID(configuration->database, table_name),
-    configuration->host,
-    configuration->port,
-    configuration->database,
-    configuration->table,
-    configuration->username,
-    configuration->password,
-    configuration->options,
-    columns,
-    ConstraintsDescription(),
-    String{});
+        StorageID(configuration->database, table_name),
+        configuration->host,
+        configuration->port,
+        configuration->database,
+        configuration->table,
+        configuration->username,
+        configuration->password,
+        configuration->options,
+        columns,
+        ConstraintsDescription(),
+        String{},
+        format_settings);
+
     storage->startup();
     return storage;
 }

@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -162,6 +163,8 @@ void insertPostgreSQLValue(
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
+        case ExternalResultDescription::ValueType::vtTuple:
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type: {}", column.getName());
     }
 }
 

@@ -25,7 +25,8 @@ public:
         const std::string & options_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment);
+        const String & comment,
+        const FormatSettings & format_settings);
 
     std::string getName() const override { return "MongoDB"; }
 
@@ -59,7 +60,7 @@ public:
 
 private:
     void connectIfNotConnected();
-    ColumnsDescription getTableStructureFromData();
+    ColumnsDescription getTableStructureFromData(const FormatSettings & format_settings);
 
     const std::string database_name;
     const std::string collection_name;

@@ -12,8 +12,10 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -22,6 +24,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 // only after poco
 // naming conflict:
@@ -45,7 +48,7 @@ namespace
     using ValueType = ExternalResultDescription::ValueType;
     using ObjectId = Poco::MongoDB::ObjectId;
     using MongoArray = Poco::MongoDB::Array;
-
+    using MongoDocument = Poco::MongoDB::Document;
 
     template <typename T>
     Field getNumber(const Poco::MongoDB::Element & value, const std::string & name)
@@ -157,7 +160,7 @@ namespace
                 return parse<UUID>(string);
             };
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type conversion to {} is not supported", nested->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Type {} is not supported inside of Array", nested->getName());
 
         array_info[column_idx] = {count_dimensions, default_value, parser};
     }
@@ -196,8 +199,12 @@ namespace
         }
     }
 
+    void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
+
     void insertValue(
         IColumn & column,
+        const IColumn & column_default,
+        const IDataType & data_type,
         const ValueType type,
         const Poco::MongoDB::Element & value,
         const std::string & name,
@@ -354,14 +361,66 @@ namespace
 
                 assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
                 break;
+            }
+            case ValueType::vtTuple:
+            {
+                if (value.type() != Poco::MongoDB::ElementTraits<MongoDocument::Ptr>::TypeId)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Tuple, got type id = {} for column {}",
+                                    toString(value.type()), name);
 
+                auto document = static_cast<const Poco::MongoDB::ConcreteElement<MongoDocument::Ptr> &>(value).value();
+
+                ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
+
+                const auto * tuple_type = assert_cast<const DataTypeTuple *>(&data_type);
+                const Strings & names = tuple_type->getElementNames();
+                const DataTypes & nested_types = tuple_type->getElements();
+
+                const ColumnTuple & column_default_tuple = assert_cast<const ColumnTuple &>(column_default);
+
+                for (const auto col_num : collections::range(0, column_tuple.tupleSize()))
+                {
+                    IColumn & nested_column = column_tuple.getColumn(col_num);
+                    const IColumn & nested_column_default = column_default_tuple.getColumn(col_num);
+                    const DataTypePtr & nested_type = nested_types[col_num];
+
+                    const auto & nested_name = names[col_num];
+                    auto nested_external_desc = ExternalResultDescription::getValueTypeWithNullable(nested_type);
+
+                    bool exists_in_current_document = document->exists(nested_name);
+                    if (!exists_in_current_document)
+                    {
+                        insertDefaultValue(nested_column, nested_column_default);
+                        continue;
+                    }
+
+                    const Poco::MongoDB::Element::Ptr nested_value = document->get(nested_name);
+
+                    if (nested_value.isNull() || nested_value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
+                    {
+                        insertDefaultValue(nested_column, nested_column_default);
+                    }
+                    else
+                    {
+                        bool is_nullable = nested_external_desc.second;
+                        if (is_nullable)
+                        {
+                            ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(nested_column);
+                            insertValue(column_nullable.getNestedColumn(), nested_column_default, *nested_type, nested_external_desc.first, *nested_value, nested_name, array_info, idx);
+                            column_nullable.getNullMapData().emplace_back(0);
+                        }
+                        else
+                            insertValue(nested_column, nested_column_default, *nested_type, nested_external_desc.first, *nested_value, nested_name, array_info, idx);
+                    }
+
+                }
+
+                break;
             }
             default:
                 throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type: {}", column.getName());
         }
     }
-
-    void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
 }
 
 
@@ -379,9 +438,8 @@ MongoDBCursor::MongoDBCursor(
     const std::string & collection,
     const Block & sample_block_to_select,
     const Poco::MongoDB::Document & query,
-    Poco::MongoDB::Connection & connection,
-    bool projections_)
-    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection)), projections(projections_)
+    Poco::MongoDB::Connection & connection)
+    : is_wire_protocol_old(isMongoDBWireProtocolOld(connection))
 {
     Poco::MongoDB::Document projection;
 
@@ -396,7 +454,7 @@ MongoDBCursor::MongoDBCursor(
     {
         old_cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
         old_cursor->query().selector() = query;
-        if (projections)
+        if (sample_block_to_select)
             old_cursor->query().returnFieldSelector() = projection;
     }
     else
@@ -404,7 +462,7 @@ MongoDBCursor::MongoDBCursor(
         new_cursor = std::make_unique<Poco::MongoDB::OpMsgCursor>(database, collection);
         new_cursor->query().setCommandName(Poco::MongoDB::OpMsgMessage::CMD_FIND);
         new_cursor->query().body().addNewDocument("filter") = query;
-        if (projections)
+        if (sample_block_to_select)
             new_cursor->query().body().addNewDocument("projection") = projection;
     }
 }
@@ -484,11 +542,13 @@ Chunk MongoDBSource::generate()
             for (const auto idx : collections::range(0, size))
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
+                const auto & type = description.sample_block.getByPosition(idx).type;
+                const auto & sample_column = description.sample_block.getByPosition(idx).column;
 
                 bool exists_in_current_document = document->exists(name);
                 if (!exists_in_current_document)
                 {
-                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                    insertDefaultValue(*columns[idx], *sample_column);
                     continue;
                 }
 
@@ -496,7 +556,7 @@ Chunk MongoDBSource::generate()
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
                 {
-                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                    insertDefaultValue(*columns[idx], *sample_column);
                 }
                 else
                 {
@@ -504,11 +564,11 @@ Chunk MongoDBSource::generate()
                     if (is_nullable)
                     {
                         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                        insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name, array_info, idx);
+                        insertValue(column_nullable.getNestedColumn(), *sample_column, *type, description.types[idx].first, *value, name, array_info, idx);
                         column_nullable.getNullMapData().emplace_back(0);
                     }
                     else
-                        insertValue(*columns[idx], description.types[idx].first, *value, name, array_info, idx);
+                        insertValue(*columns[idx], *sample_column, *type, description.types[idx].first, *value, name, array_info, idx);
                 }
             }
         }

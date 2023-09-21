@@ -32,63 +32,70 @@ void ExternalResultDescription::init(const Block & sample_block_)
         if (elem.column->empty())
             elem.column = elem.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-        bool is_nullable = elem.type->isNullable();
-        DataTypePtr type_not_nullable = removeNullable(elem.type);
-        const IDataType * type = type_not_nullable.get();
-
-        WhichDataType which(type);
-
-        if (which.isUInt8())
-            types.emplace_back(ValueType::vtUInt8, is_nullable);
-        else if (which.isUInt16())
-            types.emplace_back(ValueType::vtUInt16, is_nullable);
-        else if (which.isUInt32())
-            types.emplace_back(ValueType::vtUInt32, is_nullable);
-        else if (which.isUInt64())
-            types.emplace_back(ValueType::vtUInt64, is_nullable);
-        else if (which.isInt8())
-            types.emplace_back(ValueType::vtInt8, is_nullable);
-        else if (which.isInt16())
-            types.emplace_back(ValueType::vtInt16, is_nullable);
-        else if (which.isInt32())
-            types.emplace_back(ValueType::vtInt32, is_nullable);
-        else if (which.isInt64())
-            types.emplace_back(ValueType::vtInt64, is_nullable);
-        else if (which.isFloat32())
-            types.emplace_back(ValueType::vtFloat32, is_nullable);
-        else if (which.isFloat64())
-            types.emplace_back(ValueType::vtFloat64, is_nullable);
-        else if (which.isString())
-            types.emplace_back(ValueType::vtString, is_nullable);
-        else if (which.isDate())
-            types.emplace_back(ValueType::vtDate, is_nullable);
-        else if (which.isDate32())
-            types.emplace_back(ValueType::vtDate32, is_nullable);
-        else if (which.isDateTime())
-            types.emplace_back(ValueType::vtDateTime, is_nullable);
-        else if (which.isUUID())
-            types.emplace_back(ValueType::vtUUID, is_nullable);
-        else if (which.isEnum8())
-            types.emplace_back(ValueType::vtEnum8, is_nullable);
-        else if (which.isEnum16())
-            types.emplace_back(ValueType::vtEnum16, is_nullable);
-        else if (which.isDateTime64())
-            types.emplace_back(ValueType::vtDateTime64, is_nullable);
-        else if (which.isDecimal32())
-            types.emplace_back(ValueType::vtDecimal32, is_nullable);
-        else if (which.isDecimal64())
-            types.emplace_back(ValueType::vtDecimal64, is_nullable);
-        else if (which.isDecimal128())
-            types.emplace_back(ValueType::vtDecimal128, is_nullable);
-        else if (which.isDecimal256())
-            types.emplace_back(ValueType::vtDecimal256, is_nullable);
-        else if (which.isArray())
-            types.emplace_back(ValueType::vtArray, is_nullable);
-        else if (which.isFixedString())
-            types.emplace_back(ValueType::vtFixedString, is_nullable);
-        else
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported type {}", type->getName());
+        types.emplace_back(getValueTypeWithNullable(elem.type));
     }
+}
+
+ExternalResultDescription::TypeWithNullable ExternalResultDescription::getValueTypeWithNullable(const DataTypePtr & input_type)
+{
+    bool is_nullable = input_type->isNullable();
+    DataTypePtr type_not_nullable = removeNullable(input_type);
+    const IDataType * type = type_not_nullable.get();
+
+    WhichDataType which(type);
+
+    if (which.isUInt8())
+        return {ValueType::vtUInt8, is_nullable};
+    else if (which.isUInt16())
+        return {ValueType::vtUInt16, is_nullable};
+    else if (which.isUInt32())
+        return {ValueType::vtUInt32, is_nullable};
+    else if (which.isUInt64())
+        return {ValueType::vtUInt64, is_nullable};
+    else if (which.isInt8())
+        return {ValueType::vtInt8, is_nullable};
+    else if (which.isInt16())
+        return {ValueType::vtInt16, is_nullable};
+    else if (which.isInt32())
+        return {ValueType::vtInt32, is_nullable};
+    else if (which.isInt64())
+        return {ValueType::vtInt64, is_nullable};
+    else if (which.isFloat32())
+        return {ValueType::vtFloat32, is_nullable};
+    else if (which.isFloat64())
+        return {ValueType::vtFloat64, is_nullable};
+    else if (which.isString())
+        return {ValueType::vtString, is_nullable};
+    else if (which.isDate())
+        return {ValueType::vtDate, is_nullable};
+    else if (which.isDate32())
+        return {ValueType::vtDate32, is_nullable};
+    else if (which.isDateTime())
+        return {ValueType::vtDateTime, is_nullable};
+    else if (which.isUUID())
+        return {ValueType::vtUUID, is_nullable};
+    else if (which.isEnum8())
+        return {ValueType::vtEnum8, is_nullable};
+    else if (which.isEnum16())
+        return {ValueType::vtEnum16, is_nullable};
+    else if (which.isDateTime64())
+        return {ValueType::vtDateTime64, is_nullable};
+    else if (which.isDecimal32())
+        return {ValueType::vtDecimal32, is_nullable};
+    else if (which.isDecimal64())
+        return {ValueType::vtDecimal64, is_nullable};
+    else if (which.isDecimal128())
+        return {ValueType::vtDecimal128, is_nullable};
+    else if (which.isDecimal256())
+        return {ValueType::vtDecimal256, is_nullable};
+    else if (which.isArray())
+        return {ValueType::vtArray, is_nullable};
+    else if (which.isFixedString())
+        return {ValueType::vtFixedString, is_nullable};
+    else if (which.isTuple())
+        return {ValueType::vtTuple, is_nullable};
+    else
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported type {}", type->getName());
 }
 
 }

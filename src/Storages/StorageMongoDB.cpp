@@ -18,6 +18,7 @@
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Formats/FormatFactory.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -25,6 +26,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <unordered_set>
 
@@ -36,12 +39,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int MONGODB_ERROR;
-    extern const int EMPTY_DATA_PASSED;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 namespace
 {
     using MongoArray = Poco::MongoDB::Array;
+    using MongoDocument = Poco::MongoDB::Document;
 
     DataTypePtr getDataTypeMongoDB(const Poco::MongoDB::Element & value)
     {
@@ -50,7 +54,7 @@ namespace
             case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
                 return std::make_shared<DataTypeNothing>();
             case Poco::MongoDB::ElementTraits<bool>::TypeId:
-                return std::make_shared<DataTypeUInt8>();
+                return DataTypeFactory::instance().get("Bool");
             case Poco::MongoDB::ElementTraits<Int32>::TypeId:
                 return std::make_shared<DataTypeInt32>();
             case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
@@ -71,7 +75,30 @@ namespace
                     Poco::MongoDB::Element::Ptr child = parent->get(static_cast<int>(idx));
                     types.push_back(getDataTypeMongoDB(*child));
                 }
+
+                DataTypePtr common_type = tryGetLeastSupertype(types);
+                if (common_type)
+                    return std::make_shared<DataTypeArray>(common_type);
+
                 return std::make_shared<DataTypeTuple>(types);
+            }
+            case Poco::MongoDB::ElementTraits<MongoDocument::Ptr>::TypeId:
+            {
+                auto parent = static_cast<const Poco::MongoDB::ConcreteElement<MongoDocument::Ptr> &>(value).value();
+
+                DataTypes types;
+                Strings names;
+                types.reserve(parent->size());
+                names.reserve(parent->size());
+
+                parent->elementNames(names);
+
+                for (const auto & name : names)
+                {
+                    Poco::MongoDB::Element::Ptr child = parent->get(name);
+                    types.push_back(getDataTypeMongoDB(*child));
+                }
+                return std::make_shared<DataTypeTuple>(types, names);
             }
             default:
                 return std::make_shared<DataTypeString>();
@@ -91,7 +118,8 @@ StorageMongoDB::StorageMongoDB(
     const std::string & options_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment)
+    const String & comment,
+    const FormatSettings & format_settings)
     : IStorage(table_id_)
     , database_name(database_name_)
     , collection_name(collection_name_)
@@ -103,7 +131,7 @@ StorageMongoDB::StorageMongoDB(
 
     if (columns_.empty())
     {
-        auto columns =  StorageMongoDB::getTableStructureFromData();
+        auto columns =  StorageMongoDB::getTableStructureFromData(format_settings);
         storage_metadata.setColumns(columns);
     }
     else
@@ -145,12 +173,11 @@ void StorageMongoDB::connectIfNotConnected()
     }
 }
 
-ColumnsDescription StorageMongoDB::getTableStructureFromData()
+ColumnsDescription StorageMongoDB::getTableStructureFromData(const FormatSettings & format_settings)
 {
     connectIfNotConnected();
 
-    MongoDBCursor cursor(database_name, collection_name, {}, {}, *connection, false);
-    FormatSettings format_settings;
+    MongoDBCursor cursor(database_name, collection_name, {}, {}, *connection);
 
     std::unordered_map<std::string, DataTypePtr> types;
     std::vector<std::string> current_keys;
@@ -188,8 +215,21 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData()
                     continue;
                 }
 
-                auto & type = types[key];
-                transformInferredTypesIfNeeded(type, new_type, format_settings);
+                DataTypePtr common_type;
+
+                try
+                {
+                    common_type = getLeastSupertype(DataTypes{types[key], new_type});
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from MongoDB table: {}",
+                        e.what());
+                }
+
+                types[key] = common_type;
             }
 
             current_keys.clear();
@@ -200,7 +240,9 @@ ColumnsDescription StorageMongoDB::getTableStructureFromData()
     }
 
     if (num_rows == 0)
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
+        throw Exception(
+            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+            "Cannot extract table structure from MongoDB table: provided collection is empty");
 
     NamesAndTypesList result;
     for (auto & key : final_keys)
@@ -305,6 +347,26 @@ private:
             }
 
             document.add(name, array);
+            return;
+        }
+
+        if (which.isTuple())
+        {
+            const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(column);
+
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(&data_type);
+            const Strings & names = tuple_type->getElementNames();
+            const DataTypes & nested_types = tuple_type->getElements();
+
+            Poco::MongoDB::Document::Ptr nested_document = new Poco::MongoDB::Document();
+
+            for (size_t col_num = 0; col_num < column_tuple.tupleSize(); ++col_num)
+            {
+                const IColumn & nested_column = column_tuple.getColumn(col_num);
+                insertValueIntoMongoDB(*nested_document, names[col_num], *nested_types[col_num], nested_column, idx);
+            }
+
+            document.add(name, nested_document);
             return;
         }
 
@@ -422,6 +484,32 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
+        // Use format settings from global server context + settings from
+        // the SETTINGS clause of the create query. Settings from current
+        // session and user are ignored.
+        std::optional<FormatSettings> format_settings;
+        if (args.storage_def->settings)
+        {
+            FormatFactorySettings user_format_settings;
+
+            // Apply changed settings from global context, but ignore the
+            // unknown ones, because we only have the format settings here.
+            const auto & changes = args.getContext()->getSettingsRef().changes();
+            for (const auto & change : changes)
+            {
+                if (user_format_settings.has(change.name))
+                    user_format_settings.set(change.name, change.value);
+            }
+
+            // Apply changes from SETTINGS clause, with validation.
+            user_format_settings.applyChanges(args.storage_def->settings->changes);
+            format_settings = getFormatSettings(args.getContext(), user_format_settings);
+        }
+        else
+        {
+            format_settings = getFormatSettings(args.getContext());
+        }
+
         return std::make_shared<StorageMongoDB>(
             args.table_id,
             configuration.host,
@@ -433,7 +521,8 @@ void registerStorageMongoDB(StorageFactory & factory)
             configuration.options,
             args.columns,
             args.constraints,
-            args.comment);
+            args.comment,
+            format_settings.value_or(FormatSettings()));
     },
     {
         .supports_schema_inference = true,
