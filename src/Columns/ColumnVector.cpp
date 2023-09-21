@@ -3,6 +3,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -192,26 +193,6 @@ struct ColumnVector<T>::equals
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
-namespace
-{
-    template <typename T>
-    struct ValueWithIndex
-    {
-        T value;
-        UInt32 index;
-    };
-
-    template <typename T>
-    struct RadixSortTraits : RadixSortNumTraits<T>
-    {
-        using Element = ValueWithIndex<T>;
-        using Result = size_t;
-
-        static T & extractKey(Element & elem) { return elem.value; }
-        static size_t extractResult(Element & elem) { return elem.index; }
-    };
-}
-
 #if USE_EMBEDDED_COMPILER
 
 template <typename T>
@@ -263,11 +244,16 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    if (!limit) {
-        /// A case for radix sort
-        /// LSD RadixSort is stable
-        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+    for (size_t i = 0; i < data_size; ++i)
+        res[i] = i;
+
+    if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+    {
+        if (!limit)
         {
+            /// A case for radix sort
+            /// LSD RadixSort is stable
+
             bool reverse = direction == IColumn::PermutationSortDirection::Descending;
             bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
@@ -278,6 +264,20 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
+                bool try_sort = false;
+
+                if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), less(*this, nan_direction_hint));
+                else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+                    try_sort = trySort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
+                else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+                    try_sort = trySort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+                else
+                    try_sort = trySort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
+
+                if (try_sort)
+                    return;
+
                 PaddedPODArray<ValueWithIndex<T>> pairs(data_size);
                 for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
                     pairs[i] = {data[i], i};
@@ -323,12 +323,12 @@ template <typename T>
 void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
-    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
-    bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
-
     auto sort = [&](auto begin, auto end, auto pred)
     {
+        bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+        bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+        bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
         /// A case for radix sort
         if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
@@ -339,6 +339,10 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
+                bool try_sort = trySort(begin, end, pred);
+                if (try_sort)
+                    return;
+
                 PaddedPODArray<ValueWithIndex<T>> pairs(size);
                 size_t index = 0;
 
