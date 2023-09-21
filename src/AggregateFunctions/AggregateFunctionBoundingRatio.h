@@ -100,6 +100,17 @@ void AggregateFunctionBoundingRatioData::deserialize(ReadBuffer & buf)
     }
 }
 
+inline void writeBinary(const AggregateFunctionBoundingRatioData::Point & p, WriteBuffer & buf)
+{
+    writePODBinary(p, buf);
+}
+
+inline void readBinary(AggregateFunctionBoundingRatioData::Point & p, ReadBuffer & buf)
+{
+    readPODBinary(p, buf);
+}
+
+
 class AggregateFunctionBoundingRatio final : public IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>
 {
 private:

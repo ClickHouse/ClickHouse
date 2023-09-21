@@ -11,6 +11,7 @@
 #    include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageS3Settings.h>
+#    include <Storages/prepareReadingFromFormat.h>
 
 #    include <IO/CompressionMethod.h>
 #    include <IO/S3/getObjectInfo.h>
@@ -43,7 +44,7 @@ public:
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
-            const Block & virtual_header,
+            const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             UInt64 & max_poll_size_,
             const S3Settings::RequestSettings & request_settings_ = {});
@@ -67,19 +68,18 @@ public:
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     StorageS3QueueSource(
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
+        const ReadFromFormatInfo & info,
         const String & format,
         String name_,
-        const Block & sample_block,
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
-        const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
         String compression_hint_,
         const std::shared_ptr<const S3::Client> & client_,
         const String & bucket,
         const String & version_id,
+        const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
         const S3QueueAction & action_,
@@ -105,7 +105,8 @@ private:
     using ReaderHolder = StorageS3Source::ReaderHolder;
     ReaderHolder reader;
 
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    NamesAndTypesList requested_virtual_columns;
+    NamesAndTypesList requested_columns;
     std::shared_ptr<IIterator> file_iterator;
     const S3QueueAction action;
 

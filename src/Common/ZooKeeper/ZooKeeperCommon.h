@@ -163,7 +163,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     OpNum getOpNum() const override
     {
         chassert(false);
-        throw Exception("OpNum for watch response doesn't exist", Error::ZRUNTIMEINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
     }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
@@ -214,7 +214,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override
     {
-        throw Exception("Received response for close request", Error::ZRUNTIMEINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
     }
 
     void writeImpl(WriteBuffer &) const override {}

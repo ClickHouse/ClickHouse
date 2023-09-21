@@ -27,7 +27,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
 
 **Engine parameters**
 
-- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
+- `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
 - `format` — The [format](../../../interfaces/formats.md#formats) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
@@ -39,7 +39,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
 CREATE TABLE s3queue_engine_table (name String, value UInt32)
 ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
 SETTINGS
-    mode = 'ordred';
+    mode = 'ordered';
 ```
 
 Using named collections:
@@ -60,10 +60,10 @@ Using named collections:
 CREATE TABLE s3queue_engine_table (name String, value UInt32)
 ENGINE=S3Queue(s3queue_conf, format = 'CSV', compression_method = 'gzip')
 SETTINGS
-    mode = 'ordred';
+    mode = 'ordered';
 ```
 
-## Settings {#s3queue-settings}
+## Settings {#settings}
 
 ### mode {#mode}
 
@@ -93,7 +93,7 @@ Possible values:
 
 Default value: `/`.
 
-### s3queue_loading_retries {#s3queue_loading_retries}
+### s3queue_loading_retries {#loading_retries}
 
 Retry file loading up to specified number of times. By default, there are no retries.
 Possible values:
@@ -102,7 +102,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_polling_min_timeout_ms {#s3queue_polling_min_timeout_ms}
+### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
 Minimal timeout before next polling (in milliseconds).
 
@@ -112,7 +112,7 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_polling_max_timeout_ms {#s3queue_polling_max_timeout_ms}
+### s3queue_polling_max_timeout_ms {#polling_max_timeout_ms}
 
 Maximum timeout before next polling (in milliseconds).
 
@@ -122,7 +122,7 @@ Possible values:
 
 Default value: `10000`.
 
-### s3queue_polling_backoff_ms {#s3queue_polling_backoff_ms}
+### s3queue_polling_backoff_ms {#polling_backoff_ms}
 
 Polling backoff (in milliseconds).
 
@@ -132,7 +132,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_tracked_files_limit {#s3queue_tracked_files_limit}
+### s3queue_tracked_files_limit {#tracked_files_limit}
 
 Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
@@ -143,7 +143,7 @@ Possible values:
 
 Default value: `1000`.
 
-### s3queue_tracked_file_ttl_sec {#s3queue_tracked_file_ttl_sec}
+### s3queue_tracked_file_ttl_sec {#tracked_file_ttl_sec}
 
 Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
 After the specified number of seconds, the file will be re-imported.
@@ -154,7 +154,7 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_polling_size {#s3queue_polling_size}
+### s3queue_polling_size {#polling_size}
 
 Maximum files to fetch from S3 with SELECT or in background task.
 Engine takes files for processing from S3 in batches.
@@ -188,7 +188,7 @@ Example:
   CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
-        mode = 'unordred',
+        mode = 'unordered',
         keeper_path = '/clickhouse/s3queue/';
 
   CREATE TABLE stats (name String, value UInt32)
@@ -213,6 +213,7 @@ For more information about virtual columns see [here](../../../engines/table-eng
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
+- `**` — Substitutes any number of any characters include `/` including empty string.
 - `?` — Substitutes any single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
