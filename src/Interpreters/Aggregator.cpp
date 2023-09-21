@@ -2570,20 +2570,14 @@ void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, A
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
-    PaddedPODArray<AggregateDataPtr> dst_places;
-    PaddedPODArray<AggregateDataPtr> src_places;
+    PaddedPODArray<std::pair<AggregateDataPtr, AggregateDataPtr>> merge_pairs;
 
     auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
     {
         if (!inserted)
-        {
-            dst_places.push_back(dst);
-            src_places.push_back(src);
-        }
+            merge_pairs.emplace_back(dst, src);
         else
-        {
             dst = src;
-        }
 
         src = nullptr;
     };
@@ -2595,13 +2589,13 @@ void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, A
     if constexpr (use_compiled_functions)
     {
         const auto & compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
-        compiled_functions.merge_aggregate_states_function(dst_places.data(), src_places.data(), dst_places.size());
+        compiled_functions.merge_aggregate_states_function(merge_pairs.data(), merge_pairs.size());
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
             if (!is_aggregate_function_compiled[i])
                 aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
+                    merge_pairs.data(), merge_pairs.size(), offsets_of_aggregate_states[i], arena);
         }
 
         return;
@@ -2611,7 +2605,7 @@ void NO_INLINE Aggregator::mergeDataImpl(Table & table_dst, Table & table_src, A
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], arena);
+            merge_pairs.data(), merge_pairs.size(), offsets_of_aggregate_states[i], arena);
     }
 }
 

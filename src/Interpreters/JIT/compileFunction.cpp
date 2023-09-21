@@ -357,18 +357,18 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
     llvm::IRBuilder<> b(module.getContext());
 
     auto * aggregate_data_place_type = b.getInt8Ty()->getPointerTo();
-    auto * aggregate_data_places_type = aggregate_data_place_type->getPointerTo();
+    auto * merge_pair_type = llvm::StructType::get(aggregate_data_place_type, aggregate_data_place_type);
+    auto * aggregate_data_merge_pairs_type = merge_pair_type->getPointerTo();
     auto * size_type = b.getInt64Ty();
 
     auto * merge_aggregates_states_func_declaration
-        = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_places_type, aggregate_data_places_type, size_type}, false);
+        = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_merge_pairs_type, size_type}, false);
     auto * merge_aggregates_states_func
         = llvm::Function::Create(merge_aggregates_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
 
     auto * arguments = merge_aggregates_states_func->args().begin();
-    llvm::Value * aggregate_data_places_dst_arg = arguments++;
-    llvm::Value * aggregate_data_places_src_arg = arguments++;
-    llvm::Value * aggregate_places_size_arg = arguments++;
+    llvm::Value * aggregate_data_merge_pairs_arg = arguments++;
+    llvm::Value * aggregate_merge_places_size_arg = arguments++;
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", merge_aggregates_states_func);
     b.SetInsertPoint(entry);
@@ -377,7 +377,7 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
 
     auto * end = llvm::BasicBlock::Create(b.getContext(), "end", merge_aggregates_states_func);
     auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", merge_aggregates_states_func);
-    b.CreateCondBr(b.CreateICmpEQ(aggregate_places_size_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
+    b.CreateCondBr(b.CreateICmpEQ(aggregate_merge_places_size_arg, llvm::ConstantInt::get(size_type, 0)), end, loop);
 
     b.SetInsertPoint(loop);
 
@@ -388,10 +388,11 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
 
     for (const auto & function_to_compile : functions)
     {
-        auto * aggregate_data_place_dst = b.CreateLoad(aggregate_data_place_type,
-            b.CreateInBoundsGEP(aggregate_data_place_type->getPointerTo(), aggregate_data_places_dst_arg, counter_phi));
-        auto * aggregate_data_place_src = b.CreateLoad(aggregate_data_place_type,
-            b.CreateInBoundsGEP(aggregate_data_place_type->getPointerTo(), aggregate_data_places_src_arg, counter_phi));
+        auto * aggregate_data_merge_pair = b.CreateLoad(merge_pair_type,
+            b.CreateInBoundsGEP(merge_pair_type->getPointerTo(), aggregate_data_merge_pairs_arg, counter_phi));
+
+        auto * aggregate_data_place_dst = b.CreateExtractValue(aggregate_data_merge_pair, {0});
+        auto * aggregate_data_place_src = b.CreateExtractValue(aggregate_data_merge_pair, {0});
 
         size_t aggregate_function_offset = function_to_compile.aggregate_data_offset;
 
@@ -408,7 +409,7 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
     auto * incremeted_counter = b.CreateAdd(counter_phi, llvm::ConstantInt::get(size_type, 1));
     counter_phi->addIncoming(incremeted_counter, current_block);
 
-    b.CreateCondBr(b.CreateICmpEQ(incremeted_counter, aggregate_places_size_arg), end, loop);
+    b.CreateCondBr(b.CreateICmpEQ(incremeted_counter, aggregate_merge_places_size_arg), end, loop);
 
     b.SetInsertPoint(end);
     b.CreateRetVoid();
