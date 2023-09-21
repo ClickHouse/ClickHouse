@@ -336,7 +336,7 @@ void Runner::runBenchmark()
         for (size_t i = 0; i < concurrency; ++i)
         {
             auto thread_connections = connections;
-            pool->scheduleOrThrowOnError([this, connections = std::move(thread_connections)]() mutable { thread(connections); });
+            pool->scheduleOrThrowOnError([this, connections_ = std::move(thread_connections)]() mutable { thread(connections_); });
         }
     }
     catch (...)
