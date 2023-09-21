@@ -161,6 +161,10 @@ public:
         return res;
     }
 
+    /// For all the insert*() methods below, the caller must avoid the case of inserting a different
+    /// value into a ColumnConst. Some callers avoid it by avoiding ColumnConst altogether, others
+    /// check for it and convert to full column if needed. See also: appendRange().
+
     /// Appends new value at the end of column (column's size is increased by 1).
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
     virtual void insert(const Field & x) = 0;
@@ -204,6 +208,11 @@ public:
         for (size_t i = 0; i < length; ++i)
             insertDefault();
     }
+
+    /// Similar to `lhs.insertRangeFrom(rhs, start, length)`, but handles concatenation of
+    /// ColumnConst with full columns or ColumnConst-s with different values.
+    /// Converts `lhs` to full column if needed.
+    static void appendRange(MutablePtr & lhs, const IColumn & rhs, size_t start, size_t length);
 
     /** Removes last n elements.
       * Is used to support exception-safety of several operations.

@@ -111,12 +111,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 
         /// Append rows from queue.
         for (size_t i = 0; i < num_columns; ++i)
-        {
-            if (batch_size == 1)
-                merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
-            else
-                merged_columns[i]->insertRangeFrom(*current->all_columns[i], current->getRow(), batch_size);
-        }
+            IColumn::appendRange(merged_columns[i], *current->all_columns[i], current->getRow(), batch_size);
 
         total_merged_rows += batch_size;
         merged_rows += batch_size;

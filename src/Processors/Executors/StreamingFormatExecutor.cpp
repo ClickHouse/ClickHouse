@@ -77,7 +77,8 @@ size_t StreamingFormatExecutor::execute()
                     auto columns = chunk.detachColumns();
 
                     for (size_t i = 0, s = columns.size(); i < s; ++i)
-                        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+                        IColumn::appendRange(
+                            result_columns[i], *columns[i], 0, columns[i]->size());
 
                     break;
                 }

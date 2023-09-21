@@ -121,28 +121,50 @@ public:
         return data->isNullAt(0);
     }
 
-    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
     {
+        (void)src;
+        if (s && length)
+            assert(data->compareAt(0, 0, *assert_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
-    void insert(const Field &) override
+    void insert(const Field & x) override
     {
+        (void)x;
+        if (s)
+            assert(x == getField());
         ++s;
     }
 
-    void insertData(const char *, size_t) override
+    void insertData(const char * ptr, size_t length) override
     {
+        (void)ptr;
+        (void)length;
+#ifndef NDEBUG
+        if (s)
+        {
+            data->insertData(ptr, length);
+            assert(data->compareAt(0, 1, *data, -1) == 0);
+            data->popBack(1);
+        }
+#endif
         ++s;
     }
 
-    void insertFrom(const IColumn &, size_t) override
+    void insertFrom(const IColumn & src, size_t n) override
     {
+        (void)src;
+        (void)n;
+        if (s)
+            assert(compareAt(0, n, src, -1) == 0);
         ++s;
     }
 
     void insertDefault() override
     {
+        if (s)
+            assert(data->isDefaultAt(0));
         ++s;
     }
 

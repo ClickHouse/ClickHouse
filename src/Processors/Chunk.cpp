@@ -183,7 +183,7 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     for (size_t position = 0; position < mutable_columns.size(); ++position)
     {
         auto column = chunk.getColumns()[position];
-        mutable_columns[position]->insertRangeFrom(*column, from, length);
+        IColumn::appendRange(mutable_columns[position], *column, from, length);
     }
     size_t rows = mutable_columns[0]->size();
     setColumns(std::move(mutable_columns), rows);

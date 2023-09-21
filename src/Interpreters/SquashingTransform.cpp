@@ -94,7 +94,7 @@ void SquashingTransform::append(ReferenceType input_block)
         const auto source_column = input_block.getByPosition(i).column;
 
         auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
-        mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
+        IColumn::appendRange(mutable_column, *source_column, 0, source_column->size());
         accumulated_block.getByPosition(i).column = std::move(mutable_column);
     }
 }

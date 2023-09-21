@@ -389,19 +389,19 @@ void addRequestedPathAndFileVirtualsToChunk(
     {
         if (virtual_column.name == "_path")
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path));
         }
         else if (virtual_column.name == "_file")
         {
             if (filename)
             {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename));
             }
             else
             {
                 size_t last_slash_pos = path.find_last_of('/');
                 auto filename_from_path = path.substr(last_slash_pos + 1);
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path));
             }
         }
     }

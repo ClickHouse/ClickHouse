@@ -34,7 +34,7 @@ PartialResultTransform::ShaphotResult MergeSortingPartialResultTransform::getRea
         for (size_t position = 0; position < generated_columns.size(); ++position)
         {
             auto column = merged_chunk.getColumns()[position];
-            generated_columns[position]->insertRangeFrom(*column, 0, rows);
+            IColumn::appendRange(generated_columns[position], *column, 0, rows);
         }
 
         total_rows += rows;

@@ -34,6 +34,25 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
+void IColumn::appendRange(MutablePtr & lhs, const IColumn & rhs, size_t start, size_t length)
+{
+    ColumnConst * lhs_const = typeid_cast<ColumnConst *>(lhs.get());
+    const ColumnConst * rhs_const = typeid_cast<const ColumnConst *>(&rhs);
+
+    if (lhs_const && rhs_const && (!lhs_const->size() || !rhs_const->size() || !lhs->compareAt(0, 0, *rhs_const, -1)))
+    {
+        lhs_const->insertRangeFrom(rhs, start, length);
+        return;
+    }
+
+    if (lhs_const)
+        lhs = mutate(lhs_const->convertToFullColumn());
+    if (rhs_const)
+        lhs->insertManyFrom(rhs_const->getDataColumn(), 0, length);
+    else
+        lhs->insertRangeFrom(rhs, start, length);
+}
+
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
