@@ -162,7 +162,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_REPLICATION_QUEUES
         || type == Type::START_REPLICATION_QUEUES
         || type == Type::STOP_DISTRIBUTED_SENDS
-        || type == Type::START_DISTRIBUTED_SENDS)
+        || type == Type::START_DISTRIBUTED_SENDS
+        || type == Type::STOP_PULLING_REPLICATION_LOG
+        || type == Type::START_PULLING_REPLICATION_LOG)
     {
         if (table)
             print_database_table();
@@ -202,7 +204,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::SUSPEND)
     {
-         settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
             << (settings.hilite ? hilite_none : "") << seconds
             << (settings.hilite ? hilite_keyword : "") << " SECOND"
             << (settings.hilite ? hilite_none : "");
@@ -210,7 +212,15 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_name.empty())
+        {
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
+            if (!key_to_drop.empty())
+            {
+                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << key_to_drop;
+                if (offset_to_drop.has_value())
+                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << offset_to_drop.value();
+            }
+        }
     }
     else if (type == Type::UNFREEZE)
     {
@@ -222,12 +232,50 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::START_LISTEN || type == Type::STOP_LISTEN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " " << ServerType::serverTypeToString(server_type.type)
-            << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " "
+            << ServerType::serverTypeToString(server_type.type) << (settings.hilite ? hilite_none : "");
 
-        if (server_type.type == ServerType::CUSTOM)
+        if (server_type.type == ServerType::Type::CUSTOM)
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << " " << backQuoteIfNeed(server_type.custom_name);
+            settings.ostr << " " << quoteString(server_type.custom_name);
+        }
+
+        bool comma = false;
+
+        if (!server_type.exclude_types.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "")
+                << " EXCEPT" << (settings.hilite ? hilite_none : "");
+
+            for (auto cur_type : server_type.exclude_types)
+            {
+                if (cur_type == ServerType::Type::CUSTOM)
+                    continue;
+
+                if (comma)
+                    settings.ostr << ",";
+                else
+                    comma = true;
+
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " "
+                    << ServerType::serverTypeToString(cur_type) << (settings.hilite ? hilite_none : "");
+            }
+
+            if (server_type.exclude_types.contains(ServerType::Type::CUSTOM))
+            {
+                for (const auto & cur_name : server_type.exclude_custom_names)
+                {
+                    if (comma)
+                        settings.ostr << ",";
+                    else
+                        comma = true;
+
+                    settings.ostr << (settings.hilite ? hilite_keyword : "") << " "
+                        << ServerType::serverTypeToString(ServerType::Type::CUSTOM) << (settings.hilite ? hilite_none : "");
+
+                    settings.ostr << " " << quoteString(cur_name);
+                }
+            }
         }
 
     }

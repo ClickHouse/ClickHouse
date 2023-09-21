@@ -1,14 +1,18 @@
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/ASTDatabaseOrNone.h>
+
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
+#include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
 
 
@@ -17,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 namespace
 {
@@ -104,7 +109,9 @@ namespace
 
 BlockIO InterpreterCreateUserQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    const auto & query = updated_query_ptr->as<const ASTCreateUserQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
@@ -137,8 +144,18 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
+    IAccessStorage * storage = &access_control;
+    MultipleAccessStorage::StoragePtr storage_ptr;
+
+    if (!query.storage_name.empty())
+    {
+        storage_ptr = access_control.getStorageByName(query.storage_name);
+        storage = storage_ptr.get();
+    }
+
+    Strings names = query.names->toStrings();
     if (query.alter)
     {
         std::optional<RolesOrUsersSet> grantees_from_query;
@@ -152,14 +169,13 @@ BlockIO InterpreterCreateUserQuery::execute()
             return updated_user;
         };
 
-        Strings names = query.names->toStrings();
         if (query.if_exists)
         {
-            auto ids = access_control.find<User>(names);
-            access_control.tryUpdate(ids, update_func);
+            auto ids = storage->find<User>(names);
+            storage->tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getIDs<User>(names), update_func);
+            storage->update(storage->getIDs<User>(names), update_func);
     }
     else
     {
@@ -171,13 +187,22 @@ BlockIO InterpreterCreateUserQuery::execute()
             new_users.emplace_back(std::move(new_user));
         }
 
+        if (!query.storage_name.empty())
+        {
+            for (const auto & name : names)
+            {
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::USER, name, storage_ptr))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "User {} already exists in storage {}", name, another_storage_ptr->getStorageName());
+            }
+        }
+
         std::vector<UUID> ids;
         if (query.if_not_exists)
-            ids = access_control.tryInsert(new_users);
+            ids = storage->tryInsert(new_users);
         else if (query.or_replace)
-            ids = access_control.insertOrReplace(new_users);
+            ids = storage->insertOrReplace(new_users);
         else
-            ids = access_control.insert(new_users);
+            ids = storage->insert(new_users);
 
         if (query.grantees)
         {

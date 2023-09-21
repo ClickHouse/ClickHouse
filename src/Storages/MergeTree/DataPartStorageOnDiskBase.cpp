@@ -331,6 +331,7 @@ void DataPartStorageOnDiskBase::backup(
     const NameSet & files_without_checksums,
     const String & path_in_backup,
     const BackupSettings & backup_settings,
+    const ReadSettings & read_settings,
     bool make_temporary_hard_links,
     BackupEntries & backup_entries,
     TemporaryFilesOnDisks * temp_dirs) const
@@ -382,7 +383,7 @@ void DataPartStorageOnDiskBase::backup(
 
         if (files_without_checksums.contains(filepath))
         {
-            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, copy_encrypted));
+            backup_entries.emplace_back(filepath_in_backup, std::make_unique<BackupEntryFromSmallFile>(disk, filepath_on_disk, read_settings, copy_encrypted));
             continue;
         }
 
@@ -415,6 +416,7 @@ void DataPartStorageOnDiskBase::backup(
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     const std::string & to,
     const std::string & dir_path,
+    const WriteSettings & settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
     const ClonePartParams & params) const
 {
@@ -424,8 +426,16 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
         disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, params.make_source_readonly, {}, params.copy_instead_of_hardlink,
-                params.files_to_copy_instead_of_hardlinks, params.external_transaction);
+    localBackup(
+        disk,
+        getRelativePath(),
+        fs::path(to) / dir_path,
+        settings,
+        params.make_source_readonly,
+        /* max_level= */ {},
+        params.copy_instead_of_hardlink,
+        params.files_to_copy_instead_of_hardlinks,
+        params.external_transaction);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
@@ -456,6 +466,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const std::string & to,
     const std::string & dir_path,
     const DiskPtr & dst_disk,
+    const WriteSettings & write_settings,
     Poco::Logger * log) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
@@ -471,7 +482,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     try
     {
         dst_disk->createDirectories(to);
-        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone);
+        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone, write_settings);
     }
     catch (...)
     {

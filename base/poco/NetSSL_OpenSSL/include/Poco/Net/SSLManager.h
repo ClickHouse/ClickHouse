@@ -76,7 +76,7 @@ namespace Net
     ///            <verificationMode>none|relaxed|strict|once</verificationMode>
     ///            <verificationDepth>1..9</verificationDepth>
     ///            <loadDefaultCAFile>true|false</loadDefaultCAFile>
-    ///            <cipherList>ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH</cipherList>
+    ///            <cipherList>ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH</cipherList>
     ///            <preferServerCiphers>true|false</preferServerCiphers>
     ///            <privateKeyPassphraseHandler>
     ///                <name>KeyFileHandler</name>

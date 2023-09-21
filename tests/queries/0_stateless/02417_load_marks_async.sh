@@ -21,7 +21,7 @@ n8 UInt64,
 n9 UInt64
 )
 ENGINE = MergeTree
-ORDER BY n0 SETTINGS min_bytes_for_wide_part = 1;"
+ORDER BY n0 SETTINGS min_bytes_for_wide_part = 1, index_granularity = 8192, index_granularity_bytes = '10Mi';"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO test select number, number % 3, number % 5, number % 10, number % 13, number % 15, number % 17, number % 18, number % 22, number % 25 from numbers(1000000)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES test"

@@ -155,9 +155,8 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
-:::info "Info"
-    Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
-нужно добавить имя базы, `datasets.ontime`.
+:::info Примечание
+Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы нужно добавить имя базы, `datasets.ontime`.
 :::
 
 ## Запросы: {#zaprosy}
