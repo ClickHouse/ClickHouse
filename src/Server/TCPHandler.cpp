@@ -1,6 +1,7 @@
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
+#include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -880,13 +881,18 @@ void TCPHandler::processInsertQuery()
             executor.finish();
     };
 
-    /// TODO: better check.
-
     Block processed_block;
     const auto & settings = query_context->getSettingsRef();
-    auto insert_queue = query_context->getAsynchronousInsertQueue();
 
-    if (insert_queue && settings.async_insert)
+    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
+
+    bool async_insert_enabled = settings.async_insert;
+    if (insert_query.table_id)
+        if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, query_context))
+            async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+
+    if (insert_queue && async_insert_enabled && !insert_query.select)
     {
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -908,8 +914,11 @@ void TCPHandler::processInsertQuery()
             sendInsertProfileEvents();
             return;
         }
-
-        processed_block = result.insert_block;
+        else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+        {
+            LOG_DEBUG(log, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
+            processed_block = std::move(result.insert_block);
+        }
     }
 
     if (num_threads > 1)

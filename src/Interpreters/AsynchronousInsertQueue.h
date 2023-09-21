@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Processors/Chunk.h>
 
 #include <future>
 #include <variant>
@@ -67,15 +68,18 @@ private:
         ASTPtr query;
         String query_str;
         Settings settings;
+        DataKind data_kind;
         UInt128 hash;
 
-        InsertQuery(const ASTPtr & query_, const Settings & settings_);
-        InsertQuery(const InsertQuery & other);
+        InsertQuery(const ASTPtr & query_, const Settings & settings_, DataKind data_kind_);
+        InsertQuery(const InsertQuery & other) { *this = other; }
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
 
     private:
-        UInt128 calculateHash() const;
+        void updateHashWithQuery(SipHash & siphash);
+        void updateHashWithSettings(SipHash & siphash);
+        std::vector<SettingChange> setting_changes;
     };
 
     struct DataChunk : public std::variant<String, Block>
@@ -204,6 +208,21 @@ private:
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
 
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
+
+    template <typename LogFunc>
+    static Chunk processEntriesWithParsing(
+        const InsertQuery & key,
+        const std::list<InsertData::EntryPtr> & entries,
+        const Block & header,
+        const ContextPtr & insert_context,
+        const Poco::Logger * logger,
+        LogFunc && add_to_async_insert_log);
+
+    template <typename LogFunc>
+    static Chunk processPreprocessedEntries(
+        const std::list<InsertData::EntryPtr> & entries,
+        const Block & header,
+        LogFunc && add_to_async_insert_log);
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);

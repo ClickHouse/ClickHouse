@@ -924,12 +924,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
-            else if (!insert_query->hasInlinedData())
-                reason = "insert query doesn't have inlined data";
-            else
+            else if (insert_query->hasInlinedData())
                 async_insert = true;
 
-            if (!async_insert)
+            if (!reason.empty())
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 

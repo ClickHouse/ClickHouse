@@ -33,7 +33,12 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT table, format, bytes, rows, empty(exception), status,
     status = 'ParsingError' ? flush_time_microseconds = 0 : flush_time_microseconds > event_time_microseconds AS time_ok
     FROM system.asynchronous_insert_log
-    WHERE database = '$CLICKHOUSE_DATABASE' OR query ILIKE 'INSERT INTO FUNCTION%$CLICKHOUSE_DATABASE%'
+    WHERE
+    (
+        database = '$CLICKHOUSE_DATABASE' AND table = 't_async_inserts_logs'
+        OR query ILIKE 'INSERT INTO FUNCTION%$CLICKHOUSE_DATABASE%t_async_inserts_logs%'
+    )
+    AND data_kind = 'Parsed'
     ORDER BY table, status, format"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_async_inserts_logs"
