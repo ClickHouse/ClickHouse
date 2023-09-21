@@ -3,6 +3,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerUUID.h>
@@ -122,11 +123,10 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
     }
 }
 
-void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir)
+void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path, bool copy_root_dir, WriteSettings settings)
 {
     ResultsCollector results;
 
-    WriteSettings settings;
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
     settings.s3_allow_parallel_part_upload = false;
@@ -140,12 +140,12 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
 }
 
 
-void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+void IDisk::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const WriteSettings & settings)
 {
     if (!to_disk->exists(to_dir))
         to_disk->createDirectories(to_dir);
 
-    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false);
+    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir= */ false, settings);
 }
 
 void IDisk::truncateFile(const String &, size_t)

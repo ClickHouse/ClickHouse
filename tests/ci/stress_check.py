@@ -12,16 +12,21 @@ from github import Github
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
+    CiLogsCredentials,
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
-    get_instance_type,
 )
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    format_description,
+)
+from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, read_test_results
+from report import TestResult, TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -29,40 +34,24 @@ from upload_result_helper import upload_results
 
 
 def get_run_command(
-    pr_info,
-    check_start_time,
-    check_name,
-    build_path,
-    result_folder,
-    repo_tests_path,
-    server_log_folder,
-    image,
-):
-    instance_type = get_instance_type()
-
-    envs = [
-        # a static link, don't use S3_URL or S3_DOWNLOAD
-        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets'",
-        "-e CLICKHOUSE_CI_LOGS_HOST",
-        "-e CLICKHOUSE_CI_LOGS_PASSWORD",
-        f"-e PULL_REQUEST_NUMBER='{pr_info.number}'",
-        f"-e COMMIT_SHA='{pr_info.sha}'",
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-    ]
-
-    env_str = " ".join(envs)
-
+    build_path: str,
+    result_path: str,
+    repo_tests_path: str,
+    server_log_path: str,
+    ci_logs_args: str,
+    image: DockerImage,
+) -> str:
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        f"{env_str} "
         # For dmesg and sysctl
         "--privileged "
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        f"{ci_logs_args}"
         f"--volume={build_path}:/package_folder "
-        f"--volume={result_folder}:/test_output "
+        f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {image} "
     )
 
     return cmd
@@ -170,50 +159,47 @@ def run_stress_test(docker_image_name):
         os.makedirs(result_path)
 
     run_log_path = os.path.join(temp_path, "run.log")
+    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
 
     run_command = get_run_command(
-        pr_info,
-        stopwatch.start_time_str,
-        check_name,
         packages_path,
         result_path,
         repo_tests_path,
         server_log_path,
+        ci_logs_args,
         docker_image,
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
+    timeout_expired = False
+    timeout = 60 * 150
+    with TeePopen(run_command, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
-        if retcode == 0:
+        if process.timeout_exceeded:
+            logging.info("Timeout expired for command: %s", run_command)
+            timeout_expired = True
+        elif retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    ci_logs_credentials.clean_ci_logs_from_credentials(Path(run_log_path))
 
     s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
+
+    if timeout_expired:
+        test_results.append(TestResult.create_check_timeout_expired(timeout))
+        state = "failure"
+        description = format_description(test_results[-1].name)
+
     ch_helper = ClickHouseHelper()
-
-    # Cleanup run log from the credentials of CI logs database.
-    # Note: a malicious user can still print them by splitting the value into parts.
-    # But we will be warned when a malicious user modifies CI script.
-    # Although they can also print them from inside tests.
-    # Nevertheless, the credentials of the CI logs have limited scope
-    # and does not provide access to sensitive info.
-
-    ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "CLICKHOUSE_CI_LOGS_HOST")
-    ci_logs_password = os.getenv(
-        "CLICKHOUSE_CI_LOGS_PASSWORD", "CLICKHOUSE_CI_LOGS_PASSWORD"
-    )
-    if ci_logs_host not in ("CLICKHOUSE_CI_LOGS_HOST", ""):
-        subprocess.check_call(
-            f"sed -i -r -e 's!{ci_logs_host}!CLICKHOUSE_CI_LOGS_HOST!g; s!{ci_logs_password}!CLICKHOUSE_CI_LOGS_PASSWORD!g;' '{run_log_path}'",
-            shell=True,
-        )
 
     report_url = upload_results(
         s3_helper,

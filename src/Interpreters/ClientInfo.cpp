@@ -213,6 +213,10 @@ String ClientInfo::getVersionStr() const
     return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
 }
 
+VersionNumber ClientInfo::getVersionNumber() const
+{
+    return VersionNumber(client_version_major, client_version_minor, client_version_patch);
+}
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {

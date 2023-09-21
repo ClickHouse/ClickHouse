@@ -71,7 +71,7 @@ Possible values:
 
 - Any positive integer.
 
-Default value: 150.
+Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
@@ -854,3 +854,9 @@ Possible values:
 - `Always` or `Never`.
 
 Default value: `Never`
+
+## allow_experimental_block_number_column
+
+Persists virtual column `_block_number` on merges.
+
+Default value: false.

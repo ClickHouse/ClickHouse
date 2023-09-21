@@ -10,7 +10,6 @@
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <memory>
 
@@ -210,8 +209,6 @@ struct SelectQueryInfo
     ClusterPtr optimized_cluster;
     /// should we use custom key with the cluster
     bool use_custom_key = false;
-
-    mutable ParallelReplicasReadingCoordinatorPtr coordinator;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
