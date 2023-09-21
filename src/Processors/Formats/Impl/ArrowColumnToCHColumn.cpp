@@ -719,7 +719,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(arrow_column, column_name, type_hint);
-                    default:;
+                    default:
+                        break;
                 }
             }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
@@ -738,7 +739,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                         return readColumnWithBigIntegerFromFixedBinaryData<Int256>(arrow_column, column_name, type_hint);
                     case TypeIndex::UInt256:
                         return readColumnWithBigIntegerFromFixedBinaryData<UInt256>(arrow_column, column_name, type_hint);
-                    default:;
+                    default:
+                        break;
                 }
             }
 
