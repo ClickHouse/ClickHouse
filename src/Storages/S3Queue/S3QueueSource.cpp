@@ -147,6 +147,11 @@ StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::QueueGlobIterator::next(
     return KeyWithInfo();
 }
 
+size_t StorageS3QueueSource::QueueGlobIterator::estimatedKeysCount()
+{
+    return keys_buf.size();
+}
+
 StorageS3QueueSource::StorageS3QueueSource(
     const ReadFromFormatInfo & info,
     const String & format_,
