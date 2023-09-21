@@ -802,7 +802,7 @@ class IColumn;
     M(Bool, allow_create_index_without_type, false, "Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.", 0)\
     M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0)                                                                                                  \
     M(Bool, ignore_access_denied_multidirectory_globs, false, "Ignore access denied errors when processing multi-directory globs for file & HDFS.", 0)\
-    M(Bool, trace_pipeline, true, "Log query pipeline execution timeline information, per thread, per node", 0) \
+    M(Bool, trace_pipeline, false, "Log query pipeline execution timeline information, per thread, per node", 0) \
     // End of COMMON_SETTINGS
     // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
 

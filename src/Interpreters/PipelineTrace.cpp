@@ -63,7 +63,15 @@ void PipelineLog::record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage
     }
 
     ContextPtr query_context = CurrentThread::get().getQueryContext() ;
+    
     if (!query_context) 
+    {
+        return;
+    }
+
+    const Settings & settings = query_context->getSettingsRef();
+    auto trace_pipeline = settings.trace_pipeline;
+    if (!trace_pipeline) 
     {
         return;
     }
@@ -99,7 +107,26 @@ void PipelineLog::record(UInt64 start_ns, UInt64 end_ns, PipelineStageType stage
 }
 
 UInt64 PipelineLog::now_ns()
-{
+{    
+    if (!CurrentThread::isInitialized()) 
+    {
+        return 0;
+    }
+
+    ContextPtr query_context = CurrentThread::get().getQueryContext() ;
+    
+    if (!query_context) 
+    {
+        return 0;
+    }
+
+    const Settings & settings = query_context->getSettingsRef();
+    auto trace_pipeline = settings.trace_pipeline;
+    if (!trace_pipeline) 
+    {
+        return 0;
+    }
+
     std::chrono::time_point<std::chrono::system_clock> point = std::chrono::system_clock::now();
 
     return timeInNanoseconds(point);
