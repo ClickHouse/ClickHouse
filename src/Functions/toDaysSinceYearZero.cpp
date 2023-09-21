@@ -15,7 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -26,11 +26,12 @@ class FunctionToDaysSinceYearZero : public IFunction
 {
     using ResultType = DataTypeUInt32;
     using Transformer = TransformDateTime64<ToDaysSinceYearZeroImpl>;
+
 public:
     static constexpr auto name = "toDaysSinceYearZero";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToDaysSinceYearZero>(context); }
 
-    explicit FunctionToDaysSinceYearZero(ContextPtr /*context*/) {}
+    explicit FunctionToDaysSinceYearZero(ContextPtr /*context*/) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -41,9 +42,7 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"date",
-             [](const IDataType & dt) {
-                return isDateOrDate32<IDataType>(dt) || isDateTime<IDataType>(dt) || isDateTime64<IDataType>(dt);
-             },
+             [](const IDataType & dt) { return isDateOrDate32<IDataType>(dt) || isDateTime<IDataType>(dt) || isDateTime64<IDataType>(dt); },
              nullptr,
              "Date, Date32, DateTime or DateTime64"}};
 
@@ -58,21 +57,27 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return DateTimeTransformImpl<DataTypeDate, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate, ResultType, ToDaysSinceYearZeroImpl>::execute(
+                arguments, result_type, input_rows_count);
         else if (which.isDate32())
-            return DateTimeTransformImpl<DataTypeDate32, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate32, ResultType, ToDaysSinceYearZeroImpl>::execute(
+                arguments, result_type, input_rows_count);
         else if (which.isDateTime())
-            return DateTimeTransformImpl<DataTypeDateTime, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDateTime, ResultType, ToDaysSinceYearZeroImpl>::execute(
+                arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
             const Transformer transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ResultType, Transformer>::execute(arguments, result_type, input_rows_count, transformer);
+            return DateTimeTransformImpl<DataTypeDateTime64, ResultType, Transformer>::execute(
+                arguments, result_type, input_rows_count, transformer);
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}",
-            arguments[0].type->getName(), this->getName());
+            arguments[0].type->getName(),
+            this->getName());
     }
 };
 
@@ -80,16 +85,13 @@ public:
 
 REGISTER_FUNCTION(ToDaysSinceYearZero)
 {
-    factory.registerFunction<FunctionToDaysSinceYearZero>(
-    FunctionDocumentation{
-    .description=R"(
+    factory.registerFunction<FunctionToDaysSinceYearZero>(FunctionDocumentation{
+        .description = R"(
 Returns for a given date, the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601.
 The calculation is the same as in MySQL's TO_DAYS() function.
 )",
-    .examples{
-        {"typical", "SELECT toDaysSinceYearZero(toDate('2023-09-08'))", "713569"}},
-    .categories{"Dates and Times"}
-    });
+        .examples{{"typical", "SELECT toDaysSinceYearZero(toDate('2023-09-08'))", "713569"}},
+        .categories{"Dates and Times"}});
 
     /// MySQL compatibility alias.
     factory.registerAlias("TO_DAYS", FunctionToDaysSinceYearZero::name, FunctionFactory::CaseInsensitive);
