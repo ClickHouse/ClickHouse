@@ -106,7 +106,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 /// Forward-declare to use in expandSelector()
 void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
@@ -171,43 +170,27 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     bool recursive)
 {
+    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
+    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");
+
+    std::string_view for_match_view(for_match);
+    std::string_view matched;
+    if (RE2::FindAndConsume(&for_match_view, enum_or_range, &matched))
+    {
+        std::string buffer(matched);
+        if (buffer.find(',') != std::string::npos)
+        {
+            expandSelector(path_for_ls, for_match, total_bytes_to_read, result, recursive);
+            return;
+        }
+    }
+
     const size_t first_glob_pos = for_match.find_first_of("*?{");
-    const bool has_glob = first_glob_pos != std::string::npos;
 
     const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
     const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
 
-    bool has_generator = false;
-    bool range_generator = false;
-
-    const size_t next_slash_after_glob_pos = [&]()
-    {
-        if (!has_glob)
-            return suffix_with_globs.find('/', 1);
-
-        bool prev_is_dot = false;
-
-        for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
-        {
-            if (*it == '{')
-                has_generator = true;
-            else if (*it == '/')
-                return size_t(std::distance(suffix_with_globs.begin(), it));
-            else if (*it == '.')
-            {
-                if (prev_is_dot)
-                    range_generator = true;
-                prev_is_dot = true;
-            }
-        }
-        return std::string::npos;
-    }();
-
-    if (has_generator && !range_generator)
-    {
-        expandSelector(path_for_ls, for_match, total_bytes_to_read, result, recursive);
-        return;
-    }
+    const size_t next_slash_after_glob_pos = suffix_with_globs.find('/', 1);
 
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
