@@ -330,7 +330,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.max_block_size,
                 settings.enable_software_prefetch_in_aggregation,
                 only_merge,
-                settings.optimize_group_by_constant_keys);
+                settings.optimize_group_by_constant_keys,
+                settings.group_by_each_block_no_merge);
 
             return std::make_pair(params, only_merge);
         };

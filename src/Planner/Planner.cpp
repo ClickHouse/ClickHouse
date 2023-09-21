@@ -291,6 +291,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
+        settings.group_by_each_block_no_merge,
         stats_collecting_params);
 
     return aggregator_params;
