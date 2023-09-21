@@ -31,6 +31,8 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// CompleteMultipartUpload requests. These requests need longer timeout because S3 servers often
 /// block on them for multiple seconds without sending or receiving data from us (maybe the servers
 /// are copying data internally, or maybe throttling, idk).
+///
+/// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
     const std::shared_ptr<const S3::Client> & s3_client,
     const std::shared_ptr<const S3::Client> & s3_client_with_long_timeout,
@@ -41,6 +43,7 @@ void copyS3File(
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
+    const ReadSettings & read_settings,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
     ThreadPoolCallbackRunner<void> schedule_ = {},
     bool for_disk_s3 = false);

@@ -2473,7 +2473,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, clone_params, getContext()->getWriteSettings());
+                part_desc->src_table_part,
+                TMP_PREFIX + "clone_",
+                part_desc->new_part_info,
+                metadata_snapshot,
+                clone_params,
+                getContext()->getReadSettings(),
+                getContext()->getWriteSettings());
             part_desc->res_part = std::move(res_part);
             part_desc->temporary_part_lock = std::move(temporary_part_lock);
         }
@@ -4568,7 +4574,14 @@ bool StorageReplicatedMergeTree::fetchPart(
         {
             chassert(!is_zero_copy_part(part_to_clone));
             IDataPartStorage::ClonePartParams clone_params{ .keep_metadata_version = true };
-            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, clone_params, getContext()->getWriteSettings());
+            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(
+                part_to_clone,
+                "tmp_clone_",
+                part_info,
+                metadata_snapshot,
+                clone_params,
+                getContext()->getReadSettings(),
+                getContext()->getWriteSettings());
             part_directory_lock = std::move(lock);
             return cloned_part;
         };
@@ -7656,7 +7669,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, clone_params, query_context->getWriteSettings());
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                metadata_snapshot,
+                clone_params,
+                query_context->getReadSettings(),
+                query_context->getWriteSettings());
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
             dst_parts_locks.emplace_back(std::move(part_lock));
@@ -7896,7 +7916,14 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, clone_params, query_context->getWriteSettings());
+            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                dest_metadata_snapshot,
+                clone_params,
+                query_context->getReadSettings(),
+                query_context->getWriteSettings());
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
