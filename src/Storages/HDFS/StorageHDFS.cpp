@@ -144,26 +144,33 @@ namespace
         const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
         const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
 
-        bool has_curly_braces = false;
+        bool has_generator = false;
+        bool range_generator = false;
+
         const size_t next_slash_after_glob_pos = [&]()
         {
             if (!has_glob)
                 return suffix_with_globs.find('/', 1);
 
+            bool prev_is_dot = false;
+
             for (std::string::const_iterator it = ++suffix_with_globs.begin(); it != suffix_with_globs.end(); it++)
-        {
+            {
                 if (*it == '{')
-                {
-                    has_curly_braces = true;
-                    return size_t(0);
-                }
+                    has_generator = true;
                 else if (*it == '/')
                     return size_t(std::distance(suffix_with_globs.begin(), it));
-        }
+                else if (*it == '.')
+                {
+                    if (prev_is_dot)
+                        range_generator = true;
+                    prev_is_dot = true;
+                }
+            }
             return std::string::npos;
         }();
 
-        if (has_curly_braces)
+        if (has_generator && !range_generator)
             return expandSelector(path_for_ls, fs, for_match);
 
         const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
