@@ -168,6 +168,7 @@ ExtraArgs:
 # This is technically a compiler error, not a clang-tidy error. We could litter the code base with more pragmas that suppress
 # this error but it is better to pass the following flag to the compiler:
 - '-Wno-unknown-pragmas'
+- '-Wno-unused-command-line-argument' # similar issue
 
 CheckOptions:
   readability-identifier-naming.ClassCase: CamelCase
