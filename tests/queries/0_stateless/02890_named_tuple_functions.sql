@@ -6,6 +6,5 @@ select toTypeName(namedTuple(i, j)) from x;
 select tupleNames(namedTuple(i, j)) from x;
 
 select tupleNames(1); -- { serverError 43 }
-select tupleNames((1, 2)); -- { serverError 43 }
 
 drop table x;

@@ -112,7 +112,12 @@ public:
 
 REGISTER_FUNCTION(TupleNames)
 {
-    factory.registerFunction<TupleNamesOverloadResolver>();
+    factory.registerFunction<TupleNamesOverloadResolver>(FunctionDocumentation{
+        .description = R"(
+Turns a named tuple into a constant array of names. For a `Tuple(a T, b T, ..., c T)` returns `Array(String, ...)`, in which the `Strings` represents the named fields of the tuple.
+)",
+        .examples{{"typical", "SELECT tupleNames(namedTuple(1, 2))", "['1','2']"}},
+        .categories{"Miscellaneous"}});
 }
 
 }
