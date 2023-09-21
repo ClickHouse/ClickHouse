@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_NOT_EMPTY;
 }
 
 namespace ActionLocks
@@ -55,7 +56,8 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMut
 BlockIO InterpreterDropQuery::execute()
 {
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    if (!drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+
+    if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
@@ -67,6 +69,12 @@ BlockIO InterpreterDropQuery::execute()
 
     if (drop.table)
         return executeToTable(drop);
+    else if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    {
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
     else if (drop.database)
         return executeToDatabase(drop);
     else
@@ -122,6 +130,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
     if (database && table)
     {
+        const auto & settings = getContext()->getSettingsRef();
+        if (query.if_empty)
+        {
+            if (auto rows = table->totalRows(settings); rows > 0)
+                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
+        }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
         auto & ast_drop_query = query.as<ASTDropQuery &>();
@@ -151,6 +165,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else
             drop_storage = AccessType::DROP_TABLE;
 
+        auto new_query_ptr = query.clone();
+        auto & query_to_send = new_query_ptr->as<ASTDropQuery &>();
+
+        if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
+        {
+            query_to_send.if_empty = false;
+
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
+        }
+
         if (database->shouldReplicateQuery(getContext(), query_ptr))
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
@@ -162,7 +188,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             ddl_guard->releaseTableLock();
             table.reset();
-            return database->tryEnqueueReplicatedDDL(query.clone(), context_);
+
+            query_to_send.if_empty = false;
+
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_);
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -340,8 +369,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
+            if (query.if_empty)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
+
             if (database->hasReplicationThread())
                 database->stopReplication();
+
 
             if (database->shouldBeEmptyOnDetach())
             {
@@ -355,6 +388,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 if (truncate)
                     query_for_table.kind = ASTDropQuery::Kind::Drop;
                 query_for_table.if_exists = true;
+                query_for_table.if_empty = false;
                 query_for_table.setDatabase(database_name);
                 query_for_table.sync = query.sync;
 
