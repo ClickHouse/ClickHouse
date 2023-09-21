@@ -208,7 +208,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 }
 
-MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const WriteSettings & write_settings) const
+MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
@@ -249,12 +249,12 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
             cloned_part_storage = part->getDataPartStorage().clonePart(
-                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, write_settings, log);
+                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log);
         }
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, write_settings);
+        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings);
     }
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage);
