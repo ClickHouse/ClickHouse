@@ -152,7 +152,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-16 CXX=clang++-16`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -275,8 +275,6 @@ The system will prepare ClickHouse binary builds for your pull request individua
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
 
 ## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
-
-You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
 
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 

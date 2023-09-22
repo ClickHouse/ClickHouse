@@ -766,7 +766,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             [](ReadBuffer & buf,
                const Block & sample,
                const FormatSettings & settings,
-               const ReadSettings& read_settings,
+               const ReadSettings & read_settings,
                bool is_remote_fs,
                size_t /* max_download_threads */,
                size_t max_parsing_threads)

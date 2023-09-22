@@ -1,14 +1,9 @@
 #include <Common/isLocalAddress.h>
 
 #include <ifaddrs.h>
-#include <chrono>
 #include <cstring>
-#include <memory>
-#include <mutex>
-#include <shared_mutex>
 #include <optional>
 #include <base/types.h>
-#include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -25,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-struct NetworkInterfaces : public boost::noncopyable
+struct NetworkInterfaces
 {
     ifaddrs * ifaddr;
     NetworkInterfaces()
@@ -34,13 +29,6 @@ struct NetworkInterfaces : public boost::noncopyable
         {
             throwFromErrno("Cannot getifaddrs", ErrorCodes::SYSTEM_ERROR);
         }
-    }
-
-    void swap(NetworkInterfaces && other)
-    {
-        auto * tmp = ifaddr;
-        ifaddr = other.ifaddr;
-        other.ifaddr = tmp;
     }
 
     bool hasAddress(const Poco::Net::IPAddress & address) const
@@ -86,32 +74,6 @@ struct NetworkInterfaces : public boost::noncopyable
     {
         freeifaddrs(ifaddr);
     }
-
-    static const NetworkInterfaces & instance()
-    {
-        static constexpr int NET_INTERFACE_VALID_PERIOD_MS = 30000;
-        static NetworkInterfaces nf;
-        static std::atomic<std::chrono::steady_clock::time_point> last_updated_time = std::chrono::steady_clock::now();
-        static std::shared_mutex nf_mtx;
-
-        auto now = std::chrono::steady_clock::now();
-        auto last_updated_time_snapshot = last_updated_time.load();
-
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_updated_time_snapshot).count() > NET_INTERFACE_VALID_PERIOD_MS)
-        {
-            std::unique_lock lock(nf_mtx);
-            if (last_updated_time.load() != last_updated_time_snapshot) /// it's possible that last_updated_time after we get the snapshot
-                return nf;
-            nf.swap(NetworkInterfaces());
-            last_updated_time.store(now);
-            return nf;
-        }
-        else
-        {
-            std::shared_lock lock(nf_mtx);
-            return nf;
-        }
-    }
 };
 
 }
@@ -149,7 +111,8 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
         }
     }
 
-    return NetworkInterfaces::instance().hasAddress(address);
+    NetworkInterfaces interfaces;
+    return interfaces.hasAddress(address);
 }
 
 

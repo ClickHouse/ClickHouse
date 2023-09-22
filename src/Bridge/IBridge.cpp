@@ -140,7 +140,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
 
         /// Disable buffering for stdout.
-        setbuf(stdout, nullptr);
+        setbuf(stdout, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c)
     }
     const auto stderr_path = config().getString("logger.stderr", "");
     if (!stderr_path.empty())
@@ -149,7 +149,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr.
-        setbuf(stderr, nullptr);
+        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c)
     }
 
     buildLoggers(config(), logger(), self.commandName());
