@@ -622,12 +622,18 @@ IProcessor::Status AggregatingTransform::prepare()
 
 void AggregatingTransform::work()
 {
-    if (is_consume_finished)
+    if (is_consume_finished || flush_next) {
         initGenerate();
+        flush_next = false;
+    }
     else
     {
         consume(std::move(current_chunk));
         read_current_chunk = false;
+        if (params->params.group_by_each_block_no_merge) {
+            is_consume_finished = true;
+            flush_next = true;
+        }
     }
 }
 

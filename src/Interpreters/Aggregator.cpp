@@ -985,8 +985,6 @@ void Aggregator::executeOnBlockSmall(
     executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
 
     CurrentMemoryTracker::check();
-    if (params.group_by_each_block_no_merge) 
-        convertToBlocks(result, false, 1);
 }
 
 void Aggregator::mergeOnBlockSmall(
@@ -1462,8 +1460,6 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
                 data_variants.aggregates_pool);
     }
 
-    if (params.group_by_each_block_no_merge) 
-        convertToBlocks(data_variants, false, 1);
 }
 
 void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
@@ -1681,8 +1677,6 @@ bool Aggregator::executeOnBlock(Columns columns,
     if (!checkLimits(result_size, no_more_keys))
         return false;
 
-    if (params.group_by_each_block_no_merge)
-        convertToBlocks(result, false, 1);
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
