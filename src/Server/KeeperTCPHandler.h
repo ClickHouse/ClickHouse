@@ -25,7 +25,7 @@ struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
 using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
-using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
+using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
 
 struct LastOp;
 using LastOpMultiVersion = MultiVersion<LastOp>;

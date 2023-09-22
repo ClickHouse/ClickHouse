@@ -38,7 +38,7 @@ struct Settings;
     M(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     M(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    M(UInt64, max_requests_batch_size, 1000, "Max size of batch of requests that can be sent to RAFT", 0) \
+    M(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
     M(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
     M(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
     M(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
