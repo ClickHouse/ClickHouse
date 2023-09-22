@@ -1077,7 +1077,7 @@ Pipe StorageS3::read(
         && local_context->getSettingsRef().optimize_count_from_files;
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
-    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+    const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
     LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Reading in {} streams, {} threads per stream", num_streams, max_parsing_threads);
 
     pipes.reserve(num_streams);
