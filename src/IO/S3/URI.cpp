@@ -28,14 +28,14 @@ struct UriConverter
         else if (uri.getScheme() == "oss")
             domain = OSS_DOMAIN;
         else if (uri.getScheme() == "gs")
-            domain = GSS_DOMAIN;
+            domain = GCS_DOMAIN;
         uri.setScheme("https");
         uri.setHost(uri.getHost() + domain);
     }
 private:
     static constexpr auto S3_DOMAIN = ".s3.amazonaws.com";
     static constexpr auto OSS_DOMAIN = ".oss.aliyuncs.com";
-    static constexpr auto GSS_DOMAIN = ".storage.googleapis.com";
+    static constexpr auto GCS_DOMAIN = ".storage.googleapis.com";
 };
 
 namespace ErrorCodes
