@@ -342,7 +342,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(
                 ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
-                "The maximum ({}) value is less than the maximum ({}) value for setting {}",
+                "The maximum ({}) value is less than the minimum ({}) value for setting {}",
                 max_value,
                 min_value,
                 setting_name);
