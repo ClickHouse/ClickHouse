@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import csv
-import os
-import time
-from typing import Dict, List, Optional, Union
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+import csv
 import logging
+import time
 
 from github import Github
 from github.GithubObject import _NotSetType, NotSet as NotSet
@@ -292,9 +292,9 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
 
 def post_commit_status_to_file(
-    file_path: str, description: str, state: str, report_url: str
+    file_path: Path, description: str, state: str, report_url: str
 ) -> None:
-    if os.path.exists(file_path):
+    if file_path.exists():
         raise Exception(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
