@@ -32,7 +32,7 @@ class BackupLog;
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
 
     /// Waits until all tasks have been completed.
     void shutdown();
