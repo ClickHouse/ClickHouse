@@ -1159,7 +1159,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         "Column {} doesn't have MATERIALIZED, cannot remove it",
                         backQuote(column_name));
 
-                auto column_from_table = all_columns.get(column_name);
+                const auto & column_from_table = all_columns.get(column_name);
                 if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

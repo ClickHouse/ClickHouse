@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-16}
+export LLVM_VERSION=${LLVM_VERSION:-17}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -28,6 +28,12 @@ FASTTEST_BUILD=$(readlink -f "${FASTTEST_BUILD:-${BUILD:-$FASTTEST_WORKSPACE/bui
 FASTTEST_DATA=$(readlink -f "${FASTTEST_DATA:-$FASTTEST_WORKSPACE/db-fasttest}")
 FASTTEST_OUTPUT=$(readlink -f "${FASTTEST_OUTPUT:-$FASTTEST_WORKSPACE}")
 PATH="$FASTTEST_BUILD/programs:$FASTTEST_SOURCE/tests:$PATH"
+# Work around for non-existent user
+if [ "$HOME" == "/" ]; then
+    HOME="$FASTTEST_WORKSPACE/user-home"
+    mkdir -p "$HOME"
+    export HOME
+fi
 
 # Export these variables, so that all subsequent invocations of the script
 # use them, and not try to guess them anew, which leads to weird effects.
@@ -152,7 +158,11 @@ function clone_submodules
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --single-branch --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule init
+        # --jobs does not work as fast as real parallel running
+        printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
+            xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
+              git submodule update --depth 1 --single-branch
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -271,34 +281,12 @@ case "$stage" in
     ;&
 "clone_root")
     clone_root
-
-    # Pass control to the script from cloned sources, unless asked otherwise.
-    if ! [ -v FASTTEST_LOCAL_SCRIPT ]
-    then
-        # 'run' stage is deprecated, used for compatibility with old scripts.
-        # Replace with 'clone_submodules' after Nov 1, 2020.
-        # cd and CLICKHOUSE_DIR are also a setup for old scripts, remove as well.
-        # In modern script we undo it by changing back into workspace dir right
-        # away, see below. Remove that as well.
-        cd "$FASTTEST_SOURCE"
-        CLICKHOUSE_DIR=$(pwd)
-        export CLICKHOUSE_DIR
-        stage=run "$FASTTEST_SOURCE/docker/test/fasttest/run.sh"
-        exit $?
-    fi
-    ;&
-"run")
-    # A deprecated stage that is called by old script and equivalent to everything
-    # after cloning root, starting with cloning submodules.
     ;&
 "clone_submodules")
-    # Recover after being called from the old script that changes into source directory.
-    # See the compatibility hacks in `clone_root` stage above. Remove at the same time,
-    # after Nov 1, 2020.
-    cd "$FASTTEST_WORKSPACE"
     clone_submodules 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
     ;&
 "run_cmake")
+    cd "$FASTTEST_WORKSPACE"
     run_cmake
     ;&
 "build")

@@ -34,7 +34,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
@@ -47,6 +47,7 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
     /// If "secret" (in remote_servers) is not in use,
     /// user on the shard is not the same as the user on the initiator,
     /// hence per-user limits should not be applied.
+    const bool interserver_mode = !cluster.getSecret().empty();
     if (!interserver_mode)
     {
         /// Does not matter on remote servers, because queries are sent under different user.
@@ -123,6 +124,22 @@ ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
         new_settings.additional_table_filters.value.push_back(std::move(tuple));
     }
 
+    /// disable parallel replicas if cluster contains only shards with 1 replica
+    if (context->canUseParallelReplicas())
+    {
+        bool disable_parallel_replicas = true;
+        for (const auto & shard : cluster.getShardsInfo())
+        {
+            if (shard.getAllNodeCount() > 1)
+            {
+                disable_parallel_replicas = false;
+                break;
+            }
+        }
+        if (disable_parallel_replicas)
+            new_settings.allow_experimental_parallel_reading_from_replicas = false;
+    }
+
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
@@ -174,11 +191,20 @@ void executeQuery(
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
-    auto new_context = updateSettingsForCluster(!not_optimized_cluster->getSecret().empty(), context, settings,
-                                                main_table, query_info.additional_filter_ast, log);
+    auto cluster = query_info.getCluster();
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
+    if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+        && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
+           != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
+    {
+        LOG_TRACE(
+            log,
+            "Parallel reading from replicas is disabled for cluster. There are no shards with more than 1 replica: cluster={}",
+            cluster->getName());
+    }
+
     new_context->increaseDistributedDepth();
 
-    ClusterPtr cluster = query_info.getCluster();
     const size_t shards = cluster->getShardCount();
     for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {

@@ -490,7 +490,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
                         replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
                                                 syntax_result->array_join_result_to_source, context);
 
-                        auto column_description = storage_columns.get(column);
+                        const auto & column_description = storage_columns.get(column);
                         column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
                                                             storage_metadata_snapshot->getColumns().getAll(), context);
                         column_expr = setAlias(column_expr, column);
