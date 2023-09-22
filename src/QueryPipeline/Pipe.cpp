@@ -556,7 +556,7 @@ void Pipe::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform consuming totals to Pipe because Pipe does not have totals");
 
     if (extremes && !extremes_port)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform consuming extremes to Pipe because it already has extremes");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add transform consuming extremes to Pipe because Pipe does not have extremes");
 
     if (totals)
     {
