@@ -1,78 +1,13 @@
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionDateOrDateTimeToSomething.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include "DataTypes/IDataType.h"
-#include "Functions/TransformDateTime64.h"
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-namespace
-{
-
-/** Returns number of days passed since 0000-01-01 */
-class FunctionToDaysSinceYearZero : public IFunction
-{
-    using ResultType = DataTypeUInt32;
-public:
-    static constexpr auto name = "toDaysSinceYearZero";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToDaysSinceYearZero>(context); }
-
-    explicit FunctionToDaysSinceYearZero(ContextPtr /*context*/) { }
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors mandatory_args{
-            {"date", &isDateOrDate32OrDateTimeOrDateTime64<IDataType>, nullptr, "Date or Date32 or DateTime or DateTime64"}
-        };
-
-        validateFunctionArgumentTypes(*this, arguments, mandatory_args);
-
-        return std::make_shared<ResultType>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        const IDataType * from_type = arguments[0].type.get();
-        WhichDataType which(from_type);
-
-        if (which.isDate())
-            return DateTimeTransformImpl<DataTypeDate, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
-        else if (which.isDate32())
-            return DateTimeTransformImpl<DataTypeDate32, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
-        else if (which.isDateTime())
-            return DateTimeTransformImpl<DataTypeDateTime, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
-        else if (which.isDateTime64())
-        {
-            const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
-            const TransformDateTime64<ToDaysSinceYearZeroImpl> transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ResultType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
-        }
-
-        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}",
-            arguments[0].type->getName(),
-            this->getName());
-    }
-};
-
-}
+using FunctionToDaysSinceYearZero = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToDaysSinceYearZeroImpl>;
 
 REGISTER_FUNCTION(ToDaysSinceYearZero)
 {
