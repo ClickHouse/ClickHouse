@@ -8,6 +8,13 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'master'
+    paths-ignore:
+      - '**.md'
+      - 'docker/docs/**'
+      - 'docs/**'
+      - 'utils/check-style/aspell-ignore/**'
+      - '.github/workflows/**'
+      - '!.github/workflows/master.yml'
 jobs:
   PythonUnitTests:
     runs-on: [self-hosted, style-checker]
