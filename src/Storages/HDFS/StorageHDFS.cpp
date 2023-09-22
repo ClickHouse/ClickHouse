@@ -262,7 +262,12 @@ StorageHDFS::StorageHDFS(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in HDFS storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine HDFS doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);

@@ -898,7 +898,12 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in File storage.
+        if (!args.columns.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine File doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(args.columns);
+    }
 
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
