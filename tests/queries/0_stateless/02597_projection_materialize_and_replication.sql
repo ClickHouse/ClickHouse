@@ -25,11 +25,7 @@ select min(c_id) from test group by d format Null;
 
 
 
-ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
-
-ALTER TABLE test MATERIALIZE PROJECTION d_order;
-
-ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2;
+ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`), MATERIALIZE PROJECTION d_order, DROP PROJECTION d_order SETTINGS mutations_sync = 2;
 
 SELECT * FROM system.mutations WHERE database=currentDatabase() AND table='test' AND NOT is_done;
 
