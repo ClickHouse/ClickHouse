@@ -92,6 +92,7 @@ StorageMergeTree::StorageMergeTree(
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
     bool attach,
+    ContextMutablePtr local_context_,
     ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -100,6 +101,7 @@ StorageMergeTree::StorageMergeTree(
     : MergeTreeData(
         table_id_,
         metadata_,
+        local_context_,
         context_,
         date_column_name,
         merging_params_,

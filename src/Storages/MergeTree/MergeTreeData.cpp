@@ -333,6 +333,7 @@ DataPartsLock::~DataPartsLock()
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const StorageInMemoryMetadata & metadata_,
+    ContextMutablePtr local_context_,
     ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -371,7 +372,7 @@ MergeTreeData::MergeTreeData(
         try
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
-            setProperties(metadata_, metadata_, attach);
+            setProperties(metadata_, metadata_, attach, local_context_);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
@@ -387,7 +388,7 @@ MergeTreeData::MergeTreeData(
         is_custom_partitioned = true;
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
-    setProperties(metadata_, metadata_, attach);
+    setProperties(metadata_, metadata_, attach, local_context_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(metadata_);
@@ -495,9 +496,9 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
             "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
-    bool allow_suspicious_indices = getSettings()->allow_suspicious_indices;
-    if (local_context)
-        allow_suspicious_indices = local_context->getSettingsRef().allow_suspicious_indices;
+    if (!local_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Local context not set");
+    bool allow_suspicious_indices = local_context->getSettingsRef().allow_suspicious_indices;
 
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))

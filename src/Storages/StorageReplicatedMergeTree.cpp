@@ -289,6 +289,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
+    ContextMutablePtr local_context_,
     ContextMutablePtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
@@ -298,6 +299,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool need_check_structure)
     : MergeTreeData(table_id_,
                     metadata_,
+                    local_context_,
                     context_,
                     date_column_name,
                     merging_params_,
@@ -1249,7 +1251,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    setProperties(new_metadata, old_metadata, false, local_context);
 
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);

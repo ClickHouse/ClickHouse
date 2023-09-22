@@ -38,6 +38,7 @@ public:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
+        ContextMutablePtr local_context_,
         ContextMutablePtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
