@@ -13,11 +13,11 @@ create table t_01568 engine Memory as
 select intDiv(number, 3) p, modulo(number, 3) o, number
 from numbers(9);
 
-select sum(number) over w, max(number) over w from t_01568 window w as (partition by p);
+select sum(number) over w, max(number) over w from t_01568 window w as (partition by p) order by p;
 
-select sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p);
+select sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p) order by p;
 
-select distinct sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p);
+select distinct sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p) order by p;
 
 -- window functions + aggregation w/shards
 select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3);
