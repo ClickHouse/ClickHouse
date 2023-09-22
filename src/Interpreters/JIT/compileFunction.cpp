@@ -389,10 +389,10 @@ static void compileMergeAggregatesStates(llvm::Module & module, const std::vecto
     for (const auto & function_to_compile : functions)
     {
         auto * aggregate_data_merge_pair = b.CreateLoad(merge_pair_type,
-            b.CreateInBoundsGEP(merge_pair_type->getPointerTo(), aggregate_data_merge_pairs_arg, counter_phi));
+            b.CreateInBoundsGEP(merge_pair_type, aggregate_data_merge_pairs_arg, counter_phi));
 
         auto * aggregate_data_place_dst = b.CreateExtractValue(aggregate_data_merge_pair, {0});
-        auto * aggregate_data_place_src = b.CreateExtractValue(aggregate_data_merge_pair, {0});
+        auto * aggregate_data_place_src = b.CreateExtractValue(aggregate_data_merge_pair, {1});
 
         size_t aggregate_function_offset = function_to_compile.aggregate_data_offset;
 
