@@ -14,6 +14,10 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -33,6 +37,7 @@ namespace
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
+        const std::optional<time_t> & valid_until,
         bool allow_implicit_no_password,
         bool allow_no_password,
         bool allow_plaintext_password)
@@ -65,6 +70,9 @@ namespace
                                 AuthenticationTypeInfo::get(auth_type).name);
             }
         }
+
+        if (valid_until)
+            user.valid_until = *valid_until;
 
         if (override_name && !override_name->host_pattern.empty())
         {
@@ -123,6 +131,26 @@ BlockIO InterpreterCreateUserQuery::execute()
     if (query.auth_data)
         auth_data = AuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
 
+    std::optional<time_t> valid_until;
+    if (query.valid_until)
+    {
+        const ASTPtr valid_until_literal = evaluateConstantExpressionAsLiteral(query.valid_until, getContext());
+        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until_literal, "valid_until");
+
+        time_t time = 0;
+
+        if (valid_until_str != "infinity")
+        {
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
+
+            ReadBufferFromString in(valid_until_str);
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
+
+        valid_until = time;
+    }
+
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
@@ -165,7 +193,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
-            updateUserFromQueryImpl(*updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+            updateUserFromQueryImpl(
+                *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
+                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             return updated_user;
         };
 
@@ -183,7 +213,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            updateUserFromQueryImpl(*new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{}, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
+            updateUserFromQueryImpl(
+                *new_user, query, auth_data, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                valid_until, implicit_no_password_allowed, no_password_allowed, plaintext_password_allowed);
             new_users.emplace_back(std::move(new_user));
         }
 
@@ -226,7 +258,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreat
     if (query.auth_data)
         auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
-    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
+    updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
 }
 
 }
