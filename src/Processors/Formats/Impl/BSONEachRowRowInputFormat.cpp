@@ -1045,13 +1045,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
-
-        // Ensure the document size we write to the memory is byte arranged for LE.
-        BSONSizeT size_out = document_size;
-        if constexpr(std::endian::native == std::endian::big)
-            size_out = std::byteswap(size_out);
-        unalignedStore<BSONSizeT>(memory.data() + old_size, size_out);
-
+        unalignedStoreLittleEndian<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
     }
