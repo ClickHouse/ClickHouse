@@ -18,6 +18,26 @@
 namespace DB
 {
 
+struct UriConverter
+{
+    static void modifyURI(Poco::URI & uri)
+    {
+        std::string domain;
+        if (uri.getScheme() == "s3")
+            domain = S3_DOMAIN;
+        else if (uri.getScheme() == "oss")
+            domain = OSS_DOMAIN;
+        else if (uri.getScheme() == "gs")
+            domain = GSS_DOMAIN;
+        uri.setScheme("https");
+        uri.setHost(uri.getHost() + domain);
+    }
+private:
+    static constexpr auto S3_DOMAIN = ".s3.amazonaws.com";
+    static constexpr auto OSS_DOMAIN = ".oss.aliyuncs.com";
+    static constexpr auto GSS_DOMAIN = ".storage.googleapis.com";
+};
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -45,6 +65,9 @@ URI::URI(const std::string & uri_)
     static constexpr auto OSS = "OSS";
 
     uri = Poco::URI(uri_);
+
+    if (uri.getScheme() == "s3" || uri.getScheme() == "oss" || uri.getScheme() == "gs")
+        UriConverter::modifyURI(uri);
 
     storage_name = S3;
 
