@@ -185,6 +185,6 @@
 
 /// A template function for suppressing warnings about unused variables or function results.
 template <typename... Args>
-constexpr void UNUSED(Args &&... args [[maybe_unused]])
+constexpr void UNUSED(Args &&... args [[maybe_unused]]) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
 }

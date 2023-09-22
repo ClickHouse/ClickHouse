@@ -104,7 +104,7 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
 
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} expected {}",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
                         argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
 }
 

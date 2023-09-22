@@ -21,7 +21,7 @@ splitByChar(separator, s[, max_substrings]))
 
 - `separator` — The separator which should contain exactly one character. [String](../../sql-reference/data-types/string.md).
 - `s` — The string to split. [String](../../sql-reference/data-types/string.md).
-- `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
+- `max_substrings` — An optional `Int64` defaulting to 0. If `max_substrings` > 0, the returned array will contain at most `max_substrings` substrings, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
@@ -38,6 +38,10 @@ The behavior of parameter `max_substrings` changed starting with ClickHouse v22.
 For example,
 - in v22.10: `SELECT splitByChar('=', 'a=b=c=d', 2); -- ['a','b','c=d']`
 - in v22.11: `SELECT splitByChar('=', 'a=b=c=d', 2); -- ['a','b']`
+
+A behavior similar to ClickHouse pre-v22.11 can be achieved by setting
+[splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string)
+`SELECT splitByChar('=', 'a=b=c=d', 2) SETTINGS splitby_max_substrings_includes_remaining_string = 1 -- ['a', 'b=c=d']`
 :::
 
 **Example**
@@ -79,6 +83,8 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 - A non-empty separator occurs at the beginning or end of the string;
 - There are multiple consecutive non-empty separators;
 - The original string `s` is empty while the separator is not empty.
+
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
@@ -133,6 +139,8 @@ Returns an array of selected substrings. Empty substrings may be selected when:
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+
 **Example**
 
 ``` sql
@@ -182,6 +190,8 @@ Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
+
 **Example**
 
 ``` sql
@@ -218,6 +228,8 @@ splitByNonAlpha(s[, max_substrings]))
 Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
@@ -278,6 +290,8 @@ Alias: `splitByAlpha`
 Returns an array of selected substrings.
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+Setting [splitby_max_substrings_includes_remaining_string](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: 0) controls if the remaining string is included in the last element of the result array when argument `max_substrings` > 0.
 
 **Example**
 
