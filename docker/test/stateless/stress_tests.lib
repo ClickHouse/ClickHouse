@@ -52,6 +52,21 @@ function configure()
       | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" \
       > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+
+    function randomize_config_boolean_value {
+        value=$(($RANDOM % 2))
+        sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+        | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
+        > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+        sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+    }
+
+    # Randomize all Keeper feature flags
+    randomize_config_boolean_value filtered_list
+    randomize_config_boolean_value multi_read
+    randomize_config_boolean_value check_not_exists
+    randomize_config_boolean_value create_if_not_exists
+
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
