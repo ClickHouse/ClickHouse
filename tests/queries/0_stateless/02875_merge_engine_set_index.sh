@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan
 
 # shellcheck disable=SC2154
 
@@ -15,7 +14,8 @@ $CLICKHOUSE_CLIENT -nq "
         b UInt32
     )
     ENGINE = MergeTree
-    ORDER BY (a, b);
+    ORDER BY (a, b)
+    SETTINGS index_granularity = 8192;
 
     INSERT INTO t1 SELECT number, number FROM numbers_mt(1e6);
 
@@ -25,7 +25,8 @@ $CLICKHOUSE_CLIENT -nq "
         b UInt32
     )
     ENGINE = MergeTree
-    ORDER BY (a, b);
+    ORDER BY (a, b)
+    SETTINGS index_granularity = 8192;
 
     INSERT INTO t2 VALUES (1, 1) (2, 2) (3, 3);
 
@@ -61,5 +62,4 @@ SYSTEM FLUSH LOGS;
 
 SELECT ProfileEvents['SelectedMarks']
 FROM system.query_log
-WHERE (query_id = '$query_id') AND (type = 'QueryFinish');
-"
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND (query_id = '$query_id') AND (type = 'QueryFinish');"
