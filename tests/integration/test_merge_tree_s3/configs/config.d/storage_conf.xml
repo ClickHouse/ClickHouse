@@ -49,6 +49,10 @@
                 <type>local</type>
                 <path>/</path>
             </hdd>
+            <hdd_blob>
+                <type>local_blob_storage</type>
+                <path>/</path>
+            </hdd_blob>
             <s3_with_cache>
                 <type>cache</type>
                 <disk>s3</disk>

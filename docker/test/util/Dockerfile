@@ -6,7 +6,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 # 15.0.2
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=16
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=17
 
 RUN apt-get update \
     && apt-get install \

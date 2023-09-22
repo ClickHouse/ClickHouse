@@ -270,8 +270,8 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.reset();
-    impl->cache_address.reset();
+    impl->cache_host.clear();
+    impl->cache_address.clear();
 
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
@@ -310,8 +310,8 @@ static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr
 
 template <typename UpdateF, typename ElemsT>
 bool DNSResolver::updateCacheImpl(
-    UpdateF && update_func,
-    ElemsT && elems,
+    UpdateF && update_func, // NOLINT(cppcoreguidelines-missing-std-forward)
+    ElemsT && elems, // NOLINT(cppcoreguidelines-missing-std-forward)
     UInt32 max_consecutive_failures,
     FormatStringHelper<String> notfound_log_msg,
     FormatStringHelper<String> dropped_log_msg)

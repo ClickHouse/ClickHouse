@@ -1,0 +1,27 @@
+3
+
+3
+
+3
+3
+1
+{
+	"meta":
+	[
+		{
+			"name": "sum(a)",
+			"type": "Int64"
+		}
+	],
+
+	"data":
+	[
+		{
+			"sum(a)": "1"
+		}
+	],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 2
+}

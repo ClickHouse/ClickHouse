@@ -25,7 +25,6 @@
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageS3Settings.h>
 #    include <Storages/VirtualColumnUtils.h>
-#    include <Storages/getVirtualsForStorage.h>
 
 #    include <Formats/FormatFactory.h>
 
@@ -70,13 +69,13 @@ StorageS3QueueSource::QueueGlobIterator::QueueGlobIterator(
     const S3::Client & client_,
     const S3::URI & globbed_uri_,
     ASTPtr query,
-    const Block & virtual_header,
+    const NamesAndTypesList & virtual_columns,
     ContextPtr context,
     UInt64 & max_poll_size_,
     const S3Settings::RequestSettings & request_settings_)
     : max_poll_size(max_poll_size_)
     , glob_iterator(std::make_unique<StorageS3QueueSource::DisclosedGlobIterator>(
-          client_, globbed_uri_, query, virtual_header, context, nullptr, request_settings_))
+          client_, globbed_uri_, query, virtual_columns, context, nullptr, request_settings_))
 {
     /// todo(kssenii): remove this loop, it should not be here
     while (true)
@@ -148,6 +147,11 @@ StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::QueueGlobIterator::next(
     return KeyWithInfo();
 }
 
+size_t StorageS3QueueSource::QueueGlobIterator::estimatedKeysCount()
+{
+    return keys_buf.size();
+}
+
 StorageS3QueueSource::StorageS3QueueSource(
     const ReadFromFormatInfo & info,
     const String & format_,
@@ -160,6 +164,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     const std::shared_ptr<const S3::Client> & client_,
     const String & bucket_,
     const String & version_id_,
+    const String & url_host_and_port,
     std::shared_ptr<IIterator> file_iterator_,
     std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
     const S3QueueAction & action_,
@@ -191,8 +196,11 @@ StorageS3QueueSource::StorageS3QueueSource(
         client_,
         bucket_,
         version_id_,
+        url_host_and_port,
         file_iterator,
-        download_thread_num_);
+        download_thread_num_,
+        false,
+        /* query_info */ std::nullopt);
     reader = std::move(internal_source->reader);
     if (reader)
         reader_future = std::move(internal_source->reader_future);

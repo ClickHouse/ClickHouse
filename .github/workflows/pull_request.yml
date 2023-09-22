@@ -3,9 +3,6 @@ name: PullRequestCI
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
-  # Export system tables to ClickHouse Cloud
-  CLICKHOUSE_CI_LOGS_HOST: ${{ secrets.CLICKHOUSE_CI_LOGS_HOST }}
-  CLICKHOUSE_CI_LOGS_PASSWORD: ${{ secrets.CLICKHOUSE_CI_LOGS_PASSWORD }}
 
 on:  # yamllint disable-line rule:truthy
   pull_request:
@@ -16,9 +13,7 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
-      - 'SECURITY.md'
+      - '**.md'
       - 'docker/docs/**'
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
@@ -97,6 +92,7 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
+          fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:
@@ -5189,9 +5185,16 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
           python3 merge_pr.py --check-approved
-##############################################################################################
-########################### SQLLOGIC TEST ###################################################
-##############################################################################################
+#############################################################################################
+####################################### libFuzzer ###########################################
+#############################################################################################
+  libFuzzer:
+    if: contains(github.event.pull_request.labels.*.name, 'libFuzzer')
+    needs: [DockerHubPush, StyleCheck]
+    uses: ./.github/workflows/libfuzzer.yml
+  ##############################################################################################
+  ############################ SQLLOGIC TEST ###################################################
+  ##############################################################################################
   SQLLogicTestRelease:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
