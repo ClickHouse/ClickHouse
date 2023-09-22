@@ -25,8 +25,6 @@ namespace
 class FunctionToDaysSinceYearZero : public IFunction
 {
     using ResultType = DataTypeUInt32;
-    using Transformer = TransformDateTime64<ToDaysSinceYearZeroImpl>;
-
 public:
     static constexpr auto name = "toDaysSinceYearZero";
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToDaysSinceYearZero>(context); }
@@ -41,14 +39,12 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"date",
-             [](const IDataType & dt) { return isDateOrDate32<IDataType>(dt) || isDateTime<IDataType>(dt) || isDateTime64<IDataType>(dt); },
-             nullptr,
-             "Date, Date32, DateTime or DateTime64"}};
+            {"date", &isDateOrDate32OrDateTimeOrDateTime64<IDataType>, nullptr, "Date or Date32 or DateTime or DateTime64"}
+        };
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args);
 
-        return std::make_shared<DataTypeUInt32>();
+        return std::make_shared<ResultType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -57,24 +53,19 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            return DateTimeTransformImpl<DataTypeDate, ResultType, ToDaysSinceYearZeroImpl>::execute(
-                arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
         else if (which.isDate32())
-            return DateTimeTransformImpl<DataTypeDate32, ResultType, ToDaysSinceYearZeroImpl>::execute(
-                arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDate32, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime())
-            return DateTimeTransformImpl<DataTypeDateTime, ResultType, ToDaysSinceYearZeroImpl>::execute(
-                arguments, result_type, input_rows_count);
+            return DateTimeTransformImpl<DataTypeDateTime, ResultType, ToDaysSinceYearZeroImpl>::execute(arguments, result_type, input_rows_count);
         else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
-            const Transformer transformer(scale);
-            return DateTimeTransformImpl<DataTypeDateTime64, ResultType, Transformer>::execute(
-                arguments, result_type, input_rows_count, transformer);
+            const TransformDateTime64<ToDaysSinceYearZeroImpl> transformer(scale);
+            return DateTimeTransformImpl<DataTypeDateTime64, ResultType, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
 
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        throw Exception( ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}",
             arguments[0].type->getName(),
             this->getName());
@@ -87,7 +78,7 @@ REGISTER_FUNCTION(ToDaysSinceYearZero)
 {
     factory.registerFunction<FunctionToDaysSinceYearZero>(FunctionDocumentation{
         .description = R"(
-Returns for a given date, the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601.
+Returns for a given date or date with time, the number of days passed since 1 January 0000 in the proleptic Gregorian calendar defined by ISO 8601.
 The calculation is the same as in MySQL's TO_DAYS() function.
 )",
         .examples{{"typical", "SELECT toDaysSinceYearZero(toDate('2023-09-08'))", "713569"}},
