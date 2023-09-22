@@ -1,5 +1,3 @@
-#include "Parsers/ASTOptimizeQuery.h"
-#include "Parsers/IAST_fwd.h"
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -60,6 +58,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -84,30 +83,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const S
     SipHash siphash;
 
     siphash.update(data_kind);
-    updateHashWithQuery(siphash);
-    updateHashWithSettings(siphash);
+    query->updateTreeHash(siphash);
 
-    hash = siphash.get128();
-}
-
-void AsynchronousInsertQueue::InsertQuery::updateHashWithQuery(SipHash & siphash)
-{
-    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*query);
-
-    siphash.update(insert_query.table_id.database_name);
-    siphash.update(insert_query.table_id.table_name);
-    siphash.update(insert_query.table_id.uuid);
-
-    if (data_kind == DataKind::Parsed)
-        siphash.update(insert_query.format);
-
-    siphash.update(insert_query.children.size());
-    for (const auto & child : insert_query.children)
-        child->updateTreeHash(siphash);
-}
-
-void AsynchronousInsertQueue::InsertQuery::updateHashWithSettings(SipHash & siphash)
-{
     for (const auto & setting : settings.allChanged())
     {
         if (settings_to_skip.contains(setting.getName()))
@@ -117,6 +94,8 @@ void AsynchronousInsertQueue::InsertQuery::updateHashWithSettings(SipHash & siph
         siphash.update(setting.getName());
         applyVisitor(FieldVisitorHash(siphash), setting.getValue());
     }
+
+    hash = siphash.get128();
 }
 
 AsynchronousInsertQueue::InsertQuery &
@@ -137,13 +116,19 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
-    return query_str == other.query_str && setting_changes == other.setting_changes;
+    return std::tie(data_kind, query_str, setting_changes) == std::tie(other.data_kind, other.query_str, other.setting_changes);
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(DataChunk && chunk_, String && query_id_, const String & async_dedup_token_, MemoryTracker * user_memory_tracker_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(
+    DataChunk && chunk_,
+    String && query_id_,
+    const String & async_dedup_token_,
+    const String & format_,
+    MemoryTracker * user_memory_tracker_)
     : chunk(std::move(chunk_))
     , query_id(std::move(query_id_))
     , async_dedup_token(async_dedup_token_)
+    , format(format_)
     , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
@@ -306,7 +291,17 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         quota->used(QuotaType::WRITTEN_BYTES, chunk.byteSize());
 
     const auto & settings = query_context->getSettingsRef();
-    auto entry = std::make_shared<InsertData::Entry>(std::move(chunk), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
+    auto & insert_query = query->as<ASTInsertQuery &>();
+
+    auto entry = std::make_shared<InsertData::Entry>(
+        std::move(chunk), query_context->getCurrentQueryId(),
+        settings.insert_deduplication_token, insert_query.format,
+        CurrentThread::getUserMemoryTracker());
+
+    /// If data is parsed on client we don't care of format which is written
+    /// in INSERT query. Replace it to put all such queries into one bucket in queue.
+    if (chunk.getDataKind() == DataKind::Preprocessed)
+        insert_query.format = "Native";
 
     InsertQuery key{query, settings, chunk.getDataKind()};
     InsertDataPtr data_to_process;
@@ -492,6 +487,13 @@ catch (...)
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
 }
 
+String serializeQuery(const IAST & query, size_t max_length)
+{
+    return query.hasSecretParts()
+        ? query.formatForLogging(max_length)
+        : wipeSensitiveDataAndCutToLength(serializeAST(query), max_length);
+}
+
 }
 
 // static
@@ -532,10 +534,7 @@ try
 
     DB::CurrentThread::QueryScope query_scope_holder(insert_context);
 
-    size_t log_queries_cut_to_length = insert_context->getSettingsRef().log_queries_cut_to_length;
-    String query_for_logging = insert_query.hasSecretParts()
-        ? insert_query.formatForLogging(log_queries_cut_to_length)
-        : wipeSensitiveDataAndCutToLength(serializeAST(insert_query), log_queries_cut_to_length);
+    auto query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef().log_queries_cut_to_length);
 
     /// We add it to the process list so
     /// a) it appears in system.processes
@@ -595,7 +594,9 @@ try
         throw;
     }
 
-    auto add_entry_to_log = [&](const auto & entry, const String & exception, size_t num_rows, size_t num_bytes)
+    auto add_entry_to_log = [&](
+        const auto & entry, const auto & entry_query_for_logging,
+        const auto & exception, size_t num_rows, size_t num_bytes)
     {
         if (!async_insert_log)
             return;
@@ -603,10 +604,10 @@ try
         AsynchronousInsertLogElement elem;
         elem.event_time = timeInSeconds(entry->create_time);
         elem.event_time_microseconds = timeInMicroseconds(entry->create_time);
-        elem.query_for_logging = query_for_logging;
+        elem.query_for_logging = entry_query_for_logging;
         elem.database = query_database;
         elem.table = query_table;
-        elem.format = insert_query.format;
+        elem.format = entry->format;
         elem.query_id = entry->query_id;
         elem.bytes = num_bytes;
         elem.rows = num_rows;
@@ -648,7 +649,7 @@ try
     if (key.data_kind == DataKind::Parsed)
         chunk = processEntriesWithParsing(key, data->entries, header, insert_context, log, add_entry_to_log);
     else
-        chunk = processPreprocessedEntries(data->entries, header, add_entry_to_log);
+        chunk = processPreprocessedEntries(key, data->entries, header, insert_context, add_entry_to_log);
 
     if (chunk.getNumRows() == 0)
     {
@@ -744,6 +745,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
     std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
+    auto query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef().log_queries_cut_to_length);
 
     for (const auto & entry : entries)
     {
@@ -766,7 +768,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
 
-        add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
+        add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes);
         current_exception.clear();
     }
 
@@ -780,13 +782,29 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
 template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processPreprocessedEntries(
+    const InsertQuery & key,
     const std::list<InsertData::EntryPtr> & entries,
     const Block & header,
+    const ContextPtr & insert_context,
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
     auto result_columns = header.cloneEmptyColumns();
+
+    std::unordered_map<String, String> format_to_query;
+
+    auto get_query_by_format = [&](const String & format) -> const String &
+    {
+        auto [it, inserted] = format_to_query.try_emplace(format);
+        if (!inserted)
+            return it->second;
+
+        auto query = key.query->clone();
+        assert_cast<ASTInsertQuery &>(*query).format = format;
+        it->second = serializeQuery(*query, insert_context->getSettingsRef().log_queries_cut_to_length);
+        return it->second;
+    };
 
     for (const auto & entry : entries)
     {
@@ -802,7 +820,9 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         total_rows += block->rows();
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
-        add_to_async_insert_log(entry, "", block->rows(), block->bytes());
+
+        const auto & query_for_logging = get_query_by_format(entry->format);
+        add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes());
     }
 
     ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);

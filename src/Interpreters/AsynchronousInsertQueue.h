@@ -42,7 +42,8 @@ public:
         /// from query data in case of too much data.
         std::unique_ptr<ReadBuffer> insert_data_buffer;
 
-        /// TODO:
+        /// Block that contains received by Native
+        /// protocol data in case of too much data.
         Block insert_block;
     };
 
@@ -57,7 +58,6 @@ public:
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context);
-
     size_t getPoolSize() const { return pool_size; }
 
 private:
@@ -77,8 +77,6 @@ private:
         bool operator==(const InsertQuery & other) const;
 
     private:
-        void updateHashWithQuery(SipHash & siphash);
-        void updateHashWithSettings(SipHash & siphash);
         std::vector<SettingChange> setting_changes;
     };
 
@@ -106,7 +104,7 @@ private:
         }
 
         const String * asString() const { return std::get_if<String>(this); }
-        const Block * asBlock() const {return std::get_if<Block>(this); }
+        const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
     struct InsertData
@@ -117,10 +115,16 @@ private:
             DataChunk chunk;
             const String query_id;
             const String async_dedup_token;
+            const String format;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(DataChunk && chunk_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
+            Entry(
+                DataChunk && chunk_,
+                String && query_id_,
+                const String & async_dedup_token_,
+                const String & format_,
+                MemoryTracker * user_memory_tracker_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -220,8 +224,10 @@ private:
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
+        const InsertQuery & key,
         const std::list<InsertData::EntryPtr> & entries,
         const Block & header,
+        const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>
