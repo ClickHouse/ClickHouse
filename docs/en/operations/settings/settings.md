@@ -4067,6 +4067,17 @@ Result:
 └─────┴─────┴───────┘
 ```
 
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
+
+Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
+
+Possible values:
+
+- `0` - The remaining string will not be included in the last element of the result array.
+- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/3.1.2/api/python/reference/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+
+Default value: `0`
+
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:
