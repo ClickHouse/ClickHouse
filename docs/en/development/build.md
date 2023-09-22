@@ -57,7 +57,7 @@ sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 
 For other Linux distributions - check the availability of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of April 2023, clang-16 or higher will work.
+As of August 2023, clang-16 or higher will work.
 GCC as a compiler is not supported.
 To build with a specific Clang version:
 
@@ -67,8 +67,8 @@ to see what version you have installed before setting this environment variable.
 :::
 
 ``` bash
-export CC=clang-16
-export CXX=clang++-16
+export CC=clang-17
+export CXX=clang++-17
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -105,8 +105,8 @@ The build requires the following components:
 
 - Git (used to checkout the sources, not needed for the build)
 - CMake 3.20 or newer
-- Compiler: clang-16 or newer
-- Linker: lld-16 or newer
+- Compiler: clang-17 or newer
+- Linker: lld-17 or newer
 - Ninja
 - Yasm
 - Gawk
