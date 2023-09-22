@@ -9259,8 +9259,8 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             /// It's not a problem if we have found the mutation parent (so we have files_not_to_remove).
             /// But in rare cases mutations parents could have been already removed (so we don't have the list of hardlinks).
 
-            /// I'm not 100% sure that parent_not_to_remove list cannot be incomplete (when it's not empty)
-            if (part_info.mutation && parent_not_to_remove.empty())
+            /// I'm not 100% sure that parent_not_to_remove list cannot be incomplete (when we've found a parent)
+            if (part_info.mutation && !has_parent)
                 part_has_no_more_locks = false;
 
             LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists (can remove blobs: {})",
