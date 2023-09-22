@@ -934,13 +934,9 @@ private:
 public:
     static constexpr auto name = "toDaysSinceYearZero";
 
-    static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    static UInt32 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t.whole));
-    }
-    static UInt32 execute(Int64, const DateLUTImpl &)
-    {
-        throwDateTimeIsNotSupported(name);
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t));
     }
     static UInt32 execute(UInt32 d, const DateLUTImpl &)
     {
