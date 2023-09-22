@@ -681,3 +681,27 @@ Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are U
 ## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+
+## hammingDistance
+
+Calculates the hamming distance between two strings.
+
+**Syntax**
+
+```sql
+hammingDistance(haystack, needle)
+```
+
+**Examples**
+
+``` sql
+SELECT hammingDistance('abc', 'ab') ;
+```
+
+Result:
+
+``` text
+┌─hammingDistance('abc', 'ab')─┐
+│                            1 │
+└──────────────────────────────┘
+```
