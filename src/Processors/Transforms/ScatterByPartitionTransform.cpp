@@ -115,11 +115,7 @@ void ScatterByPartitionTransform::generateOutputChunks()
     IColumn::Selector selector(num_rows);
 
     for (size_t row = 0; row < num_rows; ++row)
-    {
-        selector[row] = hash_data[row]; /// [0, 2^32)
-        selector[row] *= output_size; /// [0, output_size * 2^32), selector stores 64 bit values.
-        selector[row] >>= 32u; /// [0, output_size)
-    }
+        selector[row] = hash_data[row] % output_size;
 
     output_chunks.resize(output_size);
     for (const auto & column : columns)
