@@ -36,13 +36,6 @@ struct NetworkInterfaces : public boost::noncopyable
         }
     }
 
-    void swap(NetworkInterfaces && other)
-    {
-        auto * tmp = ifaddr;
-        ifaddr = other.ifaddr;
-        other.ifaddr = tmp;
-    }
-
     bool hasAddress(const Poco::Net::IPAddress & address) const
     {
         ifaddrs * iface;
@@ -87,23 +80,24 @@ struct NetworkInterfaces : public boost::noncopyable
         freeifaddrs(ifaddr);
     }
 
-    static const NetworkInterfaces & instance()
+    static std::shared_ptr<const NetworkInterfaces> instance()
     {
         static constexpr int NET_INTERFACE_VALID_PERIOD_MS = 30000;
-        static NetworkInterfaces nf;
+        static std::shared_ptr<const NetworkInterfaces> nf = std::make_shared<const NetworkInterfaces>();
         static std::atomic<std::chrono::steady_clock::time_point> last_updated_time = std::chrono::steady_clock::now();
         static std::shared_mutex nf_mtx;
 
         auto now = std::chrono::steady_clock::now();
-        auto last_updated_time_snapshot = last_updated_time.load();
 
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_updated_time_snapshot).count() > NET_INTERFACE_VALID_PERIOD_MS)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_updated_time.load()).count() > NET_INTERFACE_VALID_PERIOD_MS)
         {
             std::unique_lock lock(nf_mtx);
-            if (last_updated_time.load() != last_updated_time_snapshot) /// it's possible that last_updated_time after we get the snapshot
-                return nf;
-            nf.swap(NetworkInterfaces());
-            last_updated_time.store(now);
+            /// It's possible that last_updated_time after we get lock
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_updated_time.load()).count() > NET_INTERFACE_VALID_PERIOD_MS)
+            {
+                nf = std::make_shared<const NetworkInterfaces>();
+                last_updated_time.store(now);
+            }
             return nf;
         }
         else
@@ -149,7 +143,7 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
         }
     }
 
-    return NetworkInterfaces::instance().hasAddress(address);
+    return NetworkInterfaces::instance()->hasAddress(address);
 }
 
 
