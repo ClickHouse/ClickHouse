@@ -868,6 +868,7 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
+    QueryStatusPtr getProcessListElementSafe() const;
 
     /// List all queries.
     ProcessList & getProcessList();

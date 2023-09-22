@@ -45,7 +45,7 @@ private:
 };
 
 
-class Context : public std::enable_shared_from_this<Context>
+class Context: public std::enable_shared_from_this<Context>
 {
 private:
     /// Use copy constructor or createGlobal() instead

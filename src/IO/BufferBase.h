@@ -1,12 +1,12 @@
 #pragma once
 
+#include "ContextExpireChecker.h"
+
 #include <Core/Defines.h>
 #include <algorithm>
 
-
 namespace DB
 {
-
 
 /** Base class for ReadBuffer and WriteBuffer.
   * Contains common types, variables, and functions.
@@ -126,6 +126,8 @@ protected:
 
     /// Indicator of 15 bytes pad_right
     bool padded{false};
+
+    ContextExpireChecker contextExpireChecker;
 };
 
 
