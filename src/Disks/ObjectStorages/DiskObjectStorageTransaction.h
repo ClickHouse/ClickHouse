@@ -86,7 +86,7 @@ public:
 
     void createFile(const String & path) override;
 
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 
     /// writeFile is a difficult function for transactions.
     /// Now it's almost noop because metadata added to transaction in finalize method

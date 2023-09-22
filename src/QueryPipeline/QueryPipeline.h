@@ -75,7 +75,8 @@ public:
         std::shared_ptr<Processors> processors_,
         OutputPort * output_,
         OutputPort * totals_ = nullptr,
-        OutputPort * extremes_ = nullptr);
+        OutputPort * extremes_ = nullptr,
+        OutputPort * partial_result_ = nullptr);
 
     bool initialized() const { return !processors->empty(); }
     /// When initialized, exactly one of the following is true.
@@ -99,6 +100,9 @@ public:
 
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
+
+    bool getConcurrencyControl() const { return concurrency_control; }
+    void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback);
@@ -151,12 +155,17 @@ private:
     OutputPort * output = nullptr;
     OutputPort * totals = nullptr;
     OutputPort * extremes = nullptr;
+    OutputPort * partial_result = nullptr;
 
     QueryStatusPtr process_list_element;
 
     IOutputFormat * output_format = nullptr;
 
     size_t num_threads = 0;
+    bool concurrency_control = false;
+
+    UInt64 partial_result_limit = 0;
+    UInt64 partial_result_duration_ms = 0;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;

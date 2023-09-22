@@ -78,6 +78,22 @@ void ProtobufRowInputFormat::resetParser()
     reader.reset();
 }
 
+size_t ProtobufRowInputFormat::countRows(size_t max_block_size)
+{
+    if (!reader)
+        createReaderAndSerializer();
+
+    size_t num_rows = 0;
+    while (!reader->eof() && num_rows < max_block_size)
+    {
+        reader->startMessage(with_length_delimiter);
+        reader->endMessage(false);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 void registerInputFormatProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
