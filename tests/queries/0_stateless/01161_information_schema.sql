@@ -24,13 +24,13 @@ SELECT * FROM information_schema.views WHERE table_schema = currentDatabase();
 SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE (table_schema = currentDatabase() OR table_schema = '') AND table_name NOT LIKE '%inner%';
 
 -- mixed upper/lowercase schema and table name:
-SELECT count() FROM information_schema.TABLES WHERE table_schema=currentDatabase() AND table_name = 't';
-SELECT count() FROM INFORMATION_SCHEMA.tables WHERE table_schema=currentDatabase() AND table_name = 't';
-SELECT count() FROM INFORMATION_schema.tables WHERE table_schema=currentDatabase() AND table_name = 't'; -- { serverError UNKNOWN_DATABASE }
-SELECT count() FROM information_schema.taBLES WHERE table_schema=currentDatabase() AND table_name = 't'; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM information_schema.TABLES WHERE table_schema = currentDatabase() AND table_name = 't';
+SELECT count() FROM INFORMATION_SCHEMA.tables WHERE table_schema = currentDatabase() AND table_name = 't';
+SELECT count() FROM INFORMATION_schema.tables WHERE table_schema = currentDatabase() AND table_name = 't'; -- { serverError UNKNOWN_DATABASE }
+SELECT count() FROM information_schema.taBLES WHERE table_schema  =currentDatabase() AND table_name = 't'; -- { serverError UNKNOWN_TABLE }
 
-SELECT * FROM information_schema.key_column_usage WHERE table_name = 'kcu';
-SELECT * FROM information_schema.key_column_usage WHERE table_name = 'kcu2';
+SELECT * FROM information_schema.key_column_usage WHERE table_schema = currentDatabase() AND table_name = 'kcu';
+SELECT * FROM information_schema.key_column_usage WHERE table_schema = currentDatabase() AND table_name = 'kcu2';
 
 SELECT * FROM information_schema.referential_constraints;
 
