@@ -597,7 +597,7 @@ int main(int argc, char* argv[])
     std::cout << "Compression with level: " << level << std::endl;
     if (0 != compressFiles(out_name, exec, &argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
-        printf("Compression failed.\n"); // NOLING(modernize-use-std-print)
+        printf("Compression failed.\n"); // NOLINT(modernize-use-std-print)
         if (0 != close(output_fd))
             perror("close");
         unlink(argv[start_of_files - 1]);
