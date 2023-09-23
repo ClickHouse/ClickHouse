@@ -1178,6 +1178,7 @@ builtins
 byteSize
 bytebase
 bytesToCutForIPv
+byteHammingDistance
 cLoki
 caConfig
 cacheSessions
