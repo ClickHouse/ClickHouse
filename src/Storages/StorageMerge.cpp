@@ -845,7 +845,9 @@ QueryPlan ReadFromMerge::createPlanForTable(
             InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
                 modified_context,
                 SelectQueryOptions(processed_stage).ignoreProjections());
-            plan = std::move(interpreter.getPlanner()).extractQueryPlan();
+            auto & planner = interpreter.getPlanner();
+            planner.buildQueryPlanIfNeeded();
+            plan = std::move(planner).extractQueryPlan();
         }
         else
         {
