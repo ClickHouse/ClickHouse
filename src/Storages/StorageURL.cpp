@@ -129,7 +129,12 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in URL storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine URL doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -817,9 +822,9 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     return columns;
 }
 
-bool IStorageURLBase::supportsSubsetOfColumns() const
+bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const
@@ -846,7 +851,7 @@ Pipe IStorageURLBase::read(
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper{nullptr};
     bool is_url_with_globs = urlWithGlobs(uri);
     size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     if (distributed_processing)
     {
@@ -951,7 +956,7 @@ Pipe StorageURLWithFailover::read(
         return uri_options;
     });
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);

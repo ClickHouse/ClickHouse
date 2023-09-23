@@ -4,6 +4,7 @@ import csv
 import os
 import time
 from typing import Dict, List, Optional, Union
+from collections import defaultdict
 import logging
 
 from github import Github
@@ -11,6 +12,7 @@ from github.GithubObject import _NotSetType, NotSet as NotSet
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
+from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
@@ -128,6 +130,17 @@ def post_commit_status(
             logging.error("Failed to update the status comment, continue anyway")
 
 
+STATUS_ICON_MAP = defaultdict(
+    str,
+    {
+        ERROR: "❌",
+        FAILURE: "❌",
+        PENDING: "⏳",
+        SUCCESS: "✅",
+    },
+)
+
+
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
@@ -180,33 +193,16 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
 def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     """The method generates the comment body, as well it updates the CI report"""
 
-    def beauty_state(state: str) -> str:
-        if state == SUCCESS:
-            return f"🟢 {state}"
-        if state == PENDING:
-            return f"🟡 {state}"
-        if state in [ERROR, FAILURE]:
-            return f"🔴 {state}"
-        return state
-
     report_url = create_ci_report(pr_info, statuses)
     worst_state = get_worst_state(statuses)
-    if not worst_state:
-        # Theoretically possible, although
-        # the function should not be used on empty statuses
-        worst_state = "The commit doesn't have the statuses yet"
-    else:
-        worst_state = f"The overall status of the commit is {beauty_state(worst_state)}"
 
     comment_body = (
         f"<!-- automatic status comment for PR #{pr_info.number} "
         f"from {pr_info.head_name}:{pr_info.head_ref} -->\n"
-        f"This is an automated comment for commit {pr_info.sha} with "
-        f"description of existing statuses. It's updated for the latest CI running\n"
-        f"The full report is available [here]({report_url})\n"
-        f"{worst_state}\n\n<table>"
-        "<thead><tr><th>Check name</th><th>Description</th><th>Status</th></tr></thead>\n"
-        "<tbody>"
+        f"*This is an automated comment for commit {pr_info.sha} with "
+        f"description of existing statuses. It's updated for the latest CI running*\n\n"
+        f"[{STATUS_ICON_MAP[worst_state]} Click here]({report_url}) to open a full report in a separate page\n"
+        f"\n"
     )
     # group checks by the name to get the worst one per each
     grouped_statuses = {}  # type: Dict[CheckDescription, CommitStatuses]
@@ -230,17 +226,46 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
         else:
             grouped_statuses[cd] = [status]
 
-    table_rows = []  # type: List[str]
+    table_header = (
+        "<table>\n"
+        "<thead><tr><th>Check name</th><th>Description</th><th>Status</th></tr></thead>\n"
+        "<tbody>\n"
+    )
+    table_footer = "<tbody>\n</table>\n"
+
+    details_header = "<details><summary>Successful checks</summary>\n"
+    details_footer = "</details>\n"
+
+    visible_table_rows = []  # type: List[str]
+    hidden_table_rows = []  # type: List[str]
     for desc, gs in grouped_statuses.items():
-        table_rows.append(
+        state = get_worst_state(gs)
+        table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{beauty_state(get_worst_state(gs))}</td></tr>\n"
+            f"<td>{STATUS_ICON_MAP[state]} {state}</td></tr>\n"
         )
+        if state == SUCCESS:
+            hidden_table_rows.append(table_row)
+        else:
+            visible_table_rows.append(table_row)
 
-    table_rows.sort()
+    result = [comment_body]
 
-    comment_footer = "</table>"
-    return "".join([comment_body, *table_rows, comment_footer])
+    if hidden_table_rows:
+        hidden_table_rows.sort()
+        result.append(details_header)
+        result.append(table_header)
+        result.extend(hidden_table_rows)
+        result.append(table_footer)
+        result.append(details_footer)
+
+    if visible_table_rows:
+        visible_table_rows.sort()
+        result.append(table_header)
+        result.extend(visible_table_rows)
+        result.append(table_footer)
+
+    return "".join(result)
 
 
 def get_worst_state(statuses: CommitStatuses) -> str:
@@ -252,10 +277,15 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     to S3 tests bucket. Then it returns the URL"""
     test_results = []  # type: TestResults
     for status in statuses:
-        log_urls = None
+        log_urls = []
         if status.target_url is not None:
-            log_urls = [status.target_url]
-        test_results.append(TestResult(status.context, status.state, log_urls=log_urls))
+            log_urls.append(status.target_url)
+        raw_logs = status.description or None
+        test_results.append(
+            TestResult(
+                status.context, status.state, log_urls=log_urls, raw_logs=raw_logs
+            )
+        )
     return upload_results(
         S3Helper(), pr_info.number, pr_info.sha, test_results, [], CI_STATUS_NAME
     )
