@@ -22,6 +22,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int CANNOT_MANIPULATE_SIGSET;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
 }
 
@@ -175,26 +177,35 @@ namespace
     }
 
     using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
-    ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids)
+    ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, Poco::Logger * log)
     {
         ThreadIdToName tid_to_name;
         MutableColumnPtr all_thread_names = ColumnString::create();
 
+        Stopwatch watch;
         for (UInt64 tid : thread_ids)
         {
-            std::filesystem::path thread_name_path = fmt::format("/proc/self/task/{}/comm", tid);
             String thread_name;
-            if (std::filesystem::exists(thread_name_path))
+            constexpr size_t comm_buf_size = 32; /// More than enough for thread name
+
+            try
             {
-                constexpr size_t comm_buf_size = 32; /// More than enough for thread name
-                ReadBufferFromFile comm(thread_name_path.string(), comm_buf_size);
+                ReadBufferFromFile comm(fmt::format("/proc/self/task/{}/comm", tid), comm_buf_size);
                 readEscapedStringUntilEOL(thread_name, comm);
                 comm.close();
+            }
+            catch (const Exception & e)
+            {
+                /// Ignore TOCTOU error
+                if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+                    continue;
+                throw;
             }
 
             tid_to_name[tid] = thread_name;
             all_thread_names->insert(thread_name);
         }
+        LOG_TEST(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
 
         Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
         VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -287,13 +298,20 @@ Pipe StorageSystemStackTrace::read(
 
     /// Obviously, results for different threads may be out of sync.
 
-    ColumnPtr thread_ids = getFilteredThreadIds(query_info.query, context);
+    ColumnPtr thread_ids;
+    {
+        Stopwatch watch;
+        thread_ids = getFilteredThreadIds(query_info.query, context);
+        LOG_TEST(log, "Read {} threads, took {} ms", thread_ids->size(), watch.elapsedMilliseconds());
+    }
     const auto & thread_ids_data = assert_cast<const ColumnUInt64 &>(*thread_ids).getData();
 
     ThreadIdToName thread_names;
     if (read_thread_names)
-        thread_names = getFilteredThreadNames(query_info.query, context, thread_ids_data);
+        thread_names = getFilteredThreadNames(query_info.query, context, thread_ids_data, log);
 
+    size_t signals_sent = 0;
+    size_t signals_sent_ms = 0;
     for (UInt64 tid : thread_ids_data)
     {
         size_t res_index = 0;
@@ -316,6 +334,10 @@ Pipe StorageSystemStackTrace::read(
         }
         else
         {
+            ++signals_sent;
+            Stopwatch watch;
+            SCOPE_EXIT({ signals_sent_ms += watch.elapsedMilliseconds(); });
+
             sigval sig_value{};
 
             sig_value.sival_int = sequence_num.load(std::memory_order_acquire);
@@ -329,7 +351,7 @@ Pipe StorageSystemStackTrace::read(
             }
 
             /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
-            if (send_signal && wait(pipe_read_timeout_ms) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
+            if (wait(pipe_read_timeout_ms) && sig_value.sival_int == data_ready_num.load(std::memory_order_acquire))
             {
                 size_t stack_trace_size = stack_trace.getSize();
                 size_t stack_trace_offset = stack_trace.getOffset();
@@ -361,6 +383,7 @@ Pipe StorageSystemStackTrace::read(
             ++sequence_num;
         }
     }
+    LOG_TEST(log, "Send signal to {} threads, took {} ms", signals_sent, signals_sent_ms);
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
