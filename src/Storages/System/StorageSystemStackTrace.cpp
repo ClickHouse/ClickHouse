@@ -45,189 +45,191 @@ namespace ErrorCodes
 
 namespace
 {
-    // Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
-    std::atomic<pid_t> expected_pid;
-    const int sig = SIGRTMIN;
 
-    std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
-    std::atomic<int> data_ready_num = 0;
-    std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
+// Initialized in StorageSystemStackTrace's ctor and used in signalHandler.
+std::atomic<pid_t> expected_pid;
+const int sig = SIGRTMIN;
 
-    /** Notes:
-      * Only one query from the table can be processed at the moment of time.
-      * This is ensured by the mutex in fillData function.
-      * We obtain information about threads by sending signal and receiving info from the signal handler.
-      * Information is passed via global variables and pipe is used for signaling.
-      * Actually we can send all information via pipe, but we read from it with timeout just in case,
-      * so it's convenient to use is only for signaling.
-      */
+std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
+std::atomic<int> data_ready_num = 0;
+std::atomic<bool> signal_latch = false;   /// Only need for thread sanitizer.
 
-    StackTrace stack_trace{NoCapture{}};
+/** Notes:
+  * Only one query from the table can be processed at the moment of time.
+  * This is ensured by the mutex in fillData function.
+  * We obtain information about threads by sending signal and receiving info from the signal handler.
+  * Information is passed via global variables and pipe is used for signaling.
+  * Actually we can send all information via pipe, but we read from it with timeout just in case,
+  * so it's convenient to use is only for signaling.
+  */
 
-    constexpr size_t max_query_id_size = 128;
-    char query_id_data[max_query_id_size];
-    size_t query_id_size = 0;
+StackTrace stack_trace{NoCapture{}};
 
-    LazyPipeFDs notification_pipe;
+constexpr size_t max_query_id_size = 128;
+char query_id_data[max_query_id_size];
+size_t query_id_size = 0;
 
-    void signalHandler(int, siginfo_t * info, void * context)
+LazyPipeFDs notification_pipe;
+
+void signalHandler(int, siginfo_t * info, void * context)
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    /// In case malicious user is sending signals manually (for unknown reason).
+    /// If we don't check - it may break our synchronization.
+    if (info->si_pid != expected_pid)
+        return;
+
+    /// Signal received too late.
+    int notification_num = info->si_value.sival_int;
+    if (notification_num != sequence_num.load(std::memory_order_acquire))
+        return;
+
+    bool expected = false;
+    if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
+        return;
+
+    /// All these methods are signal-safe.
+    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+    stack_trace = StackTrace(signal_context);
+
+    auto query_id = CurrentThread::getQueryId();
+    query_id_size = std::min(query_id.size(), max_query_id_size);
+    if (!query_id.empty())
+        memcpy(query_id_data, query_id.data(), query_id_size);
+
+    /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
+    data_ready_num.store(notification_num, std::memory_order_release);
+
+    ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
+
+    /// We cannot do anything if write failed.
+    (void)res;
+
+    errno = saved_errno;
+
+    signal_latch.store(false, std::memory_order_release);
+}
+
+/// Wait for data in pipe and read it.
+bool wait(int timeout_ms)
+{
+    while (true)
     {
-        DENY_ALLOCATIONS_IN_SCOPE;
-        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+        int fd = notification_pipe.fds_rw[0];
+        pollfd poll_fd{fd, POLLIN, 0};
 
-        /// In case malicious user is sending signals manually (for unknown reason).
-        /// If we don't check - it may break our synchronization.
-        if (info->si_pid != expected_pid)
-            return;
-
-        /// Signal received too late.
-        int notification_num = info->si_value.sival_int;
-        if (notification_num != sequence_num.load(std::memory_order_acquire))
-            return;
-
-        bool expected = false;
-        if (!signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire))
-            return;
-
-        /// All these methods are signal-safe.
-        const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-        stack_trace = StackTrace(signal_context);
-
-        auto query_id = CurrentThread::getQueryId();
-        query_id_size = std::min(query_id.size(), max_query_id_size);
-        if (!query_id.empty())
-            memcpy(query_id_data, query_id.data(), query_id_size);
-
-        /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
-        data_ready_num.store(notification_num, std::memory_order_release);
-
-        ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
-
-        /// We cannot do anything if write failed.
-        (void)res;
-
-        errno = saved_errno;
-
-        signal_latch.store(false, std::memory_order_release);
-    }
-
-    /// Wait for data in pipe and read it.
-    bool wait(int timeout_ms)
-    {
-        while (true)
+        int poll_res = poll(&poll_fd, 1, timeout_ms);
+        if (poll_res < 0)
         {
-            int fd = notification_pipe.fds_rw[0];
-            pollfd poll_fd{fd, POLLIN, 0};
-
-            int poll_res = poll(&poll_fd, 1, timeout_ms);
-            if (poll_res < 0)
+            if (errno == EINTR)
             {
-                if (errno == EINTR)
-                {
-                    --timeout_ms;   /// Quite a hacky way to update timeout. Just to make sure we avoid infinite waiting.
-                    if (timeout_ms == 0)
-                        return false;
-                    continue;
-                }
-
-                throwFromErrno("Cannot poll pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
-            }
-            if (poll_res == 0)
-                return false;
-
-            int notification_num = 0;
-            ssize_t read_res = ::read(fd, &notification_num, sizeof(notification_num));
-
-            if (read_res < 0)
-            {
-                if (errno == EINTR)
-                    continue;
-
-                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                --timeout_ms;   /// Quite a hacky way to update timeout. Just to make sure we avoid infinite waiting.
+                if (timeout_ms == 0)
+                    return false;
+                continue;
             }
 
-            if (read_res == sizeof(notification_num))
-            {
-                if (notification_num == sequence_num.load(std::memory_order_relaxed))
-                    return true;
-                else
-                    continue;   /// Drain delayed notifications.
-            }
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
+            throwFromErrno("Cannot poll pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
-    }
+        if (poll_res == 0)
+            return false;
 
-    ColumnPtr getFilteredThreadIds(ASTPtr query, ContextPtr context)
-    {
-        MutableColumnPtr all_thread_ids = ColumnUInt64::create();
+        int notification_num = 0;
+        ssize_t read_res = ::read(fd, &notification_num, sizeof(notification_num));
 
-        std::filesystem::directory_iterator end;
-
-        /// There is no better way to enumerate threads in a process other than looking into procfs.
-        for (std::filesystem::directory_iterator it("/proc/self/task"); it != end; ++it)
+        if (read_res < 0)
         {
-            pid_t tid = parse<pid_t>(it->path().filename());
-            all_thread_ids->insert(tid);
+            if (errno == EINTR)
+                continue;
+
+            throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
-        Block block { ColumnWithTypeAndName(std::move(all_thread_ids), std::make_shared<DataTypeUInt64>(), "thread_id") };
-        VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-        return block.getByPosition(0).column;
-    }
-
-    using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
-    ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, Poco::Logger * log)
-    {
-        ThreadIdToName tid_to_name;
-        MutableColumnPtr all_thread_names = ColumnString::create();
-
-        Stopwatch watch;
-        for (UInt64 tid : thread_ids)
+        if (read_res == sizeof(notification_num))
         {
-            String thread_name;
-            constexpr size_t comm_buf_size = 32; /// More than enough for thread name
-
-            try
-            {
-                ReadBufferFromFile comm(fmt::format("/proc/self/task/{}/comm", tid), comm_buf_size);
-                readEscapedStringUntilEOL(thread_name, comm);
-                comm.close();
-            }
-            catch (const Exception & e)
-            {
-                /// Ignore TOCTOU error
-                if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
-                    continue;
-                throw;
-            }
-
-            tid_to_name[tid] = thread_name;
-            all_thread_names->insert(thread_name);
-        }
-        LOG_TEST(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
-
-        Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
-        VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-        ColumnPtr thread_names = std::move(block.getByPosition(0).column);
-
-        std::unordered_set<String> filtered_thread_names;
-        for (size_t i = 0; i != thread_names->size(); ++i)
-        {
-            const auto & thread_name = thread_names->getDataAt(i);
-            filtered_thread_names.emplace(thread_name);
-        }
-
-        for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
-        {
-            if (!filtered_thread_names.contains(it->second))
-                it = tid_to_name.erase(it);
+            if (notification_num == sequence_num.load(std::memory_order_relaxed))
+                return true;
             else
-                ++it;
+                continue;   /// Drain delayed notifications.
         }
 
-        return tid_to_name;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
     }
+}
+
+ColumnPtr getFilteredThreadIds(ASTPtr query, ContextPtr context)
+{
+    MutableColumnPtr all_thread_ids = ColumnUInt64::create();
+
+    std::filesystem::directory_iterator end;
+
+    /// There is no better way to enumerate threads in a process other than looking into procfs.
+    for (std::filesystem::directory_iterator it("/proc/self/task"); it != end; ++it)
+    {
+        pid_t tid = parse<pid_t>(it->path().filename());
+        all_thread_ids->insert(tid);
+    }
+
+    Block block { ColumnWithTypeAndName(std::move(all_thread_ids), std::make_shared<DataTypeUInt64>(), "thread_id") };
+    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+    return block.getByPosition(0).column;
+}
+
+using ThreadIdToName = std::unordered_map<UInt64, String, DefaultHash<UInt64>>;
+ThreadIdToName getFilteredThreadNames(ASTPtr query, ContextPtr context, const PaddedPODArray<UInt64> & thread_ids, Poco::Logger * log)
+{
+    ThreadIdToName tid_to_name;
+    MutableColumnPtr all_thread_names = ColumnString::create();
+
+    Stopwatch watch;
+    for (UInt64 tid : thread_ids)
+    {
+        String thread_name;
+        constexpr size_t comm_buf_size = 32; /// More than enough for thread name
+
+        try
+        {
+            ReadBufferFromFile comm(fmt::format("/proc/self/task/{}/comm", tid), comm_buf_size);
+            readEscapedStringUntilEOL(thread_name, comm);
+            comm.close();
+        }
+        catch (const Exception & e)
+        {
+            /// Ignore TOCTOU error
+            if (e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+                continue;
+            throw;
+        }
+
+        tid_to_name[tid] = thread_name;
+        all_thread_names->insert(thread_name);
+    }
+    LOG_TEST(log, "Read {} thread names for {} threads, took {} ms", tid_to_name.size(), thread_ids.size(), watch.elapsedMilliseconds());
+
+    Block block { ColumnWithTypeAndName(std::move(all_thread_names), std::make_shared<DataTypeString>(), "thread_name") };
+    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+    ColumnPtr thread_names = std::move(block.getByPosition(0).column);
+
+    std::unordered_set<String> filtered_thread_names;
+    for (size_t i = 0; i != thread_names->size(); ++i)
+    {
+        const auto & thread_name = thread_names->getDataAt(i);
+        filtered_thread_names.emplace(thread_name);
+    }
+
+    for (auto it = tid_to_name.begin(); it != tid_to_name.end();)
+    {
+        if (!filtered_thread_names.contains(it->second))
+            it = tid_to_name.erase(it);
+        else
+            ++it;
+    }
+
+    return tid_to_name;
+}
+
 }
 
 
