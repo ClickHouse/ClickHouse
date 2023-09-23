@@ -381,7 +381,16 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto producer = std::make_unique<NATSProducer>(configuration, subject, shutdown_called, log);
+    std::unique_ptr<IMessageProducer> producer;
+    if (nats_settings->nats_js)
+    {
+        producer = std::make_unique<NATSJetStreamProducer>(configuration, subject, shutdown_called, log);
+    }
+    else
+    {
+        producer = std::make_unique<NATSProducer>(configuration, subject, shutdown_called, log);
+    }
+
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
@@ -482,10 +491,20 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 
 NATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<NATSConsumer>(
-        connection, *this, subjects,
-        nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
-        log, queue_size, shutdown_called);
+    if (nats_settings->nats_js)
+    {
+        return std::make_shared<NATSJetStreamConsumer>(
+            connection, *this, subjects,
+            nats_settings->nats_js_stream.value, nats_settings->nats_js_consumer.value,
+            log, queue_size, shutdown_called);
+    }
+    else
+    {
+        return std::make_shared<NATSConsumer>(
+            connection, *this, subjects,
+            nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
+            log, queue_size, shutdown_called);
+    }
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
