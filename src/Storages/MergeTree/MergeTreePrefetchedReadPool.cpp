@@ -61,6 +61,12 @@ MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetechedReaders::get(
 {
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+
+    /// First wait for completion of all futures.
+    for (auto & prefetch_future : prefetch_futures)
+        prefetch_future.wait();
+
+    /// Then rethrow first exception if any.
     for (auto & prefetch_future : prefetch_futures)
         prefetch_future.get();
 
@@ -89,7 +95,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         context_)
     , WithContext(context_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
-    , log(&Poco::Logger::get("MergeTreePrefetchedReadPool(" + (parts_.empty() ? "" : parts_.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
+    , log(&Poco::Logger::get("MergeTreePrefetchedReadPool(" + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
 {
     /// Tasks creation might also create a lost of readers - check they do not
     /// do any time consuming operations in ctor.

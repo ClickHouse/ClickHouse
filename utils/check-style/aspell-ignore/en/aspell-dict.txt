@@ -958,7 +958,6 @@ WikiStat
 WindowView
 WithNames
 WithNamesAndTypes
-Woboq
 WordNet
 WriteBuffer
 WriteBuffers
@@ -969,6 +968,8 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDDToDate
+YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -987,6 +988,7 @@ acos
 acosh
 activecube
 activerecord
+addDate
 addDays
 addHours
 addMinutes
@@ -1808,6 +1810,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -2002,6 +2005,7 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
+proleptic
 prometheus
 proto
 protobuf
@@ -2210,6 +2214,8 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
+splitBy
+splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -2254,6 +2260,7 @@ structureToProtobufSchema
 studentTTest
 studentttest
 subBitmap
+subDate
 subarray
 subarrays
 subcolumn
@@ -2358,6 +2365,7 @@ toDateTimeOrZero
 toDayOfMonth
 toDayOfWeek
 toDayOfYear
+toDaysSinceYearZero
 toDecimal
 toDecimalString
 toFixedString

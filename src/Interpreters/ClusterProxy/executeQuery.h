@@ -37,7 +37,7 @@ class SelectStreamFactory;
 ///   - optimize_skip_unused_shards_nesting
 ///
 /// @return new Context with adjusted settings
-ContextMutablePtr updateSettingsForCluster(bool interserver_mode,
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     ContextPtr context,
     const Settings & settings,
     const StorageID & main_table,
@@ -65,7 +65,6 @@ void executeQuery(
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
