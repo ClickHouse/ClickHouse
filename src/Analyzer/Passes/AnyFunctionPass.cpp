@@ -24,20 +24,19 @@ private:
             if (argument->as<LambdaNode>())
                 return false;
 
-            /// Function arrayJoin is special and should be skipped (think about it as a
-            /// an aggregate function), otherwise wrong result will be produced.
-            /// For example:
-            ///     SELECT *, any(arrayJoin([[], []])) FROM numbers(1) GROUP BY number
-            ///     ┌─number─┬─arrayJoin(array(array(), array()))─┐
-            ///     │      0 │ []                                 │
-            ///     │      0 │ []                                 │
-            ///     └────────┴────────────────────────────────────┘
             if (const auto * inside_function = argument->as<FunctionNode>())
+            {
+                /// Function arrayJoin is special and should be skipped (think about it as
+                /// an aggregate function), otherwise wrong result will be produced.
+                /// For example:
+                ///     SELECT *, any(arrayJoin([[], []])) FROM numbers(1) GROUP BY number
+                ///     ┌─number─┬─arrayJoin(array(array(), array()))─┐
+                ///     │      0 │ []                                 │
+                ///     │      0 │ []                                 │
+                ///     └────────┴────────────────────────────────────┘
                 if (inside_function->getFunctionName() == "arrayJoin")
                     return false;
 
-            if (const auto * inside_function = argument->as<FunctionNode>())
-            {
                 if (!canRewrite(inside_function))
                     return false;
             }
