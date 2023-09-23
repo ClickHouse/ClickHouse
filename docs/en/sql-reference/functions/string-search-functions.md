@@ -705,3 +705,56 @@ Result:
 │                                1 │
 └──────────────────────────────────┘
 ```
+
+- Alias: mismatches
+
+## byteJaccardIndex
+
+Calculates the jaccard similarity index between two byte strings.
+
+**Syntax**
+
+```sql
+byteJaccardIndex(haystack, needle)
+```
+
+**Examples**
+
+``` sql
+SELECT byteJaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─byteJaccardIndex('clickhouse', 'mouse')─┐
+│                                     0.4 │
+└─────────────────────────────────────────┘
+```
+
+## byteEditDistance
+
+Calcultes the edit distance between two byte strings.
+
+**Syntax**
+
+```sql
+byteEidtDistance(haystack, needle)
+```
+
+**Examples**
+
+``` sql
+SELECT byteEditDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─byteEditDistance('clickhouse', 'mouse')─┐
+│                                       6 │
+└─────────────────────────────────────────┘
+```
+
+- Alias: byteLevenshteinDistance
+
