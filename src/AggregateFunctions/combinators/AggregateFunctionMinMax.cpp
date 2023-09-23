@@ -1,5 +1,6 @@
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorMinMax.h>
+#include "AggregateFunctionCombinatorFactory.h"
+#include "AggregateFunctionMinMax.h"
+
 #include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
