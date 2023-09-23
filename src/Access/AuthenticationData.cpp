@@ -111,6 +111,7 @@ void AuthenticationData::setPassword(const String & password_)
 {
     switch (type)
     {
+        case AuthenticationType::ONE_TIME_PASSWORD:
         case AuthenticationType::PLAINTEXT_PASSWORD:
             return setPasswordHashBinary(Util::stringToDigest(password_));
 
@@ -143,7 +144,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
+    if ((type != AuthenticationType::PLAINTEXT_PASSWORD) && (type != AuthenticationType::ONE_TIME_PASSWORD))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
@@ -183,6 +184,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
 {
     switch (type)
     {
+        case AuthenticationType::ONE_TIME_PASSWORD:
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             password_hash = hash;
@@ -263,6 +265,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
     switch (auth_type)
     {
+        case AuthenticationType::ONE_TIME_PASSWORD:
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             node->contains_password = true;

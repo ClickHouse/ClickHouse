@@ -2,11 +2,16 @@
 #include <Access/AuthenticationData.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
-#include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
-#include <Common/Exception.h>
+#include <Access/LDAPClient.h>
+#include <Poco/Base32Decoder.h>
+#include <Poco/HMACEngine.h>
 #include <Poco/SHA1Engine.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include "base/types.h"
+
+#include <iomanip>
 
 
 namespace DB
@@ -21,9 +26,75 @@ namespace
     using Digest = AuthenticationData::Digest;
     using Util = AuthenticationData::Util;
 
+    constexpr UInt32 TotpDefaultTimeInterval = 30;
+
+    class TotpGenerator
+    {
+    public:
+        explicit TotpGenerator(const std::string & secret, UInt32 interval = TotpDefaultTimeInterval)
+            : m_secret(secret)
+            , m_interval(interval)
+        {
+        }
+
+        std::string generateOTP()
+        {
+            std::stringstream base32_secret(m_secret);
+            Poco::Base32Decoder decoder(base32_secret);
+
+            std::stringstream decoded_secret;
+            decoded_secret << decoder.rdbuf();
+
+            std::array<char, 20> buffer;
+            decoded_secret.read(buffer.data(), buffer.size());
+            Poco::HMACEngine<Poco::SHA1Engine> hmac(buffer.data(), buffer.size());
+
+            std::array<UInt8, 8> time_point_bytes;
+            auto time_point = getLastTimePoint();
+            for (size_t i = 0; i < time_point_bytes.size(); ++i)
+            {
+                time_point_bytes[7 - i] = (time_point >> (i * 8)) & 0xff;
+            }
+            hmac.update(time_point_bytes.data(), time_point_bytes.size());
+            const Poco::DigestEngine::Digest & digest = hmac.digest();
+
+            return getOTP(digest);
+        }
+
+    private:
+        std::time_t getLastTimePoint() const
+        {
+            const auto epoch = std::chrono::system_clock::now().time_since_epoch();
+            const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(epoch);
+            return static_cast<size_t>(seconds.count()) / m_interval;
+        }
+
+        std::string getOTP(const Poco::DigestEngine::Digest & bytes)
+        {
+            int offset = bytes[19] & 0xf;
+            int code = (bytes[offset] & 0x7f) << 24;
+            code |= (bytes[offset + 1] & 0xff) << 16;
+            code |= (bytes[offset + 2] & 0xff) << 8;
+            code |= (bytes[offset + 3] & 0xff);
+            code &= 0x7fffffff;
+            code %= 1000000;
+            std::stringstream ss;
+            ss << std::setfill('0') << std::setw(6) << code;
+            return ss.str();
+        }
+
+        std::string m_secret;
+        UInt32 m_interval{TotpDefaultTimeInterval};
+    };
+
     bool checkPasswordPlainText(const String & password, const Digest & password_plaintext)
     {
         return (Util::stringToDigest(password) == password_plaintext);
+    }
+
+    bool checkOneTimePassword(const std::string_view & password, const String & secret)
+    {
+        return (password == TotpGenerator(secret).generateOTP());
     }
 
     bool checkPasswordDoubleSHA1(std::string_view password, const Digest & password_double_sha1)
@@ -86,6 +157,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::PLAINTEXT_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::ONE_TIME_PASSWORD:
             case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
@@ -114,6 +186,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
 
+            case AuthenticationType::ONE_TIME_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
@@ -137,6 +210,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::PLAINTEXT_PASSWORD:
                 return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+
+            case AuthenticationType::ONE_TIME_PASSWORD:
+                return checkOneTimePassword(basic_credentials->getPassword(), auth_data.getPassword());
 
             case AuthenticationType::SHA256_PASSWORD:
                 return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary(), auth_data.getSalt());
@@ -167,6 +243,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
         {
             case AuthenticationType::NO_PASSWORD:
             case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::ONE_TIME_PASSWORD:
             case AuthenticationType::SHA256_PASSWORD:
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             case AuthenticationType::BCRYPT_PASSWORD:

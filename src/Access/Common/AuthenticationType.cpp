@@ -42,6 +42,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("DOUBLE_SHA1_PASSWORD", true);
             return info;
         }
+        case AuthenticationType::ONE_TIME_PASSWORD:
+        {
+            static const auto info = make_info("ONE_TIME_PASSWORD", true);
+            return info;
+        }
         case AuthenticationType::LDAP:
         {
             static const auto info = make_info("LDAP");

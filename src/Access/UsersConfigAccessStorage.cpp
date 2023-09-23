@@ -122,6 +122,7 @@ namespace
         String user_config = "users." + user_name;
         bool has_no_password = config.has(user_config + ".no_password");
         bool has_password_plaintext = config.has(user_config + ".password");
+        bool has_otp_secret = config.has(user_config + ".otp_secret");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
@@ -130,23 +131,28 @@ namespace
         const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos + has_certificates;
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_otp_secret + has_ldap + has_kerberos + has_certificates;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
-                            "'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos', 'ssl_certificates' "
+                            "'password_double_sha1_hex', 'no_password', 'otp_secret', 'ldap', 'kerberos', 'ssl_certificates' "
                             "are used to specify authentication info for user {}. "
                             "Must be only one of them.", user_name);
 
         if (num_password_fields < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'password' or 'password_sha256_hex' "
-                            "or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' "
+                            "or 'password_double_sha1_hex' or 'no_password' or 'otp_secret' or 'ldap' or 'kerberos' "
                             "or 'ssl_certificates' must be specified for user {}.", user_name);
 
         if (has_password_plaintext)
         {
             user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
             user->auth_data.setPassword(config.getString(user_config + ".password"));
+        }
+        else if (has_otp_secret)
+        {
+            user->auth_data = AuthenticationData{AuthenticationType::ONE_TIME_PASSWORD};
+            user->auth_data.setPassword(config.getString(user_config + ".otp_secret"));
         }
         else if (has_password_sha256_hex)
         {

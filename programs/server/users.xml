@@ -25,6 +25,12 @@
                  Example: <password>qwerty</password>.
                  Password could be empty.
 
+                 If you want to specify secret for one time passwords, place it in 'otp_secret' element.
+                 Example: <otp_secret>ALLT7V6M3NNSQXMEMPEAUSX77OOUTBSO</otp_secret>
+                 How to generate secret:
+                 Execute: echo `base32 < /dev/urandom | head -c32`
+                 More info: https://datatracker.ietf.org/doc/html/rfc6238
+
                  If you want to specify SHA256, place it in 'password_sha256_hex' element.
                  Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
                  Restrictions of SHA256: impossibility to connect to ClickHouse using MySQL JS client (as of July 2019).
