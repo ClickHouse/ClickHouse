@@ -734,7 +734,7 @@ Result:
 
 ## byteEditDistance
 
-Calcultes the edit distance between two byte strings.
+Calculates the edit distance between two byte strings.
 
 **Syntax**
 
