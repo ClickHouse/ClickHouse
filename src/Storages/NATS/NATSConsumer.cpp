@@ -127,7 +127,7 @@ void NATSJetStreamConsumer::subscribe()
     jsOptions jsOpts;
     jsSubOptions so;
 
-    int status = 0; 
+    int status = 0;
 
     if (status == NATS_OK)
     {
