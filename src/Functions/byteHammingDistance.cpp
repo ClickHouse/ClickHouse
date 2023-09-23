@@ -11,7 +11,7 @@
 
 namespace DB
 {
-struct StringHammingDistanceImpl
+struct ByteHammingDistanceImpl
 {
     using ResultType = UInt64;
 
@@ -92,15 +92,16 @@ private:
     }
 };
 
-struct NameStringHammingDistance
+struct NameByteHammingDistance
 {
-    static constexpr auto name = "hammingDistance";
+    static constexpr auto name = "byteHammingDistance";
 };
 
-using FunctionStringHammingDistance = FunctionsStringSimilarity<StringHammingDistanceImpl, NameStringHammingDistance>;
+using FunctionByteHammingDistance = FunctionsStringSimilarity<ByteHammingDistanceImpl, NameByteHammingDistance>;
 
 REGISTER_FUNCTION(StringHammingDistance)
 {
-    factory.registerFunction<FunctionStringHammingDistance>();
+    factory.registerFunction<FunctionByteHammingDistance>(
+        FunctionDocumentation{.description = R"(Calculates the hamming distance between two bytes strings.)"});
 }
 }
