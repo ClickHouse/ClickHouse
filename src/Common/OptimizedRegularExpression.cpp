@@ -471,14 +471,13 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     std::vector<std::string> alternatives_dummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
     analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives_dummy);
 
-
-    /// Just three following options are supported
-    if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
+    if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL | RE_LATIN1)))
         throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
 
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
     bool is_dot_nl = options & RE_DOT_NL;
+    bool is_latin1 = options & RE_LATIN1;
 
     number_of_subpatterns = 0;
     if (!is_trivial)
@@ -494,6 +493,11 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
 
         if (is_dot_nl)
             regexp_options.set_dot_nl(true);
+
+        /// It is UTF-8 by default, but for simple cases of substring match latin1 can be preferred
+        /// to allow invalid UTF-8.
+        if (is_latin1)
+            regexp_options.set_encoding(re2::RE2::Options::EncodingLatin1);
 
         re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
         if (!re2->ok())

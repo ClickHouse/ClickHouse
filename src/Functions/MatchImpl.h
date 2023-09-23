@@ -191,7 +191,12 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        /// In simple cases we should allow substring, prefix/suffix, and simple LIKE search with non-valid UTF-8 strings.
+        /// For example, for searching directly inside binary data.
+        /// Let's set the regexp encoding to Latin1 to allow it.
+        constexpr bool can_use_latin1_matching = is_like && !case_insensitive;
+
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive, can_use_latin1_matching>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -359,7 +364,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive, false>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -513,7 +518,7 @@ struct MatchImpl
             }
             else
             {
-                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive, false>(needle);
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
                 if (required_substr.empty())
@@ -622,7 +627,7 @@ struct MatchImpl
             }
             else
             {
-                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive, false>(needle);
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
                 if (required_substr.empty())

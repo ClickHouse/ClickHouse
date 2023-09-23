@@ -41,7 +41,7 @@ namespace Regexps
 
 using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
-template <bool like, bool no_capture, bool case_insensitive>
+template <bool like, bool no_capture, bool case_insensitive, bool latin1>
 inline OptimizedRegularExpression createRegexp(const String & pattern)
 {
     int flags = OptimizedRegularExpression::RE_DOT_NL;
@@ -49,6 +49,8 @@ inline OptimizedRegularExpression createRegexp(const String & pattern)
         flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
     if constexpr (case_insensitive)
         flags |= OptimizedRegularExpression::RE_CASELESS;
+    if constexpr (latin1)
+        flags |= OptimizedRegularExpression::RE_LATIN1;
 
     if constexpr (like)
         return {likePatternToRegexp(pattern), flags};
@@ -66,18 +68,18 @@ class LocalCacheTable
 public:
     using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
-    template <bool like, bool no_capture, bool case_insensitive>
+    template <bool like, bool no_capture, bool case_insensitive, bool latin1>
     RegexpPtr getOrSet(const String & pattern)
     {
         Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
 
         if (bucket.regexp == nullptr) [[unlikely]]
             /// insert new entry
-            bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+            bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive, latin1>(pattern))};
         else
             if (pattern != bucket.pattern)
                 /// replace existing entry
-                bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+                bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive, latin1>(pattern))};
 
         return bucket.regexp;
     }
@@ -341,6 +343,6 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
 
 }
 
-#endif // USE_VECTORSCAN
+#endif
 
 }

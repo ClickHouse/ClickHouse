@@ -50,7 +50,8 @@ public:
     {
         RE_CASELESS   = 0x00000001,
         RE_NO_CAPTURE = 0x00000010,
-        RE_DOT_NL     = 0x00000100
+        RE_DOT_NL     = 0x00000100,
+        RE_LATIN1     = 0x00001000,
     };
 
     using Match = OptimizedRegularExpressionDetails::Match;

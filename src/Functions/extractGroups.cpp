@@ -63,7 +63,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(needle);
         const auto & re2 = regexp.getRE2();
 
         if (!re2)
@@ -115,4 +115,3 @@ REGISTER_FUNCTION(ExtractGroups)
 }
 
 }
-

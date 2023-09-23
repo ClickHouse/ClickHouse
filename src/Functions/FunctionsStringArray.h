@@ -538,7 +538,7 @@ public:
                             "Must be constant string.", arguments[0].column->getName(), getName());
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(col->getValue<String>()));
 
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
@@ -657,7 +657,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be constant string.", arguments[1].column->getName(), getName());
 
-        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(col->getValue<String>()));
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);

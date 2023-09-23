@@ -390,7 +390,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             /// TODO: sounds good.
             materialized_tables.erase(table_name);
 
-            e.addMessage("while removing table `" + table_name + "` from replication");
+            e.addMessage("while removing table " + backQuote(table_name) + " from replication");
             throw;
         }
 
