@@ -1,7 +1,7 @@
 #include "Suggest.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>

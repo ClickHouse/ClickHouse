@@ -1,20 +1,21 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_aggregate_functions .)
+add_headers_and_sources(clickhouse_aggregate_functions combinators)
 
 extract_into_parent_list(clickhouse_aggregate_functions_sources dbms_sources
     IAggregateFunction.cpp
     AggregateFunctionFactory.cpp
-    AggregateFunctionCombinatorFactory.cpp
-    AggregateFunctionState.cpp
+    combinators/AggregateFunctionCombinatorFactory.cpp
+    combinators/AggregateFunctionState.cpp
     AggregateFunctionCount.cpp
     parseAggregateFunctionParameters.cpp
 )
 extract_into_parent_list(clickhouse_aggregate_functions_headers dbms_headers
     IAggregateFunction.h
-    IAggregateFunctionCombinator.h
+    combinators/IAggregateFunctionCombinator.h
     AggregateFunctionFactory.h
-    AggregateFunctionCombinatorFactory.h
-    AggregateFunctionState.h
+    combinators/AggregateFunctionCombinatorFactory.h
+    combinators/AggregateFunctionState.h
     AggregateFunctionCount.cpp
     FactoryHelpers.h
     parseAggregateFunctionParameters.h
