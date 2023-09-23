@@ -682,26 +682,26 @@ Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are U
 
 Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
 
-## hammingDistance
+## byteHammingDistance
 
-Calculates the hamming distance between two strings.
+Calculates the hamming distance between two byte strings.
 
 **Syntax**
 
 ```sql
-hammingDistance(haystack, needle)
+byteHammingDistance(haystack, needle)
 ```
 
 **Examples**
 
 ``` sql
-SELECT hammingDistance('abc', 'ab') ;
+SELECT byteHammingDistance('abc', 'ab') ;
 ```
 
 Result:
 
 ``` text
-┌─hammingDistance('abc', 'ab')─┐
-│                            1 │
-└──────────────────────────────┘
+┌─byteHammingDistance('abc', 'ab')─┐
+│                                1 │
+└──────────────────────────────────┘
 ```
