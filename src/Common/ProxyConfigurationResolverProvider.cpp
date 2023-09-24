@@ -7,8 +7,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 
-#include <Interpreters/Context.h>
-
 namespace DB
 {
 
@@ -143,13 +141,9 @@ namespace
     }
 }
 
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(Protocol protocol)
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(Protocol protocol, const Poco::Util::AbstractConfiguration & configuration)
 {
-    auto context = Context::getGlobalContextInstance();
-
-    chassert(context);
-
-    if (auto resolver = getFromSettings(protocol, "", context->getConfigRef()))
+    if (auto resolver = getFromSettings(protocol, "", configuration))
     {
         return resolver;
     }
@@ -202,7 +196,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
      * In case the combination of config_prefix and configuration does not provide a resolver, try to get it from general / new settings.
      * Falls back to Environment resolver if no configuration is found.
      * */
-    return ProxyConfigurationResolverProvider::get(Protocol::ANY);
+    return ProxyConfigurationResolverProvider::get(Protocol::ANY, configuration);
 }
 
 }

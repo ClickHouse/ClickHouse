@@ -23,6 +23,8 @@ struct BackupInfo
     static BackupInfo fromAST(const IAST & ast);
 
     String toStringForLogging() const;
+
+    void copyS3CredentialsTo(BackupInfo & dest) const;
 };
 
 }

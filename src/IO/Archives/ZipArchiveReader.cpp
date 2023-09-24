@@ -312,6 +312,8 @@ public:
 
     String getFileName() const override { return handle.getFileName(); }
 
+    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
+
     /// Releases owned handle to pass it to an enumerator.
     HandleHolder releaseHandle() &&
     {

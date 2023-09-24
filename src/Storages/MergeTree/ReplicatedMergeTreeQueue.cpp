@@ -1797,11 +1797,18 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
     LOG_TEST(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
 
     std::map<int64_t, MutationCommands> result;
+
+    bool seen_all_data_mutations = false;
+    bool seen_all_metadata_mutations = false;
+
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
     /// of part's metadata.
     for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
     {
+        if (seen_all_data_mutations && seen_all_metadata_mutations)
+            break;
+
         auto alter_version = mutation_status->entry->alter_version;
         if (alter_version != -1)
         {
@@ -1811,14 +1818,19 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
                 result[mutation_version] = mutation_status->entry->commands;
+            else
+                seen_all_metadata_mutations = true;
         }
-        else if (mutation_version > part_data_version)
+        else
         {
-            result[mutation_version] = mutation_status->entry->commands;
+            if (mutation_version > part_data_version)
+                result[mutation_version] = mutation_status->entry->commands;
+            else
+                seen_all_data_mutations = true;
         }
     }
 
-    LOG_TRACE(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
+    LOG_TEST(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
         result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;

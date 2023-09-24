@@ -11,7 +11,7 @@ sidebar_label: Other
 Returns the name of the host on which this function was executed. If the function executes on a remote server (distributed processing), the remote server name is returned.
 If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## getMacro
+## getMacro {#getMacro}
 
 Returns a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
@@ -186,7 +186,7 @@ Returns the type name of the passed argument.
 
 If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
-## blockSize()
+## blockSize() {#blockSize}
 
 In ClickHouse, queries are processed in blocks (chunks).
 This function returns the size (row count) of the block the function is called on.
@@ -311,7 +311,7 @@ Sleeps ‘seconds’ seconds for each row. The sleep time can be specified as in
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-## currentUser()
+## currentUser() {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
 
@@ -771,7 +771,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock()
+## rowNumberInBlock() {#rowNumberInBlock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -896,7 +896,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x)
+## runningDifference(x) {#runningDifference}
 
 Calculates the difference between two consecutive row values in the data block.
 Returns 0 for the first row, and for subsequent rows the difference to the previous row.
@@ -2274,7 +2274,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## queryID
+## queryID {#queryID}
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 

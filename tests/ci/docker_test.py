@@ -9,6 +9,7 @@ from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 from report import TestResult
 import docker_images_check as di
+from docker_images_helper import get_images_dict
 
 from version_helper import get_version_from_string
 import docker_server as ds
@@ -31,7 +32,7 @@ class TestDockerImageCheck(unittest.TestCase):
         images = sorted(
             list(
                 di.get_changed_docker_images(
-                    pr_info, di.get_images_dict("/", self.docker_images_path)
+                    pr_info, get_images_dict("/", self.docker_images_path)
                 )
             )
         )
