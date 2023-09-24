@@ -41,8 +41,9 @@ public:
 
     bool executeStep() override;
     void onCompleted() override;
-    StorageID getStorageID() override;
-    Priority getPriority() override { return priority; }
+    StorageID getStorageID() const override;
+    Priority getPriority() const override { return priority; }
+    String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
 private:
 

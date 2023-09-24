@@ -228,8 +228,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             };
 
 
-            writeIntBinary(plain_hashing.count(), marks_out);
-            writeIntBinary(static_cast<UInt64>(0), marks_out);
+            writeBinaryLittleEndian(plain_hashing.count(), marks_out);
+            writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), data_part->getSerialization(name_and_type->name),
@@ -239,7 +239,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             prev_stream->hashing_buf.next();
         }
 
-        writeIntBinary(granule.rows_to_write, marks_out);
+        writeBinaryLittleEndian(granule.rows_to_write, marks_out);
     }
 }
 
@@ -270,20 +270,29 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
     {
         for (size_t i = 0; i < columns_list.size(); ++i)
         {
-            writeIntBinary(plain_hashing.count(), marks_out);
-            writeIntBinary(static_cast<UInt64>(0), marks_out);
+            writeBinaryLittleEndian(plain_hashing.count(), marks_out);
+            writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
         }
-        writeIntBinary(static_cast<UInt64>(0), marks_out);
+        writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
     }
+
+    for (const auto & [_, stream] : streams_by_codec)
+    {
+        stream->hashing_buf.finalize();
+        stream->compressed_buf.finalize();
+    }
+
+    plain_hashing.finalize();
 
     plain_file->next();
 
     if (marks_source_hashing)
-        marks_source_hashing->next();
+        marks_source_hashing->finalize();
     if (marks_compressor)
-        marks_compressor->next();
+        marks_compressor->finalize();
 
-    marks_file_hashing->next();
+    marks_file_hashing->finalize();
+
     addToChecksums(checksums);
 
     plain_file->preFinalize();
@@ -292,14 +301,14 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
-    plain_file->finalize();
-    marks_file->finalize();
-
     if (sync)
     {
         plain_file->sync();
         marks_file->sync();
     }
+
+    plain_file->finalize();
+    marks_file->finalize();
 }
 
 static void fillIndexGranularityImpl(
@@ -356,8 +365,9 @@ void MergeTreeDataPartWriterCompact::addToChecksums(MergeTreeDataPartChecksums &
     {
         uncompressed_size += stream->hashing_buf.count();
         auto stream_hash = stream->hashing_buf.getHash();
+        transformEndianness<std::endian::little>(stream_hash);
         uncompressed_hash = CityHash_v1_0_2::CityHash128WithSeed(
-            reinterpret_cast<char *>(&stream_hash), sizeof(stream_hash), uncompressed_hash);
+            reinterpret_cast<const char *>(&stream_hash), sizeof(stream_hash), uncompressed_hash);
     }
 
     checksums.files[data_file_name].is_compressed = true;

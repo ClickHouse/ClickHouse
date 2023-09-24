@@ -2,17 +2,12 @@
 
 # shellcheck disable=SC2154
 
-unset CLICKHOUSE_LOG_COMMENT
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 
 check_replicas_read_in_order() {
-    # to check this we actually look for at least one log message from MergeTreeInOrderSelectProcessor.
-    # hopefully logger's names are a bit more stable than log messages itself
-    #
     # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
     $CLICKHOUSE_CLIENT -nq "
         SYSTEM FLUSH LOGS;
@@ -20,7 +15,7 @@ check_replicas_read_in_order() {
         SELECT COUNT() > 0
         FROM system.text_log
         WHERE query_id IN (SELECT query_id FROM system.query_log WHERE query_id != '$1' AND initial_query_id = '$1' AND event_date >= yesterday())
-            AND event_date >= yesterday() AND logger_name = 'MergeTreeInOrderSelectProcessor'"
+            AND event_date >= yesterday() AND message ILIKE '%Reading%ranges in order%'"
 }
 
 # replicas should use reading in order following initiator's decision to execute aggregation in order.

@@ -99,8 +99,8 @@ struct ReplaceRegexpImpl
         int num_captures,
         const Instructions & instructions)
     {
-        re2_st::StringPiece haystack(haystack_data, haystack_length);
-        re2_st::StringPiece matches[max_captures];
+        std::string_view haystack(haystack_data, haystack_length);
+        std::string_view matches[max_captures];
 
         size_t copy_pos = 0;
         size_t match_pos = 0;

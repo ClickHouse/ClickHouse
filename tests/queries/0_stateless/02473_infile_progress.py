@@ -32,7 +32,7 @@ with client(
     )
     client1.expect(prompt)
     client1.send(f"INSERT INTO test.infile_progress FROM INFILE '{filename}'")
-    client1.expect("Progress: 5.00 rows, 30.00 B.*\)")
+    client1.expect("Progress: 5.00 rows, 10.00 B.*\)")
     client1.expect(prompt)
 
     # send Ctrl-C

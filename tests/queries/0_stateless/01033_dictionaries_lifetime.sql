@@ -1,12 +1,7 @@
--- Tags: no-parallel
 
 SET send_logs_level = 'fatal';
 
-DROP DATABASE IF EXISTS database_for_dict;
-
-CREATE DATABASE database_for_dict;
-
-CREATE TABLE database_for_dict.table_for_dict
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.table_for_dict
 (
   key_column UInt64,
   second_column UInt8,
@@ -15,34 +10,34 @@ CREATE TABLE database_for_dict.table_for_dict
 ENGINE = MergeTree()
 ORDER BY key_column;
 
-INSERT INTO database_for_dict.table_for_dict VALUES (1, 100, 'Hello world');
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.table_for_dict VALUES (1, 100, 'Hello world');
 
-DROP DATABASE IF EXISTS ordinary_db;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE ordinary_db;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DICTIONARY ordinary_db.dict1
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt8 DEFAULT 1,
   third_column String DEFAULT 'qqq'
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' PASSWORD '' DB currentDatabase()))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
 SELECT 'INITIALIZING DICTIONARY';
 
-SELECT dictGetUInt8('ordinary_db.dict1', 'second_column', toUInt64(100500));
+SELECT dictGetUInt8({CLICKHOUSE_DATABASE_1:String}||'.dict1', 'second_column', toUInt64(100500));
 
-SELECT lifetime_min, lifetime_max FROM system.dictionaries WHERE database='ordinary_db' AND name = 'dict1';
+SELECT lifetime_min, lifetime_max FROM system.dictionaries WHERE database={CLICKHOUSE_DATABASE_1:String} AND name = 'dict1';
 
-DROP DICTIONARY IF EXISTS ordinary_db.dict1;
+DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
 
-DROP DATABASE IF EXISTS ordinary_db;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-DROP TABLE IF EXISTS database_for_dict.table_for_dict;
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.table_for_dict;
 
-DROP DATABASE IF EXISTS database_for_dict;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 

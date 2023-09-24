@@ -14,6 +14,7 @@ class PartitionPruner
 {
 public:
     PartitionPruner(const StorageMetadataPtr & metadata, const SelectQueryInfo & query_info, ContextPtr context, bool strict);
+    PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAGPtr filter_actions_dag, ContextPtr context, bool strict);
 
     bool canBePruned(const IMergeTreeDataPart & part);
 

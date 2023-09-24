@@ -56,7 +56,7 @@ public:
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
-    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
     /// For proper deduplication in MaterializedViews
     bool lastBlockIsDuplicate() const override
@@ -123,6 +123,7 @@ private:
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
+    UInt64 num_blocks_processed = 0;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;

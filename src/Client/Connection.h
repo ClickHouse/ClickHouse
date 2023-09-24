@@ -159,6 +159,8 @@ public:
             out->setAsyncCallback(async_callback);
     }
 
+    bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
 private:
     String host;
     UInt16 port;
@@ -227,6 +229,8 @@ private:
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
 
+    bool have_more_addresses_to_connect = false;
+
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
     {
@@ -272,7 +276,7 @@ private:
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
-    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
+    InitialAllRangesAnnouncement receiveInitialParallelReadAnnouncement() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

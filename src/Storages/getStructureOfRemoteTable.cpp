@@ -2,7 +2,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/InterpreterDescribeQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -39,7 +38,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructure(context);
+            return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
         }
 
         auto table_func_name = queryToString(table_func_ptr);
@@ -58,7 +57,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     }
 
     ColumnsDescription res;
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
+    auto new_context = ClusterProxy::updateSettingsForCluster(!cluster.getSecret().empty(), context, context->getSettingsRef(), table_id);
 
     /// Ignore limit for result number of rows (that could be set during handling CSE/CTE),
     /// since this is a service query and should not lead to query failure.
@@ -177,7 +176,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const auto & shards_info = cluster.getShardsInfo();
     auto query = "DESC TABLE " + remote_table_id.getFullTableName();
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), remote_table_id);
+    auto new_context = ClusterProxy::updateSettingsForCluster(!cluster.getSecret().empty(), context, context->getSettingsRef(), remote_table_id);
     new_context->setSetting("describe_extend_object_types", true);
 
     /// Expect only needed columns from the result of DESC TABLE.

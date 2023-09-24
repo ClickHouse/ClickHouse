@@ -12,12 +12,12 @@ from github import Github
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
+    CiLogsCredentials,
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -29,18 +29,24 @@ from upload_result_helper import upload_results
 
 
 def get_run_command(
-    build_path, result_folder, repo_tests_path, server_log_folder, image
-):
+    build_path: str,
+    result_path: str,
+    repo_tests_path: str,
+    server_log_path: str,
+    ci_logs_args: str,
+    image: DockerImage,
+) -> str:
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        # a static link, don't use S3_URL or S3_DOWNLOAD
-        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         # For dmesg and sysctl
         "--privileged "
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        f"{ci_logs_args}"
         f"--volume={build_path}:/package_folder "
-        f"--volume={result_folder}:/test_output "
+        f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {image} "
     )
 
     return cmd
@@ -148,11 +154,20 @@ def run_stress_test(docker_image_name):
         os.makedirs(result_path)
 
     run_log_path = os.path.join(temp_path, "run.log")
+    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
 
     run_command = get_run_command(
-        packages_path, result_path, repo_tests_path, server_log_path, docker_image
+        packages_path,
+        result_path,
+        repo_tests_path,
+        server_log_path,
+        ci_logs_args,
+        docker_image,
     )
-    logging.info("Going to run func tests: %s", run_command)
+    logging.info("Going to run stress test: %s", run_command)
 
     with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
         retcode = process.wait()
@@ -162,13 +177,13 @@ def run_stress_test(docker_image_name):
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    ci_logs_credentials.clean_ci_logs_from_credentials(Path(run_log_path))
 
     s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,

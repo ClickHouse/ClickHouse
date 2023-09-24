@@ -124,15 +124,18 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1">
 <summary>已弃用的建表方法</summary>
 
-    :::attention "注意"
-    不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::attention "注意"
+不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
+:::
 
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-    (
-        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-        ...
-    ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+```
 
 **MergeTree() 参数**
 

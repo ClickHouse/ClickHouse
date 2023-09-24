@@ -81,9 +81,10 @@ namespace Protocol
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
             ProfileEvents = 14,             /// Packet with profile events from server.
-            MergeTreeAllRangesAnnounecement = 15,
+            MergeTreeAllRangesAnnouncement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
-            MAX = MergeTreeReadTaskRequest,
+            TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
+            MAX = TimezoneUpdate,
 
         };
 
@@ -109,8 +110,9 @@ namespace Protocol
                 "PartUUIDs",
                 "ReadTaskRequest",
                 "ProfileEvents",
-                "MergeTreeAllRangesAnnounecement",
+                "MergeTreeAllRangesAnnouncement",
                 "MergeTreeReadTaskRequest",
+                "TimezoneUpdate",
             };
             return packet <= MAX
                 ? data[packet]

@@ -168,6 +168,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
+    bool has_partial_result_setting = build_pipeline_settings.partial_result_duration_ms > 0;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
@@ -195,6 +196,9 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         }
         else
             stack.push(Frame{.node = frame.node->children[next_child]});
+
+        if (has_partial_result_setting && last_pipeline && !last_pipeline->isPartialResultActive())
+            last_pipeline->activatePartialResult(build_pipeline_settings.partial_result_limit, build_pipeline_settings.partial_result_duration_ms);
     }
 
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
@@ -482,6 +486,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeThirdPass(*this, *root, nodes);
 
     updateDataStreams(*root);
 }
@@ -539,6 +544,11 @@ void QueryPlan::explainEstimate(MutableColumns & columns)
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
     }
+}
+
+std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)
+{
+    return {std::move(plan.nodes), std::move(plan.resources)};
 }
 
 }

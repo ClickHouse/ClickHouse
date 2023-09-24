@@ -10,6 +10,7 @@
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -221,6 +222,12 @@ namespace
 }
 
 
+std::shared_ptr<const ContextAccess> ContextAccess::fromContext(const ContextPtr & context)
+{
+    return context->getAccess();
+}
+
+
 ContextAccess::ContextAccess(const AccessControl & access_control_, const Params & params_)
     : access_control(&access_control_)
     , params(params_)
@@ -228,42 +235,44 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
-ContextAccess::~ContextAccess()
-{
-    enabled_settings.reset();
-    enabled_quota.reset();
-    enabled_row_policies.reset();
-    access_with_implicit.reset();
-    access.reset();
-    roles_info.reset();
-    subscription_for_roles_changes.reset();
-    enabled_roles.reset();
-    subscription_for_user_change.reset();
-    user.reset();
-}
+ContextAccess::~ContextAccess() = default;
 
 
 void ContextAccess::initialize()
 {
-     std::lock_guard lock{mutex};
-     subscription_for_user_change = access_control->subscribeForChanges(
-         *params.user_id, [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
-     {
-         auto ptr = weak_ptr.lock();
-         if (!ptr)
-             return;
-         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-         std::lock_guard lock2{ptr->mutex};
-         ptr->setUser(changed_user);
-     });
-     setUser(access_control->read<User>(*params.user_id));
+    std::lock_guard lock{mutex};
+
+    if (params.full_access)
+    {
+        access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
+        access_with_implicit = access;
+        return;
+    }
+
+    if (!params.user_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in current context, it's a bug");
+
+    subscription_for_user_change = access_control->subscribeForChanges(
+        *params.user_id,
+        [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
+        {
+            auto ptr = weak_ptr.lock();
+            if (!ptr)
+                return;
+            UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
+            std::lock_guard lock2{ptr->mutex};
+            ptr->setUser(changed_user);
+        });
+
+    setUser(access_control->read<User>(*params.user_id));
 }
 
 
 void ContextAccess::setUser(const UserPtr & user_) const
 {
     user = user_;
-    if (!user)
+
+    if (!user_)
     {
         /// User has been dropped.
         user_was_dropped = true;
@@ -274,6 +283,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         enabled_roles = nullptr;
         roles_info = nullptr;
         enabled_row_policies = nullptr;
+        row_policies_of_initial_user = nullptr;
         enabled_quota = nullptr;
         enabled_settings = nullptr;
         return;
@@ -288,10 +298,10 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles = user->granted_roles.findGranted(user->default_roles);
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(user->default_roles);
     }
-    else
+    else if (params.current_roles)
     {
-        current_roles = user->granted_roles.findGranted(params.current_roles);
-        current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(params.current_roles);
+        current_roles = user->granted_roles.findGranted(*params.current_roles);
+        current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.current_roles);
     }
 
     subscription_for_roles_changes.reset();
@@ -303,6 +313,11 @@ void ContextAccess::setUser(const UserPtr & user_) const
     });
 
     setRolesInfo(enabled_roles->getRolesInfo());
+
+    std::optional<UUID> initial_user_id;
+    if (!params.initial_user.empty())
+        initial_user_id = access_control->find<User>(params.initial_user);
+    row_policies_of_initial_user = initial_user_id ? access_control->tryGetDefaultRowPolicies(*initial_user_id) : nullptr;
 }
 
 
@@ -310,12 +325,12 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    enabled_row_policies = access_control->getEnabledRowPolicies(
-        *params.user_id, roles_info->enabled_roles);
-    enabled_quota = access_control->getEnabledQuota(
-        *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
+
+    enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
+
     enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
+
     calculateAccessRights();
 }
 
@@ -333,7 +348,7 @@ void ContextAccess::calculateAccessRights() const
                 boost::algorithm::join(roles_info->getCurrentRolesNames(), ", "),
                 boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
-        LOG_TRACE(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", params.readonly, params.allow_ddl, params.allow_introspection);
+        LOG_TRACE(trace_log, "Settings: readonly = {}, allow_ddl = {}, allow_introspection_functions = {}", params.readonly, params.allow_ddl, params.allow_introspection);
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
@@ -375,53 +390,55 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     return no_roles;
 }
 
-std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies() const
+RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     std::lock_guard lock{mutex};
-    if (enabled_row_policies)
-        return enabled_row_policies;
-    static const auto no_row_policies = std::make_shared<EnabledRowPolicies>();
-    return no_row_policies;
-}
 
-RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
-{
-    std::lock_guard lock{mutex};
+    RowPolicyFilterPtr filter;
     if (enabled_row_policies)
-        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_filter);
-    return combine_with_filter;
+        filter = enabled_row_policies->getFilter(database, table_name, filter_type);
+
+    if (row_policies_of_initial_user)
+    {
+        /// Find and set extra row policies to be used based on `client_info.initial_user`, if the initial user exists.
+        /// TODO: we need a better solution here. It seems we should pass the initial row policy
+        /// because a shard is allowed to not have the initial user or it might be another user
+        /// with the same name.
+        filter = row_policies_of_initial_user->getFilter(database, table_name, filter_type, filter);
+    }
+
+    return filter;
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
-    if (enabled_quota)
-        return enabled_quota;
-    static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
-    return unlimited_quota;
+
+    if (!enabled_quota)
+    {
+        if (roles_info)
+        {
+            enabled_quota = access_control->getEnabledQuota(*params.user_id,
+                                                            user_name,
+                                                            roles_info->enabled_roles,
+                                                            params.address,
+                                                            params.forwarded_address,
+                                                            params.quota_key);
+        }
+        else
+        {
+            static const auto unlimited_quota = EnabledQuota::getUnlimitedQuota();
+            return unlimited_quota;
+        }
+    }
+
+    return enabled_quota;
 }
 
 
 std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
-    std::lock_guard lock{mutex};
-    if (enabled_quota)
-        return enabled_quota->getUsage();
-    return {};
-}
-
-
-std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
-{
-    static const std::shared_ptr<const ContextAccess> res = []
-    {
-        auto full_access = std::make_shared<ContextAccess>();
-        full_access->is_full_access = true;
-        full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = full_access->access;
-        return full_access;
-    }();
-    return res;
+    return getQuota()->getUsage();
 }
 
 
@@ -478,7 +495,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         throw Exception(ErrorCodes::UNKNOWN_USER, "{}: User has been dropped", getUserName());
     }
 
-    if (is_full_access)
+    if (params.full_access)
         return true;
 
     auto access_granted = [&]
@@ -533,12 +550,12 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. "
                 "The required privileges have been granted, but without grant option. "
-                "To execute this query it's necessary to have grant {} WITH GRANT OPTION",
+                "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
                 AccessRightsElement{flags, args...}.toStringWithoutOptions());
         }
 
         return access_denied(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant {}",
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
             AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
     }
 
@@ -706,7 +723,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
         return false;
     };
 
-    if (is_full_access)
+    if (params.full_access)
         return true;
 
     if (user_was_dropped)
@@ -739,11 +756,11 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
                 show_error(ErrorCodes::ACCESS_DENIED,
                            "Not enough privileges. "
                            "Role {} is granted, but without ADMIN option. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           "To execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuote(*role_name), backQuoteIfNeed(*role_name));
             else
                 show_error(ErrorCodes::ACCESS_DENIED, "Not enough privileges. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
+                           "To execute this query, it's necessary to have the role {} granted with ADMIN option.",
                            backQuoteIfNeed(*role_name));
         }
 
@@ -806,7 +823,7 @@ void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const s
 
 void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const
 {
-    if (is_full_access)
+    if (params.full_access)
         return;
 
     auto current_user = getUser();
@@ -816,7 +833,7 @@ void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccess
 
 void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const
 {
-    if (is_full_access)
+    if (params.full_access)
         return;
 
     auto current_user = getUser();

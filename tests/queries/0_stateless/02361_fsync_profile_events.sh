@@ -12,9 +12,10 @@ $CLICKHOUSE_CLIENT -nm -q "
     create table data_fsync_pe (key Int) engine=MergeTree()
     order by key
     settings
-        min_rows_for_wide_part=2,
-        fsync_after_insert=1,
-        fsync_part_directory=1;
+        min_rows_for_wide_part = 2,
+        fsync_after_insert = 1,
+        fsync_part_directory = 1,
+        ratio_of_defaults_for_sparse_serialization = 1;
 "
 
 ret=1

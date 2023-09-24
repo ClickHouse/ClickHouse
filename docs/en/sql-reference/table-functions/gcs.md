@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/table-functions/gcs
-sidebar_position: 45
+sidebar_position: 70
 sidebar_label: gcs
 keywords: [gcs, bucket]
 ---
@@ -16,13 +16,13 @@ gcs(path [,hmac_key, hmac_secret] [,format] [,structure] [,compression])
 ```
 
 :::tip GCS
-The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC. 
+The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. See the [Google interoperability docs]( https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 
 :::
 
 **Arguments**
 
--   `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
+-   `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 
   :::note GCS
   The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:

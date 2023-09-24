@@ -25,6 +25,7 @@ public:
 template <typename Distance>
 using AnnoyIndexWithSerializationPtr = std::shared_ptr<AnnoyIndexWithSerialization<Distance>>;
 
+
 template <typename Distance>
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
@@ -42,6 +43,7 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
     const Block index_sample_block;
     AnnoyIndexWithSerializationPtr<Distance> index;
 };
+
 
 template <typename Distance>
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
@@ -103,7 +105,6 @@ private:
     const UInt64 trees;
     const String distance_function;
 };
-
 
 }
 

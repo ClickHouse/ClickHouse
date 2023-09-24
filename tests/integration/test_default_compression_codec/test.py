@@ -24,6 +24,7 @@ node3 = cluster.add_instance(
     tag="20.3.16",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node4 = cluster.add_instance("node4")
 

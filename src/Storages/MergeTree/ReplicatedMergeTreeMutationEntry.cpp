@@ -12,7 +12,7 @@ namespace DB
 void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
     out << "format version: 1\n"
-        << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
+        << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << "\n"
         << "block numbers count: " << block_numbers.size() << "\n";
 
@@ -38,7 +38,7 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 
     LocalDateTime create_time_dt;
     in >> "create time: " >> create_time_dt >> "\n";
-    create_time = DateLUT::instance().makeDateTime(
+    create_time = DateLUT::serverTimezoneInstance().makeDateTime(
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 

@@ -24,6 +24,13 @@ PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const Sele
 {
 }
 
+PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAGPtr filter_actions_dag, ContextPtr context, bool strict)
+    : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
+    , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, {}, true /* single_point */, strict)
+    , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
+{
+}
+
 bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
 {
     if (part.isEmpty())

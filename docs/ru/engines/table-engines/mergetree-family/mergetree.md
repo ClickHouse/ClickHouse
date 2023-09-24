@@ -20,9 +20,9 @@ sidebar_label: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-    :::info
-    Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-    :::
+:::info Примечание
+Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
+:::
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -115,7 +115,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 

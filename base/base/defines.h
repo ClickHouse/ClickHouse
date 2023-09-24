@@ -115,8 +115,15 @@
 /// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
+        // clang-format off
+        #include <base/types.h>
+        namespace DB
+        {
+            void abortOnFailedAssertion(const String & description);
+        }
         #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
         #define UNREACHABLE() abort()
+        // clang-format off
     #else
         /// Here sizeof() trick is used to suppress unused warning for result,
         /// since simple "(void)x" will evaluate the expression, while

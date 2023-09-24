@@ -132,6 +132,8 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
+
+    friend class ReadFromMemoryStorageStep;
 };
 
 }

@@ -9,7 +9,13 @@ from enum import Enum
 from hashlib import md5
 from functools import reduce
 
-from exceptions import Error, ProgramError, ErrorWithParent, DataResultDiffer
+from exceptions import (
+    Error,
+    ProgramError,
+    ErrorWithParent,
+    DataResultDiffer,
+    QueryExecutionError,
+)
 
 
 logger = logging.getLogger("parser")
@@ -480,6 +486,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
+                logger.debug(f"Builging row. c:{c} t:{t}")
                 if c is None:
                     res_row.append("NULL")
                     continue
@@ -490,7 +497,12 @@ class QueryResult:
                     else:
                         res_row.append(str(c))
                 elif t == "I":
-                    res_row.append(str(int(c)))
+                    try:
+                        res_row.append(str(int(c)))
+                    except ValueError as ex:
+                        raise QueryExecutionError(
+                            f"Got non-integer result '{c}' for I type."
+                        )
                 elif t == "R":
                     res_row.append(f"{c:.3f}")
 

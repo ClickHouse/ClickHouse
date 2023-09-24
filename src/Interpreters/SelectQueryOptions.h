@@ -51,6 +51,8 @@ struct SelectQueryOptions
     bool settings_limit_offset_done = false;
     bool is_explain = false; /// The value is true if it's explain statement.
     bool is_create_parameterized_view = false;
+    /// Bypass setting constraints for some internal queries such as projection ASTs.
+    bool ignore_setting_constraints = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -138,6 +140,12 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreASTOptimizations(bool value = true)
     {
         ignore_ast_optimizations = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreSettingConstraints(bool value = true)
+    {
+        ignore_setting_constraints = value;
         return *this;
     }
 

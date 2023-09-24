@@ -9,7 +9,7 @@ import subprocess
 import time
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -23,12 +23,11 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
+from docker_images_helper import ImagesDict, IMAGES_FILE_PATH, get_images_dict
 
 NAME = "Push to Dockerhub"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
-
-ImagesDict = Dict[str, dict]
 
 
 class DockerImage:
@@ -76,21 +75,6 @@ class DockerImage:
 
     def __repr__(self):
         return f"DockerImage(path={self.path},repo={self.repo},parent={self.parent})"
-
-
-def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
-    """Return images suppose to build on the current architecture host"""
-    images_dict = {}
-    path_to_images_file = os.path.join(repo_path, image_file_path)
-    if os.path.exists(path_to_images_file):
-        with open(path_to_images_file, "rb") as dict_file:
-            images_dict = json.load(dict_file)
-    else:
-        logging.info(
-            "Image file %s doesn't exist in repo %s", image_file_path, repo_path
-        )
-
-    return images_dict
 
 
 def get_changed_docker_images(
@@ -410,7 +394,7 @@ def main():
         shutil.rmtree(TEMP_PATH)
     os.makedirs(TEMP_PATH)
 
-    images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
+    images_dict = get_images_dict(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
 
     pr_info = PRInfo()
     if args.all:
