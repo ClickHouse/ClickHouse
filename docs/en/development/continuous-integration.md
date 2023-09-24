@@ -141,6 +141,10 @@ Runs [stateful functional tests](tests.md#functional-tests). Treat them in the s
 Runs [integration tests](tests.md#integration-tests).
 
 
+## Bugfix validate check
+Checks that either a new test (functional or integration) or there some changed tests that fail with the binary built on master branch. This check is triggered when pull request has "pr-bugfix" label.
+
+
 ## Stress Test
 Runs stateless functional tests concurrently from several clients to detect
 concurrency-related errors. If it fails:

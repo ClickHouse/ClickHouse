@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 template <typename Distance>
 AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
     : Base::AnnoyIndex(dimensions)
@@ -167,7 +166,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             if (offsets[i + 1] - offsets[i] != size)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
 
         /// Add all rows of block
         index->add_item(index->get_n_items(), array.data());
@@ -190,7 +190,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         if (data.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
 
         for (const auto & item : data)
             index->add_item(index->get_n_items(), item.data());
@@ -224,9 +225,9 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return getUsefulRangesImpl<Annoy::Euclidean>(idx_granule);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return getUsefulRangesImpl<Annoy::Angular>(idx_granule);
     std::unreachable();
 }
@@ -289,9 +290,9 @@ MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, UInt64
 
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Euclidean>>(index.name, index.sample_block);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Angular>>(index.name, index.sample_block);
     std::unreachable();
 }
@@ -299,9 +300,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
     std::unreachable();
 }
@@ -313,14 +314,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const Selec
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
-    static constexpr auto default_trees = 100uz;
-    static constexpr auto default_distance_function = "L2Distance";
-
-    String distance_function = default_distance_function;
+    static constexpr auto DEFAULT_DISTANCE_FUNCTION = DISTANCE_FUNCTION_L2;
+    String distance_function = DEFAULT_DISTANCE_FUNCTION;
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
 
-    UInt64 trees = default_trees;
+    static constexpr auto DEFAULT_TREES = 100uz;
+    UInt64 trees = DEFAULT_TREES;
     if (index.arguments.size() > 1)
         trees = index.arguments[1].get<UInt64>();
 
@@ -350,8 +350,8 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     if (!index.arguments.empty())
     {
         String distance_name = index.arguments[0].get<String>();
-        if (distance_name != "L2Distance" && distance_name != "cosineDistance")
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index only supports distance functions 'L2Distance' and 'cosineDistance'");
+        if (distance_name != DISTANCE_FUNCTION_L2 && distance_name != DISTANCE_FUNCTION_COSINE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }
 
     /// Check data type of indexed column:

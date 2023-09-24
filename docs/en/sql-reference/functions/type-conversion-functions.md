@@ -892,16 +892,29 @@ Query:
 
 ``` sql
 SELECT
-    now() AS now_local,
-    toString(now(), 'Asia/Yekaterinburg') AS now_yekat;
+    now() AS ts,
+    time_zone,
+    toString(ts, time_zone) AS str_tz_datetime
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10
 ```
 
 Result:
 
 ```response
-┌───────────now_local─┬─now_yekat───────────┐
-│ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
-└─────────────────────┴─────────────────────┘
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
+│ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Astrakhan  │ 2023-09-08 23:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Athens     │ 2023-09-08 22:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belfast    │ 2023-09-08 20:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Belgrade   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Berlin     │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bratislava │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Brussels   │ 2023-09-08 21:14:59 │
+│ 2023-09-08 19:14:59 │ Europe/Bucharest  │ 2023-09-08 22:14:59 │
+└─────────────────────┴───────────────────┴─────────────────────┘
 ```
 
 Also see the `toUnixTimestamp` function.
@@ -943,6 +956,44 @@ Result:
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
+```
+
+## toDecimalString
+
+Converts a numeric value to String with the number of fractional digits in the output specified by the user.
+
+**Syntax**
+
+``` sql
+toDecimalString(number, scale)
+```
+
+**Parameters**
+
+- `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+- `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+    * Maximum scale for [Decimal](/docs/en/sql-reference/data-types/decimal.md) and [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+    * Maximum scale for [Float](/docs/en/sql-reference/data-types/float.md) is 60.
+
+**Returned value**
+
+- Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
+    The number is rounded up or down according to common arithmetic in case requested scale is smaller than original number's scale.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
+```
+
+Result:
+
+```response
+┌toDecimalString(CAST('64.32', 'Float64'), 5)─┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
 ```
 
 ## reinterpretAsUInt(8\|16\|32\|64)

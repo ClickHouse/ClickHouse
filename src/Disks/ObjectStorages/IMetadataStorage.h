@@ -22,7 +22,14 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
-struct UnlinkMetadataFileOperationOutcome;
+
+/// Return the result of operation to the caller.
+/// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
+struct UnlinkMetadataFileOperationOutcome
+{
+    UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
+};
+
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
 /// Tries to provide some "transactions" interface, which allow

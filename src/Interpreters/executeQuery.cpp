@@ -45,6 +45,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -209,7 +210,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
-addStatusInfoToQueryElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
+addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
 {
     const auto time_now = std::chrono::system_clock::now();
     UInt64 elapsed_microseconds = info.elapsed_microseconds;
@@ -240,6 +241,7 @@ addStatusInfoToQueryElement(QueryLogElement & element, const QueryStatusInfo & i
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
+    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
@@ -347,6 +349,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
+    QueryCache::Usage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -364,7 +367,7 @@ void logQueryFinish(
         QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
         elem.type = QueryLogElementType::QUERY_FINISH;
 
-        addStatusInfoToQueryElement(elem, info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
         {
@@ -398,6 +401,8 @@ void logQueryFinish(
                 rows_per_second,
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
+
+        elem.query_cache_usage = query_cache_usage;
 
         if (log_queries && elem.type >= log_queries_min_type
             && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
@@ -499,12 +504,14 @@ void logQueryException(
     if (process_list_elem)
     {
         QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events, false);
-        addStatusInfoToQueryElement(elem, info, query_ast, context);
+        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
     }
     else
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
+
+    elem.query_cache_usage = QueryCache::Usage::None;
 
     if (settings.calculate_text_stack_trace && log_error)
         setExceptionStackTrace(elem);
@@ -723,11 +730,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             is_create_parameterized_view = create_query->isParameterizedView();
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        if (!is_create_parameterized_view && context->hasQueryParameters())
+        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
+        bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
+        if (!is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
-            query = serializeAST(*ast);
+            if (visitor.getNumberOfReplacedParameters())
+                query = serializeAST(*ast);
+            else
+                query.assign(begin, query_end);
         }
         else
         {
@@ -975,7 +987,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         QueryCachePtr query_cache = context->getQueryCache();
         const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
-        bool write_into_query_cache = false;
+        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
         if (!async_insert)
         {
@@ -992,6 +1004,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
+                        query_cache_usage = QueryCache::Usage::Read;
                         return true;
                     }
                 }
@@ -1026,6 +1039,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
 
                 }
+
+                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
+                // We need to force to build it here to check if we need to ignore quota.
+                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                    interpreter_with_analyzer->getQueryPlan();
 
                 if (!interpreter->ignoreQuota() && !quota_checked)
                 {
@@ -1095,7 +1113,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                              settings.query_cache_max_size_in_bytes,
                                              settings.query_cache_max_entries));
                             res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                            write_into_query_cache = true;
+                            query_cache_usage = QueryCache::Usage::Write;
                         }
                     }
 
@@ -1147,19 +1165,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    write_into_query_cache,
+                                    query_cache_usage,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (write_into_query_cache)
+                if (query_cache_usage == QueryCache::Usage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
 
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, internal);
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);

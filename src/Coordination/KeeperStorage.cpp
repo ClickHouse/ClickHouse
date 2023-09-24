@@ -2127,7 +2127,7 @@ void KeeperStorage::preprocessRequest(
     }
 
     std::vector<Delta> new_deltas;
-    TransactionInfo transaction{.zxid = new_last_zxid};
+    TransactionInfo transaction{.zxid = new_last_zxid, .nodes_digest = {}};
     uint64_t new_digest = getNodesDigest(false).value;
     SCOPE_EXIT({
         if (keeper_context->digestEnabled())

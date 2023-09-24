@@ -239,10 +239,66 @@ select dictGet('regexp_dict3', 'tag', '/docs');
 select dictGetAll('regexp_dict3', 'tag', '/docs');
 "
 
+# Test case-insensitive and dot-all match modes
+cat > "$yaml" <<EOL
+- regexp: 'foo'
+  pattern: 'foo'
+- regexp: '(?i)foo'
+  pattern: '(?i)foo'
+- regexp: '(?-i)foo'
+  pattern: '(?-i)foo'
+- regexp: 'hello.*world'
+  pattern: 'hello.*world'
+- regexp: '(?i)hello.*world'
+  pattern: '(?i)hello.*world'
+- regexp: '(?-i)hello.*world'
+  pattern: '(?-i)hello.*world'
+EOL
+
+$CLICKHOUSE_CLIENT -n --query="
+drop dictionary if exists regexp_dict4;
+create dictionary regexp_dict4
+(
+    regexp String,
+    pattern String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+select dictGetAll('regexp_dict4', 'pattern', 'foo');
+select dictGetAll('regexp_dict4', 'pattern', 'FOO');
+select dictGetAll('regexp_dict4', 'pattern', 'hello world');
+select dictGetAll('regexp_dict4', 'pattern', 'hello\nworld');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO WORLD');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO\nWORLD');
+
+drop dictionary if exists regexp_dict4;
+create dictionary regexp_dict4
+(
+    regexp String,
+    pattern String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '$yaml'))
+LIFETIME(0)
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_flag_case_insensitive = true, regexp_dict_flag_dotall = true);
+
+select dictGetAll('regexp_dict4', 'pattern', 'foo');
+select dictGetAll('regexp_dict4', 'pattern', 'FOO');
+select dictGetAll('regexp_dict4', 'pattern', 'hello world');
+select dictGetAll('regexp_dict4', 'pattern', 'hello\nworld');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO WORLD');
+select dictGetAll('regexp_dict4', 'pattern', 'HELLO\nWORLD');
+"
+
 $CLICKHOUSE_CLIENT -n --query="
 drop dictionary regexp_dict1;
 drop dictionary regexp_dict2;
 drop dictionary regexp_dict3;
+drop dictionary regexp_dict4;
 "
 
 rm -rf "$USER_FILES_PATH/test_02504"

@@ -120,7 +120,7 @@ function clone_submodules
             contrib/libxml2
             contrib/libunwind
             contrib/fmtlib
-            contrib/base64
+            contrib/aklomp-base64
             contrib/cctz
             contrib/libcpuid
             contrib/libdivide
@@ -147,6 +147,8 @@ function clone_submodules
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
+            contrib/incbin
+            contrib/yaml-cpp
         )
 
         git submodule sync
@@ -169,6 +171,7 @@ function run_cmake
         "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
         "-DENABLE_LIBURING=1"
+        "-DENABLE_YAML_CPP=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"

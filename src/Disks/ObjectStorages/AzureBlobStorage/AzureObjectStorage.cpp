@@ -69,7 +69,7 @@ private:
                     static_cast<uint64_t>(blob.BlobSize),
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
-                            blob.Details.LastModified.time_since_epoch()).count()),
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     {}});
         }
 
@@ -162,7 +162,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     static_cast<uint64_t>(blob.BlobSize),
                     Poco::Timestamp::fromEpochTime(
                         std::chrono::duration_cast<std::chrono::seconds>(
-                            blob.Details.LastModified.time_since_epoch()).count()),
+                            static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     {}});
         }
 
@@ -350,7 +350,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
         for (const auto & [key, value] : properties.Metadata)
             (*result.attributes)[key] = value;
     }
-    result.last_modified.emplace(properties.LastModified.time_since_epoch().count());
+    result.last_modified.emplace(static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch().count());
     return result;
 }
 

@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
-#include <iostream>
 #include <numeric>
 #include <algorithm>
 
@@ -243,6 +242,15 @@ void GinIndexStore::finalize()
 {
     if (!current_postings.empty())
         writeSegment();
+
+    if (metadata_file_stream)
+        metadata_file_stream->finalize();
+
+    if (dict_file_stream)
+        dict_file_stream->finalize();
+
+    if (postings_file_stream)
+        postings_file_stream->finalize();
 }
 
 void GinIndexStore::initFileStreams()
@@ -319,13 +327,8 @@ void GinIndexStore::writeSegment()
     current_segment.segment_id = getNextSegmentID();
 
     metadata_file_stream->sync();
-    metadata_file_stream->finalize();
-
     dict_file_stream->sync();
-    dict_file_stream->finalize();
-
     postings_file_stream->sync();
-    postings_file_stream->finalize();
 }
 
 GinIndexStoreDeserializer::GinIndexStoreDeserializer(const GinIndexStorePtr & store_)

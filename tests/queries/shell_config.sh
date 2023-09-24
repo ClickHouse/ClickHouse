@@ -155,3 +155,23 @@ function random_str()
     local n=$1 && shift
     tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
+
+function query_with_retry
+{
+    local query="$1" && shift
+
+    local retry=0
+    until [ $retry -ge 5 ]
+    do
+        local result
+        result="$($CLICKHOUSE_CLIENT "$@" --query="$query" 2>&1)"
+        if [ "$?" == 0 ]; then
+            echo -n "$result"
+            return
+        else
+            retry=$((retry + 1))
+            sleep 3
+        fi
+    done
+    echo "Query '$query' failed with '$result'"
+}

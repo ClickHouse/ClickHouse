@@ -36,6 +36,10 @@ public:
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
 
+    bool supportsSubcolumns() const override { return true; }
+
+    bool supportsTrivialCountOptimization() const override { return true; }
+
 protected:
     void updateConfigurationIfChanged(ContextPtr local_context);
 
@@ -46,7 +50,6 @@ private:
 
     StorageS3::Configuration s3_configuration;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
 };
 
 

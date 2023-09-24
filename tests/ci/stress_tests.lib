@@ -9,8 +9,6 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=300
 
-source attach_gdb.lib
-
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
@@ -266,7 +264,7 @@ function collect_query_and_trace_logs()
 {
     for table in query_log trace_log
     do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+        clickhouse-local --config-file=/etc/clickhouse-server/config.xml --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     done
 }
 
@@ -277,3 +275,5 @@ function collect_core_dumps()
       mv $core.zst /test_output/
   done
 }
+
+# vi: ft=bash

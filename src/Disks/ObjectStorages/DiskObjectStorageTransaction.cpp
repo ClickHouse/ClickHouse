@@ -5,8 +5,10 @@
 #include <ranges>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -156,13 +158,12 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
 struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    RemoveBatchRequest remove_paths;
-    bool keep_all_batch_data;
-    NameSet file_names_remove_metadata_only;
+    const RemoveBatchRequest remove_paths;
+    const bool keep_all_batch_data;
+    const NameSet file_names_remove_metadata_only;
 
+    std::vector<String> paths_removed_with_objects;
     std::vector<ObjectsToRemove> objects_to_remove;
-
-    bool remove_from_cache = false;
 
     RemoveManyObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -203,6 +204,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                 if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
                 {
                     objects_to_remove.emplace_back(ObjectsToRemove{std::move(objects), std::move(unlink_outcome)});
+                    paths_removed_with_objects.push_back(path);
                 }
             }
             catch (const Exception & e)
@@ -213,6 +215,12 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                     || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
                     || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                 {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                        "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
+                        metadata_storage.getPath() + path,
+                        e.message());
+
                     tx->unlinkFile(path);
                 }
                 else
@@ -238,16 +246,31 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         /// TL;DR Don't pay any attention to 404 status code
         if (!remove_from_remote.empty())
             object_storage.removeObjectsIfExist(remove_from_remote);
+
+        if (!keep_all_batch_data)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                "metadata and objects were removed for [{}], "
+                "only metadata were removed for [{}].",
+                boost::algorithm::join(paths_removed_with_objects, ", "),
+                boost::algorithm::join(file_names_remove_metadata_only, ", "));
+        }
     }
 };
 
 
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    std::string path;
+    /// path inside disk with metadata
+    const std::string path;
+    const bool keep_all_batch_data;
+    /// paths inside the 'this->path'
+    const NameSet file_names_remove_metadata_only;
+
+    /// map from local_path to its remote objects with hardlinks counter
+    /// local_path is the path inside 'this->path'
     std::unordered_map<std::string, ObjectsToRemove> objects_to_remove_by_path;
-    bool keep_all_batch_data;
-    NameSet file_names_remove_metadata_only;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -274,11 +297,16 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         {
             try
             {
+                chassert(path_to_remove.starts_with(path));
+                auto rel_path = String(fs::relative(fs::path(path_to_remove), fs::path(path)));
+
                 auto objects_paths = metadata_storage.getStorageObjects(path_to_remove);
                 auto unlink_outcome = tx->unlinkMetadata(path_to_remove);
-                if (unlink_outcome)
+
+                if (unlink_outcome && !file_names_remove_metadata_only.contains(rel_path))
                 {
-                    objects_to_remove_by_path[path_to_remove] = ObjectsToRemove{std::move(objects_paths), std::move(unlink_outcome)};
+                    objects_to_remove_by_path[std::move(rel_path)]
+                        = ObjectsToRemove{std::move(objects_paths), std::move(unlink_outcome)};
                 }
             }
             catch (const Exception & e)
@@ -320,25 +348,38 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void undo() override
     {
-
     }
 
     void finalize() override
     {
         if (!keep_all_batch_data)
         {
+            std::vector<String> total_removed_paths;
+            total_removed_paths.reserve(objects_to_remove_by_path.size());
+
             StoredObjects remove_from_remote;
             for (auto && [local_path, objects_to_remove] : objects_to_remove_by_path)
             {
-                if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
+                chassert(!file_names_remove_metadata_only.contains(local_path));
+                if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
                 {
-                    if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
-                        std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
+                    std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
+                    total_removed_paths.push_back(local_path);
                 }
             }
+
             /// Read comment inside RemoveObjectStorageOperation class
             /// TL;DR Don't pay any attention to 404 status code
             object_storage.removeObjectsIfExist(remove_from_remote);
+
+            LOG_DEBUG(
+                &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                "Recursively remove path {}: "
+                "metadata and objects were removed for [{}], "
+                "only metadata were removed for [{}].",
+                path,
+                boost::algorithm::join(total_removed_paths, ", "),
+                boost::algorithm::join(file_names_remove_metadata_only, ", "));
         }
     }
 };
@@ -769,8 +810,11 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         }));
 }
 
-void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
+void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const WriteSettings & settings)
 {
+    /// NOTE: For native copy we can ignore throttling, so no need to use WriteSettings
+    UNUSED(settings);
+
     operations_to_execute.emplace_back(
         std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, from_file_path, to_file_path));
 }
