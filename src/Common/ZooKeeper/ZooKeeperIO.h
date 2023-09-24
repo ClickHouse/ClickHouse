@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <Compression/CompressedReadBuffer.h>
 
 
 namespace Coordination

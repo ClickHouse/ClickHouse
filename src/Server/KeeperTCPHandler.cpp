@@ -20,6 +20,7 @@
 #include <queue>
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
+#include <IO/CompressionMethod.h>
 #include <base/hex.h>
 
 
@@ -242,12 +243,15 @@ KeeperTCPHandler::KeeperTCPHandler(
     KeeperTCPHandler::registerConnection(this);
 }
 
-void KeeperTCPHandler::sendHandshake(bool has_leader)
+void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
     {
-        Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
+        if (use_compression)
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION, *out);
+        else
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
     }
     else
     {
@@ -269,7 +273,7 @@ void KeeperTCPHandler::run()
     runImpl();
 }
 
-Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
+Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool & use_compression)
 {
     int32_t protocol_version;
     int64_t last_zxid_seen;
@@ -282,8 +286,10 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
 
     Coordination::read(protocol_version, *in);
 
-    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
+    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION && protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
+
+    use_compression = (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -311,6 +317,8 @@ void KeeperTCPHandler::runImpl()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+
+    bool use_compression = false;
 
     if (in->eof())
     {
@@ -343,7 +351,7 @@ void KeeperTCPHandler::runImpl()
     try
     {
         int32_t handshake_length = header;
-        auto client_timeout = receiveHandshake(handshake_length);
+        auto client_timeout = receiveHandshake(handshake_length, use_compression);
 
         if (client_timeout.totalMilliseconds() == 0)
             client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
@@ -367,18 +375,31 @@ void KeeperTCPHandler::runImpl()
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
-            sendHandshake(false);
+            sendHandshake(/* has_leader */ false, use_compression);
             return;
 
         }
 
-        sendHandshake(true);
+        sendHandshake(/* has_leader */ true, use_compression);
     }
     else
     {
         LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
-        sendHandshake(false);
+        sendHandshake(/* has_leader */ false, use_compression);
         return;
+    }
+
+    if (use_compression)
+    {
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+        maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out,
+                                                                       CompressionCodecFactory::instance().get("ZSTD",
+                                                                                                               {}));
+    }
+    else
+    {
+        maybe_compressed_in = in;
+        maybe_compressed_out = out;
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
@@ -467,7 +488,9 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response);
                 packageSent();
 
-                response->write(*out);
+                response->write(*maybe_compressed_out);
+                maybe_compressed_out->next();
+                out->next();
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -525,7 +548,8 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         try
         {
             String res = command_ptr->run();
-            out->write(res.data(), res.size());
+            maybe_compressed_out->write(res.data(),res.size());
+            maybe_compressed_out->next();
             out->next();
         }
         catch (...)
@@ -540,16 +564,16 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
     int32_t length;
-    Coordination::read(length, *in);
+    Coordination::read(length, *maybe_compressed_in);
     int32_t xid;
-    Coordination::read(xid, *in);
+    Coordination::read(xid, *maybe_compressed_in);
 
     Coordination::OpNum opnum;
-    Coordination::read(opnum, *in);
+    Coordination::read(opnum, *maybe_compressed_in);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->readImpl(*in);
+    request->readImpl(*maybe_compressed_in);
 
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);

@@ -16,6 +16,9 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -274,13 +277,13 @@ using namespace DB;
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
-    Coordination::write(x, *out);
+    Coordination::write(x, *maybe_compressed_out);
 }
 
 template <typename T>
 void ZooKeeper::read(T & x)
 {
-    Coordination::read(x, *in);
+    Coordination::read(x, *maybe_compressed_in);
 }
 
 static void removeRootPath(String & path, const String & chroot)
@@ -345,7 +348,21 @@ ZooKeeper::ZooKeeper(
     if (args.enable_fault_injections_during_startup)
         setupFaultDistributions();
 
-    connect(nodes, args.connection_timeout_ms * 1000);
+    try
+    {
+        use_compression = args.compressed_protocol;
+        connect(nodes, args.connection_timeout_ms * 1000);
+    }
+    catch (...)
+    {
+        if (use_compression)
+        {
+            use_compression = false;
+            connect(nodes, args.connection_timeout_ms * 1000);
+        }
+        else
+            throw;
+    }
 
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
@@ -422,8 +439,10 @@ void ZooKeeper::connect(
                 socket.setSendTimeout(args.operation_timeout_ms * 1000);
                 socket.setNoDelay(true);
 
-                in.emplace(socket);
-                out.emplace(socket);
+                in = std::make_shared<ReadBufferFromPocoSocket>(socket);
+                out = std::make_shared<WriteBufferFromPocoSocket>(socket);
+                maybe_compressed_in = in;
+                maybe_compressed_out = out;
 
                 try
                 {
@@ -444,7 +463,15 @@ void ZooKeeper::connect(
                     e.addMessage("while receiving handshake from ZooKeeper");
                     throw;
                 }
+
                 connected = true;
+                if (use_compression)
+                {
+                    maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+                    maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out,
+                                                                                   CompressionCodecFactory::instance().get(
+                                                                                           "ZSTD", {}));
+                }
 
                 if (connected_callback.has_value())
                     (*connected_callback)(i, node);
@@ -513,15 +540,18 @@ void ZooKeeper::sendHandshake()
     std::array<char, passwd_len> passwd {};
 
     write(handshake_length);
-    write(ZOOKEEPER_PROTOCOL_VERSION);
+    if (use_compression)
+        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
+    else
+        write(ZOOKEEPER_PROTOCOL_VERSION);
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
     write(passwd);
 
+    maybe_compressed_out->next();
     out->next();
 }
-
 
 void ZooKeeper::receiveHandshake()
 {
@@ -535,18 +565,22 @@ void ZooKeeper::receiveHandshake()
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected handshake length received: {}", handshake_length);
 
     read(protocol_version_read);
-    if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
+
+    /// Special way to tell a client that server is not ready to serve it.
+    /// It's better for faster failover than just connection drop.
+    /// Implemented in clickhouse-keeper.
+    if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
+        throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
+                                     "Keeper server rejected the connection during the handshake. "
+                                     "Possibly it's overloaded, doesn't see leader or stale");
+
+    if (use_compression)
     {
-        /// Special way to tell a client that server is not ready to serve it.
-        /// It's better for faster failover than just connection drop.
-        /// Implemented in clickhouse-keeper.
-        if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-            throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
-                            "Keeper server rejected the connection during the handshake. "
-                            "Possibly it's overloaded, doesn't see leader or stale");
-        else
-            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
+        if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
+            throw Exception(Error::ZMARSHALLINGERROR,"Unexpected protocol version with compression: {}", protocol_version_read);
     }
+    else if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
+        throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
 
     read(timeout);
     if (timeout != args.session_timeout_ms)
@@ -564,7 +598,9 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(*out);
+    request.write(*maybe_compressed_out);
+    maybe_compressed_out->next();
+    out->next();
 
     int32_t length;
     XID read_xid;
@@ -580,9 +616,13 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     if (read_xid != AUTH_XID)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected event received in reply to auth request: {}", read_xid);
 
-    int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
-    if (length != actual_length)
+    if (!use_compression)
+    {
+        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
+        if (length != actual_length)
         throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
+
+    }
 
     if (err != Error::ZOK)
         throw Exception(Error::ZMARSHALLINGERROR, "Error received in reply to auth request. Code: {}. Message: {}",
@@ -639,7 +679,10 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(*out);
+                    info.request->write(*maybe_compressed_out);
+
+                    maybe_compressed_out->next();
+                    out->next();
 
                     logOperationIfNeeded(info.request);
 
@@ -655,7 +698,9 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(*out);
+                request.write(*maybe_compressed_out);
+                maybe_compressed_out->next();
+                out->next();
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesSent, out->count() - prev_bytes_sent);
@@ -827,7 +872,7 @@ void ZooKeeper::receiveEvent()
         }
         else
         {
-            response->readImpl(*in);
+            response->readImpl(*maybe_compressed_in);
             response->removeRootPath(args.chroot);
         }
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
@@ -860,9 +905,14 @@ void ZooKeeper::receiveEvent()
             }
         }
 
-        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
-        if (length != actual_length)
-            throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
+        if (!use_compression)
+        {
+            int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
+
+            if (length != actual_length)
+                throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}",
+                                length, actual_length);
+        }
 
         logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
     }

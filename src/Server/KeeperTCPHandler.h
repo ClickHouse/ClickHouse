@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Poco/Timestamp.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 namespace DB
 {
@@ -80,13 +82,15 @@ private:
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
+    std::shared_ptr<ReadBuffer> maybe_compressed_in;
+    std::shared_ptr<WriteBuffer> maybe_compressed_out;
 
     std::atomic<bool> connected{false};
 
     void runImpl();
 
-    void sendHandshake(bool has_leader);
-    Poco::Timespan receiveHandshake(int32_t handshake_length);
+    void sendHandshake(bool has_leader, bool & use_compression);
+    Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
     bool tryExecuteFourLetterWordCmd(int32_t command);
