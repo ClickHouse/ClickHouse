@@ -35,14 +35,15 @@ public:
     };
 
     BackupImpl(
-        const String & backup_name_for_logging_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        bool use_same_s3_credentials_for_base_backup_);
 
     BackupImpl(
-        const String & backup_name_for_logging_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
@@ -50,7 +51,8 @@ public:
         bool is_internal_backup_,
         const std::shared_ptr<IBackupCoordination> & coordination_,
         const std::optional<UUID> & backup_uuid_,
-        bool deduplicate_files_);
+        bool deduplicate_files_,
+        bool use_same_s3_credentials_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -109,6 +111,7 @@ private:
 
     std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
+    BackupInfo backup_info;
     const String backup_name_for_logging;
     const bool use_archive;
     const ArchiveParams archive_params;
@@ -145,6 +148,7 @@ private:
 
     bool writing_finalized = false;
     bool deduplicate_files = true;
+    bool use_same_s3_credentials_for_base_backup = false;
     const Poco::Logger * log;
 };
 

@@ -100,7 +100,10 @@ RUN python3 -m pip install --no-cache-dir \
     requests-kerberos \
     tzlocal==2.1 \
     retry \
+    bs4 \
+    lxml \
     urllib3
+# bs4, lxml are for cloud tests, do not delete
 
 # Hudi supports only spark 3.3.*, not 3.4
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \

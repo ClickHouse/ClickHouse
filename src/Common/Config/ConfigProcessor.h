@@ -142,6 +142,9 @@ private:
     void decryptEncryptedElements(LoadedConfig & loaded_config);
 #endif
 
+    void hideRecursive(Poco::XML::Node * config_root);
+    XMLDocumentPtr hideElements(XMLDocumentPtr xml_tree);
+
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
     /// If config root node name is not 'clickhouse' and merging config's root node names doesn't match, bypasses merging and returns false.
