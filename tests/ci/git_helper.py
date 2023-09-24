@@ -14,7 +14,7 @@ RELEASE_BRANCH_REGEXP = r"\A\d+[.]\d+\Z"
 TAG_REGEXP = (
     r"\Av\d{2}[.][1-9]\d*[.][1-9]\d*[.][1-9]\d*-(testing|prestable|stable|lts)\Z"
 )
-SHA_REGEXP = r"\A([0-9]|[a-f]){40}\Z"
+SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
@@ -34,8 +34,7 @@ def removesuffix(string: str, suffix: str) -> str:
 
 
 def commit(name: str) -> str:
-    r = re.compile(SHA_REGEXP)
-    if not r.match(name):
+    if not SHA_REGEXP.match(name):
         raise argparse.ArgumentTypeError(
             "commit hash should contain exactly 40 hex characters"
         )
@@ -52,8 +51,11 @@ def release_branch(name: str) -> str:
 class Runner:
     """lightweight check_output wrapper with stripping last NEW_LINE"""
 
-    def __init__(self, cwd: str = CWD):
+    def __init__(self, cwd: str = CWD, set_cwd_to_git_root: bool = False):
         self._cwd = cwd
+        # delayed set cwd to the repo's root, to not do it at the import stage
+        self._git_root = None  # type: Optional[str]
+        self._set_cwd_to_git_root = set_cwd_to_git_root
 
     def run(self, cmd: str, cwd: Optional[str] = None, **kwargs: Any) -> str:
         if cwd is None:
@@ -68,6 +70,12 @@ class Runner:
 
     @property
     def cwd(self) -> str:
+        if self._set_cwd_to_git_root:
+            if self._git_root is None:
+                self._git_root = p.realpath(
+                    p.join(self._cwd, self.run("git rev-parse --show-cdup", self._cwd))
+                )
+            return self._git_root
         return self._cwd
 
     @cwd.setter
@@ -81,11 +89,7 @@ class Runner:
         return self.run(*args, **kwargs)
 
 
-git_runner = Runner()
-# Set cwd to abs path of git root
-git_runner.cwd = p.relpath(
-    p.join(git_runner.cwd, git_runner.run("git rev-parse --show-cdup"))
-)
+git_runner = Runner(set_cwd_to_git_root=True)
 
 
 def is_shallow() -> bool:

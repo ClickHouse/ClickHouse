@@ -63,7 +63,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(needle);
         const auto & re2 = regexp.getRE2();
 
         if (!re2)
@@ -90,7 +90,7 @@ public:
             std::string_view current_row = column_haystack->getDataAt(i).toView();
 
             if (re2->Match({current_row.data(), current_row.size()},
-                0, current_row.size(), re2_st::RE2::UNANCHORED, matched_groups.data(),
+                0, current_row.size(), re2::RE2::UNANCHORED, matched_groups.data(),
                 static_cast<int>(matched_groups.size())))
             {
                 // 1 is to exclude group #0 which is whole re match.
