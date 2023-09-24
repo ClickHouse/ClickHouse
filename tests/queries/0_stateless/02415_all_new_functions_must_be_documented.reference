@@ -192,6 +192,7 @@ blockSerializedSize
 blockSize
 buildId
 byteSize
+byteSwap
 caseWithExpr
 caseWithExpression
 caseWithoutExpr

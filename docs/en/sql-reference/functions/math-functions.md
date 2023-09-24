@@ -711,3 +711,35 @@ Result:
 │                               11 │
 └──────────────────────────────────┘
 ```
+
+## byteSwap
+
+Accepts an integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
+
+**Syntax**
+
+```sql
+byteSwap(operand)
+```
+
+**Example**
+
+```sql
+byteSwap(3351772109)
+```
+
+Result:
+
+```result
+┌─byteSwap(3351772109)─┐
+│           3455829959 │
+└──────────────────────┘
+```
+
+The above example can be understood in the following manner:
+1. First, the integer operand (base 10) is converted to bytes (base 2) in little-endian i.e. 3351772109 -> CD FB C7 C7
+2. Then, the bytes are reversed i.e CD FB C7 C7 -> C7 C7 FB CD
+3. Finally, the bytes are interpreted back to an integer assuming little-endian i.e. C7 C7 FB CD -> 3455829959
+
+Note that, in step#1, we can also choose to convert the operand to bytes in big-endian as long as we also assume big-endian when
+converting back to integer in step#3.

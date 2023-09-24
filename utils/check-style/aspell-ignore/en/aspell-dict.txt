@@ -1176,6 +1176,7 @@ buildId
 buildable
 builtins
 byteSize
+byteSwap
 bytebase
 bytesToCutForIPv
 cLoki
