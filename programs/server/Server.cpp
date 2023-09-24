@@ -130,6 +130,10 @@
 #   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
+#if USE_SFTP
+#   include <curlpp/cURLpp.hpp>
+#endif
+
 #include <incbin.h>
 /// A minimal file used when the server is run without installation
 INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
@@ -630,6 +634,10 @@ try
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
         setenv("OPENSSL_CONF", config_dir.c_str(), true);
     }
+#endif
+
+#if USE_SFTP
+    curlpp::initialize();
 #endif
 
     registerFunctions();
