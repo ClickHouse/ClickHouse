@@ -355,7 +355,7 @@ class PRInfo:
             return False
 
         # If docker image(s) relevant to functional tests are updated
-        if self.sha not in version:
+        if self.sha in version:
             return False
 
         if self.changed_files is None or not self.changed_files:
