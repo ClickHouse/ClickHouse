@@ -2406,6 +2406,8 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+- `compressed_protocol` — If set to true, enables compression in keeper protocol.
+
 
 **Example configuration**
 
