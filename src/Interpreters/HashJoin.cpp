@@ -11,9 +11,12 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -27,6 +30,9 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+
+#include <Functions/FunctionHelpers.h>
+
 
 namespace DB
 {

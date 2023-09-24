@@ -149,6 +149,9 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings->compress_snapshots_with_zstd_format);
     writeText("configuration_change_tries_count=", buf);
     write_int(coordination_settings->configuration_change_tries_count);
+
+    writeText("raft_limits_reconnect_limit=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings->raft_limits_reconnect_limit));
 }
 
 KeeperConfigurationAndSettingsPtr

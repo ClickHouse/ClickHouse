@@ -6,6 +6,7 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledSettings.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
@@ -417,7 +418,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         String type = key_in_user_directories;
         if (size_t bracket_pos = type.find('['); bracket_pos != String::npos)
             type.resize(bracket_pos);
-        if ((type == "users_xml") || (type == "users_config"))
+        if ((type == "users.xml") || (type == "users_config"))
             type = UsersConfigAccessStorage::STORAGE_TYPE;
         else if ((type == "local") || (type == "local_directory"))
             type = DiskAccessStorage::STORAGE_TYPE;
@@ -527,12 +528,14 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
-std::optional<UUID> AccessControl::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    auto id = MultipleAccessStorage::insertImpl(entity, replace_if_exists, throw_if_exists);
-    if (id)
+    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists))
+    {
         changes_notifier->sendNotifications();
-    return id;
+        return true;
+    }
+    return false;
 }
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
@@ -729,6 +732,14 @@ std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
 }
 
 
+std::shared_ptr<const EnabledRolesInfo> AccessControl::getEnabledRolesInfo(
+    const std::vector<UUID> & current_roles,
+    const std::vector<UUID> & current_roles_with_admin_option) const
+{
+    return getEnabledRoles(current_roles, current_roles_with_admin_option)->getRolesInfo();
+}
+
+
 std::shared_ptr<const EnabledRowPolicies> AccessControl::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     return row_policy_cache->getEnabledRowPolicies(user_id, enabled_roles);
@@ -770,6 +781,15 @@ std::shared_ptr<const EnabledSettings> AccessControl::getEnabledSettings(
     const SettingsProfileElements & settings_from_enabled_roles) const
 {
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
+}
+
+std::shared_ptr<const SettingsProfilesInfo> AccessControl::getEnabledSettingsInfo(
+    const UUID & user_id,
+    const SettingsProfileElements & settings_from_user,
+    const boost::container::flat_set<UUID> & enabled_roles,
+    const SettingsProfileElements & settings_from_enabled_roles) const
+{
+    return getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles)->getInfo();
 }
 
 std::shared_ptr<const SettingsProfilesInfo> AccessControl::getSettingsProfileInfo(const UUID & profile_id)

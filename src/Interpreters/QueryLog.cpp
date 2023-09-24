@@ -41,6 +41,15 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
+    auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
+            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
+            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
+            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
+        });
+
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto array_low_cardinality_string = std::make_shared<DataTypeArray>(low_cardinality_string);
 
@@ -109,6 +118,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"log_comment", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
         {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string)},
 
@@ -125,6 +135,8 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_row_policies", array_low_cardinality_string},
 
         {"transaction_id", getTransactionIDDataType()},
+
+        {"query_cache_usage", std::move(query_cache_usage_datatype)},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
     };
@@ -219,6 +231,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insert(threads_array);
     }
 
+    columns[i++]->insert(peak_threads_usage);
+
     if (profile_counters)
     {
         auto * column = columns[i++].get();
@@ -276,6 +290,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
+
+    columns[i++]->insert(query_cache_usage);
 
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());

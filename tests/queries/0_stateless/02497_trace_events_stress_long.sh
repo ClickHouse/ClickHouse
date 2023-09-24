@@ -45,4 +45,11 @@ thread2 $TIMEOUT >/dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'" | rg '^0$'
+for _ in {1..10}
+do
+    # process list is cleaned after everything is sent to client
+    # so this check can be run before process list is cleaned
+    # to avoid spurious failures we retry the check couple of times
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'" | rg '^0$' && break
+    sleep 1
+done

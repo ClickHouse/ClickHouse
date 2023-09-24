@@ -403,6 +403,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserForeignKeyDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "foreign key declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserTablePropertyDeclaration : public IParserBase
 {
 protected:
@@ -548,6 +555,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// CREATE NAMED COLLECTION name [ON CLUSTER cluster]
 class ParserCreateNamedCollectionQuery : public IParserBase
 {
 protected:

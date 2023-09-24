@@ -32,7 +32,6 @@ set(RE2_SOURCES
     ${SRC_DIR}/re2/tostring.cc
     ${SRC_DIR}/re2/unicode_casefold.cc
     ${SRC_DIR}/re2/unicode_groups.cc
-    ${SRC_DIR}/util/pcre.cc
     ${SRC_DIR}/util/rune.cc
     ${SRC_DIR}/util/strutil.cc
 )

@@ -37,6 +37,7 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
     bool supportsSparseSerialization() const override { return true; }
+    bool canBeInsideSparseColumns() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
     MutableColumnPtr createColumn(const ISerialization & serialization) const override;

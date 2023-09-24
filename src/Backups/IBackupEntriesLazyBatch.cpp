@@ -19,8 +19,8 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getReadBuffer(read_settings); }
     UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
-    UInt128 getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
-    std::optional<UInt128> getPartialChecksum(size_t prefix_length) const override { return getInternalBackupEntry()->getPartialChecksum(prefix_length); }
+    UInt128 getChecksum(const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getChecksum(read_settings); }
+    std::optional<UInt128> getPartialChecksum(size_t prefix_length, const ReadSettings & read_settings) const override { return getInternalBackupEntry()->getPartialChecksum(prefix_length, read_settings); }
     DataSourceDescription getDataSourceDescription() const override { return getInternalBackupEntry()->getDataSourceDescription(); }
     bool isEncryptedByDisk() const override { return getInternalBackupEntry()->isEncryptedByDisk(); }
     bool isFromFile() const override { return getInternalBackupEntry()->isFromFile(); }

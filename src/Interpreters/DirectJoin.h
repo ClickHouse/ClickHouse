@@ -30,6 +30,7 @@ public:
         std::shared_ptr<const IKeyValueEntity> storage_,
         const Block & right_sample_block_with_storage_column_names_);
 
+    std::string getName() const override { return "DirectKeyValueJoin"; }
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
     virtual bool addBlockToJoin(const Block &, bool) override;

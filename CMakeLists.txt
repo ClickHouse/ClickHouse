@@ -118,7 +118,11 @@ endif()
 # - sanitize.cmake
 add_library(global-libs INTERFACE)
 
-include (cmake/fuzzer.cmake)
+# We don't want to instrument everything with fuzzer, but only specific targets (see below),
+# also, since we build our own llvm, we specifically don't want to instrument
+# libFuzzer library itself - it would result in infinite recursion
+#include (cmake/fuzzer.cmake)
+
 include (cmake/sanitize.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
@@ -165,8 +169,14 @@ elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
 
-# Make sure the final executable has symbols exported
-set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+if (OS_LINUX)
+    # We should not export dynamic symbols, because:
+    # - The main clickhouse binary does not use dlopen,
+    #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
+    # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
+    #   should not expose their symbols to ODBC drivers and libraries.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic")
+endif ()
 
 if (OS_DARWIN)
     # The `-all_load` flag forces loading of all symbols from all libraries,
@@ -202,9 +212,6 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(USE_DEBUG_HELPERS ON)
-endif()
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
@@ -554,6 +561,46 @@ add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
+
+# Function get_all_targets collects all targets recursively
+function(get_all_targets var)
+    macro(get_all_targets_recursive targets dir)
+        get_property(subdirectories DIRECTORY ${dir} PROPERTY SUBDIRECTORIES)
+        foreach(subdir ${subdirectories})
+            get_all_targets_recursive(${targets} ${subdir})
+        endforeach()
+        get_property(current_targets DIRECTORY ${dir} PROPERTY BUILDSYSTEM_TARGETS)
+        list(APPEND ${targets} ${current_targets})
+    endmacro()
+
+    set(targets)
+    get_all_targets_recursive(targets ${CMAKE_CURRENT_SOURCE_DIR})
+    set(${var} ${targets} PARENT_SCOPE)
+endfunction()
+
+if (FUZZER)
+    # Bundle fuzzers target
+    add_custom_target(fuzzers)
+    # Instrument all targets fuzzer and link with libfuzzer
+    get_all_targets(all_targets)
+    foreach(target ${all_targets})
+        if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main"))
+            get_target_property(target_type ${target} TYPE)
+            if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
+                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+            endif()
+            # clickhouse fuzzer isn't working correctly
+            # initial PR https://github.com/ClickHouse/ClickHouse/pull/27526
+            #if (target MATCHES ".+_fuzzer" OR target STREQUAL "clickhouse")
+            if (target MATCHES ".+_fuzzer")
+                message(STATUS "${target} instrumented with fuzzer")
+                target_link_libraries(${target} PUBLIC ch_contrib::fuzzer)
+                # Add to fuzzers bundle
+                add_dependencies(fuzzers ${target})
+            endif()
+        endif()
+    endforeach()
+endif()
 
 include (cmake/sanitize_targets.cmake)
 

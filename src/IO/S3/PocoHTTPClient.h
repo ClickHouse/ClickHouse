@@ -9,6 +9,7 @@
 
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler_fwd.h>
+#include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -34,16 +35,9 @@ namespace DB::S3
 {
 class ClientFactory;
 
-struct ClientConfigurationPerRequest
-{
-    Aws::Http::Scheme proxy_scheme = Aws::Http::Scheme::HTTPS;
-    String proxy_host;
-    unsigned proxy_port = 0;
-};
-
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
-    std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration = [] (const Aws::Http::HttpRequest &) { return ClientConfigurationPerRequest(); };
+    std::function<DB::ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
@@ -62,17 +56,19 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 
     void updateSchemeAndRegion();
 
-    std::function<void(const ClientConfigurationPerRequest &)> error_report;
+    std::function<void(const DB::ProxyConfiguration &)> error_report;
 
 private:
     PocoHTTPClientConfiguration(
+        std::function<DB::ProxyConfiguration()> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
         const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_
+        const ThrottlerPtr & put_request_throttler_,
+        std::function<void(const DB::ProxyConfiguration &)> error_report_
     );
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
@@ -165,7 +161,7 @@ private:
     template <bool pooled>
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
-        const ClientConfigurationPerRequest & per_request_configuration,
+        const DB::ProxyConfiguration & per_request_configuration,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
@@ -174,8 +170,8 @@ protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
 
-    std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
-    std::function<void(const ClientConfigurationPerRequest &)> error_report;
+    std::function<DB::ProxyConfiguration()> per_request_configuration;
+    std::function<void(const DB::ProxyConfiguration &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;

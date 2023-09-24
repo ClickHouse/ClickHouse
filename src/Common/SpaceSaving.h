@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <vector>
 
 #include <boost/range/adaptor/reversed.hpp>
@@ -18,6 +17,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+
 
 /*
  * Implementation of the Filtered Space-Saving for TopK streaming analysis.

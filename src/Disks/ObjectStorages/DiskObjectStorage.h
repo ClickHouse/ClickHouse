@@ -189,7 +189,7 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
@@ -212,6 +212,9 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
+    String getReadResourceName() const;
+    String getWriteResourceName() const;
+
     const String object_storage_root_path;
     Poco::Logger * log;
 
@@ -225,6 +228,10 @@ private:
     bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
+
+    mutable std::mutex resource_mutex;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

@@ -29,14 +29,16 @@ private:
 
     std::vector<PortsPair> port_pairs;
     const size_t num_delayed_ports;
-    size_t num_finished_pairs = 0;
+    size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
+    size_t num_finished_main_inputs = 0;
 
     std::vector<size_t> output_to_pair;
     bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);
     void finishPair(PortsPair & pair);
+    bool shouldSkipDelayed() const;
 };
 
 }

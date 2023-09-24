@@ -4,6 +4,7 @@
 #include <Access/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SessionTracker.h>
 
 #include <chrono>
 #include <memory>
@@ -96,6 +97,8 @@ public:
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
+    void recordLoginSucess(ContextPtr login_context) const;
+
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
@@ -112,6 +115,8 @@ private:
 
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
+
+    SessionTracker::SessionTrackerHandle session_tracker_handle;
 
     Poco::Logger * log = nullptr;
 };

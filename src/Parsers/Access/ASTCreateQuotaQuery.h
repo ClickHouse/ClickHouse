@@ -38,6 +38,7 @@ public:
     Strings names;
     String new_name;
     std::optional<QuotaKeyType> key_type;
+    String storage_name;
 
     struct Limits
     {
