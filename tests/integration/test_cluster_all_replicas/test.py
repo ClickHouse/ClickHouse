@@ -25,6 +25,13 @@ def test_cluster(start_cluster):
         )
         == "node1\nnode2\n"
     )
+
+    assert set(
+        node1.query(
+            """SELECT hostName(), * FROM clusterAllReplicas("one_shard_two_nodes", system.one) ORDER BY dummy"""
+        ).splitlines()
+    ) == {"node1\t0", "node2\t0"}
+
     assert (
         node1.query("SELECT hostName() FROM cluster('one_shard_two_nodes', system.one)")
         == "node1\n"
