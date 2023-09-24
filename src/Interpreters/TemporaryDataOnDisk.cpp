@@ -205,16 +205,16 @@ struct TemporaryFileStream::OutputWriter
 
 struct TemporaryFileStream::InputReader
 {
-    InputReader(const String & path, const Block & header_, size_t size)
-        : in_file_buf(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size))
+    InputReader(const String & path, const Block & header_, size_t size = 0)
+        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
     {
         LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
     }
 
-    InputReader(const String & path, size_t size)
-        : in_file_buf(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size))
+    explicit InputReader(const String & path, size_t size = 0)
+        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
     {
