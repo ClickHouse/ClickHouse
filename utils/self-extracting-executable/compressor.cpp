@@ -174,7 +174,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
             return 1;
         }
         pointer += current_block_size;
-        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100);
+        printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100); // NOLINT(modernize-use-std-print)
         total_size += size;
         compressed_size += current_block_size;
         current_block_size = 0;
@@ -266,7 +266,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         else
             filename = filenames[i];
 
-        printf("Compressing: %s\n", filename);
+        printf("Compressing: %s\n", filename); // NOLINT(modernize-use-std-print)
 
         int input_fd = open(filename, O_RDONLY);
         if (input_fd == -1)
@@ -302,7 +302,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
 
         if (info_in.st_size == 0)
         {
-            printf("...empty file, skipped.\n");
+            printf("...empty file, skipped.\n"); // NOLINT(modernize-use-std-print)
             continue;
         }
 
@@ -597,14 +597,14 @@ int main(int argc, char* argv[])
     std::cout << "Compression with level: " << level << std::endl;
     if (0 != compressFiles(out_name, exec, &argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
-        printf("Compression failed.\n");
+        printf("Compression failed.\n"); // NOLINT(modernize-use-std-print)
         if (0 != close(output_fd))
             perror("close");
         unlink(argv[start_of_files - 1]);
         return 1;
     }
 
-    printf("Successfully compressed.\n");
+    printf("Successfully compressed.\n"); // NOLINT(modernize-use-std-print)
 
     if (0 != close(output_fd))
         perror("close");
