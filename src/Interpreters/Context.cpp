@@ -1969,7 +1969,7 @@ void Context::killCurrentQuery() const
 
 bool Context::isCurrentQueryKilled() const
 {
-    if (auto elem = getProcessListElement())
+    if (auto elem = getProcessListElementSafe())
         return elem->isKilled();
 
     return false;
@@ -2279,6 +2279,14 @@ QueryStatusPtr Context::getProcessListElement() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
 }
 
+QueryStatusPtr Context::getProcessListElementSafe() const
+{
+    if (!has_process_list_elem)
+        return {};
+    if (auto res = process_list_elem.lock())
+        return res;
+    return {};
+}
 
 void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
