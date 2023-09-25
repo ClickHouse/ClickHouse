@@ -630,7 +630,7 @@ struct AnyJoinImpl
                      FullMergeJoinCursor & right_cursor,
                      PaddedPODArray<UInt64> & left_map,
                      PaddedPODArray<UInt64> & right_map,
-                     AnyJoinState & state,
+                     AnyJoinState & any_join_state,
                      int null_direction_hint)
     {
         assert(enabled);
@@ -691,21 +691,21 @@ struct AnyJoinImpl
             }
         }
 
-        /// Remember index of last joined row to propagate it to next block
+        /// Remember last joined row to propagate it to next block
 
-        state.setValue({});
+        any_join_state.setValue({});
         if (!left_cursor->isValid())
         {
-            state.set(0, left_cursor.cursor);
+            any_join_state.set(0, left_cursor.cursor);
             if (cmp == 0 && isLeft(kind))
-                state.setValue(getRowFromChunk(right_cursor.getCurrent(), rpos));
+                any_join_state.setValue(getRowFromChunk(right_cursor.getCurrent(), rpos));
         }
 
         if (!right_cursor->isValid())
         {
-            state.set(1, right_cursor.cursor);
+            any_join_state.set(1, right_cursor.cursor);
             if (cmp == 0 && isRight(kind))
-                state.setValue(getRowFromChunk(left_cursor.getCurrent(), lpos));
+                any_join_state.setValue(getRowFromChunk(left_cursor.getCurrent(), lpos));
         }
     }
 };
@@ -720,7 +720,6 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
     for (size_t source_num = 0; source_num < 2; ++source_num)
     {
         auto & current = *cursors[source_num];
-        auto & state = any_join_state;
         if (any_join_state.keys[source_num].equals(current.cursor))
         {
             size_t start_pos = current->getRow();
@@ -728,25 +727,22 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
 
             if (length && isLeft(kind) && source_num == 0)
             {
-                if (state.value)
-                    result = copyChunkResized(current.getCurrent(), state.value, start_pos, length);
+                if (any_join_state.value)
+                    result = copyChunkResized(current.getCurrent(), any_join_state.value, start_pos, length);
                 else
                     result = createBlockWithDefaults(source_num, start_pos, length);
             }
 
             if (length && isRight(kind) && source_num == 1)
             {
-                if (state.value)
-                    result = copyChunkResized(state.value, current.getCurrent(), start_pos, length);
+                if (any_join_state.value)
+                    result = copyChunkResized(any_join_state.value, current.getCurrent(), start_pos, length);
                 else
                     result = createBlockWithDefaults(source_num, start_pos, length);
             }
 
-            /// We've found row with other key, no need to skip more rows with current key
             if (current->isValid())
-            {
-                state.keys[source_num].reset();
-            }
+                any_join_state.keys[source_num].reset();
         }
         else
         {

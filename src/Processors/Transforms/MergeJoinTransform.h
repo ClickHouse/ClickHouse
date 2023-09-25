@@ -85,6 +85,11 @@ public:
         keys[source_num] = JoinKeyRow(cursor, cursor.rows - 1);
     }
 
+    void reset(size_t source_num)
+    {
+        keys[source_num].reset();
+    }
+
     void setValue(Chunk value_) { value = std::move(value_); }
 
     bool empty() const { return keys[0].row.empty() && keys[1].row.empty(); }
