@@ -3583,7 +3583,10 @@ void Context::initializeStatisticsStorage(UInt64 refresh_interval)
 {
     std::lock_guard lock(shared->statistics_storage_mutex);
     if (!shared->statistics_storage)
+    {
         shared->statistics_storage = std::make_shared<CachedStatisticsStorage>(refresh_interval);
+        shared->statistics_storage->initialize(this->global_context_instance);
+    }
 }
 
 DisksMap Context::getDisksMap() const

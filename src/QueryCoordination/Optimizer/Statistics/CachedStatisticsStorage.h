@@ -14,12 +14,12 @@ using TableStatistics = Float64;
 class CachedStatisticsStorage : public IStatisticsStorage
 {
 public:
-    explicit CachedStatisticsStorage(UInt64 refresh_interval_sec_, const String & load_thread_name_ = "bg_stats_update");
+    explicit CachedStatisticsStorage(UInt64 refresh_interval_sec_, const String & load_thread_name_ = "StatisticsStrge");
 
     StatisticsPtr get(const StorageID & table, const String & cluster_name) override;
-    void collect(const StorageID & storage_id) override;
+    void collect(const StorageID & storage_id, const Names & columns, ContextMutablePtr context) override;
 
-    void refreshAll() override;
+    void loadAll() override;
     void shutdown() override;
 
     ~CachedStatisticsStorage() override;
@@ -32,6 +32,7 @@ private:
     StatisticsMap cache;
 
     StatisticsLoader loader;
+    StatisticsCollector collector;
 
     /// Background loading thread name
     String load_thread_name;

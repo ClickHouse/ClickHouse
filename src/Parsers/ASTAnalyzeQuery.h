@@ -9,14 +9,31 @@
 namespace DB
 {
 
-/** ANALYZE query:
- *  ANALYZE [FULL|SAMPLE] TABLE table_name (column_name [, column_name])
- *  SETTINGS (key=value [, key=value]);
- */
-
-class ASTAnalyzeQuery
+class ASTAnalyzeQuery : public IAST/// , public ASTQueryWithOnCluster
 {
+public:
+    bool is_full;
+    bool is_async;
+    ASTPtr database;
+    ASTPtr table;
+    ASTPtr column_list;
+    ASTPtr settings;
+    String cluster;
 
+    String getID(char) const override { return "Analyze"; }
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&database));
+        f(reinterpret_cast<void **>(&table));
+        f(reinterpret_cast<void **>(&column_list));
+        f(reinterpret_cast<void **>(&settings));
+    }
 };
+
 
 }

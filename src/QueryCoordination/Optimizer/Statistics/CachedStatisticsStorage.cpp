@@ -1,4 +1,5 @@
 #include "CachedStatisticsStorage.h"
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -6,6 +7,7 @@ namespace DB
 
 CachedStatisticsStorage::CachedStatisticsStorage(UInt64 refresh_interval_sec_, const String & load_thread_name_)
     : loader(StatisticsLoader())
+    , collector(StatisticsCollector())
     , load_thread_name(load_thread_name_)
     , refresh_interval_sec(refresh_interval_sec_)
     , shutdown_called(false)
@@ -32,12 +34,12 @@ StatisticsPtr CachedStatisticsStorage::get(const StorageID & storage_id, const S
     return nullptr;
 }
 
-void CachedStatisticsStorage::collect(const StorageID & storage_id)
+void CachedStatisticsStorage::collect(const StorageID & storage_id, const Names & columns, ContextMutablePtr context)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method not implemented.");
+    collector.collect(storage_id, columns, context);
 }
 
-void CachedStatisticsStorage::refreshAll()
+void CachedStatisticsStorage::loadAll()
 {
     if (shutdown_called)
         return;
@@ -81,7 +83,7 @@ void CachedStatisticsStorage::loadTask()
 
         try
         {
-            refreshAll();
+            loadAll();
         }
         catch (...)
         {
