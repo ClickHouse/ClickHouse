@@ -17,8 +17,8 @@ namespace
 bool matchFnUniq(String func_name)
 {
     auto name = Poco::toLower(func_name);
-    return name == "uniq" || name == "uniqHLL12" || name == "uniqExact" || name == "uniqTheta" || name == "uniqCombined"
-        || name == "uniqCombined64";
+    return name == "uniq" || name == "uniqhll12" || name == "uniqexact" || name == "uniqtheta" || name == "uniqcombined"
+        || name == "uniqcombined64";
 }
 
 /// Extract the corresponding projection columns for group by node list.
