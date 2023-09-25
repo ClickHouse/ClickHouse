@@ -732,11 +732,16 @@ bool Client::processWithFuzzing(const String & full_query)
     }
 
     //setting dialect to clickhouse during query fuzzing, restore dialect to original value after fuzzing
-    SettingChange new_setting("dialect", "clickhouse");
+
     SCOPE_EXIT_SAFE({
             global_context->setSetting("dialect", old_dialect);
     });
-    global_context->applySettingChange(new_setting);
+
+    if (dialect != DB::Dialect::clickhouse)
+    {
+        SettingChange new_setting("dialect", "clickhouse");
+        global_context->applySettingChange(new_setting);
+    }
 
     // Don't repeat:
     // - INSERT -- Because the tables may grow too big.
