@@ -25,7 +25,10 @@ $CLICKHOUSE_CLIENT -nm -q "
 "
 
 # break the replica
+$CLICKHOUSE_CLIENT -q "system drop cluster replica data_r1"
 $CLICKHOUSE_KEEPER_CLIENT -q "rmr /tables/$CLICKHOUSE_DATABASE/data/replicas/1"
+# FIXME: should this node ("removed") moved into the replica_path?
+$CLICKHOUSE_KEEPER_CLIENT -q "rmr /tables/$CLICKHOUSE_DATABASE/data/cluster/replicas/1"
 
 # TODO:
 # - system stop replicated cluster;
@@ -53,15 +56,16 @@ if [[ $is_readonly != "0" ]]; then
 fi
 
 $CLICKHOUSE_CLIENT -nm -q "
--- { echo }
 system sync replica data_r1 cluster;
-
-select _table, count(), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
-select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
-select partition, count() from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
-
 system sync replica data_r2 cluster;
 system sync replica data_r3 cluster;
 system sync replica data_r4 cluster;
+
+system sync replica data_r1 cluster;
+
+-- { echo }
+select _table, min2(count(), 5), min2(length(groupArrayDistinct(_partition_id)), 5) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+select partition, count() from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 select _table, count(), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=1;
 "

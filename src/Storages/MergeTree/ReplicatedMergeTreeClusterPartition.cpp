@@ -32,6 +32,7 @@ ReplicatedMergeTreeClusterPartition::ReplicatedMergeTreeClusterPartition(const S
         /* active_replicas_= */ replicas,
         /* source_replica_= */ String(),
         /* new_replica_= */ String(),
+        /* drop_replica_= */ String(),
         /* stat= */ Coordination::Stat()
     )
 {}
@@ -43,6 +44,7 @@ ReplicatedMergeTreeClusterPartition::ReplicatedMergeTreeClusterPartition(
     const Strings & active_replicas_,
     const String & source_replica_,
     const String & new_replica_,
+    const String & drop_replica_,
     const Coordination::Stat & stat)
     : partition_id(partition_id_)
     , state(state_)
@@ -50,6 +52,7 @@ ReplicatedMergeTreeClusterPartition::ReplicatedMergeTreeClusterPartition(
     , active_replicas(active_replicas_)
     , source_replica(source_replica_)
     , new_replica(new_replica_)
+    , drop_replica(drop_replica_)
     , version(stat.version)
     , modification_time_ms(stat.mtime)
 {
@@ -107,9 +110,13 @@ ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeClusterPartition::read(Re
     const auto & active_replicas = read_replicas("active_replicas");
     const auto & source_replica = read_replica("source_replica");
     const auto & new_replica = read_replica("new_replica");
+    const auto & drop_replica = read_replica("drop_replica");
     assertChar('\n', in);
 
-    return ReplicatedMergeTreeClusterPartition(partition_id, state.value(), all_replicas, active_replicas, source_replica, new_replica, stat);
+    return ReplicatedMergeTreeClusterPartition(partition_id, state.value(),
+        all_replicas, active_replicas,
+        source_replica, new_replica, drop_replica,
+        stat);
 }
 
 ReplicatedMergeTreeClusterPartition ReplicatedMergeTreeClusterPartition::fromString(const String & str, const Coordination::Stat & stat, const String & partition_id)
@@ -148,6 +155,7 @@ void ReplicatedMergeTreeClusterPartition::write(WriteBuffer & out) const
     write_replicas("active_replicas", active_replicas);
     write_replica("source_replica", source_replica);
     write_replica("new_replica", new_replica);
+    write_replica("drop_replica", drop_replica);
     writeChar('\n', out);
 }
 
@@ -166,6 +174,14 @@ String ReplicatedMergeTreeClusterPartition::toStringForLog() const
             return fmt::format("{} (replicas: [{}], version: {})",
                 partition_id,
                 fmt::join(all_replicas, ", "),
+                version);
+        case DROPPING:
+            return fmt::format("{} (all_replicas: [{}], active_replicas: [{}], {} {}, version: {})",
+                partition_id,
+                fmt::join(all_replicas, ", "),
+                fmt::join(active_replicas, ", "),
+                magic_enum::enum_name(state),
+                drop_replica,
                 version);
         case MIGRATING:
         case CLONING:
@@ -207,8 +223,10 @@ void ReplicatedMergeTreeClusterPartition::removeReplica(const String & replica)
 
 void ReplicatedMergeTreeClusterPartition::replaceReplica(const String & src, const String & dest)
 {
-    if (!source_replica.empty() || !new_replica.empty())
+    if (state != UP_TO_DATE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition {} already under migration", toStringForLog());
+    if (std::find(all_replicas.begin(), all_replicas.end(), dest) != all_replicas.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition {} already exists on replica {}", toStringForLog(), dest);
 
     new_replica = dest;
     source_replica = src;
@@ -223,7 +241,7 @@ void ReplicatedMergeTreeClusterPartition::replaceReplica(const String & src, con
 
 void ReplicatedMergeTreeClusterPartition::addReplica(const String & src, const String & dest)
 {
-    if (!source_replica.empty() || !new_replica.empty())
+    if (state != UP_TO_DATE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition {} already under migration", toStringForLog());
 
     new_replica = dest;
@@ -233,9 +251,22 @@ void ReplicatedMergeTreeClusterPartition::addReplica(const String & src, const S
     state = CLONING;
 }
 
+void ReplicatedMergeTreeClusterPartition::dropReplica(const String & replica)
+{
+    if (state != UP_TO_DATE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition {} already under migration", toStringForLog());
+
+    drop_replica = replica;
+
+    std::erase(active_non_migration_replicas, replica);
+    std::erase(all_non_migration_replicas, replica);
+
+    state = DROPPING;
+}
+
 void ReplicatedMergeTreeClusterPartition::finish()
 {
-    if (source_replica.empty() || new_replica.empty())
+    if (state == UP_TO_DATE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition {} is not under migration", toStringForLog());
 
     switch (state)
@@ -258,10 +289,25 @@ void ReplicatedMergeTreeClusterPartition::finish()
         case CLONING:
             active_replicas.push_back(new_replica);
             break;
+        case DROPPING:
+        {
+            size_t n;
+            n = std::erase(all_replicas, drop_replica);
+            if (!n)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No replica {} in all replicas ({})", drop_replica, fmt::join(all_replicas, ", "));
+            n = std::erase(active_replicas, drop_replica);
+            if (!n)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No replica {} in active replicas ({})", drop_replica, fmt::join(active_replicas, ", "));
+
+            active_replicas.push_back(new_replica);
+            break;
+        }
     }
 
     source_replica.clear();
     new_replica.clear();
+    drop_replica.clear();
+
     state = UP_TO_DATE;
 }
 
@@ -270,7 +316,8 @@ void ReplicatedMergeTreeClusterPartition::revert()
     switch (state)
     {
         case UP_TO_DATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Partition {} is not under migration", toStringForLog());
+        case DROPPING:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot revert partition {}", toStringForLog());
         case MIGRATING:
         case CLONING:
         {

@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterReplica.h>
@@ -36,12 +37,13 @@ public:
     explicit ReplicatedMergeTreeCluster(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreeCluster();
 
-    void addCreateOps(Coordination::Requests & ops);
-    void addCreateReplicaOps(Coordination::Requests & ops);
+    void addCreateOps(Coordination::Requests & ops) const;
+    void addCreateReplicaOps(Coordination::Requests & ops) const;
     void addRemoveReplicaOps(const zkutil::ZooKeeperPtr & zookeeper, Coordination::Requests & ops);
-    void addDropOps(Coordination::Requests & ops);
+    void addDropOps(Coordination::Requests & ops) const;
 
-    void waitReplicaRemoved(const zkutil::ZooKeeperPtr & zookeeper);
+    bool isReplicaActive() const;
+    void dropReplica(ContextPtr local_context);
 
     void initialize();
     void startDistributor();
@@ -93,6 +95,8 @@ private:
 
     mutable std::mutex partitions_mutex;
     mutable std::mutex replicas_mutex;
+
+    bool is_replica_active = false;
 };
 
 }

@@ -134,7 +134,11 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
         return false;
     }
 
-    setNotReadonly();
+    bool is_active = false;
+    if (storage.cluster.has_value())
+        is_active = storage.cluster->isReplicaActive();
+    if (is_active)
+        setNotReadonly();
 
     /// Start queue processing
     storage.background_operations_assignee.start();

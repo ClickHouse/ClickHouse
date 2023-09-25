@@ -15,6 +15,25 @@
 #include <base/types.h>
 #include <base/defines.h>
 
+namespace
+{
+
+using namespace DB;
+
+ReplicatedMergeTreeClusterBalancerStep getBalancerStep(const ReplicatedMergeTreeClusterPartition & partition)
+{
+    switch (partition.getState())
+    {
+        case MIGRATING: return BALANCER_MIGRATE_PARTITION;
+        case CLONING: return BALANCER_CLONE_PARTITION;
+        case DROPPING: return BALANCER_DROP_PARTITION;
+        case UP_TO_DATE:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state for restoring, partition {}", partition.toStringForLog());
+    }
+}
+
+}
+
 namespace DB
 {
 
@@ -67,7 +86,7 @@ void ReplicatedMergeTreeClusterBalancer::shutdown()
     background_task->deactivate();
 }
 
-void ReplicatedMergeTreeClusterBalancer::waitSynced()
+void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
 {
     auto task_blocker = background_task->getExecLock();
 
@@ -84,17 +103,28 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced()
 
     while (true)
     {
-        runStep();
+        try
+        {
+            runStep();
+        }
+        catch (...)
+        {
+            if (state.step == BALANCER_REVERT)
+                tryLogCurrentException(log, "While trying to REVERT, retrying");
+            else
+                throw;
+        }
+
         /// Always process REVERT regardless of is_stopped.
-        if (state.step == REVERT)
+        if (state.step == BALANCER_REVERT)
             continue;
-        if (state.step == NOTHING_TODO)
+        if (state.step == BALANCER_NOTHING_TODO)
             break;
         if (is_stopped)
             break;
     }
 
-    if (is_stopped)
+    if (throw_if_stopped && is_stopped)
         throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
 }
 
@@ -112,18 +142,7 @@ void ReplicatedMergeTreeClusterBalancer::restoreStateFromCoordinator()
             continue;
 
         auto & target = state.target.emplace(partition);
-        switch (target.getState())
-        {
-            case MIGRATING:
-                state.step = MIGRATE_PARTITION;
-                break;
-            case CLONING:
-                state.step = CLONE_PARTITION;
-                break;
-            case UP_TO_DATE:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state for restoring, partition {}", partition.toStringForLog());
-        }
-
+        state.step = getBalancerStep(target);
         LOG_INFO(log, "Restore balancer task for partition {}", target.toStringForLog());
         break;
     }
@@ -137,7 +156,7 @@ try
     while (!is_stopped)
     {
         runStep();
-        if (state.step == NOTHING_TODO)
+        if (state.step == BALANCER_NOTHING_TODO)
             break;
     }
 
@@ -155,53 +174,51 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
 {
     switch (state.step)
     {
-        case SELECT_PARTITION:
+        case BALANCER_SELECT_PARTITION:
         {
             auto partition = selectPartition();
             if (partition.has_value())
             {
                 state.target = partition;
-                switch (partition->getState())
-                {
-                    case MIGRATING:
-                        state.step = MIGRATE_PARTITION;
-                        break;
-                    case CLONING:
-                        state.step = CLONE_PARTITION;
-                        break;
-                    case UP_TO_DATE:
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Selected incorrect partition {}", partition->toStringForLog());
-                }
+                state.step = getBalancerStep(*partition);
             }
             else
-                state.step = NOTHING_TODO;
+                state.step = BALANCER_NOTHING_TODO;
             break;
         }
-        case MIGRATE_PARTITION:
-        case CLONE_PARTITION:
+        case BALANCER_MIGRATE_PARTITION:
+        case BALANCER_CLONE_PARTITION:
         {
             try
             {
                 migrateOrClonePartitionWithClone(*state.target);
                 state.target.reset();
-                state.step = SELECT_PARTITION;
+                state.step = BALANCER_SELECT_PARTITION;
             }
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY)
                     throw;
+                if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                    throw;
 
-                state.step = REVERT;
+                state.step = BALANCER_REVERT;
                 tryLogCurrentException(log, fmt::format("Cannot process partition {}, will revert", state.target->toStringForLog()));
             }
             break;
         }
-        case REVERT:
-            revert(*state.target);
-            state.step = SELECT_PARTITION;
+        case BALANCER_DROP_PARTITION:
+            /// No real drop happens, it will be done in background (if any)
+            finish(*state.target);
+            state.target.reset();
+            state.step = BALANCER_SELECT_PARTITION;
             break;
-        case NOTHING_TODO:
-            state.step = SELECT_PARTITION;
+        case BALANCER_REVERT:
+            revert(*state.target);
+            state.step = BALANCER_SELECT_PARTITION;
+            break;
+        case BALANCER_NOTHING_TODO:
+            state.step = BALANCER_SELECT_PARTITION;
             break;
     }
 }

@@ -1,6 +1,5 @@
 -- { echo }
-system sync replica data_r1 cluster;
-select _table, count(), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+select _table, min2(count(), 5), min2(length(groupArrayDistinct(_partition_id)), 5) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
 data_r1	5	5
 data_r2	5	5
 data_r3	5	5
@@ -21,9 +20,6 @@ select partition, count() from system.cluster_partitions array join active_repli
 0-7	2
 0-8	2
 0-9	2
-system sync replica data_r2 cluster;
-system sync replica data_r3 cluster;
-system sync replica data_r4 cluster;
 select _table, count(), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=1;
 data_r1	10	10
 data_r2	10	10

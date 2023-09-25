@@ -20,6 +20,7 @@ enum ReplicatedMergeTreeClusterPartitionState
     UP_TO_DATE,
     MIGRATING,
     CLONING,
+    DROPPING,
 };
 
 /// Representation of /block_numbers/$partition in case of cluster
@@ -34,6 +35,7 @@ enum ReplicatedMergeTreeClusterPartitionState
 ///     active_replicas (0):
 ///     source_replica:
 ///     new_replica:
+///     drop_replica:
 ///
 ///
 class ReplicatedMergeTreeClusterPartition
@@ -57,6 +59,7 @@ public:
     const Strings & getActiveReplicas() const { return active_replicas; }
     const Strings & getActiveNonMigrationReplicas() const { return active_non_migration_replicas; }
     const Strings & getAllNonMigrationReplicas() const { return all_non_migration_replicas; }
+    const String & getDropReplica() const { return drop_replica; }
     const String & getNewReplica() const { return new_replica; }
     const String & getSourceReplica() const { return source_replica; }
 
@@ -70,6 +73,8 @@ public:
     void replaceReplica(const String & src, const String & dest);
     /// CLONING
     void addReplica(const String & src, const String & dest);
+    /// DROPPING
+    void dropReplica(const String & replica);
 
     /// For migration/cloning
     void finish();
@@ -88,6 +93,7 @@ private:
         const Strings & active_replicas_,
         const String & source_replica_,
         const String & new_replica_,
+        const String & drop_replica_,
         const Coordination::Stat & stat);
 
     /// NOTE: This are constant values, however, if you will declare them with const CV, you cannot copy the object.
@@ -112,6 +118,7 @@ private:
     /// If replica is under migration:
     String source_replica;
     String new_replica;
+    String drop_replica;
 
     int version = -1;
     Int64 modification_time_ms = 0;

@@ -110,7 +110,6 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/String.h>
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
@@ -1185,7 +1184,6 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
 
         if (cluster)
             cluster->addRemoveReplicaOps(zookeeper, ops);
-            /// NOTE: we should retry on ZBADVERSION instead of simply recursive removal
 
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/columns", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/is_lost", -1));
@@ -1277,6 +1275,12 @@ void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path,
     dropReplica(zookeeper, drop_zookeeper_path, drop_replica, logger);
 }
 
+void StorageReplicatedMergeTree::dropClusterReplica(ContextPtr local_context)
+{
+    flushAndPrepareForShutdown();
+    partialShutdown();
+    cluster->dropReplica(local_context);
+}
 
 bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
         const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
@@ -5294,17 +5298,6 @@ void StorageReplicatedMergeTree::shutdown(bool)
         queue.pull_log_blocker.cancelForever();
     }
     background_moves_assignee.finish();
-
-    /// Only for DROP TABLE
-    bool is_from_query = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr;
-    /// FIXME: remove this ugly hack
-    bool is_from_detach = is_from_query && Poco::toLower(CurrentThread::get().getQueryForLog()).contains("detach");
-    if (is_from_query && !is_from_detach)
-    {
-        /// Need to wait for partitions to be migrated back to other replicas.
-        if (cluster)
-            cluster->waitReplicaRemoved(getZooKeeperIfTableShutDown());
-    }
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)

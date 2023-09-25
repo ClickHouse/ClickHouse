@@ -218,6 +218,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         print_drop_replica();
     }
+    else if (type == Type::DROP_CLUSTER_REPLICA)
+    {
+        print_database_table();
+    }
     else if (type == Type::SUSPEND)
     {
         print_keyword(" FOR ") << seconds;

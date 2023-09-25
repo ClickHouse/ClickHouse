@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartitionSelector.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <atomic>
@@ -13,6 +14,23 @@ namespace DB
 class ReplicatedMergeTreeCluster;
 class StorageReplicatedMergeTree;
 
+enum ReplicatedMergeTreeClusterBalancerStep
+{
+    /// Select partition to migrate/clone.
+    /// For details see ReplicatedMergeTreeClusterPartitionSelector.
+    BALANCER_SELECT_PARTITION,
+    /// Regular migration for partition.
+    BALANCER_MIGRATE_PARTITION,
+    /// Usually if some existing replica had been gone.
+    BALANCER_CLONE_PARTITION,
+    /// Usually after SYSTEM DROP CLUSTER REPLICA
+    BALANCER_DROP_PARTITION,
+    /// Revert the CLONE_PARTITION/MIGRATE_PARTITION in case of error.
+    BALANCER_REVERT,
+    /// Everything is up to date.
+    BALANCER_NOTHING_TODO,
+};
+
 class ReplicatedMergeTreeClusterBalancer
 {
 public:
@@ -22,30 +40,16 @@ public:
     void wakeup();
     void shutdown();
 
-    void waitSynced();
+    void waitSynced(bool throw_if_stopped);
 
 private:
     ReplicatedMergeTreeCluster & cluster;
     StorageReplicatedMergeTree & storage;
     Poco::Logger * log;
 
-    enum Step
-    {
-        /// Select partition to migrate/clone.
-        /// For details see ReplicatedMergeTreeClusterPartitionSelector.
-        SELECT_PARTITION,
-        /// Regular migration for partition.
-        MIGRATE_PARTITION,
-        /// Usually if some replica goes had been gone.
-        CLONE_PARTITION,
-        /// Revert the CLONE_PARTITION/MIGRATE_PARTITION in case of error.
-        REVERT,
-        /// Everything is up to date.
-        NOTHING_TODO,
-    };
     struct State
     {
-        Step step = SELECT_PARTITION;
+        ReplicatedMergeTreeClusterBalancerStep step = BALANCER_SELECT_PARTITION;
         std::optional<ReplicatedMergeTreeClusterPartition> target;
     };
     State state;

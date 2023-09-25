@@ -20,17 +20,15 @@ function sync_cluster()
 
 function backup_replicas_thread()
 {
-    # NOTE: this actions will lead to data loss, since DROP does not migrate
-    # partitions back to alive replicas, and between CREATE and DROP some
-    # partitions may be completelly migrated to this new replicas, and after
-    # DROP nobody will have them.
-    #
-    # I guess some option do migrate partitions back to other replicas on DROP
-    # should be introduced?
-    #
-    # NOTE: it will wait at least 60 seconds because old local partitions
-    # should be removed from the old replicas, to be allowed for migration.
     for i in {0..20}; do
+        # FIXME: this is very slow now due to 5 second delay
+        if [[ $i -gt 0 ]]; then
+            $CLICKHOUSE_CLIENT -nm -q "
+                system drop cluster replica data_r3;
+                system drop cluster replica data_r4;
+            "
+        fi
+
         $CLICKHOUSE_CLIENT -nm -q "
             drop table if exists data_r3;
             drop table if exists data_r4;
