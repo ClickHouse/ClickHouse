@@ -21,13 +21,12 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
     update_mergeable_check,
-    format_description,
 )
 from docker_pull_helper import get_image_with_version
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
-from report import TestResult, TestResults, read_test_results
+from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -145,14 +144,9 @@ def main():
     logs_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = logs_path / "run.log"
-    timeout_expired = False
-    timeout = 90 * 60
-    with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=90 * 60) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_cmd)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -184,11 +178,6 @@ def main():
         state = "failure"
     else:
         state, description, test_results, additional_logs = process_results(output_path)
-
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(timeout))
-        state = "failure"
-        description = format_description(test_results[-1].name)
 
     ch_helper = ClickHouseHelper()
     s3_path_prefix = os.path.join(

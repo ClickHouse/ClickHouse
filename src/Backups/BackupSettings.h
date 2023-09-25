@@ -59,9 +59,6 @@ struct BackupSettings
     /// Can only be used with BACKUP ON CLUSTER.
     size_t replica_num = 0;
 
-    /// Check checksums of the data parts before writing them to a backup.
-    bool check_parts = true;
-
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;

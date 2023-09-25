@@ -170,12 +170,6 @@ public:
         const ASTPtr & query,
         ContextPtr context);
 
-    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
-        const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAGPtr & filter_dag,
-        ContextPtr context);
-
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
         std::optional<PartitionPruner> & partition_pruner,

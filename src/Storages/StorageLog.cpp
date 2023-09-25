@@ -503,15 +503,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
 void StorageLog::Mark::write(WriteBuffer & out) const
 {
-    writeBinaryLittleEndian(rows, out);
-    writeBinaryLittleEndian(offset, out);
+    writeIntBinary(rows, out);
+    writeIntBinary(offset, out);
 }
 
 
 void StorageLog::Mark::read(ReadBuffer & in)
 {
-    readBinaryLittleEndian(rows, in);
-    readBinaryLittleEndian(offset, in);
+    readIntBinary(rows, in);
+    readIntBinary(offset, in);
 }
 
 

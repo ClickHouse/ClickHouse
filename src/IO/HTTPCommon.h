@@ -62,7 +62,6 @@ struct HTTPSessionReuseTag
 {
 };
 
-void markSessionForReuse(Poco::Net::HTTPSession & session);
 void markSessionForReuse(HTTPSessionPtr session);
 void markSessionForReuse(PooledHTTPSessionPtr session);
 

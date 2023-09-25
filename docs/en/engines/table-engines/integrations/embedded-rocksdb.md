@@ -8,7 +8,7 @@ sidebar_label: EmbeddedRocksDB
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
-## Creating a Table {#creating-a-table}
+## Creating a Table {#table_engine-EmbeddedRocksDB-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -85,7 +85,7 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
 </rocksdb>
 ```
 
-## Supported operations {#supported-operations}
+## Supported operations {#table_engine-EmbeddedRocksDB-supported-operations}
 
 ### Inserts
 

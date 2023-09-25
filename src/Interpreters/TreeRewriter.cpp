@@ -388,44 +388,6 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     else
         return;
 
-    NameSet required_by_interpolate;
-
-    if (select_query->interpolate())
-    {
-        auto & children = select_query->interpolate()->children;
-        if (!children.empty())
-        {
-            NameToNameSetMap expressions;
-
-            auto interpolate_visitor = [](const ASTPtr ast, NameSet & columns) -> void
-            {
-                auto interpolate_visitor_impl = [](const ASTPtr node, NameSet & cols, auto self) -> void
-                {
-                    if (const auto * ident = node->as<ASTIdentifier>())
-                        cols.insert(ident->name());
-                    else if (const auto * func = node->as<ASTFunction>())
-                        for (const auto & elem : func->arguments->children)
-                            self(elem, cols, self);
-                };
-                interpolate_visitor_impl(ast, columns, interpolate_visitor_impl);
-            };
-
-            for (const auto & elem : children)
-            {
-                if (auto * interpolate = elem->as<ASTInterpolateElement>())
-                {
-                    NameSet needed_columns;
-                    interpolate_visitor(interpolate->expr, needed_columns);
-                    expressions.emplace(interpolate->column, std::move(needed_columns));
-                }
-            }
-
-            for (const auto & name : required_result_columns)
-                if (const auto it = expressions.find(name); it != expressions.end())
-                    required_by_interpolate.insert(it->second.begin(), it->second.end());
-        }
-    }
-
     ASTs new_elements;
     new_elements.reserve(elements.size());
 
@@ -440,11 +402,6 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         {
             new_elements.push_back(elem);
             --it->second;
-        }
-        else if (required_by_interpolate.contains(name))
-        {
-            /// Columns required by interpolate expression are not always in the required_result_columns
-            new_elements.push_back(elem);
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
@@ -604,13 +561,15 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
 
     Field eval_res;
     DataTypePtr eval_res_type;
+    try
     {
-        auto constant_expression_result = tryEvaluateConstantExpression(expr, context);
-        if (!constant_expression_result)
-            return {};
-        std::tie(eval_res, eval_res_type) = std::move(constant_expression_result.value());
+        std::tie(eval_res, eval_res_type) = evaluateConstantExpression(expr, context);
     }
-
+    catch (DB::Exception &)
+    {
+        /// not a constant expression
+        return {};
+    }
     /// UInt8, maybe Nullable, maybe LowCardinality, and NULL are allowed
     eval_res_type = removeNullable(removeLowCardinality(eval_res_type));
     if (auto which = WhichDataType(eval_res_type); !which.isUInt8() && !which.isNothing())
@@ -957,7 +916,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 /// Calculate which columns are required to execute the expression.
 /// Then, delete all other columns from the list of available columns.
 /// After execution, columns will only contain the list of columns needed to read from the table.
-bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint, bool no_throw)
+void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint)
 {
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
@@ -1176,8 +1135,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 ss << " '" << name << "'";
         }
 
-        if (no_throw)
-            return false;
         throw Exception(PreformattedMessage{ss.str(), format_string}, ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
@@ -1186,7 +1143,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     {
         source_column_names.insert(column.name);
     }
-    return true;
 }
 
 NameSet TreeRewriterResult::getArrayJoinSourceNameSet() const
@@ -1396,9 +1352,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     else
         assertNoAggregates(query, "in wrong place");
 
-    bool is_ok = result.collectUsedColumns(query, false, settings.query_plan_optimize_primary_key, no_throw);
-    if (!is_ok)
-        return {};
+    result.collectUsedColumns(query, false, settings.query_plan_optimize_primary_key);
     return std::make_shared<const TreeRewriterResult>(result);
 }
 

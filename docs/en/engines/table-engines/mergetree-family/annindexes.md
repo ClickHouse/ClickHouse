@@ -252,7 +252,7 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -265,7 +265,7 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Tuple(Float32[, Float32[, ...]]),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -276,9 +276,6 @@ USearch currently supports two distance functions:
   ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
 - `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
-
-USearch allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`. If no scalar kind
-was specified during index creation, `f16` is used as default.
 
 For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
 distance function was specified during index creation, `L2Distance` is used as default.

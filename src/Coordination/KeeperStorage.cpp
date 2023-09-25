@@ -604,26 +604,20 @@ namespace
 
 }
 
-void KeeperStorage::applyUncommittedState(KeeperStorage & other, int64_t last_log_idx)
+void KeeperStorage::applyUncommittedState(KeeperStorage & other, int64_t last_zxid)
 {
-    std::unordered_set<int64_t> zxids_to_apply;
     for (const auto & transaction : uncommitted_transactions)
     {
-        if (transaction.log_idx == 0)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Transaction has log idx equal to 0");
-
-        if (transaction.log_idx <= last_log_idx)
+        if (transaction.zxid <= last_zxid)
             continue;
-
         other.uncommitted_transactions.push_back(transaction);
-        zxids_to_apply.insert(transaction.zxid);
     }
 
     auto it = uncommitted_state.deltas.begin();
 
     for (; it != uncommitted_state.deltas.end(); ++it)
     {
-        if (!zxids_to_apply.contains(it->zxid))
+        if (it->zxid <= last_zxid)
             continue;
 
         other.uncommitted_state.addDelta(*it);
@@ -2103,8 +2097,7 @@ void KeeperStorage::preprocessRequest(
     int64_t time,
     int64_t new_last_zxid,
     bool check_acl,
-    std::optional<Digest> digest,
-    int64_t log_idx)
+    std::optional<Digest> digest)
 {
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
@@ -2123,15 +2116,8 @@ void KeeperStorage::preprocessRequest(
     else
     {
         if (last_zxid == new_last_zxid && digest && checkDigest(*digest, getNodesDigest(false)))
-        {
-            auto & last_transaction = uncommitted_transactions.back();
-            // we found the preprocessed request with the same ZXID, we can get log_idx and skip preprocessing it
-            chassert(last_transaction.zxid == new_last_zxid && log_idx != 0);
-            /// initially leader preprocessed without knowing the log idx
-            /// on the second call we have that information and can set the log idx for the correct transaction
-            last_transaction.log_idx = log_idx;
+            // we found the preprocessed request with the same ZXID, we can skip it
             return;
-        }
 
         if (new_last_zxid <= last_zxid)
             throw Exception(
@@ -2141,7 +2127,7 @@ void KeeperStorage::preprocessRequest(
     }
 
     std::vector<Delta> new_deltas;
-    TransactionInfo transaction{.zxid = new_last_zxid, .nodes_digest = {}, .log_idx = log_idx};
+    TransactionInfo transaction{.zxid = new_last_zxid, .nodes_digest = {}};
     uint64_t new_digest = getNodesDigest(false).value;
     SCOPE_EXIT({
         if (keeper_context->digestEnabled())
@@ -2213,8 +2199,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         if (uncommitted_transactions.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
 
-        auto & front_transaction = uncommitted_transactions.front();
-        if (front_transaction.zxid != *new_last_zxid)
+        if (uncommitted_transactions.front().zxid != *new_last_zxid)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Trying to commit a ZXID {} while the next ZXID to commit is {}",

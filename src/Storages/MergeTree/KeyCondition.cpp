@@ -421,12 +421,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.get<const String &>();
-            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
-            if (expression.contains('|'))
-                return false;
-
-            String prefix = extractFixedPrefixFromRegularExpression(expression);
+            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
             if (prefix.empty())
                 return false;
 

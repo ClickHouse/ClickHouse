@@ -90,7 +90,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
     ```
 
-    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. The following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
+    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
 
     ```bash
     /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql

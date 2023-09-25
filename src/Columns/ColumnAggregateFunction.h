@@ -103,7 +103,7 @@ private:
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
+    void set(const AggregateFunctionPtr & func_, size_t version_);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
