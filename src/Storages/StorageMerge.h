@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
@@ -182,6 +183,8 @@ private:
     std::vector<Aliases> table_aliases;
 
     void createChildPlans();
+
+    void applyFilters(const QueryPlan & plan) const;
 
     QueryPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
