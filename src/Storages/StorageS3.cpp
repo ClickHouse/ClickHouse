@@ -1005,7 +1005,12 @@ StorageS3::StorageS3(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in S3 storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine S3 doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -1078,7 +1083,11 @@ Pipe StorageS3::read(
         query_configuration, distributed_processing, local_context, query_info.query, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
-    num_streams = std::min(num_streams, estimated_keys_count);
+    if (estimated_keys_count > 1)
+        num_streams = std::min(num_streams, estimated_keys_count);
+    else
+        /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
+        num_streams = 1;
 
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
