@@ -1818,7 +1818,7 @@ Query:
 
 ``` sql
 SELECT arrayRemove(
-        ( x) -> x LIKE '%World%',
+        x -> x LIKE '%World%',
         ['Hello', 'abc World'] AS arr)
     AS res
 ```
