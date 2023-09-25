@@ -53,7 +53,6 @@ namespace
     class DataTypeJSONPaths : public IDataTypeDummy
     {
     public:
-
         /// We create DataTypeJSONPaths on each row in input data, to
         /// compare and merge such types faster, we use hash map to
         /// store mapping path -> data_type. Path is a vector
@@ -899,7 +898,7 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, String * out_value = nullptr)
+    DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
         String field;
         bool ok = true;
@@ -912,9 +911,6 @@ namespace
             return nullptr;
 
         skipWhitespaceIfAny(buf);
-
-        if (out_value)
-            *out_value = field;
 
         /// If it's object key, we should just return String type.
         if constexpr (is_json)
@@ -965,11 +961,12 @@ namespace
             if (!tryReadJSONStringInto(key, buf))
                 return false;
 
-            std::vector<String> current_path = path;
-            current_path.push_back(key);
             skipWhitespaceIfAny(buf);
             if (!checkChar(':', buf))
                 return false;
+
+            std::vector<String> current_path = path;
+            current_path.push_back(key);
 
             skipWhitespaceIfAny(buf);
 
@@ -1019,7 +1016,6 @@ namespace
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
 
-        Names json_keys;
         DataTypes key_types;
         DataTypes value_types;
         bool first = true;
@@ -1040,8 +1036,7 @@ namespace
             {
                 /// For JSON key type must be String.
                 json_info->is_object_key = true;
-                json_keys.emplace_back();
-                key_type = tryInferString<is_json>(buf, settings, json_info, &json_keys.back());
+                key_type = tryInferString<is_json>(buf, settings, json_info);
                 json_info->is_object_key = false;
             }
             else
