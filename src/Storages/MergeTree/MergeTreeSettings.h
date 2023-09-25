@@ -121,6 +121,8 @@ struct Settings;
     M(UInt64, max_replicated_fetches_network_bandwidth, 0, "The maximum speed of data exchange over the network in bytes per second for replicated fetches. Zero means unlimited.", 0) \
     M(UInt64, max_replicated_sends_network_bandwidth, 0, "The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited.", 0) \
     M(Milliseconds, wait_for_unique_parts_send_before_shutdown_ms, 0, "Before shutdown table will wait for required amount time for unique parts (exist only on current replica) to be fetched by other replicas (0 means disabled).", 0) \
+    M(Float, fault_probability_before_part_commit, 0, "For testing. Do not change it.", 0) \
+    M(Float, fault_probability_after_part_commit, 0, "For testing. Do not change it.", 0) \
     \
     /** Check delay of replicas settings. */ \
     M(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \

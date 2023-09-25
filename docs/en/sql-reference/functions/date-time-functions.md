@@ -732,14 +732,15 @@ Returns for a given date, the number of days passed since [1 January 0000](https
 **Syntax**
 
 ``` sql
-toDaysSinceYearZero(date)
+toDaysSinceYearZero(date[, time_zone])
 ```
 
 Aliases: `TO_DAYS`
 
-**Arguments**
 
-- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md).
+**Arguments**
+- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
