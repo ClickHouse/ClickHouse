@@ -973,9 +973,7 @@ public:
                 }
 
                 for (auto & instruction : instructions)
-                {
                     instruction.perform(pos, static_cast<Int64>(c.whole), c.fractional, scale, *time_zone);
-                }
             }
             else
             {

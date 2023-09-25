@@ -320,20 +320,20 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
     std::vector<Float32> distances(result.size());
     result.dump_to(neighbors.data(), distances.data());
 
-    std::vector<size_t> granule_numbers;
-    granule_numbers.reserve(neighbors.size());
+    std::vector<size_t> granules;
+    granules.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granule_numbers.push_back(neighbors[i] / index_granularity);
+        granules.push_back(neighbors[i] / index_granularity);
     }
 
     /// make unique
-    std::sort(granule_numbers.begin(), granule_numbers.end());
-    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
+    std::sort(granules.begin(), granules.end());
+    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
 
-    return granule_numbers;
+    return granules;
 }
 
 MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_)
@@ -352,7 +352,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
