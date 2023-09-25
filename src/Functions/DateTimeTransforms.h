@@ -928,28 +928,27 @@ struct ToDayOfYearImpl
 struct ToDaysSinceYearZeroImpl
 {
 private:
-    /// Constant calculated from MySQL's TO_DAYS() implementation.
-    /// https://github.com/mysql/mysql-server/blob/ea1efa9822d81044b726aab20c857d5e1b7e046a/mysys/my_time.cc#L1042
-    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1900 = 693'961; /// 01 January, each
+    static constexpr auto DAYS_BETWEEN_YEARS_0_AND_1970 = 719'528; /// 01 January, each. Constant taken from Java LocalDate. Consistent with MySQL's TO_DAYS().
+    static constexpr auto SECONDS_PER_DAY = 60 * 60 * 24;
 
 public:
     static constexpr auto name = "toDaysSinceYearZero";
 
-    static UInt32 execute(Int64, const DateLUTImpl &)
+    static UInt32 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        throwDateTimeIsNotSupported(name);
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + static_cast<UInt32>(time_zone.toDayNum(t));
     }
-    static UInt32 execute(UInt32, const DateLUTImpl &)
+    static UInt32 execute(UInt32 d, const DateLUTImpl &)
     {
-        throwDateTimeIsNotSupported(name);
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + d / SECONDS_PER_DAY;
     }
     static UInt32 execute(Int32 d, const DateLUTImpl &)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1900 + d;
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + d;
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl &)
     {
-        return DAYS_BETWEEN_YEARS_0_AND_1900 + d;
+        return DAYS_BETWEEN_YEARS_0_AND_1970 + d;
     }
     static constexpr bool hasPreimage() { return false; }
 

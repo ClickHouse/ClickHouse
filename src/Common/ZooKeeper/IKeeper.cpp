@@ -1,5 +1,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/thread_local_rng.h>
+#include <random>
 
 
 namespace DB
@@ -53,6 +55,34 @@ Exception::Exception(const Error code_)
 
 Exception::Exception(const Exception & exc) = default;
 
+
+SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_)
+{
+    if (likely(probability_before == 0.0) && likely(probability_after_ == 0.0))
+        return;
+
+    std::bernoulli_distribution fault(probability_before);
+    if (fault(thread_local_rng))
+        throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (before {})", description_);
+
+    probability_after = probability_after_;
+    description = description_;
+    exceptions_level = std::uncaught_exceptions();
+}
+
+SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
+{
+    if (likely(probability_after == 0.0))
+        return;
+
+    /// Do not throw from dtor during unwinding
+    if (exceptions_level != std::uncaught_exceptions())
+        return;
+
+    std::bernoulli_distribution fault(probability_after);
+    if (fault(thread_local_rng))
+        throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after {})", description);
+}
 
 using namespace DB;
 
