@@ -227,10 +227,10 @@ void inline addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end
         left_map.push_back(i);
 }
 
-void inline addMany(PaddedPODArray<UInt64> & left_map, size_t idx, size_t num)
+void inline addMany(PaddedPODArray<UInt64> & left_or_right_map, size_t idx, size_t num)
 {
     for (size_t i = 0; i < num; ++i)
-        left_map.push_back(idx);
+        left_or_right_map.push_back(idx);
 }
 
 }
@@ -291,8 +291,10 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
-    cursors.push_back(createCursor(input_headers[0], join_on.key_names_left));
-    cursors.push_back(createCursor(input_headers[1], join_on.key_names_right));
+    cursors = {
+        createCursor(input_headers[0], join_on.key_names_left),
+        createCursor(input_headers[1], join_on.key_names_right)
+    };
 
     for (const auto & [left_key, right_key] : table_join->getTableJoin().leftToRightKeyRemap())
     {
@@ -454,8 +456,9 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
 
     if (all_join_state)
     {
+        assert(cursors.size() == 2);
         /// Accumulate blocks with same key in all_join_state
-        for (size_t i = 0; i < cursors.size(); ++i)
+        for (size_t i = 0; i < 2; ++i)
         {
             if (cursors[i]->cursor.isValid() && all_join_state->keys[i].equals(cursors[i]->cursor))
             {
