@@ -60,6 +60,8 @@ if (OS_LINUX)
         # FIPS_mode(). Besides that, the custom s390x/config.h only exists to make things compile without additional ifdefs.
         # With high probability, libssl with OpenSSL on s390x is broken.
         target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/s390x")
+    elseif (ARCH_RISCV64)
+        target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/riscv64")
     else ()
         message(FATAL_ERROR "Platform is not supported")
     endif ()

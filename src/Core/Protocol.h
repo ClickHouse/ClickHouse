@@ -62,14 +62,6 @@ const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
 /// Marker of the SSH keys based authentication (passed in the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
 
-struct SSHKeyAuthenticationData
-{
-    String user;
-
-    String encodeBase64() const;
-    void decodeBase64(const String & source);
-};
-
 };
 
 namespace Protocol

@@ -320,10 +320,7 @@ void Connection::sendHello()
     /// Just inform server that we will authenticate using SSH keys.
     else if (!ssh_private_key.isEmpty())
     {
-        EncodedUserInfo::SSHKeyAuthenticationData data;
-        data.user = user;
-
-        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, data.encodeBase64()), *out);
+        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, user), *out);
         writeStringBinary(password, *out);
 
         performHandshakeForSSHAuth();

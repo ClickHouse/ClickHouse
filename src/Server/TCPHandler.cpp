@@ -1341,10 +1341,7 @@ void TCPHandler::receiveHello()
     is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
     {
-        EncodedUserInfo::SSHKeyAuthenticationData data;
         user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
-        data.decodeBase64(user);
-        user = data.user;
     }
 
     session = makeSession();
