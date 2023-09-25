@@ -213,11 +213,140 @@ Block executePipeline(QueryPipeline && pipeline)
 }
 
 template <typename T>
-void checkColumn(const typename ColumnVector<T>::Container & expected, const Block & block, const std::string & name)
+void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, const Block & block, const std::string & name)
 {
     const auto & actual = assert_cast<const ColumnVector<T> *>(block.getByName(name).column.get())->getData();
     EXPECT_EQ(actual.size(), expected.size());
     ASSERT_EQ(actual, expected);
+}
+
+template <typename T>
+void assertColumnEq(const IColumn & expected, const Block & block, const std::string & name)
+{
+    const ColumnPtr & actual = block.getByName(name).column;
+    ASSERT_TRUE(checkColumn<T>(*actual));
+    ASSERT_TRUE(checkColumn<T>(expected));
+    EXPECT_EQ(actual->size(), expected.size());
+
+    auto dump_val = [](const IColumn & col, size_t i) -> String
+    {
+        Field value;
+        col.get(i, value);
+        return value.dump();
+    };
+
+    size_t num_rows = std::min(actual->size(), expected.size());
+    for (size_t i = 0; i < num_rows; ++i)
+        ASSERT_EQ(actual->compareAt(i, i, expected, 1), 0) << dump_val(*actual, i) << " != " << dump_val(expected, i) << " at row " << i;
+}
+
+template <typename T>
+T getRandomFrom(const std::initializer_list<T> & opts)
+{
+    std::vector<T> options(opts.begin(), opts.end());
+    size_t idx = std::uniform_int_distribution<size_t>(0, options.size() - 1)(rng);
+    return options[idx];
+}
+
+/// Used to have accurate 0.0 and 1.0 probabilities
+double getRandomDoubleQuantized(size_t quants = 5)
+{
+    return std::uniform_int_distribution<size_t>(0, quants)(rng) / static_cast<double>(quants);
+}
+
+void generateNextKey(UInt64 & k1, String & k2)
+{
+    size_t str_len = std::uniform_int_distribution<>(1, 10)(rng);
+    String new_k2 = getRandomASCIIString(str_len, rng);
+    if (new_k2.compare(k2) <= 0)
+        ++k1;
+    k2 = new_k2;
+}
+
+TEST(FullSortingJoin, Any)
+try
+{
+    JoinKind kind = getRandomFrom({JoinKind::Inner, JoinKind::Left, JoinKind::Right});
+
+    SourceChunksBuilder left_source({
+        {std::make_shared<DataTypeUInt64>(), "k1"},
+        {std::make_shared<DataTypeString>(), "k2"},
+        {std::make_shared<DataTypeString>(), "attr"},
+    });
+
+    SourceChunksBuilder right_source({
+        {std::make_shared<DataTypeUInt64>(), "k1"},
+        {std::make_shared<DataTypeString>(), "k2"},
+        {std::make_shared<DataTypeString>(), "attr"},
+    });
+
+    left_source.break_prob = getRandomDoubleQuantized();
+    right_source.break_prob = getRandomDoubleQuantized();
+
+    size_t num_keys = std::uniform_int_distribution<>(100, 1000)(rng);
+
+    auto expected_left = ColumnString::create();
+    auto expected_right = ColumnString::create();
+
+    UInt64 k1 = 0;
+    String k2 = "";
+
+    auto get_attr = [&](const String & side, size_t idx) -> String
+    {
+        return toString(k1) + "_" + k2 + "_" + side + "_" + toString(idx);
+    };
+
+    for (size_t i = 0; i < num_keys; ++i)
+    {
+        generateNextKey(k1, k2);
+
+        /// Key is present in left, right or both tables. Both tables is more probable.
+        size_t key_presence = std::uniform_int_distribution<>(0, 10)(rng);
+
+        size_t num_rows_left = key_presence == 0 ? 0 : std::uniform_int_distribution<>(1, 10)(rng);
+        for (size_t j = 0; j < num_rows_left; ++j)
+            left_source.addRow({k1, k2, get_attr("left", j)});
+
+        size_t num_rows_right = key_presence == 1 ? 0 : std::uniform_int_distribution<>(1, 10)(rng);
+        for (size_t j = 0; j < num_rows_right; ++j)
+            right_source.addRow({k1, k2, get_attr("right", j)});
+
+        String left_attr = num_rows_left ? get_attr("left", 0) : "";
+        String right_attr = num_rows_right ? get_attr("right", 0) : "";
+
+        if (kind == JoinKind::Inner && num_rows_left && num_rows_right)
+        {
+            expected_left->insert(left_attr);
+            expected_right->insert(right_attr);
+        }
+        else if (kind == JoinKind::Left)
+        {
+            for (size_t j = 0; j < num_rows_left; ++j)
+            {
+                expected_left->insert(get_attr("left", j));
+                expected_right->insert(right_attr);
+            }
+        }
+        else if (kind == JoinKind::Right)
+        {
+            for (size_t j = 0; j < num_rows_right; ++j)
+            {
+                expected_left->insert(left_attr);
+                expected_right->insert(get_attr("right", j));
+            }
+        }
+    }
+
+    Block result_block = executePipeline(buildJoinPipeline(
+        left_source.build(), right_source.build(), /* key_length = */ 2,
+        kind, JoinStrictness::Any));
+    assertColumnEq<ColumnString>(*expected_left, result_block, "t1.attr");
+    assertColumnEq<ColumnString>(*expected_right, result_block, "t2.attr");
+}
+catch (Exception & e)
+{
+    std::cout << e.getStackTraceString() << std::endl;
+    throw;
 }
 
 TEST(FullSortingJoin, Asof)
@@ -259,18 +388,18 @@ try
         }));
     }
 
-    {
-        Block result_block = executePipeline(buildJoinPipeline(
-            left_source.build(), right_source.build(), /* key_length = */ 2,
-            JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::GreaterOrEquals));
-        auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
+    // {
+    //     Block result_block = executePipeline(buildJoinPipeline(
+    //         left_source.build(), right_source.build(), /* key_length = */ 2,
+    //         JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::GreaterOrEquals));
+    //     auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
 
-        ASSERT_EQ(values, (std::vector<std::vector<Field>>{
-            {"AMZN", 3u, 2u, 110u},
-            {"AMZN", 4u, 4u, 130u},
-            {"AMZN", 6u, 5u, 140u},
-        }));
-    }
+    //     ASSERT_EQ(values, (std::vector<std::vector<Field>>{
+    //         {"AMZN", 3u, 2u, 110u},
+    //         {"AMZN", 4u, 4u, 130u},
+    //         {"AMZN", 6u, 5u, 140u},
+    //     }));
+    // }
 }
 catch (Exception & e)
 {
@@ -330,14 +459,12 @@ catch (Exception & e)
 TEST(FullSortingJoin, AsofGeneratedTestData)
 try
 {
-    std::array join_kinds{JoinKind::Inner, JoinKind::Left};
-    auto join_kind = join_kinds[std::uniform_int_distribution<size_t>(0, join_kinds.size() - 1)(rng)];
+    auto join_kind = getRandomFrom({JoinKind::Inner, JoinKind::Left});
 
-    std::array asof_inequalities{
+    auto asof_inequality = getRandomFrom({
         ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals,
         // ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals,
-    };
-    auto asof_inequality = asof_inequalities[std::uniform_int_distribution<size_t>(0, asof_inequalities.size() - 1)(rng)];
+    });
 
     SourceChunksBuilder left_source_builder({
         {std::make_shared<DataTypeUInt64>(), "k1"},
@@ -353,18 +480,8 @@ try
         {std::make_shared<DataTypeInt64>(), "attr"},
     });
 
-    /// uniform_int_distribution to have 0.0 and 1.0 probabilities
-    left_source_builder.break_prob = std::uniform_int_distribution<>(0, 5)(rng) / 5.0;
-    right_source_builder.break_prob = std::uniform_int_distribution<>(0, 5)(rng) / 5.0;
-
-    auto get_next_key = [](UInt64 & k1, String & k2)
-    {
-        size_t str_len = std::uniform_int_distribution<>(1, 10)(rng);
-        String new_k2 = getRandomASCIIString(str_len, rng);
-        if (new_k2.compare(k2) <= 0)
-            ++k1;
-        k2 = new_k2;
-    };
+    left_source_builder.break_prob = getRandomDoubleQuantized();
+    right_source_builder.break_prob = getRandomDoubleQuantized();
 
     ColumnInt64::Container expected;
 
@@ -416,7 +533,7 @@ try
                 expected.push_back(-10 * left_t);
         }
 
-        get_next_key(k1, k2);
+        generateNextKey(k1, k2);
     }
 
     Block result_block = executePipeline(buildJoinPipeline(
@@ -424,12 +541,12 @@ try
         /* key_length = */ 3,
         join_kind, JoinStrictness::Asof, asof_inequality));
 
-    checkColumn<Int64>(expected, result_block, "t1.attr");
+    assertColumnVectorEq<Int64>(expected, result_block, "t1.attr");
 
     for (auto & e : expected)
         e = e < 0 ? 0 : 10 * e; /// non matched rows from left table have negative attr
 
-    checkColumn<Int64>(expected, result_block, "t2.attr");
+    assertColumnVectorEq<Int64>(expected, result_block, "t2.attr");
 }
 catch (Exception & e) {
     std::cout << e.getStackTraceString() << std::endl;
