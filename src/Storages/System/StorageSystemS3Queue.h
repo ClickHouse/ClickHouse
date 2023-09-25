@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_AWS_S3
 
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
@@ -20,3 +23,5 @@ protected:
 };
 
 }
+
+#endif
