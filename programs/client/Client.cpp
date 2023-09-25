@@ -1189,7 +1189,7 @@ void Client::processOptions(const OptionsDescription & options_description,
 
 void Client::processConfig()
 {
-    if (config().has("query") && config().has("queries-file"))
+    if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -1200,9 +1200,9 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (stdin_is_a_tty
-        && (delayed_interactive || (!config().has("query") && queries_files.empty())))
+        && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }

@@ -345,7 +345,7 @@ Block createBlockForSet(
 {
     auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
     {
-        if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
+        if ((func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
             auto element = func->arguments->children.at(0);
@@ -356,6 +356,7 @@ Block createBlockForSet(
         return evaluateConstantExpression(func, context).second;
     };
 
+    assert(right_arg);
     const DataTypePtr & right_arg_type = get_tuple_type_from_ast(right_arg);
 
     size_t left_tuple_depth = getTypeDepth(left_arg_type);

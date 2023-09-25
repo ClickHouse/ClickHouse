@@ -397,6 +397,13 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Requests the removal of unused capacity.
+    /// It is a non-binding request to reduce the capacity of the underlying container to its size.
+    virtual MutablePtr shrinkToFit() const
+    {
+        return cloneResized(size());
+    }
+
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     virtual void ensureOwnership() {}
 

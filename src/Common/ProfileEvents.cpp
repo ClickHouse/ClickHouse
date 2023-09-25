@@ -253,6 +253,13 @@ The server successfully detected this situation and will download merged part fr
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.") \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.") \
     \
+    M(USearchAddCount, "Number of vectors added to usearch indexes.") \
+    M(USearchAddVisitedMembers, "Number of nodes visited when adding vectors to usearch indexes.") \
+    M(USearchAddComputedDistances, "Number of times distance was computed when adding vectors to usearch indexes.") \
+    M(USearchSearchCount, "Number of search operations performed in usearch indexes.") \
+    M(USearchSearchVisitedMembers, "Number of nodes visited when searching in usearch indexes.") \
+    M(USearchSearchComputedDistances, "Number of times distance was computed when searching usearch indexes.") \
+    \
     M(RWLockAcquiredReadLocks, "Number of times a read lock was acquired (in a heavy RWLock).") \
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).") \
     M(RWLockReadersWaitMilliseconds, "Total time spent waiting for a read lock to be acquired (in a heavy RWLock).") \
@@ -569,6 +576,23 @@ Counters global_counters(global_counters_array);
 
 const Event Counters::num_counters = END;
 
+
+Timer::Timer(Counters & counters_, Event timer_event_, Resolution resolution_)
+    : counters(counters_), timer_event(timer_event_), resolution(resolution_)
+{
+}
+
+Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_)
+    : Timer(counters_, timer_event_, resolution_)
+{
+    counters.increment(counter_event);
+}
+
+void Timer::end()
+{
+    counters.increment(timer_event, watch.elapsedNanoseconds() / static_cast<UInt64>(resolution));
+    watch.reset();
+}
 
 Counters::Counters(VariableContext level_, Counters * parent_)
     : counters_holder(new Counter[num_counters] {}),

@@ -81,9 +81,6 @@ namespace
 
     void visitCreateQuery(ASTCreateQuery & create, const DDLAdjustingForBackupVisitor::Data & data)
     {
-        create.uuid = UUIDHelpers::Nil;
-        create.to_inner_uuid = UUIDHelpers::Nil;
-
         if (create.storage)
             visitStorage(*create.storage, data);
     }

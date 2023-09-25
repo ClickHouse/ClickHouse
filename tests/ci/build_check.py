@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 import subprocess
 import logging
-import json
 import os
 import sys
 import time
@@ -22,6 +21,7 @@ from env_helper import (
 )
 from git_helper import Git, git_runner
 from pr_info import PRInfo
+from report import BuildResult, FAILURE, StatusType, SUCCESS
 from s3_helper import S3Helper
 from tee_popen import TeePopen
 from version_helper import (
@@ -34,6 +34,7 @@ from clickhouse_helper import (
     CiLogsCredentials,
     prepare_tests_results_for_clickhouse,
     get_instance_type,
+    get_instance_id,
 )
 from stopwatch import Stopwatch
 
@@ -98,7 +99,7 @@ def get_packager_cmd(
 
 def build_clickhouse(
     packager_cmd: str, logs_path: Path, build_output_path: Path
-) -> Tuple[Path, bool]:
+) -> Tuple[Path, StatusType]:
     build_log_path = logs_path / BUILD_LOG_NAME
     success = False
     with TeePopen(packager_cmd, build_log_path) as process:
@@ -118,15 +119,16 @@ def build_clickhouse(
                 )
         else:
             logging.info("Build failed")
-    return build_log_path, success
+    return build_log_path, SUCCESS if success else FAILURE
 
 
 def check_for_success_run(
     s3_helper: S3Helper,
     s3_prefix: str,
     build_name: str,
-    build_config: BuildConfig,
+    version: ClickHouseVersion,
 ) -> None:
+    # TODO: Remove after S3 artifacts
     # the final empty argument is necessary for distinguish build and build_suffix
     logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
@@ -155,50 +157,21 @@ def check_for_success_run(
         return
 
     success = len(build_urls) > 0
-    create_json_artifact(
-        TEMP_PATH,
+    build_result = BuildResult(
         build_name,
         log_url,
         build_urls,
-        build_config,
+        version.describe,
+        SUCCESS if success else FAILURE,
         0,
-        success,
+        GITHUB_JOB,
     )
+    build_result.write_json(Path(TEMP_PATH))
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
     else:
         sys.exit(0)
-
-
-def create_json_artifact(
-    temp_path: str,
-    build_name: str,
-    log_url: str,
-    build_urls: List[str],
-    build_config: BuildConfig,
-    elapsed: int,
-    success: bool,
-) -> None:
-    subprocess.check_call(
-        f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
-    )
-
-    result = {
-        "log_url": log_url,
-        "build_urls": build_urls,
-        "build_config": build_config.__dict__,
-        "elapsed_seconds": elapsed,
-        "status": success,
-        "job_name": GITHUB_JOB,
-    }
-
-    json_name = "build_urls_" + build_name + ".json"
-
-    print(f"Dump json report {result} to {json_name} with env build_urls_{build_name}")
-
-    with open(os.path.join(temp_path, json_name), "w", encoding="utf-8") as build_links:
-        json.dump(result, build_links)
 
 
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
@@ -269,7 +242,7 @@ def main():
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
-    check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
+    check_for_success_run(s3_helper, s3_path_prefix, build_name, version)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -312,16 +285,17 @@ def main():
     os.makedirs(logs_path, exist_ok=True)
 
     start = time.time()
-    log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path)
+    log_path, build_status = build_clickhouse(
+        packager_cmd, logs_path, build_output_path
+    )
     elapsed = int(time.time() - start)
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
-    logging.info("Build finished with %s, log path %s", success, log_path)
-    if success:
+    logging.info("Build finished as %s, log path %s", build_status, log_path)
+    if build_status == SUCCESS:
         cargo_cache.upload()
-
-    if not success:
+    else:
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
@@ -345,7 +319,7 @@ def main():
         os.remove(performance_path)
 
     build_urls = (
-        s3_helper.upload_build_folder_to_s3(
+        s3_helper.upload_build_directory_to_s3(
             build_output_path,
             s3_path_prefix,
             keep_dirs_in_s3_path=False,
@@ -367,8 +341,20 @@ def main():
 
     print(f"::notice ::Log URL: {log_url}")
 
-    create_json_artifact(
-        TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success
+    build_result = BuildResult(
+        build_name,
+        log_url,
+        build_urls,
+        version.describe,
+        build_status,
+        elapsed,
+        GITHUB_JOB,
+    )
+    result_json_path = build_result.write_json(temp_path)
+    logging.info(
+        "Build result file %s is written, content:\n %s",
+        result_json_path,
+        result_json_path.read_text(encoding="utf-8"),
     )
 
     upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
@@ -379,6 +365,7 @@ def main():
     ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
     if ci_logs_credentials.host:
         instance_type = get_instance_type()
+        instance_id = get_instance_id()
         query = f"""INSERT INTO build_time_trace
 (
     pull_request_number,
@@ -386,6 +373,7 @@ def main():
     check_start_time,
     check_name,
     instance_type,
+    instance_id,
     file,
     library,
     time,
@@ -401,7 +389,7 @@ def main():
     avgMs,
     args_name
 )
-SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', *
 FROM input('
     file String,
     library String,
@@ -449,7 +437,7 @@ FORMAT JSONCompactEachRow"""
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         [],
-        "success" if success else "failure",
+        build_status,
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         log_url,
@@ -458,7 +446,7 @@ FORMAT JSONCompactEachRow"""
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     # Fail the build job if it didn't succeed
-    if not success:
+    if build_status != SUCCESS:
         sys.exit(1)
 
 
