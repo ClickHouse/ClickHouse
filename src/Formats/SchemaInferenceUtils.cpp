@@ -29,7 +29,6 @@ namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
-    extern const int TYPE_MISMATCH;
     extern const int INCORRECT_DATA;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
 }
