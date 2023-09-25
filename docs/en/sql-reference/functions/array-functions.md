@@ -1832,7 +1832,7 @@ Result:
 ```
 
 ``` sql
-SELECT arrayRemove(x->x<11, [2,10,11,12]) AS x;
+SELECT arrayRemove(x -> x < 11, [2, 10, 11, 12]) AS x;
 ```
 
 Result:
