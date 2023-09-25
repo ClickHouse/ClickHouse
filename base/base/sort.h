@@ -132,6 +132,13 @@ void sort(RandomIt first, RandomIt last)
     ::sort(first, last, comparator());
 }
 
+/** Try to fast sort elements for common sorting patterns:
+  * 1. If elements are already sorted.
+  * 2. If elements are already almost sorted.
+  * 3. If elements are already sorted in reverse order.
+  *
+  * Returns true if fast sort was performed or elements were already sorted, false otherwise.
+  */
 template <typename RandomIt, typename Compare>
 bool trySort(RandomIt first, RandomIt last, Compare compare)
 {
@@ -148,5 +155,5 @@ bool trySort(RandomIt first, RandomIt last)
 {
     using value_type = typename std::iterator_traits<RandomIt>::value_type;
     using comparator = std::less<value_type>;
-    return ::pdqsort_try_sort(first, last, comparator());
+    return ::trySort(first, last, comparator());
 }
