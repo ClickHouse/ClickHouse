@@ -1,6 +1,7 @@
 #include <set>
 #include "Common/Exception.h"
 #include "Common/ZooKeeper/Types.h"
+#include "Common/scope_guard_safe.h"
 #include "Interpreters/Context_fwd.h"
 #include "Storages/S3Queue/S3QueueSettings.h"
 #include "config.h"
@@ -35,14 +36,12 @@ namespace
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
-    size_t generateRescheduleInterval()
+    size_t generateRescheduleInterval(size_t min, size_t max)
     {
         /// Use more or less random interval for unordered mode cleanup task.
         /// So that distributed processing cleanup tasks would not schedule cleanup at the same time.
-        /// TODO: make lower and upper boundary configurable by settings
         pcg64 rng(randomSeed());
-        //return 5000 + rng() % 30000;
-        return rng() % 100;
+        return min + rng() % (max - min + 1);
     }
 }
 
@@ -55,19 +54,19 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(
     , max_set_size(settings_.s3queue_tracked_files_limit.value)
     , max_set_age_sec(settings_.s3queue_tracked_file_ttl_sec.value)
     , max_loading_retries(settings_.s3queue_loading_retries.value)
+    , min_cleanup_interval_ms(settings_.s3queue_cleanup_interval_min_ms.value)
+    , max_cleanup_interval_ms(settings_.s3queue_cleanup_interval_max_ms.value)
     , zookeeper_processing_path(storage->getZooKeeperPath() / "processing")
     , zookeeper_processed_path(storage->getZooKeeperPath() / "processed")
     , zookeeper_failed_path(storage->getZooKeeperPath() / "failed")
+    , zookeeper_cleanup_lock_path(storage->getZooKeeperPath() / "cleanup_lock")
     , log(&Poco::Logger::get("S3QueueFilesMetadata"))
 {
     if (mode == S3QueueMode::UNORDERED && (max_set_size || max_set_age_sec))
     {
         task = context->getSchedulePool().createTask("S3QueueCleanupFunc", [this] { cleanupThreadFunc(); });
         task->activate();
-
-        auto schedule_ms = generateRescheduleInterval();
-        LOG_TEST(log, "Scheduling a cleanup task in {} ms", schedule_ms);
-        task->scheduleAfter(schedule_ms);
+        task->scheduleAfter(generateRescheduleInterval(min_cleanup_interval_ms, max_cleanup_interval_ms));
     }
 }
 
@@ -343,7 +342,7 @@ void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exc
     {
         /// File is no longer retriable.
         /// Make a failed/node_name node and remove failed/node_name.retriable node.
-        /// TODO always add version for processing node.
+        /// TODO: always add version for processing node.
 
         Coordination::Requests requests;
         requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
@@ -405,7 +404,7 @@ void S3QueueFilesMetadata::cleanupThreadFunc()
     if (shutdown)
         return;
 
-    task->scheduleAfter(generateRescheduleInterval());
+    task->scheduleAfter(generateRescheduleInterval(min_cleanup_interval_ms, max_cleanup_interval_ms));
 }
 
 void S3QueueFilesMetadata::cleanupThreadFuncImpl()
@@ -429,6 +428,33 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
         LOG_TEST(log, "No limit exceeded");
         return;
     }
+
+    /// Create a lock so that with distributed processing
+    /// multiple nodes do not execute cleanup in parallel.
+    Coordination::Error code = zk_client->tryCreate(zookeeper_cleanup_lock_path,
+                                                    toString(getCurrentTime()),
+                                                    zkutil::CreateMode::Ephemeral);
+    if (code == Coordination::Error::ZNODEEXISTS)
+    {
+        LOG_TEST(log, "Cleanup is already being executed by another node");
+        return;
+    }
+    else if (code != Coordination::Error::ZOK)
+    {
+        throw Coordination::Exception::fromPath(code, zookeeper_cleanup_lock_path);
+    }
+
+    SCOPE_EXIT_SAFE({
+        try
+        {
+            zk_client->remove(zookeeper_cleanup_lock_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
+        }
+    });
 
     struct Node
     {
@@ -467,8 +493,6 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
         }
     }
 
-    /// TODO add a zookeeper lock for cleanup
-
     auto get_nodes_str = [&]()
     {
         WriteBufferFromOwnString wb;
@@ -487,11 +511,11 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
             LOG_TEST(log, "Removing node at path {} ({}) because max files limit is reached",
                      node.metadata.file_path, path.string());
 
-            auto code = zk_client->tryRemove(path);
+            code = zk_client->tryRemove(path);
             if (code == Coordination::Error::ZOK)
                 --nodes_to_remove;
             else
-                LOG_ERROR(log, "Failed to remove a node `{}`", path.string());
+                LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", path.string(), code);
         }
         else if (check_nodes_ttl)
         {
@@ -502,9 +526,9 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
                 LOG_TEST(log, "Removing node at path {} ({}) because file is reached",
                         node.metadata.file_path, path.string());
 
-                auto code = zk_client->tryRemove(path);
+                code = zk_client->tryRemove(path);
                 if (code != Coordination::Error::ZOK)
-                    LOG_ERROR(log, "Failed to remove a node `{}`", path.string());
+                    LOG_ERROR(log, "Failed to remove a node `{}` (code: {})", path.string(), code);
             }
             else if (!nodes_to_remove)
             {

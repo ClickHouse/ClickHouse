@@ -334,13 +334,7 @@ StorageS3Queue::Configuration StorageS3Queue::updateConfigurationAndGetCopy(Cont
 
 zkutil::ZooKeeperPtr StorageS3Queue::getZooKeeper() const
 {
-    std::lock_guard lock{zk_mutex};
-    if (!zk_client || zk_client->expired())
-    {
-        zk_client = getContext()->getZooKeeper();
-        zk_client->sync(zk_path);
-    }
-    return zk_client;
+    return getContext()->getZooKeeper();
 }
 
 void StorageS3Queue::createOrCheckMetadata(const StorageInMemoryMetadata & storage_metadata)
