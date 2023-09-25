@@ -660,21 +660,26 @@ SELECT
 
 ## formatReadableTimeDelta
 
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second as string.
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as string.
 
 **Syntax**
 
 ``` sql
-formatReadableTimeDelta(column[, maximum_unit])
+formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 ```
 
 **Arguments**
 
 - `column` — A column with a numeric time delta.
-- `maximum_unit` — Optional. Maximum unit to show. Acceptable values `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+- `maximum_unit` — Optional. Maximum unit to show.
+  * Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  * Default value: `years`.
+- `minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated.
+  * Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  * If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
+  * Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
 
-Example:
-
+**Example**
 ``` sql
 SELECT
     arrayJoin([100, 12345, 432546534]) AS elapsed,
@@ -701,6 +706,20 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    arrayJoin([100, 12345, 432546534.00000006]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes', 'nanoseconds') AS time_delta
+```
+
+```text
+┌────────────elapsed─┬─time_delta─────────────────────────────────────┐
+│                100 │ 1 minute and 40 seconds                        │
+│              12345 │ 205 minutes and 45 seconds                     │
+│ 432546534.00000006 │ 7209108 minutes, 54 seconds and 60 nanoseconds │
+└────────────────────┴────────────────────────────────────────────────┘
 ```
 
 ## parseTimeDelta

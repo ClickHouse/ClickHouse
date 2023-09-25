@@ -229,10 +229,10 @@ struct StatisticsStringRef
 /// The Coverter* structs below are responsible for that.
 /// When conversion is not needed, getBatch() will just return pointer into original data.
 
-template <typename Col, typename To, typename MinMaxType = typename std::conditional<
-        std::is_signed<typename Col::Container::value_type>::value,
+template <typename Col, typename To, typename MinMaxType = typename std::conditional_t<
+        std::is_signed_v<typename Col::Container::value_type>,
         To,
-        typename std::make_unsigned<To>::type>::type>
+        typename std::make_unsigned_t<To>>>
 struct ConverterNumeric
 {
     using Statistics = StatisticsNumeric<MinMaxType, To>;
@@ -517,14 +517,14 @@ void writeColumnImpl(
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
-    if constexpr (std::is_same<ParquetDType, parquet::FLBAType>::value)
+    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
     {
         /// This just communicates one number to MakeTypedEncoder(): the fixed string length.
         fixed_string_descr.emplace(parquet::schema::PrimitiveNode::Make(
             "", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY,
             parquet::ConvertedType::NONE, static_cast<int>(converter.fixedStringSize())), 0, 0);
 
-        if constexpr (std::is_same<typename Converter::Statistics, StatisticsFixedStringRef>::value)
+        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringRef>)
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
