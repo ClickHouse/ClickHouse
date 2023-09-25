@@ -8825,8 +8825,6 @@ void StorageReplicatedMergeTree::lockSharedData(
     auto zookeeper = tryGetZooKeeper();
     if (zookeeper)
         return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_existing_lock, hardlinked_files);
-    else
-        return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(nullptr), replace_existing_lock, hardlinked_files);
 }
 
 void StorageReplicatedMergeTree::getLockSharedDataOps(
