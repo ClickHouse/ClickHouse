@@ -43,6 +43,7 @@
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/AggregateFunctionOfGroupByKeysPass.h>
+#include <Analyzer/Passes/AnyFunctionPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 
 
@@ -284,7 +285,10 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
+
+    manager.addPass(std::make_unique<AnyFunctionPass>());
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
+
 }
 
 }

@@ -79,7 +79,7 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Do the same cycle as schedulerThread() but never block, just exit instead
+                // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
                 {
@@ -88,7 +88,7 @@ public:
                         execute(request);
                     else
                         has_work = false;
-                    while (events.tryProcess())
+                    while (events.forceProcess())
                         has_work = true;
                 }
             }
