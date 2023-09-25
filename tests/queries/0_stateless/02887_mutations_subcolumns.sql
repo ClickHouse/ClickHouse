@@ -1,11 +1,8 @@
--- Tags: no-replicated-database
--- This won't work in case there are misssing subcolumns in different shards
-
 DROP TABLE IF EXISTS t_mutations_subcolumns;
 
 SET allow_experimental_object_type = 1;
 
-CREATE TABLE t_mutations_subcolumns (id UInt64, n String, obj JSON)
+CREATE TABLE t_mutations_subcolumns (id UInt64, n String, obj Object(Nullable('json')))
 ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t_mutations_subcolumns VALUES (1, 'aaa', '{"k1": {"k2": "foo"}, "k3": 5}');
@@ -35,7 +32,7 @@ SELECT id, n FROM t_mutations_subcolumns;
 
 DROP TABLE IF EXISTS t_mutations_subcolumns;
 
-CREATE TABLE t_mutations_subcolumns (a UInt64, obj JSON)
+CREATE TABLE t_mutations_subcolumns (a UInt64, obj Object(Nullable('json')))
 ENGINE = MergeTree ORDER BY a PARTITION BY a;
 
 INSERT INTO t_mutations_subcolumns VALUES (1, '{"k1": 1}');
@@ -45,7 +42,7 @@ INSERT INTO t_mutations_subcolumns VALUES (3, '{"k3": 1}');
 ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k2 = 1;
 SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
 
-ALTER TABLE t_mutations_subcolumns DELETE WHERE obj.k1 = 0;
+ALTER TABLE t_mutations_subcolumns DELETE WHERE isNull(obj.k1);
 SELECT * FROM t_mutations_subcolumns ORDER BY a FORMAT JSONEachRow;
 
 DROP TABLE t_mutations_subcolumns;
