@@ -530,6 +530,60 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     initialization_done = true;
 }
 
+PartMetadataFormatVersion StorageReplicatedMergeTree::partMetadataFormatVersion() const
+{
+    auto min = PartMetadataFormatVersion{getSettings()->desired_part_metadata_format_version};
+    if (min == PART_METADATA_FORMAT_VERSION_OLD)
+        // this is the lowest possible value. in this case, other replicas' opinion will not matter
+        return min;
+
+    try {
+        // TODO Consider using watches, and compute the correct format version in the background
+        // but it seems maybe overkill?
+        auto zookeeper = getZooKeeper();
+
+        Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+        for (const auto & remote_replica_name : replicas)
+        {
+            if (remote_replica_name == replica_name)
+                // A little optimization, one less round trip
+                continue;
+            if (!zookeeper->exists(zookeeper_path + "/replicas/" + remote_replica_name + "/is_active"))
+            {
+                // It seems like this sometimes happens in a CREATE TABLE ... AS SELECT
+                // If other replica not active we'll be slightly pessimistic
+                // Set the setting to minimum of default, or already seen minimum
+                // (because other replica might not be fully initialized with /host yet)
+                min = std::min(min, PART_METADATA_DEFAULT_FORMAT_VERSION);
+                continue;
+            }
+            String host_str = zookeeper->get(zookeeper_path + "/replicas/" + remote_replica_name + "/host");
+            min = std::min(min, ReplicatedMergeTreeAddress(host_str).desired_part_metadata_format_version);
+            if (min == PART_METADATA_FORMAT_VERSION_OLD)
+                // if any replica has switched the feature off, we can break early, as this will be the final value
+                return min;
+        }
+    }
+    catch (Coordination::Exception & e)
+    {
+        // Take minimum of default and configured value as a precaution
+        // It's possible the operator explicitly went to a value lower than the default, because they might have had issues, so respect that decision
+        // It's also possible that other replicas would have wanted a lower value than this replica has configured, so we should go back to default value if it happens to be lower
+        min = std::min(min, PART_METADATA_DEFAULT_FORMAT_VERSION);
+        LOG_WARNING(log, "Cannot read desired part metadata format version from siblings in ZooKeeper, fallback to minimum of default or configured value. Chosen value is {}. Error was: {}", min, e.displayText());
+    }
+
+    // Verify that we don't somehow have a value that is larger than the max known value
+    // Shouldn't be possible due to limits checking at startup, but extra layer of checking seems sensible
+    if (min > PART_METADATA_MAX_FORMAT_VERSION)
+    {
+        // I considered throwing an exception, but this basically would mean it's impossible to do inserts/merges because of a bad setting
+        // So instead, we just fall back to the default value, and log a warning
+        LOG_WARNING(log, "Unknown value '{}' for desired_part_metadata_format_version is specified. Using default value instead: '{}'", min, PART_METADATA_DEFAULT_FORMAT_VERSION);
+        min = PART_METADATA_DEFAULT_FORMAT_VERSION;
+    }
+    return min;
+}
 
 String StorageReplicatedMergeTree::getDefaultZooKeeperPath(const Poco::Util::AbstractConfiguration & config)
 {
@@ -3643,9 +3697,9 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
             all_in_zk = false;
 
             const auto & part = parts[i];
-            if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
+            if (part->metadata.creationTime(part->modification_time) + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
-                LOG_WARNING(log, "Part {} (that was selected for merge) with age {} seconds exists locally but not in ZooKeeper. Won't do merge with that part and will check it.", part->name, (time(nullptr) - part->modification_time));
+                LOG_WARNING(log, "Part {} (that was selected for merge) with age {} seconds exists locally but not in ZooKeeper. Won't do merge with that part and will check it.", part->name, (time(nullptr) - part->metadata.creationTime(part->modification_time)));
                 enqueuePartForCheck(part->name);
             }
         }
@@ -8258,6 +8312,7 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
     res.database = table_id.database_name;
     res.table = table_id.table_name;
     res.scheme = getContext()->getInterserverScheme();
+    res.desired_part_metadata_format_version = getSettings()->desired_part_metadata_format_version;
     return res;
 }
 

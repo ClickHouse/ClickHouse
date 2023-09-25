@@ -210,16 +210,19 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
 
             part_out.write(block);
 
+            // This is in the insert path I think. So creation time is now
+            time_t creation_time = time(nullptr);
+
             for (const auto & projection : metadata_snapshot->getProjections())
             {
                 auto projection_block = projection.calculate(block, context);
-                auto temp_part = MergeTreeDataWriter::writeProjectionPart(storage, log, projection_block, projection, part.get());
+                auto temp_part = MergeTreeDataWriter::writeProjectionPart(storage, log, projection_block, projection, part.get(), creation_time);
                 temp_part.finalize();
                 if (projection_block.rows())
                     part->addProjectionPart(projection.name, std::move(temp_part.part));
             }
 
-            part_out.finalizePart(part, false);
+            part_out.finalizePart(part, false, creation_time);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
             max_block_number = std::max(max_block_number, part->info.max_block);

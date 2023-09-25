@@ -49,7 +49,9 @@ Columns:
 
 - `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks for secondary indices.
 
-- `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
+- `creation_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) – For old parts (`metadata_format_version` is 0), it is null. For all newer versions, the time at which this part was created.
+
+- `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time the directory with the data part was modified.
 
 - `remove_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time when the data part became inactive.
 
@@ -100,6 +102,8 @@ Columns:
 - `delete_ttl_info_max` ([DateTime](../../sql-reference/data-types/datetime.md)) — The maximum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
 - `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of expressions. Each expression defines a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
+
+- `metadata_format_version` ([UInt32](../../sql-reference/data-types/int-uint.md)) – Version of the `metadata.json` for this part. Values documented under [setting `desired_part_metadata_format_version`](../../operations/settings/merge-tree-settings.md#desired_part_metadata_format_version-desired_part_metadata_format_version)
 
 :::note
 The `move_ttl_info.expression` array is kept mostly for backward compatibility, now the simplest way to check `TTL MOVE` rule is to use the `move_ttl_info.min` and `move_ttl_info.max` fields.

@@ -8134,7 +8134,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     out.write(block);
     /// Here is no projections as no data inside
-    out.finalizePart(new_data_part, sync_on_insert);
+    /// We set create time to the current time since it's just an empty part.
+    out.finalizePart(new_data_part, sync_on_insert, time(nullptr));
 
     new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));

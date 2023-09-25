@@ -406,7 +406,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
         IMergeSelector::Part part_info;
         part_info.size = part->getBytesOnDisk();
-        part_info.age = res.current_time - part->modification_time;
+        part_info.age = res.current_time - part->metadata.creationTime(part->modification_time);
         part_info.level = part->info.level;
         part_info.data = &part;
         part_info.ttl_infos = &part->ttl_infos;

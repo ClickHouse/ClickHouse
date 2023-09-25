@@ -56,12 +56,14 @@ public:
     Finalizer finalizePartAsync(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
+        time_t create_time,
         const NamesAndTypesList * total_columns_list = nullptr,
         MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
+        time_t create_time,
         const NamesAndTypesList * total_columns_list = nullptr,
         MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 

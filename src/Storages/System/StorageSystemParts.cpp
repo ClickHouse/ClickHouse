@@ -4,7 +4,9 @@
 #include <string_view>
 
 #include <Common/escapeForFileName.h>
+#include "Storages/MergeTree/PartMetadataJSON.h"
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -62,6 +64,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"secondary_indices_compressed_bytes",          std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_uncompressed_bytes",        std::make_shared<DataTypeUInt64>()},
         {"secondary_indices_marks_bytes",               std::make_shared<DataTypeUInt64>()},
+        {"creation_time",                               std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"modification_time",                           std::make_shared<DataTypeDateTime>()},
         {"remove_time",                                 std::make_shared<DataTypeDateTime>()},
         {"refcount",                                    std::make_shared<DataTypeUInt32>()},
@@ -122,6 +125,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"last_removal_attempt_time",                    std::make_shared<DataTypeDateTime>()},
         {"removal_state",                               std::make_shared<DataTypeString>()},
+        {"metadata_format_version",                     std::make_shared<DataTypeUInt32>()},
     }
     )
 {
@@ -179,6 +183,13 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(secondary_indexes_size.data_uncompressed);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(secondary_indexes_size.marks);
+        if (columns_mask[src_index++])
+        {
+            if (part->metadata.metadataFormatVersion() >= PART_METADATA_FORMAT_VERSION_INITIAL)
+                columns[res_index++]->insert(static_cast<UInt64>(part->metadata.creationTime()));
+            else
+                columns[res_index++]->insertDefault();
+        }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(static_cast<UInt64>(part->modification_time));
 
@@ -349,6 +360,8 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attempt_time.load(std::memory_order_relaxed)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->metadata.metadataFormatVersion().toUnderType());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

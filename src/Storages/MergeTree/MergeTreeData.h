@@ -1060,6 +1060,10 @@ public:
     /// Do nothing for non-replicated tables
     virtual void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const;
 
+    /// Should report the metadata format version to be used when writing new parts
+    /// Implementation depends on whether it is replicated
+    virtual PartMetadataFormatVersion partMetadataFormatVersion() const = 0;
+
     /// Parts that currently submerging (merging to bigger parts) or emerging
     /// (to be appeared after merging finished). These two variables have to be used
     /// with `currently_submerging_emerging_mutex`.

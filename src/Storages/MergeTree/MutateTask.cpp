@@ -753,6 +753,24 @@ void finalizeMutatedPart(
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
+    // Firstly, we decide whether to use new metadata on the part
+    // Because, if we use it, we might choose *not* to write some other files below
+    if (source_part->metadata.metadataFormatVersion() >= PART_METADATA_FORMAT_VERSION_INITIAL)
+    {
+        Poco::JSON::Object::Ptr metajson = new Poco::JSON::Object();
+        metajson->set("version", source_part->metadata.metadataFormatVersion().toUnderType());
+        metajson->set("creation_time", static_cast<UInt64>(source_part->metadata.creationTime()));
+        new_data_part->metadata = PartMetadataJSON(metajson);
+
+        auto metajsonfile = new_data_part->getDataPartStorage().writeFile("metadata.json", 4096, context->getWriteSettings());
+        HashingWriteBuffer metajson_hashing(*metajsonfile);
+        new_data_part->metadata.writeJSON(metajson_hashing);
+
+        new_data_part->checksums.files["metadata.json"].file_size = metajson_hashing.count();
+        new_data_part->checksums.files["metadata.json"].file_hash = metajson_hashing.getHash();
+        written_files.emplace_back(std::move(metajsonfile));
+    }
+
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
         auto out = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
@@ -1468,8 +1486,12 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
+        // This mutation produces a "new" part with the block output stream
+        // However, the level of the part didn't increment -- crucially meaning it's age hasn't really changed
+        // So, we set the creation time to that of the source part, or fallback to the current time
+        // This covers if the part is old, or the new metadata not enabled
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_checksums);
+            ctx->new_data_part, ctx->need_sync, ctx->source_part->metadata.creationTime(time(nullptr)), nullptr, &ctx->existing_indices_checksums);
         ctx->out.reset();
     }
 

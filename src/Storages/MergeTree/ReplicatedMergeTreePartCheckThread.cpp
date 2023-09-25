@@ -394,7 +394,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 
         }
     }
-    else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < current_time)
+    else if (part->metadata.creationTime(part->modification_time) + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < current_time)
     {
         /// If the part is not in ZooKeeper, delete it locally.
         /// Probably, someone just wrote down the part, and has not yet added to ZK.
@@ -409,9 +409,9 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
     else
     {
         auto message = PreformattedMessage::create("Young part {} with age {} seconds hasn't been added to ZooKeeper yet. It's ok.",
-                                                   part_name, (current_time - part->modification_time));
+                                                   part_name, (current_time - part->metadata.creationTime(part->modification_time)));
         LOG_INFO(log, message);
-        result.recheck_after = part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER - current_time;
+        result.recheck_after = part->metadata.creationTime(part->modification_time) + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER - current_time;
         result.status = {part_name, true, message};
         result.action = ReplicatedCheckResult::RecheckLater;
         return result;

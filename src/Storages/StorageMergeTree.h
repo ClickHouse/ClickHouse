@@ -114,6 +114,9 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
+    // In non-replicated implementation, we just grab the value of the setting desired_part_metadata_format_version, or else default to most recent version
+    PartMetadataFormatVersion partMetadataFormatVersion() const override;
+
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
 private:

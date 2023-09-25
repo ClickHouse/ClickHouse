@@ -644,6 +644,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     try
     {
+        loadMetadataJson();
         loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
@@ -673,10 +674,24 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
 }
 
+void IMergeTreeDataPart::appendFilesOfMetadataJSON(Strings & files)
+{
+    files.push_back("metadata.json");
+}
+
+void IMergeTreeDataPart::loadMetadataJson()
+{
+    if (metadata_manager->exists("metadata.json"))
+    {
+        metadata.readJSON(*metadata_manager->read("metadata.json"));
+    }
+}
+
 void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection) const
 {
     if (isStoredOnDisk())
     {
+        appendFilesOfMetadataJSON(files);
         appendFilesOfUUID(files);
         appendFilesOfColumns(files);
         appendFilesOfChecksums(files);

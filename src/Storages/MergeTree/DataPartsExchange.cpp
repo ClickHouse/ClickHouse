@@ -748,7 +748,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
 
     part_out.write(block);
-    part_out.finalizePart(new_data_part, false);
+
+    // In the case of fetching an in-memory part, it's not clear what the creation time should be
+    // We would like it to be identical to replicas, but we have no way to see the value there.
+    // Changing replication protocol just for this thing seems overkill, so use current time instead :/
+    part_out.finalizePart(new_data_part, false, time(nullptr));
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
 
     return new_data_part;

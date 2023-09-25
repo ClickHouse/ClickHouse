@@ -867,3 +867,32 @@ Default value: `Never`
 Persists virtual column `_block_number` on merges.
 
 Default value: false.
+
+## desired_part_metadata_format_version {#desired_part_metadata_format_version}
+
+For the MergeTree family of tables, the desired part metadata format version.
+This refers to the `version` field written in `metadata.json` for each part.
+This feature is still experimental, so the default value is `0`, which disables the feature altogether.
+
+It is the "desired" version since, in replicated tables, sibling replicas could have a different value for the setting.
+For these replicated tables, the value is written into ZooKeeper/ClickHouse-Keeper, and each replica will check the lowest such value when writing parts.
+In this way, the replicas will not write parts using a metadata format which might not be understood by the siblings.
+
+If the operator sees some issue when using a newer metadata version, they could use this setting to pick an older format version for the metadata.
+
+If an invalid version is specified, the server will reject it, and not start.
+
+Known values (as defined in `src/Storages/MergeTree/PartMetadataJSON.h`):
+ - 0: Don't write `metadata.json` for new parts (i.e. disable the feature)
+ - 1: Write `metadata.json`, and record the `creation_time` of new parts in it.
+
+Note that, after downgrading the value of this setting, ClickHouse will still *read* parts which were written with a newer metadata format version (if it is one of the known versions mentioned above).
+This means that downgrading the setting to an old value won't result in any lost data.
+However, if ClickHouse itself is downgraded, such that it doesn't understand metadata version of previously written parts, it will fail to read those parts.
+
+**Example**
+
+```xml
+<!-- NOTE: we enabled this cool new feature so we could see creation time for parts! -->
+<desired_part_metadata_format_version>1</desired_part_metadata_format_version>
+```

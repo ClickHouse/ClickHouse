@@ -374,6 +374,9 @@ public:
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
 
+    // In replicated implementation, we use the lowest value of setting desired_part_metadata_format_version from all replicas
+    PartMetadataFormatVersion partMetadataFormatVersion() const override;
+
 private:
     std::atomic_bool are_restoring_replica {false};
 

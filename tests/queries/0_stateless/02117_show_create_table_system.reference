@@ -466,6 +466,7 @@ CREATE TABLE system.parts
     `secondary_indices_compressed_bytes` UInt64,
     `secondary_indices_uncompressed_bytes` UInt64,
     `secondary_indices_marks_bytes` UInt64,
+    `creation_time` Nullable(DateTime),
     `modification_time` DateTime,
     `remove_time` DateTime,
     `refcount` UInt32,
@@ -514,6 +515,7 @@ CREATE TABLE system.parts
     `has_lightweight_delete` UInt8,
     `last_removal_attempt_time` DateTime,
     `removal_state` String,
+    `metadata_format_version` UInt32,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
@@ -1091,6 +1093,7 @@ CREATE TABLE system.tables
     `total_marks` Nullable(UInt64),
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
+    `part_metadata_format_version` Nullable(UInt32),
     `comment` String,
     `has_own_data` UInt8,
     `loading_dependencies_database` Array(String),
