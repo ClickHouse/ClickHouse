@@ -19,7 +19,10 @@ class ExternalAuthenticators;
 struct Authentication
 {
     /// Checks the credentials (passwords, readiness, etc.)
-    static bool areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators);
+    static bool areCredentialsValid(
+        const Credentials & credentials,
+        const IAuthenticationData & authentication_data,
+        const ExternalAuthenticators & external_authenticators);
 
     // A signaling class used to communicate requirements for credentials.
     template <typename CredentialsType>

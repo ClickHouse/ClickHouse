@@ -32,7 +32,7 @@ namespace
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
-        const std::optional<AuthenticationData> auth_data,
+        const IAuthenticationDataPtr auth_data,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings,
@@ -56,11 +56,11 @@ namespace
                             "in the server configuration");
 
         if (auth_data)
-            user.auth_data = *auth_data;
+            user.auth_data = auth_data;
 
         if (auth_data || !query.alter)
         {
-            auto auth_type = user.auth_data.getType();
+            auto auth_type = user.auth_data->getType();
             if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                 ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD)  && !allow_plaintext_password))
             {
@@ -127,9 +127,9 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
-    std::optional<AuthenticationData> auth_data;
+    IAuthenticationDataPtr auth_data;
     if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
+        auth_data = IAuthenticationData::fromAST(*query.auth_data, getContext(), !query.attach);
 
     std::optional<time_t> valid_until;
     if (query.valid_until)
@@ -254,9 +254,9 @@ BlockIO InterpreterCreateUserQuery::execute()
 
 void InterpreterCreateUserQuery::updateUserFromQuery(User & user, const ASTCreateUserQuery & query, bool allow_no_password, bool allow_plaintext_password)
 {
-    std::optional<AuthenticationData> auth_data;
+    IAuthenticationDataPtr auth_data;
     if (query.auth_data)
-        auth_data = AuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
+        auth_data = IAuthenticationData::fromAST(*query.auth_data, {}, !query.attach);
 
     updateUserFromQueryImpl(user, query, auth_data, {}, {}, {}, {}, {}, allow_no_password, allow_plaintext_password, true);
 }

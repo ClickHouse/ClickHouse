@@ -12,6 +12,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <base/hex.h>
+#include <base/overloaded.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -302,17 +303,6 @@ void KeeperStorage::initializeSystemNodes()
 
     initialized = true;
 }
-
-template <class... Ts>
-struct Overloaded : Ts...
-{
-    using Ts::operator()...;
-};
-
-// explicit deduction guide
-// https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
-template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
 
 std::shared_ptr<KeeperStorage::Node> KeeperStorage::UncommittedState::tryGetNodeFromStorage(StringRef path) const
 {

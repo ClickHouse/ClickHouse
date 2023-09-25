@@ -230,6 +230,21 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
     params.keytab = config.getString("kerberos.keytab", "");
 }
 
+UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
+{
+    SipHash hash;
+    params.updateHash(hash);
+    if (role_search_params)
+    {
+        for (const auto & params_instance : *role_search_params)
+        {
+            params_instance.updateHash(hash);
+        }
+    }
+
+    return hash.get128();
+}
+
 }
 
 void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -322,21 +337,6 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     {
         tryLogCurrentException(log, "Could not parse Kerberos section");
     }
-}
-
-UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
-{
-    SipHash hash;
-    params.updateHash(hash);
-    if (role_search_params)
-    {
-        for (const auto & params_instance : *role_search_params)
-        {
-            params_instance.updateHash(hash);
-        }
-    }
-
-    return hash.get128();
 }
 
 bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const BasicCredentials & credentials,

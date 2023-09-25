@@ -145,18 +145,21 @@ namespace
 
         if (has_password_plaintext)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
-            user->auth_data.setPassword(config.getString(user_config + ".password"));
+            auto auth_data = std::make_shared<PlainTextPasswordAuthData>();
+            auth_data->setPassword(config.getString(user_config + ".password"));
+            user->auth_data = auth_data;
         }
         else if (has_password_sha256_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            auto auth_data = std::make_shared<SHA256PasswordAuthData>();
+            auth_data->setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->auth_data = auth_data;
         }
         else if (has_password_double_sha1_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            auto auth_data = std::make_shared<DoubleSHA1PasswordAuthData>();
+            auth_data->setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->auth_data = auth_data;
         }
         else if (has_ldap)
         {
@@ -164,28 +167,23 @@ namespace
             if (!has_ldap_server)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing mandatory 'server' in 'ldap', with LDAP server name, for user {}.", user_name);
 
-            const auto ldap_server_name = config.getString(user_config + ".ldap.server");
+            String ldap_server_name = config.getString(user_config + ".ldap.server");
             if (ldap_server_name.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server name cannot be empty for user {}.", user_name);
 
-            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
-            user->auth_data.setLDAPServerName(ldap_server_name);
+            user->auth_data = std::make_shared<LDAPAuthData>(std::move(ldap_server_name));
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
-
-            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
-            user->auth_data.setKerberosRealm(realm);
+            user->auth_data = std::make_shared<KerberosAuthData>(realm);
         }
         else if (has_certificates)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SSL_CERTIFICATE};
-
             /// Fill list of allowed certificates.
             Poco::Util::AbstractConfiguration::Keys keys;
             config.keys(certificates_config, keys);
-            boost::container::flat_set<String> common_names;
+            SSLCertificateAuthData::NamesContainer common_names;
             for (const String & key : keys)
             {
                 if (key.starts_with("common_name"))
@@ -196,10 +194,10 @@ namespace
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown certificate pattern type: {}", key);
             }
-            user->auth_data.setSSLCertificateCommonNames(std::move(common_names));
+            user->auth_data = std::make_shared<SSLCertificateAuthData>(std::move(common_names));
         }
 
-        auto auth_type = user->auth_data.getType();
+        auto auth_type = user->auth_data->getType();
         if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
             ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
         {

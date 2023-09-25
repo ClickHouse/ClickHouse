@@ -33,11 +33,18 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int OPENSSL_ERROR;
 }
 
-AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
+using Digest = IPasswordAuthData::Digest;
+
+String IPasswordAuthData::Util::digestToString(const Digest & text) { return String(text.data(), text.data() + text.size()); }
+Digest IPasswordAuthData::Util::stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
+Digest IPasswordAuthData::Util::encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
+Digest IPasswordAuthData::Util::encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
+Digest IPasswordAuthData::Util::encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
+
+Digest IPasswordAuthData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
 {
 #if USE_SSL
     Digest hash;
@@ -49,15 +56,14 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 #endif
 }
 
-
-AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view text)
+Digest IPasswordAuthData::Util::encodeSHA1(std::string_view text)
 {
     Poco::SHA1Engine engine;
     engine.update(text.data(), text.size());
     return engine.digest();
 }
 
-AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_view text [[maybe_unused]], int workfactor [[maybe_unused]])
+IPasswordAuthData::Digest IPasswordAuthData::Util::encodeBcrypt(std::string_view text [[maybe_unused]], int workfactor [[maybe_unused]])
 {
 #if USE_BCRYPT
     if (text.size() > 72)
@@ -85,7 +91,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 #endif
 }
 
-bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
+bool IPasswordAuthData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
     int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));
@@ -99,232 +105,383 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
 #endif
 }
 
-bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
+
+bool operator ==(const IAuthenticationData & lhs, const IAuthenticationData & rhs)
 {
-    return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
-        && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
-        && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names);
+    return lhs.equal(rhs);
+}
+
+bool IAuthenticationData::equal(const IAuthenticationData& other) const
+{
+    return getType() == other.getType();
+}
+
+String IPasswordAuthData::getPassword() const
+{
+    return String(hash.data(), hash.data() + hash.size());
 }
 
 
-void AuthenticationData::setPassword(const String & password_)
+void IPasswordAuthData::setPasswordHash(const String & hash_)
 {
-    switch (type)
-    {
-        case AuthenticationType::PLAINTEXT_PASSWORD:
-            return setPasswordHashBinary(Util::stringToDigest(password_));
-
-        case AuthenticationType::SHA256_PASSWORD:
-            return setPasswordHashBinary(Util::encodeSHA256(password_));
-
-        case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            return setPasswordHashBinary(Util::encodeDoubleSHA1(password_));
-
-        case AuthenticationType::BCRYPT_PASSWORD:
-        case AuthenticationType::NO_PASSWORD:
-        case AuthenticationType::LDAP:
-        case AuthenticationType::KERBEROS:
-        case AuthenticationType::SSL_CERTIFICATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
-
-        case AuthenticationType::MAX:
-            break;
-    }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPassword(): authentication type {} not supported", toString(type));
+    setPasswordHashHex(hash_);
 }
 
-void AuthenticationData::setPasswordBcrypt(const String & password_, int workfactor_)
-{
-    if (type != AuthenticationType::BCRYPT_PASSWORD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify bcrypt password for authentication type {}", toString(type));
-
-    return setPasswordHashBinary(Util::encodeBcrypt(password_, workfactor_));
-}
-
-String AuthenticationData::getPassword() const
-{
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
-    return String(password_hash.data(), password_hash.data() + password_hash.size());
-}
-
-
-void AuthenticationData::setPasswordHashHex(const String & hash)
+void IPasswordAuthData::setPasswordHashHex(const String & hash_)
 {
     Digest digest;
-    digest.resize(hash.size() / 2);
+    digest.resize(hash_.size() / 2);
 
     try
     {
-        boost::algorithm::unhex(hash.begin(), hash.end(), digest.data());
+        boost::algorithm::unhex(hash_.begin(), hash_.end(), digest.data());
     }
     catch (const std::exception &)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
     }
-
     setPasswordHashBinary(digest);
 }
 
-
-String AuthenticationData::getPasswordHashHex() const
+String IPasswordAuthData::getPasswordHashHex() const
 {
-    if (type == AuthenticationType::LDAP || type == AuthenticationType::KERBEROS || type == AuthenticationType::SSL_CERTIFICATE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get password hex hash for authentication type {}", toString(type));
-
     String hex;
-    hex.resize(password_hash.size() * 2);
-    boost::algorithm::hex(password_hash.begin(), password_hash.end(), hex.data());
+    hex.resize(hash.size() * 2);
+    boost::algorithm::hex(hash.begin(), hash.end(), hex.data());
     return hex;
 }
 
-
-void AuthenticationData::setPasswordHashBinary(const Digest & hash)
+const Digest & IPasswordAuthData::getPasswordHashBinary() const
 {
-    switch (type)
+    return hash;
+}
+
+void IPasswordAuthData::setPasswordHashBinary(const Digest & hash_)
+{
+    hash = hash_;
+}
+
+bool IPasswordAuthData::equal(const IAuthenticationData& other) const
+{
+    if (!IAuthenticationData::equal(other))
+        return false;
+    const auto & other_password = typeid_cast<const IPasswordAuthData &>(other);
+    return hash == other_password.hash;
+}
+
+
+std::shared_ptr<ASTAuthenticationData> NoPasswordAuthData::toAST() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(getType()));
+}
+
+void PlainTextPasswordAuthData::setPassword(const String & password_)
+{
+    setPasswordHashBinary(Util::stringToDigest(password_));
+}
+
+
+std::shared_ptr<ASTAuthenticationData> PlainTextPasswordAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+
+    node->contains_password = true;
+    node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
+    return node;
+}
+
+
+void SHA256PasswordAuthData::setPassword(const String & password)
+{
+    setPasswordHashBinary(Util::encodeSHA256(password + salt));
+}
+
+void SHA256PasswordAuthData::setPasswordHashBinary(const Digest & hash)
+{
+    if (hash.size() != 32)
     {
-        case AuthenticationType::PLAINTEXT_PASSWORD:
-        {
-            password_hash = hash;
-            return;
-        }
-
-        case AuthenticationType::SHA256_PASSWORD:
-        {
-            if (hash.size() != 32)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Password hash for the 'SHA256_PASSWORD' authentication type has length {} "
-                                "but must be exactly 32 bytes.", hash.size());
-            password_hash = hash;
-            return;
-        }
-
-        case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-        {
-            if (hash.size() != 20)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length {} "
-                                "but must be exactly 20 bytes.", hash.size());
-            password_hash = hash;
-            return;
-        }
-
-        case AuthenticationType::BCRYPT_PASSWORD:
-        {
-            /// Depending on the workfactor the resulting hash can be 59 or 60 characters long.
-            /// However the library we use to encode it requires hash string to be 64 characters long,
-            ///  so we also allow the hash of this length.
-
-            if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
-                                "but must be 59 or 60 bytes.", hash.size());
-            password_hash = hash;
-            password_hash.resize(64);
-            return;
-        }
-
-        case AuthenticationType::NO_PASSWORD:
-        case AuthenticationType::LDAP:
-        case AuthenticationType::KERBEROS:
-        case AuthenticationType::SSL_CERTIFICATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
-
-        case AuthenticationType::MAX:
-            break;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Password hash for the 'SHA256_PASSWORD' authentication type has length {} "
+            "but must be exactly 32 bytes.", hash.size());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setPasswordHashBinary(): authentication type {} not supported", toString(type));
+    IPasswordAuthData::setPasswordHashBinary(hash);
 }
 
-void AuthenticationData::setSalt(String salt_)
+
+void SHA256PasswordAuthData::setSalt(String salt_)
 {
-    if (type != AuthenticationType::SHA256_PASSWORD)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSalt(): authentication type {} not supported", toString(type));
-    salt = std::move(salt_);
+    salt = salt_;
 }
 
-String AuthenticationData::getSalt() const
+String SHA256PasswordAuthData::getSalt() const
 {
     return salt;
 }
 
-void AuthenticationData::setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_)
+bool SHA256PasswordAuthData::equal(const IAuthenticationData& other) const
+{
+    if (!IPasswordAuthData::equal(other))
+        return false;
+    const auto & other_password = typeid_cast<const SHA256PasswordAuthData &>(other);
+    return salt == other_password.salt;
+}
+
+std::shared_ptr<ASTAuthenticationData> SHA256PasswordAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+    node->contains_hash = true;
+    node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+
+    if (!getSalt().empty())
+        node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+    return node;
+}
+
+
+void DoubleSHA1PasswordAuthData::setPassword(const String & password)
+{
+    setPasswordHashBinary(Util::encodeDoubleSHA1(password));
+}
+
+void DoubleSHA1PasswordAuthData::setPasswordHashBinary(const Digest & hash)
+{
+    if (hash.size() != 20)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Password hash for the 'DOUBLE_SHA1_PASSWORD' authentication type has length {} "
+            "but must be exactly 20 bytes.", hash.size());
+    }
+    IPasswordAuthData::setPasswordHashBinary(hash);
+}
+
+std::shared_ptr<ASTAuthenticationData> DoubleSHA1PasswordAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+    node->contains_hash = true;
+    node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+    return node;
+}
+
+void BcryptPasswordAuthData::setWorkfactor(int workfactor_)
+{
+    workfactor = workfactor_;
+}
+
+void BcryptPasswordAuthData::setPassword(const String & password)
+{
+    if (!workfactor.has_value())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "For setting password 'BCRYPT_PASSWORD' authentication type workfactor must be provided.");
+    }
+    setPasswordHashBinary(Util::encodeBcrypt(password, workfactor.value()));
+}
+
+void BcryptPasswordAuthData::setPasswordHash(const String & hash_)
+{
+    setPasswordHashBinary(IPasswordAuthData::Util::stringToDigest(hash_));
+}
+
+void BcryptPasswordAuthData::setPasswordHashBinary(const Digest & hash)
+{
+    /// Depending on the workfactor the resulting hash can be 59 or 60 characters long.
+    /// However the library we use to encode it requires hash string to be 64 characters long,
+    ///  so we also allow the hash of this length.
+
+    if (hash.size() != 59 && hash.size() != 60 && hash.size() != 64)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Password hash for the 'BCRYPT_PASSWORD' authentication type has length {} "
+                        "but must be 59 or 60 bytes.", hash.size());
+    auto hash_ = hash;
+    hash_.resize(64);
+    IPasswordAuthData::setPasswordHashBinary(hash_);
+}
+
+std::shared_ptr<ASTAuthenticationData> BcryptPasswordAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+
+    node->contains_hash = true;
+    node->children.push_back(std::make_shared<ASTLiteral>(Util::digestToString(getPasswordHashBinary())));
+
+    return node;
+}
+
+
+bool LDAPAuthData::equal(const IAuthenticationData & other) const
+{
+     if (!IAuthenticationData::equal(other))
+        return false;
+    const auto & other_ldap_data = typeid_cast<const LDAPAuthData &>(other);
+    return ldap_server_name == other_ldap_data.ldap_server_name;
+}
+
+std::shared_ptr<ASTAuthenticationData> LDAPAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+    node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
+    return node;
+}
+
+
+bool KerberosAuthData::equal(const IAuthenticationData & other) const
+{
+    if (!IAuthenticationData::equal(other))
+        return false;
+    const auto & other_kerberos_data = typeid_cast<const KerberosAuthData &>(other);
+    return kerberos_realm == other_kerberos_data.kerberos_realm;
+}
+
+std::shared_ptr<ASTAuthenticationData> KerberosAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+
+    const auto & realm = getKerberosRealm();
+    if (!realm.empty())
+        node->children.push_back(std::make_shared<ASTLiteral>(realm));
+    return node;
+}
+
+
+SSLCertificateAuthData::SSLCertificateAuthData(NamesContainer common_names_)
+{
+    setSSLCertificateCommonNames(std::move(common_names_));
+}
+
+bool SSLCertificateAuthData::equal(const IAuthenticationData & other) const
+{
+    if (!IAuthenticationData::equal(other))
+        return false;
+    const auto & other_cert_data = typeid_cast<const SSLCertificateAuthData &>(other);
+    return ssl_certificate_common_names == other_cert_data.ssl_certificate_common_names;
+}
+
+std::shared_ptr<ASTAuthenticationData> SSLCertificateAuthData::toAST() const
+{
+    auto node = std::make_shared<ASTAuthenticationData>();
+    node->type = getType();
+
+    for (const auto & name : getSSLCertificateCommonNames())
+        node->children.push_back(std::make_shared<ASTLiteral>(name));
+    return node;
+}
+
+void SSLCertificateAuthData::setSSLCertificateCommonNames(NamesContainer common_names_)
 {
     if (common_names_.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'SSL CERTIFICATE' authentication type requires a non-empty list of common names.");
     ssl_certificate_common_names = std::move(common_names_);
 }
 
-std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+String generateSalt()
 {
-    auto node = std::make_shared<ASTAuthenticationData>();
-    auto auth_type = getType();
-    node->type = auth_type;
-
-    switch (auth_type)
+#if USE_SSL
+    ///random generator FIPS complaint
+    uint8_t key[32];
+    if (RAND_bytes(key, sizeof(key)) != 1)
     {
-        case AuthenticationType::PLAINTEXT_PASSWORD:
-        {
-            node->contains_password = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
-            break;
-        }
-        case AuthenticationType::SHA256_PASSWORD:
-        {
-            node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
-
-            if (!getSalt().empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
-            break;
-        }
-        case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-        {
-            node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
-            break;
-        }
-        case AuthenticationType::BCRYPT_PASSWORD:
-        {
-            node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
-            break;
-        }
-        case AuthenticationType::LDAP:
-        {
-            node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
-            break;
-        }
-        case AuthenticationType::KERBEROS:
-        {
-            const auto & realm = getKerberosRealm();
-
-            if (!realm.empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(realm));
-
-            break;
-        }
-        case AuthenticationType::SSL_CERTIFICATE:
-        {
-            for (const auto & name : getSSLCertificateCommonNames())
-                node->children.push_back(std::make_shared<ASTLiteral>(name));
-
-            break;
-        }
-
-        case AuthenticationType::NO_PASSWORD: [[fallthrough]];
-        case AuthenticationType::MAX:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
+        char buf[512] = {0};
+        ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
     }
 
-    return node;
+    String salt;
+    salt.resize(sizeof(key) * 2);
+    char * buf_pos = salt.data();
+    for (uint8_t k : key)
+    {
+        writeHexByteUppercase(k, buf_pos);
+        buf_pos += 2;
+    }
+    return salt;
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+#endif
 }
 
+IAuthenticationDataPtr makePasswordAuthenticationData(const ASTAuthenticationData & query, const ASTs & args, ContextPtr context, bool check_password_rules)
+{
+    if (!query.type && !context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
+    if (check_password_rules && !context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
+
+    if (query.type == AuthenticationType::BCRYPT_PASSWORD && !context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get bcrypt work factor without context");
+
+    String password = checkAndGetLiteralArgument<String>(args[0], "password");
+    if (check_password_rules)
+        context->getAccessControl().checkPasswordComplexityRules(password);
+
+    auto auth_type = query.type.value_or(context->getAccessControl().getDefaultPasswordType());
+
+    IPasswordAuthDataPtr auth_data;
+
+    if (auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
+    {
+        auth_data = std::make_shared<PlainTextPasswordAuthData>();
+    }
+    else if (auth_type == AuthenticationType::SHA256_PASSWORD)
+    {
+        auth_data = std::make_shared<SHA256PasswordAuthData>(generateSalt());
+    }
+    else if (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
+    {
+        auth_data = std::make_shared<DoubleSHA1PasswordAuthData>();
+    }
+    else if (auth_type == AuthenticationType::BCRYPT_PASSWORD)
+    {
+        int workfactor = context->getAccessControl().getBcryptWorkfactor();
+        auth_data = std::make_shared<BcryptPasswordAuthData>(workfactor);
+    }
+    auth_data->setPassword(password);
+
+    return auth_data;
+}
+
+IAuthenticationDataPtr makePasswordAuthenticationData(const ASTAuthenticationData & query, const ASTs & args)
+{
+    AuthenticationType auth_type = *query.type;
+    String hash = checkAndGetLiteralArgument<String>(args[0], "hash");
+
+    IPasswordAuthDataPtr auth_data;
+
+    if (auth_type == AuthenticationType::PLAINTEXT_PASSWORD)
+    {
+        auth_data = std::make_shared<PlainTextPasswordAuthData>();
+    }
+    else if (auth_type == AuthenticationType::SHA256_PASSWORD)
+    {
+        String parsed_salt;
+        if (args.size() == 2)
+            parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
+        auth_data = std::make_shared<SHA256PasswordAuthData>(parsed_salt);
+    }
+    else if (auth_type == AuthenticationType::DOUBLE_SHA1_PASSWORD)
+    {
+        auth_data = std::make_shared<DoubleSHA1PasswordAuthData>();
+    }
+    else if (auth_type == AuthenticationType::BCRYPT_PASSWORD)
+    {
+        auth_data = std::make_shared<BcryptPasswordAuthData>();
+    }
+    auth_data->setPasswordHash(hash);
+
+    return auth_data;
+}
+
+IAuthenticationDataPtr IAuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool check_password_rules)
 {
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
-        return AuthenticationData();
+        return std::make_shared<NoPasswordAuthData>();
 
     size_t args_size = query.children.size();
     ASTs args(args_size);
@@ -333,117 +490,35 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
     if (query.contains_password)
     {
-        if (!query.type && !context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get default password type without context");
-
-        if (check_password_rules && !context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot check password complexity rules without context");
-
-        if (query.type == AuthenticationType::BCRYPT_PASSWORD && !context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get bcrypt work factor without context");
-
-        String value = checkAndGetLiteralArgument<String>(args[0], "password");
-
-        AuthenticationType current_type;
-
-        if (query.type)
-            current_type = *query.type;
-        else
-            current_type = context->getAccessControl().getDefaultPasswordType();
-
-        AuthenticationData auth_data(current_type);
-
-        if (check_password_rules)
-            context->getAccessControl().checkPasswordComplexityRules(value);
-
-        if (query.type == AuthenticationType::BCRYPT_PASSWORD)
-        {
-            int workfactor = context->getAccessControl().getBcryptWorkfactor();
-            auth_data.setPasswordBcrypt(value, workfactor);
-            return auth_data;
-        }
-
-        if (query.type == AuthenticationType::SHA256_PASSWORD)
-        {
-#if USE_SSL
-            ///random generator FIPS complaint
-            uint8_t key[32];
-            if (RAND_bytes(key, sizeof(key)) != 1)
-            {
-                char buf[512] = {0};
-                ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-            }
-
-            String salt;
-            salt.resize(sizeof(key) * 2);
-            char * buf_pos = salt.data();
-            for (uint8_t k : key)
-            {
-                writeHexByteUppercase(k, buf_pos);
-                buf_pos += 2;
-            }
-            value.append(salt);
-            auth_data.setSalt(salt);
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
-#endif
-        }
-
-        auth_data.setPassword(value);
-        return auth_data;
+        return makePasswordAuthenticationData(query, args, context, check_password_rules);
     }
-
-    AuthenticationData auth_data(*query.type);
-
-    if (query.contains_hash)
+    else if (query.contains_hash)
     {
-        String value = checkAndGetLiteralArgument<String>(args[0], "hash");
-
-        if (query.type == AuthenticationType::BCRYPT_PASSWORD)
-        {
-            auth_data.setPasswordHashBinary(AuthenticationData::Util::stringToDigest(value));
-            return auth_data;
-        }
-        else
-        {
-            auth_data.setPasswordHashHex(value);
-        }
-
-        if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
-        {
-            String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
-            auth_data.setSalt(parsed_salt);
-        }
+        return makePasswordAuthenticationData(query, args);
     }
     else if (query.type == AuthenticationType::LDAP)
     {
-        String value = checkAndGetLiteralArgument<String>(args[0], "ldap_server_name");
-        auth_data.setLDAPServerName(value);
+        String ldap_server_name = checkAndGetLiteralArgument<String>(args[0], "ldap_server_name");
+        return std::make_shared<LDAPAuthData>(std::move(ldap_server_name));
     }
     else if (query.type == AuthenticationType::KERBEROS)
     {
+        String realm;
         if (!args.empty())
         {
-            String value = checkAndGetLiteralArgument<String>(args[0], "kerberos_realm");
-            auth_data.setKerberosRealm(value);
+            realm = checkAndGetLiteralArgument<String>(args[0], "kerberos_realm");
         }
+        return std::make_shared<KerberosAuthData>(realm);
     }
     else if (query.type == AuthenticationType::SSL_CERTIFICATE)
     {
-        boost::container::flat_set<String> common_names;
+        SSLCertificateAuthData::NamesContainer common_names;
         for (const auto & arg : args)
             common_names.insert(checkAndGetLiteralArgument<String>(arg, "common_name"));
 
-        auth_data.setSSLCertificateCommonNames(std::move(common_names));
+        return std::make_shared<SSLCertificateAuthData>(std::move(common_names));
     }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected ASTAuthenticationData structure");
-    }
-
-    return auth_data;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected ASTAuthenticationData structure");
 }
 
 }

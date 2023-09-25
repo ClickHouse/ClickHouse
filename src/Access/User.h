@@ -15,7 +15,7 @@ namespace DB
   */
 struct User : public IAccessEntity
 {
-    AuthenticationData auth_data;
+    IAuthenticationDataPtr auth_data = std::make_shared<NoPasswordAuthData>();
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     AccessRights access;
     GrantedRoles granted_roles;

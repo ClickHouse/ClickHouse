@@ -96,7 +96,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
-                       const AuthenticationData & auth_data,
+                       const IAuthenticationData &  auth_data,
                        const AllowedClientHosts & allowed_hosts,
                        const RolesOrUsersSet & default_roles,
                        const RolesOrUsersSet & grantees,
@@ -113,18 +113,18 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         {
             Poco::JSON::Object auth_params_json;
 
-            if (auth_data.getType() == AuthenticationType::LDAP)
+            if (const auto * ldap_auth_data = typeid_cast<const LDAPAuthData*>(&auth_data))
             {
-                auth_params_json.set("server", auth_data.getLDAPServerName());
+                auth_params_json.set("server", ldap_auth_data->getLDAPServerName());
             }
-            else if (auth_data.getType() == AuthenticationType::KERBEROS)
+            else if (const auto * kerberos_auth_data = typeid_cast<const KerberosAuthData*>(&auth_data))
             {
-                auth_params_json.set("realm", auth_data.getKerberosRealm());
+                auth_params_json.set("realm", kerberos_auth_data->getKerberosRealm());
             }
-            else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
+            else if (const auto * cert_auth_data = typeid_cast<const SSLCertificateAuthData*>(&auth_data))
             {
                 Poco::JSON::Array::Ptr arr = new Poco::JSON::Array();
-                for (const auto & common_name : auth_data.getSSLCertificateCommonNames())
+                for (const auto & common_name : cert_auth_data->getSSLCertificateCommonNames())
                     arr->add(common_name);
                 auth_params_json.set("common_names", arr);
             }
@@ -212,7 +212,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->auth_data, user->allowed_client_hosts,
+        add_row(user->getName(), id, storage->getStorageName(), *user->auth_data, user->allowed_client_hosts,
                 user->default_roles, user->grantees, user->default_database);
     }
 }

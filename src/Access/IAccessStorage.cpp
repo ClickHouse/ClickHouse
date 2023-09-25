@@ -526,7 +526,7 @@ std::optional<UUID> IAccessStorage::authenticateImpl(
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            auto auth_type = user->auth_data.getType();
+            auto auth_type = user->auth_data->getType();
             if (((auth_type == AuthenticationType::NO_PASSWORD) && !allow_no_password) ||
                 ((auth_type == AuthenticationType::PLAINTEXT_PASSWORD) && !allow_plaintext_password))
                 throwAuthenticationTypeNotAllowed(auth_type);
@@ -564,7 +564,7 @@ bool IAccessStorage::areCredentialsValid(
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
+    return Authentication::areCredentialsValid(credentials, *user.auth_data, external_authenticators);
 }
 
 

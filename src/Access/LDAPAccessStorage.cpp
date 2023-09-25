@@ -468,8 +468,7 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
         // User does not exist, so we create one, and will add it if authentication is successful.
         new_user = std::make_shared<User>();
         new_user->setName(credentials.getUserName());
-        new_user->auth_data = AuthenticationData(AuthenticationType::LDAP);
-        new_user->auth_data.setLDAPServerName(ldap_server_name);
+        new_user->auth_data = std::make_shared<LDAPAuthData>(ldap_server_name);
         user = new_user;
     }
 
