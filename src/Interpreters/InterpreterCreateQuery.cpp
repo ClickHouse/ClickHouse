@@ -681,6 +681,34 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    ColumnsDescription as_select_columns;
+    if (create.select)
+    {
+        Block as_select_sample;
+
+        if (getContext()->getSettingsRef().allow_experimental_analyzer)
+        {
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+        }
+        else
+        {
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(
+                create.select->clone(), getContext(), false /* is_subquery */, create.isParameterizedView());
+        }
+
+        as_select_columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+    }
+
+    auto check_view_columns_same_with_select = [&](const ColumnsDescription & columns)
+    {
+        if (create.is_ordinary_view && create.select && columns != as_select_columns)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Columns of select query are not same with the column list, select query: {}, columns list: {}",
+                as_select_columns.toString(),
+                columns.toString());
+    };
+
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
@@ -692,6 +720,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->columns)
         {
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
+            check_view_columns_same_with_select(properties.columns);
         }
 
         if (create.columns_list->indices)
@@ -730,6 +759,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
+        check_view_columns_same_with_select(properties.columns);
 
         /// Secondary indices and projections make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
@@ -748,22 +778,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-
-        Block as_select_sample;
-
-        if (getContext()->getSettingsRef().allow_experimental_analyzer)
-        {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-        }
-        else
-        {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
-        }
-
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        properties.columns = as_select_columns;
     }
     else if (create.as_table_function)
     {
@@ -771,6 +786,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+        check_view_columns_same_with_select(properties.columns);
     }
     else if (create.is_dictionary)
     {
