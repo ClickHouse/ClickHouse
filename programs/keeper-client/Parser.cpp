@@ -11,8 +11,6 @@ bool parseKeeperArg(IParser::Pos & pos, Expected & expected, String & result)
     {
         if (!parseIdentifierOrStringLiteral(pos, expected, result))
             return false;
-
-        ParserToken{TokenType::Whitespace}.ignore(pos);
     }
 
     while (pos->type != TokenType::Whitespace && pos->type != TokenType::EndOfStream && pos->type != TokenType::Semicolon)

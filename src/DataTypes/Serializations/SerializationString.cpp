@@ -364,7 +364,7 @@ void SerializationString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 void SerializationString::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.output_format_markdown_escape_special_characters)
+    if (settings.markdown.escape_special_characters)
         writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);

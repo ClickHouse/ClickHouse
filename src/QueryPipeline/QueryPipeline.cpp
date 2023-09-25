@@ -353,6 +353,7 @@ QueryPipeline::QueryPipeline(Pipe pipe)
         totals = pipe.getTotalsPort();
         extremes = pipe.getExtremesPort();
         partial_result = pipe.getPartialResultPort(0);
+        num_threads = pipe.max_parallel_streams;
 
         processors = std::move(pipe.processors);
         checkPulling(*processors, output, totals, extremes, partial_result);
