@@ -293,7 +293,7 @@ inline void writeBinByte(UInt8 byte, void * out)
 /// Converts byte array to a hex string. Useful for debug logging.
 inline std::string hexString(const void * data, size_t size)
 {
-    auto p = reinterpret_cast<const char *>(data);
+    const char * p = reinterpret_cast<const char *>(data);
     std::string s(size * 2, '\0');
     for (size_t i = 0; i < size; ++i)
         writeHexByteLowercase(p[i], s.data() + i * 2);
