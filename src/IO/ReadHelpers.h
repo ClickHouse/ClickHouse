@@ -637,6 +637,8 @@ bool tryReadQuotedStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector, typename ReturnType = void>
 ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
 
+void readJSONArrayInto(String & s, ReadBuffer & buf);
+
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
