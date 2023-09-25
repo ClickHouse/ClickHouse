@@ -1,0 +1,14 @@
+//
+// Created by kimigaev on 24.09.23.
+//
+
+#ifndef CLICKHOUSE_READBUFFERFROMSFTP_H
+#define CLICKHOUSE_READBUFFERFROMSFTP_H
+
+
+class ReadBufferFromSFTP {
+
+};
+
+
+#endif //CLICKHOUSE_READBUFFERFROMSFTP_H
