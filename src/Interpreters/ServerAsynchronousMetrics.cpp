@@ -99,6 +99,15 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
     }
 
+    {
+        size_t count, size_in_bytes;
+        GinIndexStoreFactory::instance().getCacheSize(count, size_in_bytes);
+        new_values["InvertedIndexMetadataCacheCells"] = { count,
+            "Total number of entries in the cache for inverted index (only metadata). Each entry represents metadata of inverted index, including segments from .gin_seg file and dictionaries from .gin_dict file" };
+        new_values["InvertedIndexMetadataCacheBytes"] = { size_in_bytes,
+            "Total size of cache in bytes for inverted index (only metadata)." };
+    }
+
     if (auto mmap_cache = getContext()->getMMappedFileCache())
     {
         new_values["MMapCacheCells"] = { mmap_cache->count(),

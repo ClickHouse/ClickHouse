@@ -41,6 +41,8 @@
     M(UncompressedCacheHits, "Number of times a block of data has been found in the uncompressed cache (and decompression was avoided).") \
     M(UncompressedCacheMisses, "Number of times a block of data has not been found in the uncompressed cache (and required decompression).") \
     M(UncompressedCacheWeightLost, "Number of bytes evicted from the uncompressed cache.") \
+    M(InvertedIndexMetadataCacheHits, "Number of times the segments and segmented dictionaries of a inverted index for a part has been found in the cache (so we don't have to read the segment file and dictionary file).") \
+    M(InvertedIndexMetadataCacheMisses, "Number of times the segments and segmented dictionaries of a inverted index for a part has not been found in the cache (so we have to read the segment file and dictionary file).") \
     M(MMappedFileCacheHits, "Number of times a file has been found in the MMap cache (for the 'mmap' read_method), so we didn't have to mmap it again.") \
     M(MMappedFileCacheMisses, "Number of times a file has not been found in the MMap cache (for the 'mmap' read_method), so we had to mmap it again.") \
     M(OpenedFileCacheHits, "Number of times a file has been found in the opened file cache, so we didn't have to open it again.") \

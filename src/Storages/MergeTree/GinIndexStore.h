@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Common/FST.h>
+#include <Common/CacheBase.h>
+#include <Common/TTLCachePolicy.h>
 #include <Core/Block.h>
+#include <Core/ServerSettings.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -169,6 +172,7 @@ public:
 
 private:
     friend class GinIndexStoreDeserializer;
+    friend class GinIndexStoreFactory;
 
     /// Initialize all indexing files for this store
     void initFileStreams();
@@ -286,18 +290,65 @@ public:
     /// Get singleton of GinIndexStoreFactory
     static GinIndexStoreFactory & instance();
 
+    // Apply settings for GinIndexStores (the hash map).
+    void applySettings(const ServerSettings & settings);
+
     /// Get GinIndexStore by using index name, disk and part_path (which are combined to create key in stores)
     GinIndexStorePtr get(const String & name, DataPartStoragePtr storage);
 
     /// Remove all Gin index files which are under the same part_path
     void remove(const String & part_path);
 
+    /// Clear all Gin index files
+    void clear() { stores.clear(); }
+
+    /// Get current cells count and size of metadata cache
+    void getCacheSize(size_t & count, size_t & size_in_bytes) const;
+
+    struct CacheKey
+    {
+        const String key;
+        const std::chrono::time_point<std::chrono::system_clock> expires_at;
+        static const String user_name; // required by TTLCachePolicy, leave it empty.
+
+        bool operator==(const CacheKey & other) const { return key == other.key; }
+
+        struct KeyHasher
+        {
+            size_t operator()(const CacheKey & key_) const { return StringRefHash()(key_.key); }
+        };
+        struct IsStale
+        {
+            bool operator()(const CacheKey & key_) const { return (key_.expires_at < std::chrono::system_clock::now()); }
+        };
+    };
+
+    struct CacheEntry
+    {
+        GinIndexStorePtr ptr;
+        const size_t weight;
+
+        struct Weight
+        {
+            size_t operator()(CacheEntry & entry) { return entry.weight; }
+        };
+    };
+
+    using Cache = CacheBase<CacheKey, CacheEntry, CacheKey::KeyHasher, CacheEntry::Weight>;
+
     /// GinIndexStores indexed by part file path
     using GinIndexStores = std::unordered_map<std::string, GinIndexStorePtr>;
 
 private:
-    GinIndexStores stores;
-    std::mutex mutex;
+    explicit GinIndexStoreFactory(Poco::Logger * log_);
+
+    std::mutex apply_settings_mutex;
+
+    std::atomic_bool cache_enabled;
+    std::atomic_size_t cache_ttl;
+    Cache stores;
+
+    Poco::Logger * log;
 };
 
 }

@@ -1,6 +1,8 @@
+#include <base/getMemoryAmount.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
+#include <Common/ProfileEvents.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,6 +16,12 @@
 #include <unordered_map>
 #include <numeric>
 #include <algorithm>
+
+namespace ProfileEvents
+{
+    extern const Event InvertedIndexMetadataCacheHits;
+    extern const Event InvertedIndexMetadataCacheMisses;
+}
 
 namespace DB
 {
@@ -460,47 +468,94 @@ GinPostingsCachePtr PostingsCacheForStore::getPostings(const String & query_stri
     return it->second;
 }
 
+GinIndexStoreFactory::GinIndexStoreFactory(Poco::Logger * log_)
+    : stores(std::make_unique<TTLCachePolicy<CacheKey, CacheEntry, CacheKey::KeyHasher, CacheEntry::Weight, CacheKey::IsStale>>(
+        std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    , log(log_)
+{ }
+
+const String GinIndexStoreFactory::CacheKey::user_name;
+
 GinIndexStoreFactory & GinIndexStoreFactory::instance()
 {
-    static GinIndexStoreFactory instance;
+    static GinIndexStoreFactory instance(&Poco::Logger::get("GinIndexStoreFactory"));
     return instance;
+}
+
+void GinIndexStoreFactory::applySettings(const ServerSettings & settings)
+{
+    std::lock_guard apply_settings_lock(apply_settings_mutex);
+
+    cache_enabled.store(settings.inverted_index_metadata_cache_memory_limit > 0);
+    if (!cache_enabled.load())
+    {
+        stores.clear();
+        return;
+    }
+
+    auto cache_max_cells = settings.inverted_index_metadata_cache_max_cells;
+    stores.setMaxCount(cache_max_cells ? cache_max_cells : std::numeric_limits<uint64_t>::max());
+    stores.setMaxSizeInBytes(settings.inverted_index_metadata_cache_memory_limit);
+
+    auto ttl = settings.inverted_index_metadata_cache_ttl;
+    cache_ttl.store(ttl ? ttl : std::numeric_limits<uint64_t>::max());
 }
 
 GinIndexStorePtr GinIndexStoreFactory::get(const String & name, DataPartStoragePtr storage)
 {
-    const String & part_path = storage->getRelativePath();
-    String key = name + ":" + part_path;
-
-    std::lock_guard lock(mutex);
-    GinIndexStores::const_iterator it = stores.find(key);
-
-    if (it == stores.end())
+    static auto create_store = [](const String & name_, DataPartStoragePtr storage_)
     {
-        GinIndexStorePtr store = std::make_shared<GinIndexStore>(name, storage);
+        GinIndexStorePtr store = std::make_shared<GinIndexStore>(name_, storage_);
         if (!store->exists())
-            return nullptr;
-
+            return GinIndexStorePtr(nullptr);
         GinIndexStoreDeserializer deserializer(store);
         deserializer.readSegments();
         deserializer.readSegmentDictionaries();
-
-        stores[key] = store;
-
         return store;
-    }
-    return it->second;
+    };
+
+    if (!cache_enabled.load(std::memory_order_relaxed))
+        return create_store(name, storage);
+
+    const String & part_path = storage->getRelativePath();
+    const String key = name + ":" + part_path;
+
+    CacheKey cache_key {key, std::chrono::system_clock::now() + std::chrono::seconds(cache_ttl)};
+    auto result = stores.getOrSet(cache_key, [&]()
+    {
+        assert(CurrentThread::getMemoryTracker());
+        auto memory_before = CurrentThread::getMemoryTracker()->get() + current_thread->untracked_memory;
+
+        GinIndexStorePtr store = create_store(name, storage);
+
+        auto memory_after = CurrentThread::getMemoryTracker()->get() + current_thread->untracked_memory;
+        auto memory_size = memory_after - memory_before;
+        LOG_TRACE(log, "Loaded metadata of '{}' with memory size {} ({})", key, memory_size, formatReadableSizeWithBinarySuffix(memory_size));
+
+        return std::make_shared<CacheEntry>(store, memory_size);
+    });
+
+    if (result.second)
+        ProfileEvents::increment(ProfileEvents::InvertedIndexMetadataCacheMisses);
+    else
+        ProfileEvents::increment(ProfileEvents::InvertedIndexMetadataCacheHits);
+
+    return result.first->ptr;
 }
 
 void GinIndexStoreFactory::remove(const String & part_path)
 {
-    std::lock_guard lock(mutex);
-    for (auto it = stores.begin(); it != stores.end();)
+    for (auto & [cache_key, cache_entry] : stores.dump())
     {
-        if (it->first.find(part_path) != String::npos)
-            it = stores.erase(it);
-        else
-            ++it;
+        if (cache_key.key.find(part_path) != String::npos)
+            stores.remove(cache_key);
     }
+}
+
+void GinIndexStoreFactory::getCacheSize(size_t & count, size_t & size_in_bytes) const
+{
+    count = stores.count();
+    size_in_bytes = stores.sizeInBytes(); // cache size
 }
 
 }

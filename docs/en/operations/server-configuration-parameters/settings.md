@@ -309,6 +309,30 @@ Type: Double
 
 Default: 0.5
 
+## inverted_index_metadata_cache_memory_limit
+
+Max memory size for metadata cache of inverted index. Note that this setting is meant to be a protective limitation against Out-Of-Memory problem in low resource setups, not a trade-off between memory usage and performance. Zero means disabled.
+
+Type: UInt64
+
+Default: 0
+
+## inverted_index_metadata_cache_max_cells
+
+Max number of entries in metadata cache of inverted index. Zero means unlimited.
+
+Type: UInt64
+
+Default: 0
+
+## inverted_index_metadata_cache_ttl
+
+TTL for cache entries of metadata of inverted index. Zero means unlimited. Stale (expired) entries can stay in memory until they're replaced by new entries.
+
+Type: UInt64
+
+Default: 3600
+
 ## max_backup_bandwidth_for_server
 
 The maximum read speed in bytes per second for all backups on server. Zero means unlimited.

@@ -1491,6 +1491,8 @@ try
 
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
+            GinIndexStoreFactory::instance().applySettings(server_settings);
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.

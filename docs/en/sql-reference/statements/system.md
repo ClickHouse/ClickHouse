@@ -110,6 +110,11 @@ Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
 Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
+## DROP INVERTED INDEX CACHE
+
+Clears the metadata cache of inverted index.
+Its size can be configured using the server-level setting [inverted_index_metadata_cache_memory_limit](../../operations/server-configuration-parameters/settings.md#server-settings-inverted_index_metadata_cache_memory_limit), or disabled by setting `inverted_index_metadata_cache_memory_limit` to zero. See other relevant settings [inverted_index_metadata_cache_max_cells](../../operations/server-configuration-parameters/settings.md#server-settings-inverted_index_metadata_cache_max_cells), [inverted_index_metadata_cache_ttl](../../operations/server-configuration-parameters/settings.md#server-settings-inverted_index_metadata_cache_ttl).
+
 ## DROP COMPILED EXPRESSION CACHE
 
 Clears the compiled expression cache.

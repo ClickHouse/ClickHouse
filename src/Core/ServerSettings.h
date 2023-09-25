@@ -74,6 +74,9 @@ namespace DB
     M(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, "Size of cache for secondary index marks. Zero means disabled.", 0) \
     M(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, "The size of the protected queue in the secondary index mark cache relative to the cache's total size.", 0) \
     M(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, "A cache for mmapped files.", 0) \
+    M(UInt64, inverted_index_metadata_cache_memory_limit, 8_GiB, "Limit of memory allocated for inverted index metadata cache. Zero disables the cache. Note that this setting is meant to be a protective limitation against Out-Of-Memory problem in low resource setups.", 0) \
+    M(UInt64, inverted_index_metadata_cache_max_cells, 0, "Max number of entries in metadata cache of inverted index. Zero means unlimited.", 0) \
+    M(UInt64, inverted_index_metadata_cache_ttl, 1*60*60, "TTL for cache entries of metadata of inverted index. Zero means unlimited.", 0) \
     \
     M(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
     M(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
