@@ -92,6 +92,22 @@ def put_azure_file_content(filename, data):
     buf = io.BytesIO(data)
     blob_client.upload_blob(buf)
 
+@pytest.fixture(autouse=True, scope="function")
+def delete_all_files():
+    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    containers = blob_service_client.list_containers()
+    for container in containers:
+        container_client = blob_service_client.get_container_client(container)
+        blob_list = container_client.list_blobs()
+        for blob in blob_list:
+            print(blob)
+            blob_client = container_client.get_blob_client(blob)
+            blob_client.delete_blob()
+
+        assert (len(list(container_client.list_blobs())) == 0)
+
+    yield
 
 def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
@@ -448,7 +464,7 @@ def test_schema_inference_from_globs(cluster):
     max_path = ""
     for i in range(10):
         for j in range(10):
-            path = "{}/{}_{}/{}_schema.csv".format(
+            path = "{}/{}_{}/{}.csv".format(
                 unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
             )
             max_path = max(path, max_path)
@@ -464,14 +480,14 @@ def test_schema_inference_from_globs(cluster):
 
     azure_query(
         node,
-        f"CREATE TABLE test_glob_select_inference Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/*_schema.csv')",
+        f"CREATE TABLE test_glob_select_inference Engine = AzureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')",
     )
 
     print(node.query("SHOW CREATE TABLE test_glob_select_inference"))
 
     query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from test_glob_select_inference"
     assert azure_query(node, query).splitlines() == [
-        "450\t450\t900\t0_schema.csv\t{bucket}/{max_path}".format(
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
         )
     ]
@@ -536,7 +552,7 @@ def test_put_get_with_globs_tf(cluster):
     max_path = ""
     for i in range(10):
         for j in range(10):
-            path = "{}/{}_{}/{}_tf.csv".format(
+            path = "{}/{}_{}/{}.csv".format(
                 unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
             )
             max_path = max(path, max_path)
@@ -546,9 +562,9 @@ def test_put_get_with_globs_tf(cluster):
                 node,
                 f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
             )
-    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/*_tf.csv', format='CSV', structure='{table_format}')"
+    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV', structure='{table_format}')"
     assert azure_query(node, query).splitlines() == [
-        "450\t450\t900\t0_tf.csv\t{bucket}/{max_path}".format(
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
         )
     ]
@@ -576,7 +592,7 @@ def test_schema_inference_from_globs_tf(cluster):
 
     for i in range(10):
         for j in range(10):
-            path = "{}/{}_{}/{}_schema_tf.csv".format(
+            path = "{}/{}_{}/{}.csv".format(
                 unique_prefix, i, random.choice(["a", "b", "c", "d"]), j
             )
             max_path = max(path, max_path)
@@ -585,9 +601,9 @@ def test_schema_inference_from_globs_tf(cluster):
             query = f"insert into table function azureBlobStorage(azure_conf2, container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}"
             azure_query(node, query)
 
-    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/*_schema_tf.csv')"
+    query = f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, container='cont', blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')"
     assert azure_query(node, query).splitlines() == [
-        "450\t450\t900\t0_schema_tf.csv\t{bucket}/{max_path}".format(
+        "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
         )
     ]
