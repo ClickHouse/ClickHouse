@@ -11,14 +11,13 @@
 
 namespace CurrentMetrics
 {
-extern const Metric StorageS3Threads;
-extern const Metric StorageS3ThreadsActive;
+    extern const Metric StorageS3Threads;
+    extern const Metric StorageS3ThreadsActive;
 }
 
 namespace ProfileEvents
 {
-extern const Event S3DeleteObjects;
-extern const Event S3ListObjects;
+    extern const Event S3QueuePullMicroseconds;
 }
 
 namespace DB
@@ -50,6 +49,11 @@ StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::FileIterator::next()
     }
 }
 
+size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
+}
+
 StorageS3QueueSource::StorageS3QueueSource(
     String name_,
     const Block & header_,
@@ -58,7 +62,10 @@ StorageS3QueueSource::StorageS3QueueSource(
     const S3QueueAction & action_,
     RemoveFileFunc remove_file_func_,
     const NamesAndTypesList & requested_virtual_columns_,
-    ContextPtr context_)
+    ContextPtr context_,
+    const std::atomic<bool> & shutdown_called_,
+    std::shared_ptr<S3QueueLog> s3_queue_log_,
+    const StorageID & storage_id_)
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))
@@ -66,12 +73,18 @@ StorageS3QueueSource::StorageS3QueueSource(
     , files_metadata(files_metadata_)
     , internal_source(std::move(internal_source_))
     , requested_virtual_columns(requested_virtual_columns_)
+    , shutdown_called(shutdown_called_)
+    , s3_queue_log(s3_queue_log_)
+    , storage_id(storage_id_)
     , remove_file_func(remove_file_func_)
     , log(&Poco::Logger::get("StorageS3QueueSource"))
 {
     reader = std::move(internal_source->reader);
     if (reader)
+    {
         reader_future = std::move(internal_source->reader_future);
+        file_status = files_metadata->getFileStatus(reader.getFile());
+    }
 }
 
 StorageS3QueueSource::~StorageS3QueueSource()
@@ -88,19 +101,31 @@ Chunk StorageS3QueueSource::generate()
 {
     while (true)
     {
-        if (isCancelled() || !reader)
+        if (!reader)
+            break;
+
+        if (isCancelled())
         {
-            if (reader)
-                reader->cancel();
+            reader->cancel();
             break;
         }
 
+        auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
+        SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
+
         try
         {
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueuePullMicroseconds);
+
             Chunk chunk;
             if (reader->pull(chunk))
             {
                 LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), reader.getPath());
+
+                file_status->processed_rows += chunk.getNumRows();
+                // file_status->profile_counters.increment(ProfileEvents::S3QueuePullMicroseconds, timer.get());
+                processed_rows_from_file += chunk.getNumRows();
+
                 VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());
                 return chunk;
             }
@@ -109,17 +134,29 @@ Chunk StorageS3QueueSource::generate()
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
             files_metadata->setFileFailed(reader.getFile(), e.message());
+            appendLogElement(reader.getFile(), processed_rows_from_file, false);
             throw;
         }
 
         files_metadata->setFileProcessed(reader.getFile());
         applyActionAfterProcessing(reader.getFile());
 
+        appendLogElement(reader.getFile(), processed_rows_from_file, true);
+        processed_rows_from_file = 0;
+
+        if (shutdown_called)
+        {
+            LOG_INFO(log, "Shutdown was called, stopping sync");
+            break;
+        }
+
         chassert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)
             break;
+
+        file_status = files_metadata->getFileStatus(reader.getFile());
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -143,6 +180,21 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
         case S3QueueAction::KEEP:
             break;
     }
+}
+
+void StorageS3QueueSource::appendLogElement(const std::string & file_name, size_t processed_rows, bool processed)
+{
+    if (!s3_queue_log)
+        return;
+
+    S3QueueLogElement elem
+    {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .file_name = file_name,
+        .rows_processed = processed_rows,
+        .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,
+    };
+    s3_queue_log->add(std::move(elem));
 }
 
 }

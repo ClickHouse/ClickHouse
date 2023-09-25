@@ -163,7 +163,7 @@ Pipe StorageS3Queue::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /* num_streams */)
+    size_t num_streams)
 {
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
     {
@@ -178,7 +178,8 @@ Pipe StorageS3Queue::read(
     }
 
     Pipes pipes;
-    pipes.emplace_back(createSource(column_names, storage_snapshot, query_info.query, max_block_size, local_context));
+    for (size_t i = 0; i < num_streams; ++i)
+        pipes.emplace_back(createSource(column_names, storage_snapshot, query_info.query, max_block_size, local_context));
     return Pipe::unitePipes(std::move(pipes));
 }
 
@@ -219,9 +220,11 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
             LOG_TRACE(log, "Object with path {} was removed from S3", path);
         }
     };
+    auto s3_queue_log = s3queue_settings->s3queue_enable_logging_to_s3queue_log ? local_context->getS3QueueLog() : nullptr;
     return std::make_shared<StorageS3QueueSource>(
         getName(), read_from_format_info.source_header, std::move(internal_source),
-        files_metadata, after_processing, file_deleter, read_from_format_info.requested_virtual_columns, local_context);
+        files_metadata, after_processing, file_deleter, read_from_format_info.requested_virtual_columns,
+        local_context, shutdown_called, s3_queue_log, getStorageID());
 }
 
 bool StorageS3Queue::hasDependencies(const StorageID & table_id)
@@ -280,6 +283,10 @@ void StorageS3Queue::threadFunc()
                 }
             }
         }
+        else
+        {
+            LOG_TEST(log, "No attached dependencies");
+        }
     }
     catch (...)
     {
@@ -317,7 +324,13 @@ void StorageS3Queue::streamToViews()
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
     auto block_io = interpreter.execute();
-    auto pipe = Pipe(createSource(block_io.pipeline.getHeader().getNames(), storage_snapshot, nullptr, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context));
+    Pipes pipes;
+    for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
+    {
+        auto source = createSource(block_io.pipeline.getHeader().getNames(), storage_snapshot, nullptr, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
+        pipes.emplace_back(std::move(source));
+    }
+    auto pipe = Pipe::unitePipes(std::move(pipes));
 
     std::atomic_size_t rows = 0;
     block_io.pipeline.complete(std::move(pipe));

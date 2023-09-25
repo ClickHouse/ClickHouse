@@ -200,6 +200,38 @@ Example:
   SELECT * FROM stats ORDER BY name;
 ```
 
+## Introspection {#introspection}
+
+For introspection use `system.s3queue` stateless table and `system.s3_queue_log` persistent table.
+
+In order to use `system.s3_queue_log` define its configuration in server config file:
+
+``` xml
+    <s3_queue_log>
+        <database>system</database>
+        <table>s3_queue_log</table>
+    </s3_queue_log>
+```
+
+Example:
+
+``` sql
+:) select * from system.s3queue
+
+SELECT *
+FROM system.s3queue
+
+Query id: bb41964e-c947-4112-be3a-0f01770a1e84
+
+┌─database─┬─table───┬─file_name──────────────────────────────────────────┬─rows_processed─┬─status─────┬─processing_start_time─┬─processing_end_time─┬─ProfileEvents──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ default  │ s3queue │ hits_compatible/athena_partitioned/hits_60.parquet │              0 │ Processing │   2023-09-25 19:56:51 │                ᴺᵁᴸᴸ │ {'S3QueueSetFileProcessingMicroseconds':516}                                                                                                                                                                                                               │
+│ default  │ s3queue │ hits_compatible/athena_partitioned/hits_54.parquet │        1000000 │ Processing │   2023-09-25 19:56:50 │                ᴺᵁᴸᴸ │ {'SelectedRows':1000000,'SelectedBytes':1284181126,'S3ReadMicroseconds':385274,'S3ReadRequestsCount':3,'S3ReadRequestsErrors':1,'S3GetObject':1,'ReadBufferFromS3Microseconds':405970,'ReadBufferFromS3InitMicroseconds':385790,'ReadBufferFromS3Bytes':65536,'ReadBufferFromS3PreservedSessions':1,'S3QueueSetFileProcessingMicroseconds':567,'S3QueuePullMicroseconds':2475045} │
+└──────────┴─────────┴────────────────────────────────────────────────────┴────────────────┴────────────┴───────────────────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+SELECT * FROM system.s3_queue_log;
+```
+
 ## Virtual columns {#virtual-columns}
 
 - `_path` — Path to the file.
