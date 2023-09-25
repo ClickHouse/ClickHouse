@@ -124,8 +124,8 @@ MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
-    // NOLINTNEXTLINE(*)
     int threads = (max_threads_for_creation == 0) ? -1 : static_cast<int>(max_threads_for_creation);
+    // NOLINTNEXTLINE(*)
     index->build(static_cast<int>(trees), threads);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
