@@ -92,7 +92,7 @@ private:
         ContextPtr local_context);
 
     bool hasDependencies(const StorageID & table_id);
-    void streamToViews();
+    bool streamToViews();
     void threadFunc();
 
     void createOrCheckMetadata(const StorageInMemoryMetadata & storage_metadata);

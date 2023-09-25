@@ -82,7 +82,7 @@ private:
     std::shared_ptr<S3QueueFilesMetadata::FileStatus> file_status;
 
     void applyActionAfterProcessing(const String & path);
-    void appendLogElement(const std::string & file_name, size_t processed_rows, bool processed);
+    void appendLogElement(const std::string & filename, const S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
 };
 
 }

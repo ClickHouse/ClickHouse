@@ -134,14 +134,15 @@ Chunk StorageS3QueueSource::generate()
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
             files_metadata->setFileFailed(reader.getFile(), e.message());
-            appendLogElement(reader.getFile(), processed_rows_from_file, false);
+            appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
             throw;
         }
 
         files_metadata->setFileProcessed(reader.getFile());
         applyActionAfterProcessing(reader.getFile());
 
-        appendLogElement(reader.getFile(), processed_rows_from_file, true);
+        appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, true);
+        file_status.reset();
         processed_rows_from_file = 0;
 
         if (shutdown_called)
@@ -182,7 +183,7 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
     }
 }
 
-void StorageS3QueueSource::appendLogElement(const std::string & file_name, size_t processed_rows, bool processed)
+void StorageS3QueueSource::appendLogElement(const std::string & filename, const S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed)
 {
     if (!s3_queue_log)
         return;
@@ -190,9 +191,12 @@ void StorageS3QueueSource::appendLogElement(const std::string & file_name, size_
     S3QueueLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .file_name = file_name,
+        .file_name = filename,
         .rows_processed = processed_rows,
         .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,
+        .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
+        .processing_start_time = file_status_.processing_start_time,
+        .processing_end_time = file_status_.processing_end_time,
     };
     s3_queue_log->add(std::move(elem));
 }

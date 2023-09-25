@@ -34,8 +34,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -254,34 +252,31 @@ bool StorageS3Queue::hasDependencies(const StorageID & table_id)
 
 void StorageS3Queue::threadFunc()
 {
-    SCOPE_EXIT({ mv_attached.store(false); });
+    if (shutdown_called)
+        return;
+
     try
     {
-        auto table_id = getStorageID();
-        size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        const size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
         if (dependencies_count)
         {
-            auto start_time = std::chrono::steady_clock::now();
-            /// Reset reschedule interval.
-            reschedule_processing_interval_ms = s3queue_settings->s3queue_polling_min_timeout_ms;
-            /// Disallow parallel selects while streaming to mv.
             mv_attached.store(true);
+            SCOPE_EXIT({ mv_attached.store(false); });
 
-            /// Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!shutdown_called && hasDependencies(table_id))
+            LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
+
+            if (streamToViews())
             {
-                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-                streamToViews();
-
-                auto now = std::chrono::steady_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
-                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-                {
-                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
-                    break;
-                }
+                /// Reset the reschedule interval.
+                reschedule_processing_interval_ms = s3queue_settings->s3queue_polling_min_timeout_ms;
             }
+            else
+            {
+                /// Increase the reschedule interval.
+                reschedule_processing_interval_ms += s3queue_settings->s3queue_polling_backoff_ms;
+            }
+
+            LOG_DEBUG(log, "Stopped streaming to {} attached views", dependencies_count);
         }
         else
         {
@@ -295,15 +290,12 @@ void StorageS3Queue::threadFunc()
 
     if (!shutdown_called)
     {
-        if (reschedule_processing_interval_ms < s3queue_settings->s3queue_polling_max_timeout_ms)
-            reschedule_processing_interval_ms += s3queue_settings->s3queue_polling_backoff_ms;
-
         LOG_TRACE(log, "Reschedule S3 Queue processing thread in {} ms", reschedule_processing_interval_ms);
         task->scheduleAfter(reschedule_processing_interval_ms);
     }
 }
 
-void StorageS3Queue::streamToViews()
+bool StorageS3Queue::streamToViews()
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -324,10 +316,12 @@ void StorageS3Queue::streamToViews()
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
     auto block_io = interpreter.execute();
+
     Pipes pipes;
     for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
     {
-        auto source = createSource(block_io.pipeline.getHeader().getNames(), storage_snapshot, nullptr, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
+        auto source = createSource(
+            block_io.pipeline.getHeader().getNames(), storage_snapshot, nullptr, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
         pipes.emplace_back(std::move(source));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -337,6 +331,8 @@ void StorageS3Queue::streamToViews()
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
     CompletedPipelineExecutor executor(block_io.pipeline);
     executor.execute();
+
+    return rows > 0;
 }
 
 StorageS3Queue::Configuration StorageS3Queue::updateConfigurationAndGetCopy(ContextPtr local_context)

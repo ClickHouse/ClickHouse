@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -26,6 +27,9 @@ NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
         {"file_name", std::make_shared<DataTypeString>()},
         {"rows_processed", std::make_shared<DataTypeUInt64>()},
         {"status", status_datatype},
+        {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
     };
 }
 
@@ -38,6 +42,17 @@ void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(file_name);
     columns[i++]->insert(rows_processed);
     columns[i++]->insert(magic_enum::enum_name(status));
+
+    if (processing_start_time)
+        columns[i++]->insert(processing_start_time);
+    else
+        columns[i++]->insertDefault();
+    if (processing_end_time)
+        columns[i++]->insert(processing_end_time);
+    else
+        columns[i++]->insertDefault();
+
+    ProfileEvents::dumpToMapColumn(counters_snapshot, columns[i++].get(), true);
 }
 
 }

@@ -331,6 +331,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(asynchronous_insert_log.get());
     if (backup_log)
         logs.emplace_back(backup_log.get());
+    if (s3_queue_log)
+        logs.emplace_back(s3_queue_log.get());
 
     try
     {
