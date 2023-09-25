@@ -89,6 +89,9 @@ SortingStep::SortingStep(
     : SortingStep(input_stream, description_, limit_, settings_, optimize_sorting_by_input_stream_properties_)
 {
     partition_by_description = partition_by_description_;
+
+    output_stream->sort_description = result_description;
+    output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 SortingStep::SortingStep(
@@ -132,7 +135,11 @@ void SortingStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
     output_stream->sort_description = result_description;
-    output_stream->sort_scope = DataStream::SortScope::Global;
+
+    if (partition_by_description.empty())
+        output_stream->sort_scope = DataStream::SortScope::Global;
+    else
+        output_stream->sort_scope = DataStream::SortScope::Stream;
 }
 
 void SortingStep::updateLimit(size_t limit_)
