@@ -328,6 +328,13 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
         ReadBufferFromString buf(field);
         read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
     }
+    else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
+    {
+        String field;
+        readJSONArrayInto(field, istr);
+        ReadBufferFromString buf(field);
+        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+    }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;

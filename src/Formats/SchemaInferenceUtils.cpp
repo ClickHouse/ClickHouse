@@ -20,6 +20,7 @@
 
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -27,10 +28,201 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
+    extern const int INCORRECT_DATA;
+    extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
 }
 
 namespace
 {
+    /// Special data type that represents JSON object as a set of paths and their types.
+    /// It supports merging two JSON objects and creating Named Tuple from itself.
+    /// It's used only for schema inference of Named Tuples from JSON objects.
+    /// Example:
+    /// JSON objects:
+    /// "obj1" : {"a" : {"b" : 1, "c" : {"d" : 'Hello'}}, "e" : "World"}
+    /// "obj2" : {"a" : {"b" : 2, "f" : [1,2,3]}, "g" : {"h" : 42}}
+    /// JSONPaths type for each object:
+    /// obj1 : {'a.b' : Int64, 'a.c.d' : String, 'e' : String}
+    /// obj2 : {'a.b' : Int64, 'a.f' : Array(Int64), 'g.h' : Int64}
+    /// Merged JSONPaths type for obj1 and obj2:
+    /// obj1 ⋃ obj2 : {'a.b' : Int64, 'a.c.d' : String, 'a.f' : Array(Int64), 'e' : String, 'g.h' : Int64}
+    /// Result Named Tuple:
+    /// Tuple(a Tuple(b Int64, c Tuple(d String), f Array(Int64)), e String, g Tuple(h Int64))
+    class DataTypeJSONPaths : public IDataTypeDummy
+    {
+    public:
+
+        /// We create DataTypeJSONPaths on each row in input data, to
+        /// compare and merge such types faster, we use hash map to
+        /// store mapping path -> data_type. Path is a vector
+        /// of path components, to use hash map we need a hash
+        /// for std::vector<String>. We cannot just concatenate
+        /// components with '.' and store it as a string,
+        /// because components can also contain '.'
+        struct PathHash
+        {
+            size_t operator()(const std::vector<String> & path) const
+            {
+                SipHash hash;
+                hash.update(path.size());
+                for (const auto & part : path)
+                    hash.update(part);
+                return hash.get64();
+            }
+        };
+
+        using Paths = std::unordered_map<std::vector<String>, DataTypePtr, PathHash>;
+
+        DataTypeJSONPaths(Paths paths_) : paths(std::move(paths_))
+        {
+        }
+
+        DataTypeJSONPaths() = default;
+
+        const char * getFamilyName() const override { return "JSONPaths"; }
+        String doGetName() const override { return finalize()->getName(); }
+        TypeIndex getTypeId() const override { return TypeIndex::JSONPaths; }
+
+        String getSQLCompatibleName() const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getSQLCompatibleName is not implemented for JSONObjectForInference type");
+        }
+
+        bool isParametric() const override
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isParametric is not implemented for JSONObjectForInference type");
+        }
+
+        bool equals(const IDataType & rhs) const override
+        {
+            if (this == &rhs)
+                return true;
+
+            if (rhs.getTypeId() != getTypeId())
+                return false;
+
+            const auto & rhs_paths = assert_cast<const DataTypeJSONPaths &>(rhs).paths;
+            if (paths.size() != rhs_paths.size())
+                return false;
+
+            for (const auto & [path, type] : paths)
+            {
+                auto it = rhs_paths.find(path);
+                if (it == rhs_paths.end() || !it->second->equals(*type))
+                    return false;
+            }
+
+            return true;
+        }
+
+        bool merge(const DataTypeJSONPaths & rhs, std::function<void(DataTypePtr & type1, DataTypePtr & type2)> transform_types)
+        {
+            for (const auto & [rhs_path, rhs_type] : rhs.paths)
+            {
+                auto it = paths.find(rhs_path);
+                if (it != paths.end())
+                {
+                    auto & type = it->second;
+                    /// If types are different, try to apply provided transform function.
+                    if (!type->equals(*rhs_type))
+                    {
+                        auto rhs_type_copy = rhs_type;
+                        transform_types(type, rhs_type_copy);
+                        /// If types for different paths are different even after transform, we cannot merge these objects.
+                        if (!type->equals(*rhs_type_copy))
+                            return false;
+                    }
+                }
+                else
+                {
+                    paths[rhs_path] = rhs_type;
+                }
+            }
+
+            return true;
+        }
+
+        bool empty() const { return paths.empty(); }
+
+        DataTypePtr finalize() const
+        {
+            if (paths.empty())
+                throw Exception(ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA, "Cannot infer named Tuple from JSON object because object is empty");
+
+            /// Construct a path tree from list of paths and their types and convert it to named Tuple.
+            /// Example:
+            /// Paths : {'a.b' : Int64, 'a.c.d' : String, 'e' : String, 'f.g' : Array(Int64), 'f.h' : String}
+            /// Tree:
+            ///              ┌─ 'c' ─ 'd' (String)
+            ///       ┌─ 'a' ┴─ 'b' (Int64)
+            /// root ─┼─ 'e' (String)
+            ///       └─ 'f' ┬─ 'g' (Array(Int64))
+            ///              └─ 'h' (String)
+            /// Result Named Tuple:
+            /// Tuple('a' Tuple('b' Int64, 'c' Tuple('d' String)), 'e' String, 'f' Tuple('g' Array(Int64), 'h' String))
+            PathNode root_node;
+            for (const auto & [path, type] : paths)
+            {
+                PathNode * current_node = &root_node;
+                String current_path;
+                for (const auto & name : path)
+                {
+                    current_path += (current_path.empty() ? "" : ".") + name;
+                    current_node = &current_node->nodes[name];
+                    current_node->path = current_path;
+                }
+
+                current_node->leaf_type = type;
+            }
+
+            return root_node.getType();
+        }
+
+    private:
+        struct PathNode
+        {
+            /// Use just map to have result tuple with names in lexicographic order.
+            /// No strong reason for it, made for consistency.
+            std::map<String, PathNode> nodes;
+            DataTypePtr leaf_type;
+            /// Store path to this node for better exception message in case of ambiguous paths.
+            String path;
+
+            DataTypePtr getType() const
+            {
+                /// Check if we have ambiguous paths.
+                /// For example:
+                /// 'a.b.c' : Int32 and 'a.b' : String
+                /// Also check if leaf type is Nothing, because the next situation is possible:
+                /// {"a" : {"b" : null}} -> 'a.b' : Nullable(Nothing)
+                /// {"a" : {"b" : {"c" : 42}}} -> 'a.b.c' : Int32
+                /// And after merge we will have ambiguous paths 'a.b.c' : Int32 and 'a.b' : Nullable(Nothing),
+                /// but it's a valid case and we should ignore path 'a.b'.
+                if (leaf_type && !isNothing(removeNullable(leaf_type)) && !nodes.empty())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON objects have ambiguous paths: '{}' with type {} and '{}'", path, leaf_type->getName(), nodes.begin()->second.path);
+
+                if (nodes.empty())
+                    return leaf_type;
+
+                Names node_names;
+                node_names.reserve(nodes.size());
+                DataTypes node_types;
+                node_types.reserve(nodes.size());
+                for (const auto & [name, node] : nodes)
+                {
+                    node_names.push_back(name);
+                    node_types.push_back(node.getType());
+                }
+
+                return std::make_shared<DataTypeTuple>(std::move(node_types), std::move(node_names));
+            }
+        };
+
+        Paths paths;
+    };
+
     bool checkIfTypesAreEqual(const DataTypes & types)
     {
         if (types.empty())
@@ -331,57 +523,6 @@ namespace
         }
     }
 
-    /// Merge all named Tuples and empty Maps (because empty JSON objects are inferred as empty Maps)
-    /// to single Tuple with elements from all tuples. It's used to infer named Tuples from JSON objects.
-    void mergeAllNamedTuplesAndEmptyMaps(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings, JSONInferenceInfo * json_info)
-    {
-        if (!type_indexes.contains(TypeIndex::Tuple))
-            return;
-
-        /// Collect all names and their types from all named tuples.
-        std::unordered_map<String, DataTypes> names_to_types;
-        /// Try to save original order of element names.
-        Names element_names;
-        for (auto & type : data_types)
-        {
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            if (tuple_type && tuple_type->haveExplicitNames())
-            {
-                const auto & elements = tuple_type->getElements();
-                const auto & names = tuple_type->getElementNames();
-                for (size_t i = 0; i != elements.size(); ++i)
-                {
-                    if (!names_to_types.contains(names[i]))
-                        element_names.push_back(names[i]);
-                    names_to_types[names[i]].push_back(elements[i]);
-                }
-            }
-        }
-
-        /// Try to find common type for each tuple element.
-        DataTypes element_types;
-        element_types.reserve(names_to_types.size());
-        for (const auto & name : element_names)
-        {
-            auto types = names_to_types[name];
-            transformInferredTypesIfNeededImpl<true>(types, settings, json_info);
-            /// If some element have different types in different tuples, we can't do anything
-            if (!checkIfTypesAreEqual(types))
-                return;
-            element_types.push_back(types.front());
-        }
-
-        DataTypePtr result_tuple = std::make_shared<DataTypeTuple>(element_types, element_names);
-
-        for (auto & type : data_types)
-        {
-            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
-            const auto * map_type = typeid_cast<const DataTypeMap *>(type.get());
-            if ((tuple_type && tuple_type->haveExplicitNames()) || (map_type && isNothing(map_type->getKeyType()) && isNothing(map_type->getValueType())))
-                type = result_tuple;
-        }
-    }
-
     void transformMapsAndStringsToStrings(DataTypes & data_types, TypeIndexesSet & type_indexes)
     {
         /// Check if we have both String and Map
@@ -395,6 +536,26 @@ namespace
         }
 
         type_indexes.erase(TypeIndex::Map);
+    }
+
+    void mergeJSONPaths(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    {
+        if (!type_indexes.contains(TypeIndex::JSONPaths))
+            return;
+
+        std::shared_ptr<DataTypeJSONPaths> merged_type = std::make_shared<DataTypeJSONPaths>();
+        auto transform_func = [&](DataTypePtr & type1, DataTypePtr & type2){ transformInferredJSONTypesIfNeeded(type1, type2, settings, json_info); };
+        for (auto & type : data_types)
+        {
+            if (const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get()))
+                merged_type->merge(*json_type, transform_func);
+        }
+
+        for (auto & type : data_types)
+        {
+            if (type->getTypeId() == TypeIndex::JSONPaths)
+                type = merged_type;
+        }
     }
 
     template <bool is_json>
@@ -429,6 +590,9 @@ namespace
             /// Convert Bool to number (Int64/Float64) if needed.
             if (settings.json.read_bools_as_numbers)
                 transformBoolsAndNumbersToNumbers(data_types, type_indexes);
+
+            if (settings.json.try_infer_objects_as_tuples)
+                mergeJSONPaths(data_types, type_indexes, settings, json_info);
         };
 
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
@@ -448,9 +612,6 @@ namespace
 
             /// Convert JSON tuples and arrays to arrays if possible.
             transformJSONTuplesAndArraysToArrays(data_types, settings, type_indexes, json_info);
-
-            if (settings.json.try_infer_objects_as_tuples)
-                mergeAllNamedTuplesAndEmptyMaps(data_types, type_indexes, settings, json_info);
 
             if (settings.json.read_objects_as_strings)
                 transformMapsAndStringsToStrings(data_types, type_indexes);
@@ -780,6 +941,78 @@ namespace
         return std::make_shared<DataTypeString>();
     }
 
+    [[maybe_unused]] bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
+    {
+        if (depth > settings.max_parser_depth)
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                            "Maximum parse depth ({}) exceeded. Consider rising max_parser_depth setting.", settings.max_parser_depth);
+
+        assertChar('{', buf);
+        skipWhitespaceIfAny(buf);
+        bool first = true;
+        while (!buf.eof() && *buf.position() != '}')
+        {
+            if (!first)
+            {
+                if (!checkChar(',', buf))
+                    return false;
+                skipWhitespaceIfAny(buf);
+            }
+            else
+                first = false;
+
+            String key;
+            if (!tryReadJSONStringInto(key, buf))
+                return false;
+
+            std::vector<String> current_path = path;
+            current_path.push_back(key);
+            skipWhitespaceIfAny(buf);
+            if (!checkChar(':', buf))
+                return false;
+
+            skipWhitespaceIfAny(buf);
+
+            if (!buf.eof() && *buf.position() == '{')
+            {
+                if (!tryReadJSONObject(buf, settings, paths, current_path, json_info, depth + 1))
+                    return false;
+            }
+            else
+            {
+                auto value_type = tryInferDataTypeForSingleFieldImpl<true>(buf, settings, json_info, depth + 1);
+                if (!value_type)
+                    return false;
+
+                paths[current_path] = value_type;
+            }
+
+            skipWhitespaceIfAny(buf);
+        }
+
+        /// No '}' at the end.
+        if (buf.eof())
+            return false;
+
+        assertChar('}', buf);
+        skipWhitespaceIfAny(buf);
+
+        /// If it was empty object and it's not root object, treat it as null, so we won't
+        /// lose this path if this key contains empty object in all sample data.
+        /// This case will be processed in JSONPaths type during finalize.
+        if (first && !path.empty())
+            paths[path] = std::make_shared<DataTypeNothing>();
+        return true;
+    }
+
+    [[maybe_unused]] DataTypePtr tryInferJSONPaths(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    {
+        DataTypeJSONPaths::Paths paths;
+        if (!tryReadJSONObject(buf, settings, paths, {}, json_info, depth))
+            return nullptr;
+        return std::make_shared<DataTypeJSONPaths>(std::move(paths));
+    }
+
     template <bool is_json>
     DataTypePtr tryInferMapOrObject(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
     {
@@ -862,9 +1095,6 @@ namespace
             if (settings.json.allow_object_type)
                 return std::make_shared<DataTypeObject>("json", true);
 
-            if (settings.json.try_infer_objects_as_tuples)
-                return std::make_shared<DataTypeTuple>(value_types, json_keys);
-
             if (settings.json.read_objects_as_strings)
                 return std::make_shared<DataTypeString>();
 
@@ -915,7 +1145,15 @@ namespace
 
         /// Map/Object for JSON { key1 : value1, key2 : value2, ...}
         if (*buf.position() == '{')
+        {
+            if constexpr (is_json)
+            {
+                if (!settings.json.allow_object_type && settings.json.try_infer_objects_as_tuples)
+                    return tryInferJSONPaths(buf, settings, json_info, depth);
+            }
+
             return tryInferMapOrObject<is_json>(buf, settings, json_info, depth);
+        }
 
         /// String
         char quote = is_json ? '"' : '\'';
@@ -957,24 +1195,58 @@ void transformInferredJSONTypesIfNeeded(
     second = std::move(types[1]);
 }
 
-void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
+void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
 {
     if (!data_type)
         return;
 
+    if (isNothing(data_type) && settings.json.infer_incomplete_types_as_strings)
+    {
+        data_type = std::make_shared<DataTypeString>();
+        return;
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))
+    {
+        auto nested_type = nullable_type->getNestedType();
+        transformFinalInferredJSONTypeIfNeeded(nested_type, settings, json_info);
+        data_type = std::make_shared<DataTypeNullable>(std::move(nested_type));
+        return;
+    }
+
+    if (const auto * json_paths = typeid_cast<const DataTypeJSONPaths *>(data_type.get()))
+    {
+        /// If all objects were empty, use type String, so these JSON objects will be read as Strings.
+        if (json_paths->empty() && settings.json.infer_incomplete_types_as_strings)
+        {
+            data_type = std::make_shared<DataTypeString>();
+            return;
+        }
+
+        data_type = json_paths->finalize();
+        transformFinalInferredJSONTypeIfNeeded(data_type, settings, json_info);
+        return;
+    }
+
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
         auto nested_type = array_type->getNestedType();
-        transformJSONTupleToArrayIfPossible(nested_type, settings, json_info);
+        transformFinalInferredJSONTypeIfNeeded(nested_type, settings, json_info);
         data_type = std::make_shared<DataTypeArray>(nested_type);
         return;
     }
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(data_type.get()))
     {
+        auto key_type = map_type->getKeyType();
+        /// If all inferred Maps are empty, use type String, so these JSON objects will be read as Strings.
+        if (isNothing(key_type) && settings.json.infer_incomplete_types_as_strings)
+            key_type = std::make_shared<DataTypeString>();
+
         auto value_type = map_type->getValueType();
-        transformJSONTupleToArrayIfPossible(value_type, settings, json_info);
-        data_type = std::make_shared<DataTypeMap>(map_type->getKeyType(), value_type);
+
+        transformFinalInferredJSONTypeIfNeeded(value_type, settings, json_info);
+        data_type = std::make_shared<DataTypeMap>(key_type, value_type);
         return;
     }
 
@@ -982,7 +1254,7 @@ void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSe
     {
         auto nested_types = tuple_type->getElements();
         for (auto & nested_type : nested_types)
-            transformJSONTupleToArrayIfPossible(nested_type, settings, json_info);
+            transformFinalInferredJSONTypeIfNeeded(nested_type, settings, json_info);
 
         if (tuple_type->haveExplicitNames())
         {
