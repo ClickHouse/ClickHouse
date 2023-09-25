@@ -46,7 +46,7 @@
 #include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
@@ -815,6 +815,9 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     ASTPtr expression_ast;
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
+    if (virtual_columns_block.rows() == 0)
+        return {};
+
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
 
@@ -1229,6 +1232,10 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
+        {
+            virt_column_names.push_back(name);
+        }
+        else if (name == BlockNumberColumn::name)
         {
             virt_column_names.push_back(name);
         }

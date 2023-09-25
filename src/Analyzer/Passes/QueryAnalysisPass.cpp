@@ -6247,7 +6247,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                                               .getTable(insertion_table, scope_context)
                                               ->getInMemoryMetadataPtr()
                                               ->getColumns();
-            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getInsertable().getNames();
+            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -6282,6 +6282,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
                         column.name = identifier_node->getIdentifier().getFullName();
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
                         structure_hint.add(std::move(column));
                     }
 
@@ -6356,7 +6358,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     if (asterisk)
                     {
                         for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
+                        {
+                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                            /// Change ephemeral columns to default columns.
+                            column.default_desc.kind = ColumnDefaultKind::Default;
                             structure_hint.add(insert_columns.get(*insert_column_name_it));
+                        }
                     }
 
                     if (!structure_hint.empty())
