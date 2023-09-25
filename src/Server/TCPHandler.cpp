@@ -284,7 +284,7 @@ void TCPHandler::runImpl()
             /// We try to send error information to the client.
             sendException(e, send_exception_with_stack_trace);
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
 
         throw;
     }

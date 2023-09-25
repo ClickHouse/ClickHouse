@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    switch (type)
+    switch (type) // NOLINT(bugprone-switch-missing-default-case)
     {
         case Field::Types::Null:
         {
