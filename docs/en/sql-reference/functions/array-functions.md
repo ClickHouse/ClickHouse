@@ -1810,7 +1810,7 @@ arrayRemove(Function,arr)
 
 **Returned value**
 
-- Array that contains only those elements which failed the predicate.
+- Array that contains only the elements that don't satisfy the predicate.
 
 **Examples**
 
