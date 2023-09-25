@@ -14,41 +14,41 @@ ContextExpireChecker::~ContextExpireChecker()
     Status at_end;
 
     bool interesting_case = false;
-    WriteBufferFromOwnString explanation;
+    String explanation;
 
     if (atStart.hasThreadStatus and !at_end.hasThreadStatus)
     {
         interesting_case = true;
         std::string_view reason = " thread status gone;";
-        explanation.write(reason.data(), reason.size());
+        explanation.append(reason);
     }
 
     if (atStart.hasAttachedThreadGroup and !at_end.hasAttachedThreadGroup)
     {
         interesting_case = true;
         std::string_view reason = " thread group gone;";
-        explanation.write(reason.data(), reason.size());
+        explanation.append(reason);
     }
 
     if (atStart.hasQueryID and !at_end.hasQueryID)
     {
         interesting_case = true;
         std::string_view reason = " query id gone;";
-        explanation.write(reason.data(), reason.size());
+        explanation.append(reason);
     }
 
     if (atStart.hasValidQueryContext and !at_end.hasValidQueryContext)
     {
         interesting_case = true;
         std::string_view reason = " query context gone;";
-        explanation.write(reason.data(), reason.size());
+        explanation.append(reason);
     }
 
     if (atStart.hasProcessListElem and !at_end.hasProcessListElem)
     {
         interesting_case = true;
         std::string_view reason = " process list element gone;";
-        explanation.write(reason.data(), reason.size());
+        explanation.append(reason);
     }
 
     if (interesting_case)
@@ -57,7 +57,7 @@ ContextExpireChecker::~ContextExpireChecker()
         LOG_ERROR(
             log,
             "anomaly caught, explain: {}, created at: {}, destroyed at: {}",
-            explanation.str(),
+            explanation,
             atStart.stack.toString(),
             at_end.stack.toString());
         chassert(false && "WriteBuffer is not finalized in destructor.");
