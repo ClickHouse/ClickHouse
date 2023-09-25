@@ -1,4 +1,7 @@
 #include "StorageSystemS3Queue.h"
+
+#if USE_AWS_S3
+
 #include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -82,3 +85,5 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr con
 }
 
 }
+
+#endif

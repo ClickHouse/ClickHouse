@@ -1,6 +1,5 @@
 #include "config.h"
 
-
 #if USE_AWS_S3
 #include <Common/ProfileEvents.h>
 #include <IO/S3Common.h>

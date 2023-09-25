@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StorageS3QueueSource::FileIterator::FileIterator(
