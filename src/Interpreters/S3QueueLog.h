@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
@@ -20,6 +21,9 @@ struct S3QueueLogElement
         Failed,
     };
     S3QueueStatus status;
+    ProfileEvents::Counters::Snapshot counters_snapshot;
+    time_t processing_start_time;
+    time_t processing_end_time;
 
     static std::string name() { return "S3QueueLog"; }
 
