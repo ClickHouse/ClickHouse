@@ -586,8 +586,7 @@ void LocalServer::processConfig()
 
     print_stack_trace = config().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};
-    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
-        && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
+    load_suggestions = false;
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
