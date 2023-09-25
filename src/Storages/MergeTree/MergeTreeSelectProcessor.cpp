@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Storages/BlockNumberColumn.h>
 #include <city.h>
 
 namespace DB
@@ -24,7 +25,8 @@ namespace ErrorCodes
 static void injectNonConstVirtualColumns(
     size_t rows,
     Block & block,
-    const Names & virtual_columns);
+    const Names & virtual_columns,
+    MergeTreeReadTask * task = nullptr);
 
 static void injectPartConstVirtualColumns(
     size_t rows,
@@ -247,7 +249,8 @@ namespace
 static void injectNonConstVirtualColumns(
     size_t rows,
     Block & block,
-    const Names & virtual_columns)
+    const Names & virtual_columns,
+    MergeTreeReadTask * task)
 {
     VirtualColumnsInserter inserter(block);
     for (const auto & virtual_column_name : virtual_columns)
@@ -277,6 +280,24 @@ static void injectNonConstVirtualColumns(
                     column = LightweightDeleteDescription::FILTER_COLUMN.type->createColumn();
 
                 inserter.insertUInt8Column(column, virtual_column_name);
+        }
+
+        if (virtual_column_name == BlockNumberColumn::name)
+        {
+            ColumnPtr column;
+            if (rows)
+            {
+                size_t value = 0;
+                if (task)
+                {
+                    value = task->getInfo().data_part ? task->getInfo().data_part->info.min_block : 0;
+                }
+                column = BlockNumberColumn::type->createColumnConst(rows, value)->convertToFullColumnIfConst();
+            }
+            else
+                column = BlockNumberColumn::type->createColumn();
+
+            inserter.insertUInt64Column(column, virtual_column_name);
         }
     }
 }
@@ -368,7 +389,7 @@ void MergeTreeSelectProcessor::injectVirtualColumns(
 {
     /// First add non-const columns that are filled by the range reader and then const columns that we will fill ourselves.
     /// Note that the order is important: virtual columns filled by the range reader must go first
-    injectNonConstVirtualColumns(row_count, block, virtual_columns);
+    injectNonConstVirtualColumns(row_count, block, virtual_columns,task);
     injectPartConstVirtualColumns(row_count, block, task, partition_value_type, virtual_columns);
 }
 

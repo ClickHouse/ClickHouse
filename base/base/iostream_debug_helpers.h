@@ -20,14 +20,14 @@ Out & dumpValue(Out &, T &&);
 
 /// Catch-all case.
 template <int priority, typename Out, typename T>
-std::enable_if_t<priority == -1, Out> & dumpImpl(Out & out, T &&)
+std::enable_if_t<priority == -1, Out> & dumpImpl(Out & out, T &&) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return out << "{...}";
 }
 
 /// An object, that could be output with operator <<.
 template <int priority, typename Out, typename T>
-std::enable_if_t<priority == 0, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::declval<Out &>() << std::declval<T>())> * = nullptr)
+std::enable_if_t<priority == 0, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::declval<Out &>() << std::declval<T>())> * = nullptr) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return out << x;
 }
@@ -37,7 +37,7 @@ template <int priority, typename Out, typename T>
 std::enable_if_t<priority == 1
     /// Protect from the case when operator * do effectively nothing (function pointer).
     && !std::is_same_v<std::decay_t<T>, std::decay_t<decltype(*std::declval<T>())>>
-    , Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(*std::declval<T>())> * = nullptr)
+    , Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(*std::declval<T>())> * = nullptr) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     if (!x)
         return out << "nullptr";
@@ -46,7 +46,7 @@ std::enable_if_t<priority == 1
 
 /// Container.
 template <int priority, typename Out, typename T>
-std::enable_if_t<priority == 2, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::begin(std::declval<T>()))> * = nullptr)
+std::enable_if_t<priority == 2, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::begin(std::declval<T>()))> * = nullptr) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     bool first = true;
     out << "{";
@@ -64,7 +64,7 @@ std::enable_if_t<priority == 2, Out> & dumpImpl(Out & out, T && x, std::decay_t<
 
 template <int priority, typename Out, typename T>
 std::enable_if_t<priority == 3 && std::is_enum_v<std::decay_t<T>>, Out> &
-dumpImpl(Out & out, T && x)
+dumpImpl(Out & out, T && x) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return out << magic_enum::enum_name(x);
 }
@@ -73,7 +73,7 @@ dumpImpl(Out & out, T && x)
 
 template <int priority, typename Out, typename T>
 std::enable_if_t<priority == 3 && (std::is_same_v<std::decay_t<T>, std::string> || std::is_same_v<std::decay_t<T>, const char *>), Out> &
-dumpImpl(Out & out, T && x)
+dumpImpl(Out & out, T && x) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return out << std::quoted(x);
 }
@@ -82,7 +82,7 @@ dumpImpl(Out & out, T && x)
 
 template <int priority, typename Out, typename T>
 std::enable_if_t<priority == 3 && std::is_same_v<std::decay_t<T>, unsigned char>, Out> &
-dumpImpl(Out & out, T && x)
+dumpImpl(Out & out, T && x) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return out << int(x);
 }
@@ -90,7 +90,7 @@ dumpImpl(Out & out, T && x)
 
 /// Tuple, pair
 template <size_t N, typename Out, typename T>
-Out & dumpTupleImpl(Out & out, T && x)
+Out & dumpTupleImpl(Out & out, T && x) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     if constexpr (N == 0)
         out << "{";
@@ -108,14 +108,14 @@ Out & dumpTupleImpl(Out & out, T && x)
 }
 
 template <int priority, typename Out, typename T>
-std::enable_if_t<priority == 4, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::get<0>(std::declval<T>()))> * = nullptr)
+std::enable_if_t<priority == 4, Out> & dumpImpl(Out & out, T && x, std::decay_t<decltype(std::get<0>(std::declval<T>()))> * = nullptr) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return dumpTupleImpl<0>(out, x);
 }
 
 
 template <int priority, typename Out, typename T>
-Out & dumpDispatchPriorities(Out & out, T && x, std::decay_t<decltype(dumpImpl<priority>(std::declval<Out &>(), std::declval<T>()))> *)
+Out & dumpDispatchPriorities(Out & out, T && x, std::decay_t<decltype(dumpImpl<priority>(std::declval<Out &>(), std::declval<T>()))> *) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return dumpImpl<priority>(out, x);
 }
@@ -124,21 +124,21 @@ Out & dumpDispatchPriorities(Out & out, T && x, std::decay_t<decltype(dumpImpl<p
 struct LowPriority { LowPriority(void *) {} };
 
 template <int priority, typename Out, typename T>
-Out & dumpDispatchPriorities(Out & out, T && x, LowPriority)
+Out & dumpDispatchPriorities(Out & out, T && x, LowPriority) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return dumpDispatchPriorities<priority - 1>(out, x, nullptr);
 }
 
 
 template <typename Out, typename T>
-Out & dumpValue(Out & out, T && x)
+Out & dumpValue(Out & out, T && x) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     return dumpDispatchPriorities<5>(out, x, nullptr);
 }
 
 
 template <typename Out, typename T>
-Out & dump(Out & out, const char * name, T && x)
+Out & dump(Out & out, const char * name, T && x) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
     // Dumping string literal, printing name and demangled type is irrelevant.
     if constexpr (std::is_same_v<const char *, std::decay_t<std::remove_reference_t<T>>>)
