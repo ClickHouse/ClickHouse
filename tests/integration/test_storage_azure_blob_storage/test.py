@@ -92,6 +92,7 @@ def put_azure_file_content(filename, data):
     buf = io.BytesIO(data)
     blob_client.upload_blob(buf)
 
+
 @pytest.fixture(autouse=True, scope="function")
 def delete_all_files():
     connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
@@ -105,9 +106,10 @@ def delete_all_files():
             blob_client = container_client.get_blob_client(blob)
             blob_client.delete_blob()
 
-        assert (len(list(container_client.list_blobs())) == 0)
+        assert len(list(container_client.list_blobs())) == 0
 
     yield
+
 
 def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
