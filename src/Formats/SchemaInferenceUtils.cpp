@@ -1189,12 +1189,12 @@ void transformInferredJSONTypesIfNeeded(
     second = std::move(types[1]);
 }
 
-void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
+void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
 {
     if (!data_type)
         return;
 
-    if (isNothing(data_type) && settings.json.infer_incomplete_types_as_strings)
+    if (!remain_nothing_types && isNothing(data_type) && settings.json.infer_incomplete_types_as_strings)
     {
         data_type = std::make_shared<DataTypeString>();
         return;
@@ -1203,7 +1203,7 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))
     {
         auto nested_type = nullable_type->getNestedType();
-        transformFinalInferredJSONTypeIfNeeded(nested_type, settings, json_info);
+        transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
         data_type = std::make_shared<DataTypeNullable>(std::move(nested_type));
         return;
     }
@@ -1218,14 +1218,14 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
         }
 
         data_type = json_paths->finalize();
-        transformFinalInferredJSONTypeIfNeeded(data_type, settings, json_info);
+        transformFinalInferredJSONTypeIfNeededImpl(data_type, settings, json_info, remain_nothing_types);
         return;
     }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get()))
     {
         auto nested_type = array_type->getNestedType();
-        transformFinalInferredJSONTypeIfNeeded(nested_type, settings, json_info);
+        transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
         data_type = std::make_shared<DataTypeArray>(nested_type);
         return;
     }
@@ -1239,7 +1239,7 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
 
         auto value_type = map_type->getValueType();
 
-        transformFinalInferredJSONTypeIfNeeded(value_type, settings, json_info);
+        transformFinalInferredJSONTypeIfNeededImpl(value_type, settings, json_info, remain_nothing_types);
         data_type = std::make_shared<DataTypeMap>(key_type, value_type);
         return;
     }
@@ -1247,24 +1247,44 @@ void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const Forma
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(data_type.get()))
     {
         auto nested_types = tuple_type->getElements();
-        for (auto & nested_type : nested_types)
-            transformFinalInferredJSONTypeIfNeeded(nested_type, settings, json_info);
 
         if (tuple_type->haveExplicitNames())
         {
+            for (auto & nested_type : nested_types)
+                transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
             data_type = std::make_shared<DataTypeTuple>(nested_types, tuple_type->getElementNames());
             return;
         }
 
+        for (auto & nested_type : nested_types)
+            /// Don't change Nothing to String in nested types here, because we are not sure yet if it's Array or actual Tuple
+            transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, /*remain_nothing_types=*/ true);
+
         auto nested_types_copy = nested_types;
         transformInferredTypesIfNeededImpl<true>(nested_types_copy, settings, json_info);
         if (checkIfTypesAreEqual(nested_types_copy))
+        {
             data_type = std::make_shared<DataTypeArray>(nested_types_copy.back());
+        }
         else
+        {
+            /// No we should run transform one more time to convert Nothing to String if needed.
+            if (!remain_nothing_types)
+            {
+                for (auto & nested_type : nested_types)
+                    transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info);
+            }
+
             data_type = std::make_shared<DataTypeTuple>(nested_types);
+        }
 
         return;
     }
+}
+
+void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
+{
+    transformFinalInferredJSONTypeIfNeededImpl(data_type, settings, json_info);
 }
 
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings)
