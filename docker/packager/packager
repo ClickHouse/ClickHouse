@@ -395,7 +395,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--additional-scripts",
         type=dir_name,
-        help="A path to a directory with script which have to be executed"
+        help="A path to a directory with script which have to be executed",
     )
 
     parser.add_argument("--output-dir", type=dir_name, required=True)
