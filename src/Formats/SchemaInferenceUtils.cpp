@@ -73,7 +73,7 @@ namespace
 
         using Paths = std::unordered_map<std::vector<String>, DataTypePtr, PathHash>;
 
-        DataTypeJSONPaths(Paths paths_) : paths(std::move(paths_))
+        explicit DataTypeJSONPaths(Paths paths_) : paths(std::move(paths_))
         {
         }
 
