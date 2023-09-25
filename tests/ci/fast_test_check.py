@@ -146,7 +146,21 @@ def main():
 
     run_log_path = logs_path / "run.log"
     timeout_expired = False
-    timeout = 90 * 60
+    # Do not increase this timeout
+    # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
+    #
+    # SELECT toStartOfWeek(started_at) AS hour,
+    #   avg(completed_at - started_at) AS avg_runtime from default.workflow_jobs
+    # WHERE
+    #   conclusion = 'success' AND
+    #   name = 'FastTest'
+    # GROUP BY hour
+    # ORDER BY hour
+    #
+    # Our fast tests finish in less than 10 minutes average, and very rarely it builds
+    # longer, but the next run will reuse the sccache
+    # SO DO NOT INCREASE IT
+    timeout = 40 * 60
     with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
