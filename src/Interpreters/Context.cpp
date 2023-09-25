@@ -1592,7 +1592,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                               ->getInMemoryMetadataPtr()
                                               ->getColumns();
 
-            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getInsertable().getNames();
+            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -1626,6 +1626,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
                         ColumnDescription column = insert_columns.get(*insert_column_name_it);
                         column.name = identifier->name();
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
                         structure_hint.add(std::move(column));
                     }
 
@@ -1700,7 +1702,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     if (asterisk)
                     {
                         for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
-                            structure_hint.add(insert_columns.get(*insert_column_name_it));
+                        {
+                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                            /// Change ephemeral columns to default columns.
+                            column.default_desc.kind = ColumnDefaultKind::Default;
+
+                            structure_hint.add(std::move(column));
+                        }
                     }
 
                     if (!structure_hint.empty())
@@ -2224,7 +2232,7 @@ BackupsWorker & Context::getBackupsWorker() const
     UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -4629,18 +4637,20 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     return SAMPLE_KEY;
 }
 
-bool Context::canUseParallelReplicasOnInitiator() const
+bool Context::canUseParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
-        && !getClientInfo().collaborate_with_initiator;
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+}
+
+bool Context::canUseParallelReplicasOnInitiator() const
+{
+    return canUseParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
-        && getClientInfo().collaborate_with_initiator;
+    return canUseParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
