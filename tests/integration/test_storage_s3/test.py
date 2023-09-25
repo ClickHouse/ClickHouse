@@ -1018,11 +1018,11 @@ def test_url_reconnect_in_the_middle(started_cluster):
         def select():
             global result
             result = instance.query(
-                f"""select sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
+                f"""select count(), sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
                 url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
                 settings http_max_tries = 10, http_retry_max_backoff_ms=2000, http_send_timeout=1, http_receive_timeout=1)"""
             )
-            assert int(result) == 3914219105369203805
+            assert result == "1000000\t3914219105369203805\n"
 
         thread = threading.Thread(target=select)
         thread.start()
@@ -1035,7 +1035,7 @@ def test_url_reconnect_in_the_middle(started_cluster):
 
         thread.join()
 
-        assert int(result) == 3914219105369203805
+        assert result == "1000000\t3914219105369203805\n"
 
 
 def test_seekable_formats(started_cluster):

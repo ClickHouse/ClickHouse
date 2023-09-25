@@ -97,11 +97,10 @@ if [ -n "$MAKE_DEB" ]; then
   bash -x /build/packages/build
 fi
 
-if [ "$BUILD_TARGET" != "fuzzers" ]; then
-  mv ./programs/clickhouse* /output
-  [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
-  mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
-fi
+mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
+[ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
+mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
+mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
 
 prepare_combined_output () {
     local OUTPUT

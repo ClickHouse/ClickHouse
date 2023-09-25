@@ -19,6 +19,9 @@ struct BuildQueryPipelineSettings
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
 
+    UInt64 partial_result_limit = 0;
+    UInt64 partial_result_duration_ms = 0;
+
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
     static BuildQueryPipelineSettings fromContext(ContextPtr from);
 };
