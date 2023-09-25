@@ -27,7 +27,6 @@ set(LIBRARY_SOVERSION "4")
 # add definitions
 
 include(DefinePlatformDefaults)
-include("${LIB_SOURCE_DIR}/CompilerChecks.cmake")
 
 # Copy library files to a lib sub-directory
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${LIB_BINARY_DIR}/lib")
