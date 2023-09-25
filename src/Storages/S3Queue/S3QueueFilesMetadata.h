@@ -36,10 +36,13 @@ private:
     const UInt64 max_set_size;
     const UInt64 max_set_age_sec;
     const UInt64 max_loading_retries;
+    const size_t min_cleanup_interval_ms;
+    const size_t max_cleanup_interval_ms;
 
     const fs::path zookeeper_processing_path;
     const fs::path zookeeper_processed_path;
     const fs::path zookeeper_failed_path;
+    const fs::path zookeeper_cleanup_lock_path;
 
     mutable std::mutex mutex;
     Poco::Logger * log;

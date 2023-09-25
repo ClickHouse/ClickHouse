@@ -67,9 +67,6 @@ private:
     const std::optional<FormatSettings> format_settings;
     NamesAndTypesList virtual_columns;
 
-    mutable zkutil::ZooKeeperPtr zk_client;
-    mutable std::mutex zk_mutex;
-
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
     UInt64 reschedule_processing_interval_ms;
