@@ -236,7 +236,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        switch (identifier)
+        switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 'n': /// NULL
             {
@@ -381,7 +381,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
-                switch (identifier)
+                switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
                 {
                     /// Only if changed column(s) are part of replica identity index (or primary keys if they are used instead).
                     /// In this case, first comes a tuple with old replica identity indexes and all other values will come as
