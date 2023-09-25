@@ -985,7 +985,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         DiskPtr disk;
         SCOPE_EXIT_SAFE(destroyDisk(disk));
 
-        disk = createDisk();
+        disk = createDisk("temporary_data_read_buffer_size_test_dir");
         VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
 
         auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*limit=*/0);
