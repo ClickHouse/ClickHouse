@@ -569,7 +569,9 @@ def test_schema_inference_with_globs(started_cluster):
         f"insert into table function hdfs('hdfs://hdfs1:9000/data2.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select 0"
     )
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0")
+    result = node1.query(
+        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings input_format_json_infer_incomplete_types_as_strings=0"
+    )
     assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
