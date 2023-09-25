@@ -21,12 +21,21 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+namespace ProfileEvents
+{
+    extern const Event S3QueueSetFileProcessingMicroseconds;
+    extern const Event S3QueueSetFileProcessedMicroseconds;
+    extern const Event S3QueueSetFileFailedMicroseconds;
+    extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
+};
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace
@@ -129,19 +138,48 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
+std::shared_ptr<S3QueueFilesMetadata::FileStatus> S3QueueFilesMetadata::getFileStatus(const std::string & path)
+{
+    std::lock_guard lock(file_statuses_mutex);
+    return file_statuses.at(path);
+}
+
+S3QueueFilesMetadata::FileStatuses S3QueueFilesMetadata::getFileStateses() const
+{
+    std::lock_guard lock(file_statuses_mutex);
+    return file_statuses;
+}
+
 bool S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessingMicroseconds);
+
+    bool result;
     switch (mode)
     {
         case S3QueueMode::ORDERED:
         {
-            return trySetFileAsProcessingForOrderedMode(path);
+            result = trySetFileAsProcessingForOrderedMode(path);
+            break;
         }
         case S3QueueMode::UNORDERED:
         {
-            return trySetFileAsProcessingForUnorderedMode(path);
+            result = trySetFileAsProcessingForUnorderedMode(path);
+            break;
         }
     }
+    if (result)
+    {
+        std::lock_guard lock(file_statuses_mutex);
+        auto it = file_statuses.emplace(path, std::make_shared<FileStatus>()).first;
+        auto & file_status = it->second;
+        file_status->state = FileStatus::State::Processing;
+        file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessingMicroseconds, timer.get());
+        timer.cancel();
+        if (!file_status->processing_start_time)
+            file_status->processing_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    }
+    return result;
 }
 
 bool S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path)
@@ -225,6 +263,16 @@ bool S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::strin
 
 void S3QueueFilesMetadata::setFileProcessed(const String & path)
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessedMicroseconds);
+    SCOPE_EXIT({
+        std::lock_guard lock(file_statuses_mutex);
+        auto & file_status = file_statuses.at(path);
+        file_status->state = FileStatus::State::Processed;
+        file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessedMicroseconds, timer.get());
+        timer.cancel();
+        file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    });
+
     switch (mode)
     {
         case S3QueueMode::ORDERED:
@@ -301,6 +349,17 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(const String & path)
 
 void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exception_message)
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileFailedMicroseconds);
+
+    SCOPE_EXIT_SAFE({
+        std::lock_guard lock(file_statuses_mutex);
+        auto & file_status = file_statuses.at(path);
+        file_status->state = FileStatus::State::Failed;
+        file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileFailedMicroseconds, timer.get());
+        timer.cancel();
+        file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    });
+
     const auto node_name = getNodeName(path);
     auto node_metadata = createNodeMetadata(path, exception_message);
     const auto zk_client = storage->getZooKeeper();
@@ -409,6 +468,8 @@ void S3QueueFilesMetadata::cleanupThreadFunc()
 
 void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueCleanupMaxSetSizeOrTTLMicroseconds);
+
     chassert(max_set_size || max_set_age_sec);
 
     const bool check_nodes_limit = max_set_size > 0;

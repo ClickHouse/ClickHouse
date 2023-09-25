@@ -2,10 +2,11 @@
 #include "config.h"
 
 #if USE_AWS_S3
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Processors/ISource.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
 #include <Storages/StorageS3.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/S3QueueLog.h>
 
 
 namespace Poco { class Logger; }
@@ -32,13 +33,13 @@ public:
 
         KeyWithInfo next() override;
 
+        size_t estimatedKeysCount() override;
+
     private:
         const std::shared_ptr<S3QueueFilesMetadata> metadata;
         const std::unique_ptr<GlobIterator> glob_iterator;
         std::mutex mutex;
     };
-
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     StorageS3QueueSource(
         String name_,
@@ -48,9 +49,14 @@ public:
         const S3QueueAction & action_,
         RemoveFileFunc remove_file_func_,
         const NamesAndTypesList & requested_virtual_columns_,
-        ContextPtr context_);
+        ContextPtr context_,
+        const std::atomic<bool> &  shutdown_called_,
+        std::shared_ptr<S3QueueLog> s3_queue_log_,
+        const StorageID & storage_id_);
 
     ~StorageS3QueueSource() override;
+
+    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
     String getName() const override;
 
@@ -62,6 +68,9 @@ private:
     const std::shared_ptr<S3QueueFilesMetadata> files_metadata;
     const std::shared_ptr<StorageS3Source> internal_source;
     const NamesAndTypesList requested_virtual_columns;
+    const std::atomic<bool> & shutdown_called;
+    const std::shared_ptr<S3QueueLog> s3_queue_log;
+    const StorageID storage_id;
 
     RemoveFileFunc remove_file_func;
     Poco::Logger * log;
@@ -69,8 +78,11 @@ private:
     using ReaderHolder = StorageS3Source::ReaderHolder;
     ReaderHolder reader;
     std::future<ReaderHolder> reader_future;
+    size_t processed_rows_from_file = 0;
+    std::shared_ptr<S3QueueFilesMetadata::FileStatus> file_status;
 
     void applyActionAfterProcessing(const String & path);
+    void appendLogElement(const std::string & file_name, size_t processed_rows, bool processed);
 };
 
 }

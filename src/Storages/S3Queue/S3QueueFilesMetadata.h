@@ -28,7 +28,31 @@ public:
 
     void setFileFailed(const std::string & path, const std::string & exception_message);
 
+    using OnProgress = std::function<void(size_t)>;
+
     void deactivateCleanupTask();
+
+    struct FileStatus
+    {
+        size_t processed_rows = 0;
+        enum class State
+        {
+            Processing,
+            Processed,
+            Failed,
+            None
+        };
+        State state = State::None;
+        ProfileEvents::Counters profile_counters;
+
+        time_t processing_start_time = 0;
+        time_t processing_end_time = 0;
+    };
+    using FileStatuses = std::unordered_map<std::string, std::shared_ptr<FileStatus>>;
+
+    std::shared_ptr<FileStatus> getFileStatus(const std::string & path);
+
+    FileStatuses getFileStateses() const;
 
 private:
     const StorageS3Queue * storage;
@@ -44,11 +68,13 @@ private:
     const fs::path zookeeper_failed_path;
     const fs::path zookeeper_cleanup_lock_path;
 
-    mutable std::mutex mutex;
     Poco::Logger * log;
 
     std::atomic_bool shutdown = false;
     BackgroundSchedulePool::TaskHolder task;
+
+    FileStatuses file_statuses;
+    mutable std::mutex file_statuses_mutex;
 
     bool trySetFileAsProcessingForOrderedMode(const std::string & path);
     bool trySetFileAsProcessingForUnorderedMode(const std::string & path);

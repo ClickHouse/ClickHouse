@@ -626,7 +626,6 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
-    poll_size = 30
 
     for i in range(3):
         table = f"{table_name}_{i + 1}"
@@ -638,7 +637,6 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
             mode,
             files_path,
             additional_settings={
-                "s3queue_polling_size": poll_size,
                 "keeper_path": keeper_path,
             },
         )
@@ -700,7 +698,6 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
-    poll_size = 2
 
     for instance in [node, node_2]:
         create_table(
@@ -710,7 +707,6 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             mode,
             files_path,
             additional_settings={
-                "s3queue_polling_size": poll_size,
                 "keeper_path": keeper_path,
             },
         )
