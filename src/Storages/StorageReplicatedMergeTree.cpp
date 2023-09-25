@@ -197,6 +197,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType Cleanup;
 }
 
 
@@ -372,14 +373,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// to be manually deleted before retrying the CreateQuery.
         try
         {
-            if (zookeeper_name == default_zookeeper_name)
-            {
-                current_zookeeper = getContext()->getZooKeeper();
-            }
-            else
-            {
-                current_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
-            }
+            setZooKeeper();
         }
         catch (...)
         {
@@ -1635,7 +1629,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         }
 
         Coordination::Responses responses;
-        Coordination::Error e = zookeeper->tryMulti(ops, responses);
+        Coordination::Error e;
+        {
+
+            Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
+                                                     getSettings()->fault_probability_after_part_commit, "part commit");
+            e = zookeeper->tryMulti(ops, responses);
+        }
         if (e == Coordination::Error::ZOK)
         {
             LOG_DEBUG(log, "Part {} committed to zookeeper", part->name);
@@ -8260,6 +8260,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     if (action_type == ActionLocks::PullReplicationLog)
         return queue.pull_log_blocker.cancel();
 
+    if (action_type == ActionLocks::Cleanup)
+        return cleanup_thread.getCleanupLock();
+
     return {};
 }
 
@@ -8271,6 +8274,8 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
+    else if (action_type == ActionLocks::Cleanup)
+        cleanup_thread.wakeup();
 }
 
 bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)
@@ -9181,7 +9186,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
         files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
-        LOG_TRACE(logger, "Remove zookeeper lock {} for part {}", zookeeper_part_replica_node, part_name);
+        LOG_TRACE(logger, "Removing zookeeper lock {} for part {} (files to keep: [{}])", zookeeper_part_replica_node, part_name, fmt::join(files_not_to_remove, ", "));
 
         if (auto ec = zookeeper_ptr->tryRemove(zookeeper_part_replica_node); ec != Coordination::Error::ZOK)
         {
@@ -9218,7 +9223,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            LOG_TRACE(logger, "No more children left for for {}, will try to remove the whole node", zookeeper_part_uniq_node);
+            LOG_TRACE(logger, "No more children left for {}, will try to remove the whole node", zookeeper_part_uniq_node);
         }
 
         auto error_code = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
@@ -9274,8 +9279,19 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
-                zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+            /// It's possible that we have two instances of the same part with different blob names of
+            /// FILE_FOR_REFERENCES_CHECK aka checksums.txt aka part_unique_id,
+            /// and other files in both parts are hardlinks (the same blobs are shared between part instances).
+            /// It's possible after unsuccessful attempts to commit a mutated part to zk.
+            /// It's not a problem if we have found the mutation parent (so we have files_not_to_remove).
+            /// But in rare cases mutations parents could have been already removed (so we don't have the list of hardlinks).
+
+            /// I'm not 100% sure that parent_not_to_remove list cannot be incomplete (when we've found a parent)
+            if (part_info.mutation && !has_parent)
+                part_has_no_more_locks = false;
+
+            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists (can remove blobs: {})",
+                zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "), part_has_no_more_locks);
         }
     }
 
