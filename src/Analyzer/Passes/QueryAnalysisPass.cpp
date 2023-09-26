@@ -3051,6 +3051,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     JoinKind join_kind = from_join_node.getKind();
     bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
+    /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
+    /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
     if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
         && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
     {
