@@ -122,8 +122,9 @@ MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
-    // NOLINTNEXTLINE(*)
     index->build(static_cast<int>(trees), /*number_of_threads=*/1);
+    /// clang-tidy reports a false positive: it considers %p with an outdated pointer in fprintf() (used by logging which we don't do) dereferencing
+    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc)
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
