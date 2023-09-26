@@ -28,6 +28,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
+    extern const char replicated_merge_tree_insert_quorum_fail_0[];
 }
 
 namespace ErrorCodes
@@ -1074,6 +1075,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     try
     {
+        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
+        {
+            if (!zookeeper->fault_policy)
+            {
+                zookeeper->logger = log;
+                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
+            }
+            zookeeper->fault_policy->must_fail_before_op = true;
+        });
+
         while (true)
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
