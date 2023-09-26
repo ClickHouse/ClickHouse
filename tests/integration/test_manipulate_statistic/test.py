@@ -5,7 +5,10 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", user_configs=["config/config.xml"], with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1", user_configs=["config/config.xml"], with_zookeeper=True
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -16,6 +19,7 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
 
 def check_stat_file_on_disk(node, table, part_name, column_name, exist):
     part_path = node.query(
@@ -33,19 +37,24 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
         ],
         privileged=True,
     )
-    logging.debug(f"stat file ls in {part_path} for column {column_name}, shows {output}")
+    logging.debug(
+        f"stat file ls in {part_path} for column {column_name}, shows {output}"
+    )
     if exist:
         assert len(output) != 0
     else:
         assert len(output) == 0
 
+
 def test_single_node(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_stat")
 
-    node1.query("""
+    node1.query(
+        """
         CREATE TABLE test_stat(a Int64 STATISTIC(tdigest), b Int64 STATISTIC(tdigest), c Int64 STATISTIC(tdigest))
         ENGINE = MergeTree() ORDER BY a;
-    """)
+    """
+    )
 
     node1.query("INSERT INTO test_stat VALUES (1,2,3), (4,5,6)")
 

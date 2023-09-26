@@ -1377,9 +1377,6 @@ private:
             }
         }
 
-        for (auto stat_name : removed_stats)
-            LOG_INFO(ctx->log, "removed stat {}", stat_name);
-
         Statistics stats;
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
@@ -1406,9 +1403,6 @@ private:
                 }
             }
         }
-
-        for (auto hardlink : entries_to_hardlink)
-            LOG_INFO(ctx->log, "hard link {}", hardlink);
 
         NameSet removed_projections;
         for (const auto & command : ctx->for_file_renames)
@@ -1498,7 +1492,6 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
-        LOG_TRACE(ctx->log, "going to write {} stats", stats.size());
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
@@ -1670,10 +1663,6 @@ private:
                 }
             }
         }
-
-            LOG_INFO(ctx->log, "hard link size : {}", hardlinked_files.size());
-        for (auto name : hardlinked_files)
-            LOG_INFO(ctx->log, "hard link file : {}", name);
 
         /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because

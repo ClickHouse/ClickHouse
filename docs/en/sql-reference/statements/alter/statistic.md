@@ -1,6 +1,6 @@
 ---
-toc_hidden_folder: true
-sidebar_position: 42
+slug: /en/sql-reference/statements/alter/statistic
+sidebar_position: 45
 sidebar_label: STATISTIC
 ---
 
@@ -14,12 +14,12 @@ The following operations are available:
 
 -   `ALTER TABLE [db].table CLEAR STATISTIC (columns list) TYPE type` - Deletes statistic files from disk.
 
--   `ALTER TABLE [db.]table MATERIALIZE STATISTIC (columns list) TYPE type` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../../sql-reference/statements/alter/index.md#mutations). 
+-   `ALTER TABLE [db.]table MATERIALIZE STATISTIC (columns list) TYPE type` - Rebuilds the statistic for columns. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations). 
 
 The first two commands are lightweight in a sense that they only change metadata or remove files.
 
 Also, they are replicated, syncing statistics metadata via ZooKeeper.
 
 :::note    
-Statistic manipulation is supported only for tables with [`*MergeTree`](../../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../../engines/table-engines/mergetree-family/replication.md) variants).
+Statistic manipulation is supported only for tables with [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) variants).
 :::

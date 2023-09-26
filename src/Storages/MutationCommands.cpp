@@ -11,7 +11,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
-#include "Parsers/ASTAlterQuery.h"
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
 

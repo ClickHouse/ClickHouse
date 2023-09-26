@@ -44,7 +44,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
     PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
-    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
