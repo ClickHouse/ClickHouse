@@ -24,11 +24,7 @@ JoinStep::JoinStep(
     bool keep_left_read_in_order_)
     : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
-    input_streams = {left_stream_, right_stream_};
-    output_stream = DataStream
-    {
-        .header = JoiningTransform::transformHeader(left_stream_.header, join),
-    };
+    updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -95,20 +91,12 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
 }
 
-void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t idx)
+void JoinStep::updateOutputStream()
 {
-    if (idx == 0)
+    output_stream = DataStream
     {
-        input_streams = {new_input_stream_, input_streams.at(1)};
-        output_stream = DataStream
-        {
-            .header = JoiningTransform::transformHeader(new_input_stream_.header, join),
-        };
-    }
-    else
-    {
-        input_streams = {input_streams.at(0), new_input_stream_};
-    }
+        .header = JoiningTransform::transformHeader(input_streams[0].header, join),
+    };
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()

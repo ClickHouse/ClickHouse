@@ -27,6 +27,8 @@
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <base/sleep.h>
+
 
 namespace ProfileEvents
 {
@@ -599,7 +601,9 @@ Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn r
                 last_exception = std::current_exception();
 
                 auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-                client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+                auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+                LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
+                sleepForMilliseconds(sleep_ms);
                 continue;
             }
         }

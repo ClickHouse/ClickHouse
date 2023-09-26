@@ -197,6 +197,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType Cleanup;
 }
 
 
@@ -372,14 +373,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// to be manually deleted before retrying the CreateQuery.
         try
         {
-            if (zookeeper_name == default_zookeeper_name)
-            {
-                current_zookeeper = getContext()->getZooKeeper();
-            }
-            else
-            {
-                current_zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
-            }
+            setZooKeeper();
         }
         catch (...)
         {
@@ -1635,7 +1629,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         }
 
         Coordination::Responses responses;
-        Coordination::Error e = zookeeper->tryMulti(ops, responses);
+        Coordination::Error e;
+        {
+
+            Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
+                                                     getSettings()->fault_probability_after_part_commit, "part commit");
+            e = zookeeper->tryMulti(ops, responses);
+        }
         if (e == Coordination::Error::ZOK)
         {
             LOG_DEBUG(log, "Part {} committed to zookeeper", part->name);
@@ -2473,7 +2473,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
             auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, clone_params, getContext()->getWriteSettings());
+                part_desc->src_table_part,
+                TMP_PREFIX + "clone_",
+                part_desc->new_part_info,
+                metadata_snapshot,
+                clone_params,
+                getContext()->getReadSettings(),
+                getContext()->getWriteSettings());
             part_desc->res_part = std::move(res_part);
             part_desc->temporary_part_lock = std::move(temporary_part_lock);
         }
@@ -4568,7 +4574,14 @@ bool StorageReplicatedMergeTree::fetchPart(
         {
             chassert(!is_zero_copy_part(part_to_clone));
             IDataPartStorage::ClonePartParams clone_params{ .keep_metadata_version = true };
-            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, clone_params, getContext()->getWriteSettings());
+            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(
+                part_to_clone,
+                "tmp_clone_",
+                part_info,
+                metadata_snapshot,
+                clone_params,
+                getContext()->getReadSettings(),
+                getContext()->getWriteSettings());
             part_directory_lock = std::move(lock);
             return cloned_part;
         };
@@ -5359,7 +5372,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -7656,7 +7669,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, clone_params, query_context->getWriteSettings());
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                metadata_snapshot,
+                clone_params,
+                query_context->getReadSettings(),
+                query_context->getWriteSettings());
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
             dst_parts_locks.emplace_back(std::move(part_lock));
@@ -7896,7 +7916,14 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 .copy_instead_of_hardlink = zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport(),
                 .metadata_version_to_write = dest_metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, clone_params, query_context->getWriteSettings());
+            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                dest_metadata_snapshot,
+                clone_params,
+                query_context->getReadSettings(),
+                query_context->getWriteSettings());
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
@@ -8233,6 +8260,9 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     if (action_type == ActionLocks::PullReplicationLog)
         return queue.pull_log_blocker.cancel();
 
+    if (action_type == ActionLocks::Cleanup)
+        return cleanup_thread.getCleanupLock();
+
     return {};
 }
 
@@ -8244,6 +8274,8 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
         background_moves_assignee.trigger();
+    else if (action_type == ActionLocks::Cleanup)
+        cleanup_thread.wakeup();
 }
 
 bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)
@@ -9033,7 +9065,7 @@ namespace
 /// But sometimes we need an opposite. When we deleting all_0_0_0_1 it can be non replicated to other replicas, so we are the only owner of this part.
 /// In this case when we will drop all_0_0_0_1 we will drop blobs for all_0_0_0. But it will lead to dataloss. For such case we need to check that other replicas
 /// still need parent part.
-std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
+std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const std::string & zero_copy_part_path_prefix, const MergeTreePartInfo & part_info, MergeTreeDataFormatVersion format_version, Poco::Logger * log)
 {
     NameSet files_not_to_remove;
 
@@ -9078,8 +9110,9 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
             zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
             if (code != Coordination::Error::ZOK)
             {
-                LOG_TRACE(log, "Cannot get parent files from ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), code);
-                return {true, std::nullopt};
+                LOG_INFO(log, "Cannot get parent files from ZooKeeper on path ({}), error {}, assuming the parent was removed concurrently",
+                            (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), code);
+                continue;
             }
 
             if (!files_not_to_remove_str.empty())
@@ -9093,8 +9126,9 @@ std::pair<bool, std::optional<NameSet>> getParentLockedBlobs(const ZooKeeperWith
                 code = zookeeper_ptr->tryGetChildren(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, children);
                 if (code != Coordination::Error::ZOK)
                 {
-                    LOG_TRACE(log, "Cannot get parent locks in ZooKeeper on path ({}), error {}", (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
-                    return {true, std::nullopt};
+                    LOG_INFO(log, "Cannot get parent locks in ZooKeeper on path ({}), error {}, assuming the parent was removed concurrently",
+                              (fs::path(zero_copy_part_path_prefix) / part_candidate_info_str).string(), errorMessage(code));
+                    continue;
                 }
 
                 if (children.size() > 1 || (children.size() == 1 && children[0] != ZeroCopyLock::ZERO_COPY_LOCK_NAME))
@@ -9150,17 +9184,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         auto [has_parent, parent_not_to_remove] = getParentLockedBlobs(
             zookeeper_ptr, fs::path(zc_zookeeper_path).parent_path(), part_info, data_format_version, logger);
 
-        // parent_not_to_remove == std::nullopt means that we were unable to retrieve parts set
-        if (has_parent && parent_not_to_remove == std::nullopt)
-        {
-            LOG_TRACE(logger, "Failed to get mutation parent on {} for part {}, refusing to remove blobs", zookeeper_part_replica_node, part_name);
-            return {false, {}};
-        }
+        files_not_to_remove.insert(parent_not_to_remove.begin(), parent_not_to_remove.end());
 
-        files_not_to_remove.insert(parent_not_to_remove->begin(), parent_not_to_remove->end());
-
-
-        LOG_TRACE(logger, "Remove zookeeper lock {} for part {}", zookeeper_part_replica_node, part_name);
+        LOG_TRACE(logger, "Removing zookeeper lock {} for part {} (files to keep: [{}])", zookeeper_part_replica_node, part_name, fmt::join(files_not_to_remove, ", "));
 
         if (auto ec = zookeeper_ptr->tryRemove(zookeeper_part_replica_node); ec != Coordination::Error::ZOK)
         {
@@ -9197,7 +9223,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            LOG_TRACE(logger, "No more children left for for {}, will try to remove the whole node", zookeeper_part_uniq_node);
+            LOG_TRACE(logger, "No more children left for {}, will try to remove the whole node", zookeeper_part_uniq_node);
         }
 
         auto error_code = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
@@ -9253,8 +9279,19 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else
         {
-            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists",
-                zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "));
+            /// It's possible that we have two instances of the same part with different blob names of
+            /// FILE_FOR_REFERENCES_CHECK aka checksums.txt aka part_unique_id,
+            /// and other files in both parts are hardlinks (the same blobs are shared between part instances).
+            /// It's possible after unsuccessful attempts to commit a mutated part to zk.
+            /// It's not a problem if we have found the mutation parent (so we have files_not_to_remove).
+            /// But in rare cases mutations parents could have been already removed (so we don't have the list of hardlinks).
+
+            /// I'm not 100% sure that parent_not_to_remove list cannot be incomplete (when we've found a parent)
+            if (part_info.mutation && !has_parent)
+                part_has_no_more_locks = false;
+
+            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} for part {}, because children {} ({}) exists (can remove blobs: {})",
+                zookeeper_part_node, part_name, children.size(), fmt::join(children, ", "), part_has_no_more_locks);
         }
     }
 
