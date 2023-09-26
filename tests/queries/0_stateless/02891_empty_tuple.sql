@@ -1,13 +1,7 @@
 drop table if exists x;
 
-create table x engine MergeTree order by () as select () as a, () as b;
-
-insert into x values ((), ());
-
-select count() from x;
-
-select * from x;
+create table x engine MergeTree order by () as select () as a, () as b; -- { serverError 370 }
 
 select ();
 
-drop table x;
+select number from numbers(10) order by ();
