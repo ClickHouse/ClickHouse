@@ -214,9 +214,10 @@ void ReplicatedMergeTreeClusterPartition::removeReplica(const String & replica)
     ///
     /// - remover --  DROP/CREATE TABLE will update the partition version as
     ///               well, and retry in case of ZBADVERSION.
+    auto old_state = state;
     if (state != UP_TO_DATE)
         revert();
-    if (!std::erase(all_replicas, replica))
+    if (!std::erase(all_replicas, replica) && old_state == UP_TO_DATE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No replica {} in all replicas ({})", replica, fmt::join(all_replicas, ", "));
     std::erase(active_replicas, replica);
 }
