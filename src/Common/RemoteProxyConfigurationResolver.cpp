@@ -17,18 +17,19 @@ namespace ErrorCodes
 }
 
 RemoteProxyConfigurationResolver::RemoteProxyConfigurationResolver(
-    const Poco::URI & endpoint_,
-    String proxy_protocol_,
-    unsigned proxy_port_,
-    unsigned cache_ttl_
+    const RemoteServerConfiguration & remote_server_configuration_,
+    Protocol request_protocol_,
+    ConnectProtocolPolicy connect_protocol_policy_
 )
-: endpoint(endpoint_), proxy_protocol(std::move(proxy_protocol_)), proxy_port(proxy_port_), cache_ttl(cache_ttl_)
+: ProxyConfigurationResolver(request_protocol_, connect_protocol_policy_), remote_server_configuration(remote_server_configuration_)
 {
 }
 
 ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 {
     auto * logger = &Poco::Logger::get("RemoteProxyConfigurationResolver");
+
+    auto & [endpoint, proxy_protocol, proxy_port, cache_ttl_] = remote_server_configuration;
 
     LOG_DEBUG(logger, "Obtain proxy using resolver: {}", endpoint.toString());
 
@@ -39,10 +40,11 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
         LOG_DEBUG(logger,
-                  "Use cached proxy: {}://{}:{}",
+                  "Use cached proxy: {}://{}:{}. Tunneling: {}",
                   cached_config.protocol,
                   cached_config.host,
-                  cached_config.port
+                  cached_config.port,
+                  cached_config.use_connect_protocol
                   );
         return cached_config;
     }
@@ -98,6 +100,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         cached_config.protocol = ProxyConfiguration::protocolFromString(proxy_protocol);
         cached_config.host = proxy_host;
         cached_config.port = proxy_port;
+        cached_config.use_connect_protocol = useConnectProtocol(cached_config.protocol);
         cache_timestamp = std::chrono::system_clock::now();
         cache_valid = true;
 

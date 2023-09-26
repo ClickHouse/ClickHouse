@@ -107,7 +107,7 @@ namespace
 
                     break;
                 }
-                catch (...)
+                catch ([[maybe_unused]] const std::exception & e)
                 {
                     Session::close();
                     if (++it == endpoinds.end())
@@ -195,6 +195,7 @@ namespace
 
                 session->setProxyProtocol(proxy_scheme);
 
+                // TODO investigate this use cae
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
                 session->setProxyTunnel(!proxy_https && https);
             }

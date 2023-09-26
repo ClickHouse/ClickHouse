@@ -120,4 +120,37 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListBoth)
     ASSERT_EQ(https_proxy_configuration.port, https_list_proxy_server.getPort());
 }
 
+template <bool USE_CONNECT_PROTOCOL, bool STRING>
+void test_connect_protocol(DB::ContextMutablePtr context)
+{
+    EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server);
+
+    ConfigurationPtr config = Poco::AutoPtr(new Poco::Util::MapConfiguration());
+
+    config->setString("proxy", "");
+
+    if constexpr (STRING)
+    {
+        config->setString("proxy.use_connect_protocol", USE_CONNECT_PROTOCOL ? "true" : "false");
+    }
+    else
+    {
+        config->setBool("proxy.use_connect_protocol", USE_CONNECT_PROTOCOL);
+    }
+
+    context->setConfig(config);
+
+    auto https_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
+
+    ASSERT_EQ(https_configuration.use_connect_protocol, USE_CONNECT_PROTOCOL);
+}
+
+TEST_F(ProxyConfigurationResolverProviderTests, ConnectProtocolString)
+{
+    test_connect_protocol<false, false>(context);
+    test_connect_protocol<false, true>(context);
+    test_connect_protocol<true, false>(context);
+    test_connect_protocol<true, true>(context);
+}
+
 // remote resolver is tricky to be tested in unit tests
