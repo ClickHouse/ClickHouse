@@ -41,5 +41,5 @@ ENGINE = MergeTree()
 ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
                      max_size = '1Mi',
-                     path = 'kek',
+                     path = 'kek2',
                      disk = 'local_disk');
