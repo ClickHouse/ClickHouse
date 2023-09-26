@@ -52,20 +52,6 @@ public:
         if (!hasDynamicSubcolumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-        auto object_columns = getConcreteObjectColumns(
-            parts.begin(), parts.end(),
-            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
-
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
-    }
-
-    StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr /*query_context*/) const override
-    {
-        const auto & storage_columns = metadata_snapshot->getColumns();
-        if (!hasDynamicSubcolumns(storage_columns))
-            return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-
         auto data_parts = storage.getDataPartsVectorForInternalUsage();
 
         auto object_columns = getConcreteObjectColumns(
