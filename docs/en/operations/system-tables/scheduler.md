@@ -38,6 +38,10 @@ inflight_requests: ᴺᵁᴸᴸ
 inflight_cost:     ᴺᵁᴸᴸ
 max_requests:      ᴺᵁᴸᴸ
 max_cost:          ᴺᵁᴸᴸ
+max_speed:         ᴺᵁᴸᴸ
+max_burst:         ᴺᵁᴸᴸ
+throttling_us:     ᴺᵁᴸᴸ
+tokens:            ᴺᵁᴸᴸ
 ```
 
 Columns:
@@ -62,3 +66,7 @@ Columns:
 - `inflight_cost` (`Nullable(Int64)`) - For `inflight_limit` nodes only. The sum of costs (e.g. bytes) of all resource requests dequeued from this node, that are currently in consumption state.
 - `max_requests` (`Nullable(Int64)`) - For `inflight_limit` nodes only. Upper limit for `inflight_requests` leading to constraint violation.
 - `max_cost` (`Nullable(Int64)`) - For `inflight_limit` nodes only. Upper limit for `inflight_cost` leading to constraint violation.
+- `max_speed` (`Nullable(Float64)`) - For `bandwidth_limit` nodes only. Upper limit for bandwidth in tokens per second.
+- `max_burst` (`Nullable(Float64)`) - For `bandwidth_limit` nodes only. Upper limit for `tokens` available in token-bucket throttler.
+- `throttling_us` (`Nullable(Int64)`) - For `bandwidth_limit` nodes only. Total number of microseconds this node was in throttling state.
+- `tokens` (`Nullable(Float64)`) - For `bandwidth_limit` nodes only. Number of tokens currently available in token-bucket throttler.

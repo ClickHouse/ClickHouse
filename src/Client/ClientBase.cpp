@@ -1475,13 +1475,23 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
 
         /// Create temporary storage file, to support globs and parallel reading
+        /// StorageFile doesn't support ephemeral/materialized/alias columns.
+        /// We should change ephemeral columns to ordinary and ignore materialized/alias columns.
+        ColumnsDescription columns_for_storage_file;
+        for (const auto & [name, _] : columns_description_for_query.getInsertable())
+        {
+            ColumnDescription column = columns_description_for_query.get(name);
+            column.default_desc.kind = ColumnDefaultKind::Default;
+            columns_for_storage_file.add(std::move(column));
+        }
+
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
             current_format,
             getFormatSettings(global_context),
             compression_method,
-            columns_description_for_query,
+            columns_for_storage_file,
             ConstraintsDescription{},
             String{},
             {},

@@ -1247,9 +1247,19 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach, bool allow_empty_sorting_key, ContextPtr local_context) const;
+    void checkProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        bool attach,
+        bool allow_empty_sorting_key,
+        bool allow_nullable_key_,
+        ContextPtr local_context) const;
 
-    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
+    void setProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        bool attach = false,
+        ContextPtr local_context = nullptr);
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
@@ -1575,6 +1585,9 @@ private:
         ContextPtr query_context,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const;
+
+    void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
+    void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
