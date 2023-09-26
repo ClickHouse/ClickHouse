@@ -371,9 +371,11 @@ struct WhichDataType
 
     constexpr bool isDate() const { return idx == TypeIndex::Date; }
     constexpr bool isDate32() const { return idx == TypeIndex::Date32; }
+    constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
-    constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
+    constexpr bool isDateTimeOrDateTime64() const { return isDateTime() || isDateTime64(); }
+    constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDateOrDate32() || isDateTimeOrDateTime64(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -410,6 +412,10 @@ template <typename T>
 inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
 template <typename T>
 inline bool isDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTime64(); }
+template <typename T>
+inline bool isDateTimeOrDateTime64(const T & data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); }
+template <typename T>
+inline bool isDateOrDate32OrDateTimeOrDateTime64(const T & data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); }
 
 template <typename T>
 inline bool isEnum(const T & data_type) { return WhichDataType(data_type).isEnum(); }
@@ -433,26 +439,14 @@ template <typename T>
 inline bool isIPv6(const T & data_type) { return WhichDataType(data_type).isIPv6(); }
 
 template <typename T>
-inline bool isObject(const T & data_type) { return WhichDataType(data_type).isObject();
-}
+inline bool isObject(const T & data_type) { return WhichDataType(data_type).isObject(); }
 
 template <typename T>
-inline bool isUInt8(const T & data_type)
-{
-    return WhichDataType(data_type).isUInt8();
-}
-
+inline bool isUInt8(const T & data_type) { return WhichDataType(data_type).isUInt8(); }
 template <typename T>
-inline bool isUInt64(const T & data_type)
-{
-    return WhichDataType(data_type).isUInt64();
-}
-
+inline bool isUInt64(const T & data_type) { return WhichDataType(data_type).isUInt64(); }
 template <typename T>
-inline bool isUnsignedInteger(const T & data_type)
-{
-    return WhichDataType(data_type).isUInt();
-}
+inline bool isUnsignedInteger(const T & data_type) { return WhichDataType(data_type).isUInt(); }
 
 template <typename T>
 inline bool isInteger(const T & data_type)

@@ -1,0 +1,1 @@
+CREATE TABLE default.sales\n(\n    `DATE_SOLD` DateTime64(3, \'UTC\'),\n    `PRODUCT_ID` Nullable(String),\n    PROJECTION test\n    (\n        SELECT toInt64(count(*))\n        GROUP BY \n            PRODUCT_ID,\n            DATE_SOLD\n    )\n)\nENGINE = MergeTree\nPARTITION BY toYYYYMM(DATE_SOLD)\nORDER BY DATE_SOLD\nSETTINGS index_granularity = 8192
