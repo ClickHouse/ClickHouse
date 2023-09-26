@@ -246,6 +246,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     ASTs & engine_args = args.engine_args;
+    auto local_context = args.getLocalContext();
     auto context = args.getContext();
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
@@ -288,7 +289,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 /// Do not try evaluate array or tuple, because it's array or tuple of column identifiers.
                 if (arg_func->name == "array" || arg_func->name == "tuple")
                     continue;
-                Field value = evaluateConstantExpression(arg, args.getLocalContext()).first;
+                Field value = evaluateConstantExpression(arg, local_context).first;
                 arg = std::make_shared<ASTLiteral>(value);
             }
         }
@@ -298,7 +299,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), verbose_help_message);
         }
     }
-    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
+    else if (!args.attach && !local_context->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
                                                    "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
@@ -310,8 +311,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String replica_name;
     RenamingRestrictions renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
 
-    bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+    bool is_on_cluster = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
         DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
@@ -606,7 +607,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->settings)
         {
             if (!args.attach)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
+                local_context->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
     }
@@ -661,7 +662,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
+                local_context->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
             }
         }
         else
@@ -687,7 +688,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
     {
         bool need_check_table_structure = true;
-        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
 
         return std::make_shared<StorageReplicatedMergeTree>(
@@ -697,6 +698,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.table_id,
             args.relative_data_path,
             metadata,
+            local_context,
             context,
             date_column_name,
             merging_params,
@@ -711,6 +713,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.relative_data_path,
             metadata,
             args.attach,
+            local_context,
             context,
             date_column_name,
             merging_params,

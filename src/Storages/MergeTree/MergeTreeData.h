@@ -382,6 +382,7 @@ public:
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const StorageID & table_id_,
                   const StorageInMemoryMetadata & metadata_,
+                  ContextMutablePtr local_context_,
                   ContextMutablePtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
@@ -1258,8 +1259,8 @@ protected:
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
-        bool attach = false,
-        ContextPtr local_context = nullptr);
+        bool attach,
+        ContextPtr local_context);
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
