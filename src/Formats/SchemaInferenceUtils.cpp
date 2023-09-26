@@ -128,7 +128,7 @@ namespace
                     {
                         auto rhs_type_copy = rhs_type;
                         transform_types(type, rhs_type_copy);
-                        /// If types for different paths are different even after transform, we cannot merge these objects.
+                        /// If types for the same path are different even after transform, we cannot merge these objects.
                         if (!type->equals(*rhs_type_copy))
                             return false;
                     }
