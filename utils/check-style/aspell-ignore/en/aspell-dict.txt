@@ -958,7 +958,6 @@ WikiStat
 WindowView
 WithNames
 WithNamesAndTypes
-Woboq
 WordNet
 WriteBuffer
 WriteBuffers
@@ -1179,6 +1178,10 @@ builtins
 byteSize
 bytebase
 bytesToCutForIPv
+byteEditDistance
+byteHammingDistance
+byteJaccardIndex
+byteLevenshteinDistance
 cLoki
 caConfig
 cacheSessions
@@ -1907,6 +1910,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overparallelization
 packetpool
 packetsize
 pageviews
@@ -2215,6 +2219,8 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
+splitBy
+splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp

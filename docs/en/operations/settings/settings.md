@@ -4067,6 +4067,17 @@ Result:
 └─────┴─────┴───────┘
 ```
 
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
+
+Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
+
+Possible values:
+
+- `0` - The remaining string will not be included in the last element of the result array.
+- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/3.1.2/api/python/reference/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+
+Default value: `0`
+
 ## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
 
 Enables or disables returning results of type:
@@ -4666,45 +4677,4 @@ The default value is `false`.
 
 ``` xml
 <validate_tcp_client_information>true</validate_tcp_client_information>
-```
-
-## ignore_access_denied_multidirectory_globs {#ignore_access_denied_multidirectory_globs}
-
-Allows to ignore 'permission denied' errors when using multi-directory `{}` globs for [File](../../sql-reference/table-functions/file.md#globs_in_path) and [HDFS](../../sql-reference/table-functions/hdfs.md) storages.
-This setting is only applicable to multi directory `{}` globs.
-
-Possible values: `0`, `1`.
-
-Default value: `0`.
-
-### Example
-
-Having the following structure in `user_files`:
-```
-my_directory/
-├── data1
-│   ├── f1.csv
-├── data2
-│   ├── f2.csv
-└── test_root
-```
-where `data1`, `data2` directories are accessible, but one has no rights to read `test_root` directories.
-
-For a query like `SELECT *, _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV)` an exception will be thrown:
-`Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied`.  
-It happens because a multi-directory glob requires a recursive search in _all_ available directories under `my_directory`.
-
-If this setting is on, all inaccessible directories will be silently skipped, even if they are explicitly specified inside `{}`.
-
-```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 0;
-
-Code: 1001. DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in directory_iterator::directory_iterator(...): Permission denied
-```
-```sql
-SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTINGS ignore_access_denied_multidirectory_globs = 1;
-
-┌─_path───────────────────┬─_file───────┐
-│ <full path to file>     │ <file name> │
-└─────────────────────────┴─────────────┘
 ```

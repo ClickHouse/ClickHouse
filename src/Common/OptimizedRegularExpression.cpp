@@ -496,6 +496,14 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
             regexp_options.set_dot_nl(true);
 
         re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
+
+        /// Fallback to latin1 to allow matching binary data.
+        if (!re2->ok() && re2->error_code() == re2::RE2::ErrorCode::ErrorBadUTF8)
+        {
+            regexp_options.set_encoding(re2::RE2::Options::EncodingLatin1);
+            re2 = std::make_unique<re2::RE2>(regexp_, regexp_options);
+        }
+
         if (!re2->ok())
         {
             throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
