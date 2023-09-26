@@ -1,11 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/AggregateFunctionNull.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
-#include <AggregateFunctions/AggregateFunctionSimpleState.h>
 #include <DataTypes/DataTypeNullable.h>
-
+#include <AggregateFunctions/AggregateFunctionNull.h>
+#include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionSimpleState.h>
 
 namespace DB
 {
