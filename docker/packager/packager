@@ -105,7 +105,7 @@ def run_docker_image_with_env(
         ccache_mount = ""
 
     cmd = (
-        f"docker run --network=host --user={user} --rm {ccache_mount} "
+        f"docker run --network=host --user={user} --rm {ccache_mount}"
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
     )
@@ -387,7 +387,6 @@ def parse_args() -> argparse.Namespace:
         type=dir_name,
         help="ClickHouse git repository",
     )
-
     parser.add_argument("--output-dir", type=dir_name, required=True)
     parser.add_argument("--debug-build", action="store_true")
 
