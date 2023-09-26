@@ -75,9 +75,11 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-else()
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
-endif()
+else ()
+    message(STATUS "Using linker: <default>")
+endif ()
 
 # Archiver
 
