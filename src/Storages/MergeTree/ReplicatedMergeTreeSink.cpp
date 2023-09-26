@@ -765,7 +765,12 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                             [&]()
                             {
                                 waitForQuorum(
-                                    zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
+                                    zookeeper,
+                                    existing_part_name,
+                                    quorum_path,
+                                    quorum_info.is_active_node_version,
+                                    quorum_info.host_node_version,
+                                    replicas_num);
                             }))
                         return;
                 }
@@ -1071,7 +1076,15 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
             if (!quorum_retries_ctl.callAndCatchAll(
                     [&]()
-                    { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num); }))
+                    {
+                        waitForQuorum(
+                            zookeeper,
+                            part->name,
+                            quorum_info.status_path,
+                            quorum_info.is_active_node_version,
+                            quorum_info.host_node_version,
+                            replicas_num);
+                    }))
                 return;
         });
     }
@@ -1091,7 +1104,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    Int32 is_active_node_version,
+    int is_active_node_version,
+    int host_node_version,
     size_t replicas_num) const
 {
     /// We are waiting for quorum to be satisfied.
@@ -1123,11 +1137,14 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
         }
 
         /// And what if it is possible that the current replica at this time has ceased to be active
-        /// and the quorum is marked as failed and deleted?
-        Coordination::Stat stat;
-        String value;
-        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat)
-            || stat.version != is_active_node_version)
+        /// and the quorum is marked as failed and deleted
+        auto get_results = zookeeper->tryGet(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+        const auto is_active = get_results[0];
+        const auto host = get_results[1];
+
+        /// check is_active
+        if ((is_active.error == Coordination::Error::ZNONODE || is_active.stat.version != is_active_node_version)
+            || (host.error == Coordination::Error::ZNONODE || host.stat.version != host_node_version))
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Replica become inactive while waiting for quorum");
     }
     catch (...)

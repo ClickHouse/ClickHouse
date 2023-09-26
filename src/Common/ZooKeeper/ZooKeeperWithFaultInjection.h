@@ -173,6 +173,11 @@ public:
         return access("tryGet", path, [&]() { return keeper->tryGet(path, res, stat, watch, code); });
     }
 
+    zkutil::ZooKeeper::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
+    {
+        return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
+    }
+
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
     {
         constexpr auto method = "tryMulti";
