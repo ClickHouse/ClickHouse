@@ -21,6 +21,7 @@
             <heart_beat_interval_ms>1000</heart_beat_interval_ms>
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
+            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>

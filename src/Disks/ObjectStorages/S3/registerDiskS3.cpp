@@ -104,12 +104,8 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         S3::URI uri(endpoint);
-
-        if (uri.key.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No key in S3 uri: {}", uri.uri.toString());
-
-        if (uri.key.back() != '/')
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
+        if (!uri.key.ends_with('/'))
+            uri.key.push_back('/');
 
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         std::shared_ptr<S3ObjectStorage> s3_storage;

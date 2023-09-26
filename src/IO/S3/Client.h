@@ -152,16 +152,16 @@ public:
 
     Aws::Auth::AWSCredentials getCredentials() const;
 
-    /// Decorator for RetryStrategy needed for this client to work correctly.
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
     ///   requests so we need to manually find the correct location
     /// - we want to cache the new location to decrease number of roundtrips for future requests
-    /// This decorator doesn't retry if 301 is detected and fallbacks to the inner retry strategy otherwise.
+    /// Other retries are processed with exponential backoff timeout
+    /// which is limited and rundomly spread
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_);
+        RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -172,14 +172,10 @@ public:
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
-        void GetSendToken() override;
-
-        bool HasSendToken() override;
-
-        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome) override;
-        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError) override;
     private:
-        std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy;
+        uint32_t maxRetries;
+        uint32_t scaleFactor;
+        uint32_t maxDelayMs;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
@@ -250,6 +246,10 @@ private:
     std::invoke_result_t<RequestFn, RequestType>
     doRequest(const RequestType & request, RequestFn request_fn) const;
 
+    template <bool IsReadMethod, typename RequestType, typename RequestFn>
+    std::invoke_result_t<RequestFn, RequestType>
+    doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const;
+
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
@@ -307,10 +307,12 @@ public:
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
+        unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler);
+        const ThrottlerPtr & put_request_throttler,
+        const String & protocol = "https");
 
 private:
     ClientFactory();

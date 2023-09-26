@@ -24,8 +24,9 @@ public:
     bool caches = false;
     bool full = false;
 
+    IAST * from;
+
     String cluster_str;
-    String from;
     String like;
 
     bool not_like = false;
@@ -37,6 +38,8 @@ public:
     String getID(char) const override { return "ShowTables"; }
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
+
+    String getFrom() const;
 
 protected:
     void formatLike(const FormatSettings & settings) const;

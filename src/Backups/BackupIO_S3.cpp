@@ -49,8 +49,10 @@ namespace
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
             static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
+            static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
             context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
-            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {});
+            /* for_disk_s3 = */ false, settings.request_settings.get_request_throttler, settings.request_settings.put_request_throttler,
+            s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
         client_configuration.maxConnections = static_cast<unsigned>(context->getSettingsRef().s3_max_connections);
@@ -88,7 +90,7 @@ namespace
         request.SetMaxKeys(1);
         auto outcome = client.ListObjects(request);
         if (!outcome.IsSuccess())
-            throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         return outcome.GetResult().GetContents();
     }
 
@@ -101,8 +103,14 @@ namespace
 
 
 BackupReaderS3::BackupReaderS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_)
-    : BackupReaderDefault(&Poco::Logger::get("BackupReaderS3"), context_)
+    const S3::URI & s3_uri_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
+    bool allow_s3_native_copy,
+    const ReadSettings & read_settings_,
+    const WriteSettings & write_settings_,
+    const ContextPtr & context_)
+    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
@@ -154,6 +162,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
             copyS3File(
                 client,
+                client,
                 s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
                 0,
@@ -161,6 +170,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 /* dest_bucket= */ blob_path[1],
                 /* dest_key= */ blob_path[0],
                 request_settings,
+                read_settings,
                 object_attributes,
                 threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupReaderS3"),
                 /* for_disk_s3= */ true);
@@ -178,8 +188,15 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
 
 
 BackupWriterS3::BackupWriterS3(
-    const S3::URI & s3_uri_, const String & access_key_id_, const String & secret_access_key_, bool allow_s3_native_copy, const ContextPtr & context_)
-    : BackupWriterDefault(&Poco::Logger::get("BackupWriterS3"), context_)
+    const S3::URI & s3_uri_,
+    const String & access_key_id_,
+    const String & secret_access_key_,
+    bool allow_s3_native_copy,
+    const String & storage_class_name,
+    const ReadSettings & read_settings_,
+    const WriteSettings & write_settings_,
+    const ContextPtr & context_)
+    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
@@ -188,6 +205,7 @@ BackupWriterS3::BackupWriterS3(
     request_settings.updateFromSettings(context_->getSettingsRef());
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
     request_settings.allow_native_copy = allow_s3_native_copy;
+    request_settings.setStorageClassName(storage_class_name);
 }
 
 void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
@@ -205,6 +223,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
             copyS3File(
                 client,
+                client,
                 /* src_bucket */ blob_path[1],
                 /* src_key= */ blob_path[0],
                 start_pos,
@@ -212,6 +231,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
                 s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
                 request_settings,
+                read_settings,
                 {},
                 threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
             return; /// copied!
@@ -224,7 +244,7 @@ void BackupWriterS3::copyFileFromDisk(const String & path_in_backup, DiskPtr src
 
 void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
-    copyDataToS3File(create_read_buffer, start_pos, length, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, request_settings, {},
+    copyDataToS3File(create_read_buffer, start_pos, length, client, client, s3_uri.bucket, fs::path(s3_uri.key) / path_in_backup, request_settings, {},
                      threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
@@ -271,7 +291,7 @@ void BackupWriterS3::removeFile(const String & file_name)
     request.SetKey(fs::path(s3_uri.key) / file_name);
     auto outcome = client->DeleteObject(request);
     if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
-        throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
 }
 
 void BackupWriterS3::removeFiles(const Strings & file_names)
@@ -329,7 +349,7 @@ void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 
         auto outcome = client->DeleteObjects(request);
         if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
-            throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
     }
 }
 

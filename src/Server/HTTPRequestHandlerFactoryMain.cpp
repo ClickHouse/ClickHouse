@@ -29,7 +29,7 @@ std::unique_ptr<HTTPRequestHandler> HTTPRequestHandlerFactoryMain::createRequest
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
-        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler);
+        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler(hints.getHints(request.getURI())));
     }
 
     return nullptr;

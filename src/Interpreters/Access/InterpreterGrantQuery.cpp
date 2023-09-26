@@ -139,7 +139,7 @@ namespace
         /// For example, to execute
         /// GRANT ALL ON mydb.* TO role1
         /// REVOKE ALL ON *.* FROM role1
-        /// the current user needs to have grants only on the 'mydb' database.
+        /// the current user needs to have the grants only on the 'mydb' database.
         AccessRights all_granted_access;
         for (const auto & id : grantees_from_query)
         {

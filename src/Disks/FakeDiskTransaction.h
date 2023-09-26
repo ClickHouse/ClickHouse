@@ -54,9 +54,9 @@ public:
         disk.replaceFile(from_path, to_path);
     }
 
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override
     {
-        disk.copyFile(from_file_path, disk, to_file_path);
+        disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT

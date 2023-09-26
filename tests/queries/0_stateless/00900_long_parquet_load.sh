@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
+# Tags: long, no-fasttest, no-debug
 
 #
 # Load all possible .parquet files found in submodules.
@@ -43,9 +43,9 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_A
     JSON=$DATA_DIR/$NAME.json
     COLUMNS_FILE=$DATA_DIR/$NAME.columns
 
-    ([ -z "$PARQUET_READER" ] || [ ! -s "$PARQUET_READER" ]) && [ ! -s "$COLUMNS_FILE" ] && continue
+    { [ -z "$PARQUET_READER" ] || [ ! -s "$PARQUET_READER" ]; } && [ ! -s "$COLUMNS_FILE" ] && continue
 
-    echo === Try load data from "$NAME"
+    echo "=== Try load data from $NAME"
 
     # If you want change or add .parquet file - rm data_parquet/*.json data_parquet/*.columns
     [ -n "$PARQUET_READER" ] && [ ! -s "$COLUMNS_FILE" ] && [ ! -s "$JSON" ] && "$PARQUET_READER" --json "$DATA_DIR"/"$NAME" > "$JSON"
@@ -64,7 +64,7 @@ CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory;
 EOF
 
     # Some files contain unsupported data structures, exception is ok.
-    cat "$DATA_DIR"/"$NAME" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_load FORMAT Parquet" 2>&1 | sed 's/Exception/Ex---tion/'
+    ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_load FORMAT Parquet" < "$DATA_DIR"/"$NAME" 2>&1 | sed 's/Exception/Ex---tion/'
 
     ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load ORDER BY tuple(*) LIMIT 100"
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_load"

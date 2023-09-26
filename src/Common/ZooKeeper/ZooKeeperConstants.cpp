@@ -33,7 +33,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
 OpNum getOpNum(int32_t raw_op_num)
 {
     if (!VALID_OPERATIONS.contains(raw_op_num))
-        throw Exception("Operation " + std::to_string(raw_op_num) + " is unknown", Error::ZUNIMPLEMENTED);
+        throw Exception(Error::ZUNIMPLEMENTED, "Operation {} is unknown", raw_op_num);
     return static_cast<OpNum>(raw_op_num);
 }
 

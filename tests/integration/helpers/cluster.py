@@ -3199,7 +3199,6 @@ class ClickHouseInstance:
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
-        self.base_dir = base_path
         self.docker_id = cluster.get_instance_docker_id(self.name)
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
@@ -3477,6 +3476,7 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_answer_with_error(
@@ -3487,6 +3487,7 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         )
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
@@ -4194,14 +4195,6 @@ class ClickHouseInstance:
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
-    def put_users_config(self, config_path):
-        """Put new config (useful if you cannot put it at the start)"""
-
-        instance_config_dir = p.abspath(p.join(self.path, "configs"))
-        users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
-        config_path = p.join(self.base_dir, config_path)
-        shutil.copy(config_path, users_d_dir)
-
     def create_dir(self):
         """Create the instance directory and all the needed files there."""
 
@@ -4266,6 +4259,23 @@ class ClickHouseInstance:
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
+
+        version = None
+        version_parts = self.tag.split(".")
+        if version_parts[0].isdigit() and version_parts[1].isdigit():
+            version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+
+        # async replication is only supported in version 23.9+
+        # for tags that don't specify a version we assume it has a version of ClickHouse
+        # that supports async replication if a test for it is present
+        if (
+            version == None
+            or version["major"] > 23
+            or (version["major"] == 23 and version["minor"] >= 9)
+        ):
+            write_embedded_config(
+                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
+            )
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()
