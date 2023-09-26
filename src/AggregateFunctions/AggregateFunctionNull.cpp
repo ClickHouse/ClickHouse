@@ -1,9 +1,10 @@
-#include <DataTypes/DataTypeNullable.h>
-#include <AggregateFunctions/AggregateFunctionNull.h>
-#include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <AggregateFunctions/AggregateFunctionNull.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionSimpleState.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -37,6 +38,34 @@ public:
                 res[i] = removeNullable(arguments[i]);
         }
         return res;
+    }
+
+    template <typename T>
+    std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
+                                                       const AggregateFunctionProperties & properties,
+                                                       const DataTypes & arguments,
+                                                       const Array & params) const
+    {
+        if (const auto function_state = typeid_cast<const T *>(nested_function.get()))
+        {
+            auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
+
+            return std::make_shared<T>(
+                transformed_nested_function,
+                transformed_nested_function->getArgumentTypes(),
+                transformed_nested_function->getParameters());
+        }
+        return {};
+    }
+
+    AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
+                                                   const AggregateFunctionProperties & properties,
+                                                   const DataTypes & arguments,
+                                                   const Array & params) const
+    {
+        return tryTransformStateFunctionImpl<AggregateFunctionState>(nested_function, properties, arguments, params)
+            .or_else([&]() { return tryTransformStateFunctionImpl<AggregateFunctionSimpleState>(nested_function, properties, arguments, params); })
+            .value_or(nullptr);
     }
 
     AggregateFunctionPtr transformAggregateFunction(
@@ -82,17 +111,11 @@ public:
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;
 
-        /// If applied to aggregate function with -State combinator, we apply -Null combinator to it's nested_function instead of itself.
+        /// If applied to aggregate function with either -State/-SimpleState combinator, we apply -Null combinator to it's nested_function instead of itself.
         /// Because Nullable AggregateFunctionState does not make sense and ruins the logic of managing aggregate function states.
-
-        if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(nested_function.get()))
+        if (const AggregateFunctionPtr new_function = tryTransformStateFunction(nested_function, properties, arguments, params))
         {
-            auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
-
-            return std::make_shared<AggregateFunctionState>(
-                transformed_nested_function,
-                transformed_nested_function->getArgumentTypes(),
-                transformed_nested_function->getParameters());
+            return new_function;
         }
 
         bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
