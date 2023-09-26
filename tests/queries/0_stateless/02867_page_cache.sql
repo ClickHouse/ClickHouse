@@ -5,6 +5,7 @@
 set force_enable_page_cache = 1;
 set page_cache_inject_eviction = 0;
 set enable_filesystem_cache = 0;
+set use_uncompressed_cache = 0;
 
 create temporary table e as select * from system.events;
 create view events_diff as

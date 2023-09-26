@@ -106,7 +106,7 @@ TEST(PageCache, Stress)
                 else
                 {
                     /// We may write/read the same memory from multiple threads in parallel here.
-                    auto items = reinterpret_cast<std::atomic<size_t> *>(chunk.getChunk()->data + cache.pageSize() * page_idx);
+                    std::atomic<size_t> * items = reinterpret_cast<std::atomic<size_t> *>(chunk.getChunk()->data + cache.pageSize() * page_idx);
                     if (populated)
                     {
                         for (size_t j = 0; j < items_per_page; ++j)
@@ -155,7 +155,7 @@ TEST(PageCache, Stress)
             std::cout << fmt::format("{:.3f}%", progress.load() * 100. / (num_keys * passes * num_threads / step)) << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    for (auto & t : threads)
+    for (std::thread & t : threads)
         t.join();
 
     auto end_time = std::chrono::steady_clock::now();
