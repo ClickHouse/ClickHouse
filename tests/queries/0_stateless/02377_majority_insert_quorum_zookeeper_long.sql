@@ -3,6 +3,8 @@
 -- no-replicated-database:
 --   The number of replicas is doubled, so `SYSTEM STOP FETCHES` stop not enough replicas.
 
+SET insert_keeper_fault_injection_probability=0;
+
 SET insert_quorum_parallel = false;
 
 SET select_sequential_consistency = 1;
