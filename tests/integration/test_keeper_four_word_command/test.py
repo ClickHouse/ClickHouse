@@ -279,7 +279,7 @@ def test_cmd_conf(started_cluster):
         assert result["stale_log_gap"] == "10000"
         assert result["fresh_log_gap"] == "200"
 
-        assert result["max_requests_batch_size"] == "1000"
+        assert result["max_requests_batch_size"] == "100"
         assert result["max_requests_batch_bytes_size"] == "102400"
         assert result["max_flush_batch_size"] == "1000"
         assert result["max_request_queue_size"] == "100000"
