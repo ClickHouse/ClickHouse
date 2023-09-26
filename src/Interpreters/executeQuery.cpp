@@ -94,11 +94,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
-    extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -991,7 +992,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive/read use of the query cache is enabled, and the cache knows the query, then set
+            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
             /// a pipeline with a source populated by the query cache.
             auto get_result_from_query_cache = [&]()
             {
@@ -1091,11 +1092,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    /// If it is a non-internal SELECT query, and active/write use of the query cache is enabled, then add a processor on
+                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings.enable_writes_to_query_cache
-                        && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
+                    if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
+                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
+                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting query_cache_store_results_of_queries_with_nondeterministic_functions = 1 to store the query result regardless.");
+
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
                             context->getUserName(), settings.query_cache_share_between_users,
