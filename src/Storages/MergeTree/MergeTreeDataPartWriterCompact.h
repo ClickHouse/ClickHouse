@@ -22,7 +22,7 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) override;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) override;
     void finish(bool sync) override;
 
 private:
