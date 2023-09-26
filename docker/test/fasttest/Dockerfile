@@ -18,7 +18,6 @@ RUN apt-get update \
         python3-termcolor \
         unixodbc \
         pv \
-        jq \
         zstd \
     --yes --no-install-recommends
 
@@ -31,11 +30,7 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cp /tmp/clickhouse-odbc-tmp/lib64/*.so /usr/local/lib/ \
   && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
   && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
-  && rm -rf /tmp/clickhouse-odbc-tmp \
-  && mkdir -p /var/lib/clickhouse \
-  && chmod 777 /var/lib/clickhouse
-
-# chmod 777 to make the container user independent
+  && rm -rf /tmp/clickhouse-odbc-tmp
 
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

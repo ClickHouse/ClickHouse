@@ -471,7 +471,7 @@ void TCPHandler::runImpl()
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
 
-                sendMergeTreeAllRangesAnnouncementAssumeLocked(announcement);
+                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
             });
@@ -885,8 +885,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
-        bool has_partial_result_setting = query_context->getSettingsRef().partial_result_update_duration_ms.totalMilliseconds() > 0;
-        PullingAsyncPipelineExecutor executor(pipeline, has_partial_result_setting);
+        PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;
@@ -1045,9 +1044,9 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
+void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
-    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
     announcement.serialize(*out);
     out->next();
 }

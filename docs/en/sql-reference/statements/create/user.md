@@ -14,7 +14,6 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
         [, name2 [ON CLUSTER cluster_name2] ...]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name'}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
@@ -91,7 +90,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
     ```
 
-    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. The following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
+    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
 
     ```bash
     /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
@@ -162,16 +161,6 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 :::tip
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
-
-## VALID UNTIL Clause
-
-Allows you to specify the expiration date and, optionally, the time for user credentials. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
-
-Examples:
-
-- `CREATE USER name1 VALID UNTIL '2025-01-01'`
-- `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
-- `CREATE USER name1 VALID UNTIL 'infinity'`
 
 ## GRANTEES Clause
 

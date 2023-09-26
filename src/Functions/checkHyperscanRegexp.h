@@ -3,14 +3,7 @@
 #include <string_view>
 #include <vector>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <re2_st/re2.h>
 
 namespace DB
 {
@@ -29,8 +22,8 @@ public:
 private:
     bool isSlowOneRepeat(std::string_view regexp);
     bool isSlowTwoRepeats(std::string_view regexp);
-    re2::RE2 searcher_one_repeat;
-    re2::RE2 searcher_two_repeats;
+    re2_st::RE2 searcher_one_repeat;
+    re2_st::RE2 searcher_two_repeats;
 };
 
 }

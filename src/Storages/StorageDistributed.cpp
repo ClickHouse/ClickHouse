@@ -102,8 +102,6 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Storages/BlockNumberColumn.h>
-
 #include <memory>
 #include <filesystem>
 #include <optional>
@@ -300,7 +298,6 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
-        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -440,9 +437,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            const auto & select = query_info.query->as<const ASTSelectQuery &>();
-            auto syntax_analyzer_result = query_info.syntax_analyzer_result;
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, select, syntax_analyzer_result);
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -745,16 +740,12 @@ void StorageDistributed::read(
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
-        /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
-          * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
-          */
-        for (auto & column : header)
-            column.column = column.column->convertToFullColumnIfConst();
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
     }
     else
     {
-        header = InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        header =
+            InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         query_ast = query_info.query;
     }
 
@@ -1312,8 +1303,8 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
-ClusterPtr StorageDistributed::getOptimizedCluster(ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot,
-                                                   const ASTSelectQuery & select, const TreeRewriterResultPtr & syntax_analyzer_result) const
+ClusterPtr StorageDistributed::getOptimizedCluster(
+    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1322,7 +1313,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(ContextPtr local_context, con
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, select, syntax_analyzer_result, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_info, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1371,16 +1362,16 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
-    const ASTSelectQuery & select,
-    const TreeRewriterResultPtr & syntax_analyzer_result,
+    const SelectQueryInfo & query_info,
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
 
     /// FIXME: support analyzer
-    if (!syntax_analyzer_result)
+    if (!query_info.syntax_analyzer_result)
         return nullptr;
 
     ASTPtr condition_ast;
@@ -1389,7 +1380,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     {
         ASTPtr select_without_join_ptr = select.clone();
         ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *syntax_analyzer_result;
+        TreeRewriterResult analyzer_result_without_join = *query_info.syntax_analyzer_result;
 
         removeJoin(select_without_join, analyzer_result_without_join, local_context);
         if (!select_without_join.prewhere() && !select_without_join.where())

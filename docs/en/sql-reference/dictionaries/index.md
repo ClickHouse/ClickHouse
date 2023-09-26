@@ -123,7 +123,7 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-## Storing Dictionaries in Memory {#storing-dictionaries-in-memory}
+## Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -2360,12 +2360,6 @@ Result:
 │ github.com/clickhouse/tree/master/docs │ (['Documentation','GitHub'],[2,3],[NULL],[])                                          │
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-#### Matching Modes
-
-Pattern matching behavior can be modified with certain dictionary settings:
-- `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
-- `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 

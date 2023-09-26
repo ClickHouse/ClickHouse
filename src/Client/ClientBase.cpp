@@ -441,20 +441,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (!block)
         return;
 
-    if (block.rows() == 0 && partial_result_mode == PartialResultMode::Active)
-    {
-        partial_result_mode = PartialResultMode::Inactive;
-        if (is_interactive)
-        {
-            progress_indication.clearProgressOutput(*tty_buf);
-            std::cout << "Full result:" << std::endl;
-            progress_indication.writeProgress(*tty_buf);
-        }
-    }
-
-    if (partial_result_mode == PartialResultMode::Inactive)
-        processed_rows += block.rows();
-
+    processed_rows += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
@@ -464,20 +451,13 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (!is_interactive && partial_result_mode == PartialResultMode::Active)
-        return;
-
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput(*tty_buf);
 
     try
     {
-        if (partial_result_mode == PartialResultMode::Active)
-            output_format->writePartialResult(materializeBlock(block));
-        else
-            output_format->write(materializeBlock(block));
-
+        output_format->write(materializeBlock(block));
         written_first_block = true;
     }
     catch (const Exception &)
@@ -541,9 +521,6 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
-    if (partial_result_mode == PartialResultMode::NotInit)
-        partial_result_mode = PartialResultMode::Active;
-
     if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
@@ -954,14 +931,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     const auto & settings = global_context->getSettingsRef();
     const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
-    bool has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
-
-    if (has_partial_result_setting)
-    {
-        partial_result_mode = PartialResultMode::NotInit;
-        if (is_interactive)
-            std::cout << "Partial result:" << std::endl;
-    }
 
     int retries_left = 10;
     while (retries_left)
@@ -1071,9 +1040,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
         }
         catch (const LocalFormatError &)
         {
-            /// Remember the first exception.
-            if (!local_format_error)
-                local_format_error = std::current_exception();
+            local_format_error = std::current_exception();
             connection->sendCancel();
         }
     }
@@ -1180,18 +1147,7 @@ void ClientBase::onEndOfStream()
         bool is_running = false;
         output_format->setStartTime(
             clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
-
-        try
-        {
-            output_format->finalize();
-        }
-        catch (...)
-        {
-            /// Format should be reset to make it work for subsequent query
-            /// (otherwise it will throw again in resetOutput())
-            output_format.reset();
-            throw;
-        }
+        output_format->finalize();
     }
 
     resetOutput();
@@ -1475,23 +1431,13 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
 
         /// Create temporary storage file, to support globs and parallel reading
-        /// StorageFile doesn't support ephemeral/materialized/alias columns.
-        /// We should change ephemeral columns to ordinary and ignore materialized/alias columns.
-        ColumnsDescription columns_for_storage_file;
-        for (const auto & [name, _] : columns_description_for_query.getInsertable())
-        {
-            ColumnDescription column = columns_description_for_query.get(name);
-            column.default_desc.kind = ColumnDefaultKind::Default;
-            columns_for_storage_file.add(std::move(column));
-        }
-
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
             current_format,
             getFormatSettings(global_context),
             compression_method,
-            columns_for_storage_file,
+            columns_description_for_query,
             ConstraintsDescription{},
             String{},
             {},
@@ -1779,7 +1725,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     }
 
     processed_rows = 0;
-    partial_result_mode = PartialResultMode::Inactive;
     written_first_block = false;
     progress_indication.resetProgress();
     profile_events.watch.restart();
@@ -2539,34 +2484,23 @@ void ClientBase::runNonInteractive()
         return;
     }
 
-    if (!queries.empty())
+    String text;
+    if (config().has("query"))
     {
-        for (const auto & query : queries)
-        {
-            if (query_fuzzer_runs)
-            {
-                if (!processWithFuzzing(query))
-                    return;
-            }
-            else
-            {
-                if (!processQueryText(query))
-                    return;
-            }
-        }
+        text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
     }
     else
     {
         /// If 'query' parameter is not set, read a query from stdin.
         /// The query is read entirely into memory (streaming is disabled).
         ReadBufferFromFileDescriptor in(STDIN_FILENO);
-        String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithFuzzing(text);
-        else
-            processQueryText(text);
     }
+
+    if (query_fuzzer_runs)
+        processWithFuzzing(text);
+    else
+        processQueryText(text);
 }
 
 
@@ -2735,8 +2669,8 @@ void ClientBase::init(int argc, char ** argv)
     stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
 
+    Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
-    Arguments common_arguments = {""}; /// 0th argument is ignored.
     std::vector<Arguments> hosts_and_ports_arguments;
 
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
@@ -2754,6 +2688,7 @@ void ClientBase::init(int argc, char ** argv)
     }
 
 
+    po::variables_map options;
     OptionsDescription options_description;
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
 
@@ -2765,8 +2700,9 @@ void ClientBase::init(int argc, char ** argv)
 
         ("config-file,C", po::value<std::string>(), "config-file path")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(query; can be specified multiple times (--query "SELECT 1" --query "SELECT 2"...))")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("query,q", po::value<std::string>(), "query")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
+            "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "If specified, multiple queries separated by semicolons can be listed after --query. For convenience, it is also possible to omit --query and pass the queries directly after --multiquery.")
         ("multiline,m", "If specified, allow multiline queries (do not send the query on Enter)")
         ("database,d", po::value<std::string>(), "database")
@@ -2787,7 +2723,8 @@ void ClientBase::init(int argc, char ** argv)
         ("log-level", po::value<std::string>(), "log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
-        ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch.")
+        ("suggestion_limit", po::value<int>()->default_value(10000),
+            "Suggestion limit for how many databases, tables and columns to fetch.")
 
         ("format,f", po::value<std::string>(), "default output format")
         ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
@@ -2825,7 +2762,6 @@ void ClientBase::init(int argc, char ** argv)
         std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
     }
 
-    po::variables_map options;
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
@@ -2853,7 +2789,7 @@ void ClientBase::init(int argc, char ** argv)
     if (options.count("time"))
         print_time_to_stderr = true;
     if (options.count("query"))
-        queries = options["query"].as<std::vector<std::string>>();
+        config().setString("query", options["query"].as<std::string>());
     if (options.count("query_id"))
         config().setString("query_id", options["query_id"].as<std::string>());
     if (options.count("database"))

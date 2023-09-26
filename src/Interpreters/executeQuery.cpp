@@ -94,12 +94,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -242,7 +241,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
-    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
@@ -992,7 +990,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
+            /// If it is a non-internal SELECT, and passive/read use of the query cache is enabled, and the cache knows the query, then set
             /// a pipeline with a source populated by the query cache.
             auto get_result_from_query_cache = [&]()
             {
@@ -1075,7 +1073,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// Save insertion table (not table function). TODO: support remote() table function.
                     auto table_id = insert_interpreter->getDatabaseTable();
                     if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+                        context->setInsertionTable(std::move(table_id));
 
                     if (insert_data_buffer_holder)
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
@@ -1092,14 +1090,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
+                    /// If it is a non-internal SELECT query, and active/write use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings.enable_writes_to_query_cache)
+                    if (can_use_query_cache && settings.enable_writes_to_query_cache
+                        && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
                     {
-                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
-                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting query_cache_store_results_of_queries_with_nondeterministic_functions = 1 to store the query result regardless.");
-
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
                             context->getUserName(), settings.query_cache_share_between_users,

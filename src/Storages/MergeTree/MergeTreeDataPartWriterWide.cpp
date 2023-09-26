@@ -6,12 +6,9 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
-#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -90,14 +87,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 {
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
-    {
-        ASTPtr compression;
-        if (it.name == BlockNumberColumn::name)
-            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
-        else
-            compression = columns.getCodecDescOrDefault(it.name, default_codec);
-        addStreams(it, compression);
-    }
+        addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
 }
 
 void MergeTreeDataPartWriterWide::addStreams(

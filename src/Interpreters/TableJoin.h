@@ -146,9 +146,6 @@ private:
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
-    /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
-    size_t max_memory_usage = 0;
-
     ASTs key_asts_left;
     ASTs key_asts_right;
 
@@ -247,8 +244,6 @@ public:
     JoinStrictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
-    size_t getMaxMemoryUsage() const;
-
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
     ActionsDAGPtr createJoinedBlockActions(ContextPtr context) const;

@@ -87,7 +87,7 @@ struct TreeRewriterResult
         bool add_special = true);
 
     void collectSourceColumns(bool add_special);
-    bool collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint, bool no_throw = false);
+    void collectUsedColumns(const ASTPtr & query, bool is_select, bool visit_index_hint);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
@@ -108,10 +108,7 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 class TreeRewriter : WithContext
 {
 public:
-    explicit TreeRewriter(ContextPtr context_, bool no_throw_ = false)
-        : WithContext(context_)
-        , no_throw(no_throw_)
-    {}
+    explicit TreeRewriter(ContextPtr context_) : WithContext(context_) {}
 
     /// Analyze and rewrite not select query
     TreeRewriterResultPtr analyze(
@@ -135,9 +132,6 @@ public:
 
 private:
     static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view = false);
-
-    /// Do not throw exception from analyze on unknown identifiers, but only return nullptr.
-    bool no_throw = false;
 };
 
 }
