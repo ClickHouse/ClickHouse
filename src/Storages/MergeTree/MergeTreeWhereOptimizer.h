@@ -4,9 +4,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistic/Estimator.h>
 
 #include <boost/noncopyable.hpp>
-#include "Storages/Statistic/Statistic.h"
 
 #include <memory>
 #include <set>
