@@ -223,9 +223,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNothing(
             getName(),
             result_type->getName());
 
-    if (input_rows_count > 0)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
-    return ColumnNothing::create(0);
+    return ColumnNothing::create(input_rows_count);
 }
 
 ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
