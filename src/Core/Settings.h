@@ -792,6 +792,7 @@ class IColumn;
     M(Bool, allow_experimental_usearch_index, false, "Allows to use USearch index. Disabled by default because this feature is experimental", 0) \
     M(Bool, allow_experimental_s3queue, false, "Allows to use S3Queue engine. Disabled by default, because this feature is experimental", 0) \
     M(UInt64, max_limit_for_ann_queries, 1'000'000, "SELECT queries with LIMIT bigger than this setting cannot use ANN indexes. Helps to prevent memory overflows in ANN search indexes.", 0) \
+    M(UInt64, max_threads_for_annoy_index_creation, 4, "Number of threads used to build Annoy indexes (0 means all cores, not recommended)", 0) \
     M(Int64, annoy_index_search_k_nodes, -1, "SELECT queries search up to this many nodes in Annoy indexes.", 0) \
     M(Bool, throw_on_unsupported_query_inside_transaction, true, "Throw exception if unsupported query is used inside transaction", 0) \
     M(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, "Wait for committed changes to become actually visible in the latest snapshot", 0) \
@@ -807,7 +808,7 @@ class IColumn;
     M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0)                                                                                                  \
 
 // End of COMMON_SETTINGS
-    // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
+    // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
@@ -860,9 +861,6 @@ class IColumn;
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
     MAKE_OBSOLETE(M, UInt64, backup_threads, 16) \
     MAKE_OBSOLETE(M, UInt64, restore_threads, 16) \
-    MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, optimize_duplicate_order_by_and_distinct, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
@@ -1069,10 +1067,17 @@ class IColumn;
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 
-#define LIST_OF_SETTINGS(M, ALIAS)    \
-    COMMON_SETTINGS(M, ALIAS)         \
-    OBSOLETE_SETTINGS(M, ALIAS)       \
-    FORMAT_FACTORY_SETTINGS(M, ALIAS)
+#define OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
+    /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
+
+#define LIST_OF_SETTINGS(M, ALIAS)     \
+    COMMON_SETTINGS(M, ALIAS)          \
+    OBSOLETE_SETTINGS(M, ALIAS)        \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 
@@ -1111,10 +1116,14 @@ private:
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
 
+#define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)         \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)        \
+
 /*
  * User-specified file format settings for File and URL engines.
  */
-DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
+DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>
 {

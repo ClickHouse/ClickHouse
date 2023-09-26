@@ -679,7 +679,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorFullText>(index.column_names, index.name, params, token_extractor.get());
 }
