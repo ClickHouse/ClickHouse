@@ -1057,11 +1057,15 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 }
 
 template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
+template void readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
-void readJSONArrayInto(String & s, ReadBuffer & buf)
+template <typename Vector>
+void readJSONArrayInto(Vector & s, ReadBuffer & buf)
 {
-    readJSONObjectOrArrayPossiblyInvalid<String, void, '[', ']'>(s, buf);
+    readJSONObjectOrArrayPossiblyInvalid<Vector, void, '[', ']'>(s, buf);
 }
+
+template void readJSONArrayInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
