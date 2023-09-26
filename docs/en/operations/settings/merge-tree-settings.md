@@ -555,7 +555,7 @@ Merge reads rows from parts in blocks of `merge_max_block_size` rows, then merge
 
 ## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number-of-free-entries-in-pool-to-lower-max-size-of-merge}
 
-When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue). 
+When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue).
 This is to allow small merges to process - not filling the pool with long running merges.
 
 Possible values:
@@ -566,7 +566,7 @@ Default value: 8
 
 ## number_of_free_entries_in_pool_to_execute_mutation {#number-of-free-entries-in-pool-to-execute-mutation}
 
-When there is less than specified number of free entries in pool, do not execute part mutations. 
+When there is less than specified number of free entries in pool, do not execute part mutations.
 This is to leave free threads for regular merges and avoid "Too many parts".
 
 Possible values:
@@ -844,6 +844,13 @@ You can see which parts of `s` were stored using the sparse serialization:
 │ s      │ Sparse             │
 └────────┴────────────────────┘
 ```
+
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
+If the file name for column is too long (more than `max_file_name_length` bytes) replace it to SipHash128. Default value: `false`.
+
+## max_file_name_length {#max_file_name_length}
+
+The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
 
 ## clean_deleted_rows
 
