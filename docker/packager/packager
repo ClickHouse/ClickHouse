@@ -77,7 +77,6 @@ def pre_build(repo_path: Path, env_variables: List[str]) -> None:
 def run_docker_image_with_env(
     image_name: str,
     as_root: bool,
-    additional_scripts: Path,
     output_dir: Path,
     env_variables: List[str],
     ch_root: Path,
@@ -105,9 +104,7 @@ def run_docker_image_with_env(
     if ccache_dir is None:
         ccache_mount = ""
 
-    additional_scripts_mount = f"--volume={additional_scripts}:/scripts"
-    if additional_scripts is None:
-        additional_scripts_mount = ""
+    additional_scripts_mount = "--volume=pre-build:/pre-build"
 
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount} {additional_scripts_mount} "
@@ -392,11 +389,6 @@ def parse_args() -> argparse.Namespace:
         type=dir_name,
         help="ClickHouse git repository",
     )
-    parser.add_argument(
-        "--additional-scripts",
-        type=dir_name,
-        help="A path to a directory with script which have to be executed",
-    )
 
     parser.add_argument("--output-dir", type=dir_name, required=True)
     parser.add_argument("--debug-build", action="store_true")
@@ -535,7 +527,6 @@ def main() -> None:
     run_docker_image_with_env(
         image_with_version,
         args.as_root,
-        args.additional_scripts,
         args.output_dir,
         env_prepared,
         ch_root,

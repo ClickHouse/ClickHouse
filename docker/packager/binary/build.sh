@@ -55,12 +55,12 @@ ccache_status
 # clear cache stats
 ccache --zero-stats ||:
 
-# Check if there are some additional scripts we would need to run
-if [ -d "/scripts" ] && [ -z "$(ls -A /scripts)" ]; then
+# Check whether the directory with pre-build scripts exists and not empty.
+if [ -d "/pre-build" ] && [ -z "$(ls -A /pre-build)" ]; then
    echo "There are no subcommands to execute :)"
 else
   # Execute all commands
-  for file in /scripts/*.sh ;
+  for file in /pre-build/*.sh ;
   do
     bash "$file"
   done

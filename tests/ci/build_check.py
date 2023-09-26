@@ -65,7 +65,7 @@ def get_packager_cmd(
     comp = build_config.compiler
     cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --additional-scripts=scripts "
+        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager "
         f"--output-dir={output_path} --package-type={package_type} --compiler={comp}"
     )
 
