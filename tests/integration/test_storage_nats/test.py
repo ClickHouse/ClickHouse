@@ -1503,7 +1503,7 @@ def test_nats_select_empty(nats_cluster):
 #     instance.query(
 #         """
 #         DROP TABLE IF EXISTS test.nats;
-        
+
 #         CREATE TABLE test.nats (key UInt64, value UInt64)
 #             ENGINE = NATS
 #             SETTINGS nats_url = 'nats1:4444',
@@ -1556,7 +1556,7 @@ def test_nats_select_empty(nats_cluster):
 #         """
 #         DROP TABLE IF EXISTS test.view;
 #         DROP TABLE IF EXISTS test.nats;
-           
+
 #         CREATE TABLE test.nats (key UInt64, value UInt64)
 #             ENGINE = NATS
 #             SETTINGS nats_url = 'nats1:4444',
@@ -1565,7 +1565,7 @@ def test_nats_select_empty(nats_cluster):
 #                      nats_max_rows_per_message = 3,
 #                      format_custom_result_before_delimiter = '<prefix>\n',
 #                      format_custom_result_after_delimiter = '<suffix>\n';
-        
+
 #         CREATE MATERIALIZED VIEW test.view Engine=Log AS
 #         SELECT key, value FROM test.nats;
 #     """
@@ -1652,13 +1652,13 @@ def test_nats_select_empty(nats_cluster):
 #             f"""
 #             DROP TABLE IF EXISTS test.view;
 #             DROP TABLE IF EXISTS test.nats;
-               
+
 #             CREATE TABLE test.nats (key UInt64, value UInt64)
 #                 ENGINE = NATS
 #                 SETTINGS nats_url = 'nats1:4444',
 #                          nats_subjects = '{format_name}',
-#                          nats_format = '{format_name}';      
-    
+#                          nats_format = '{format_name}';
+
 #             CREATE MATERIALIZED VIEW test.view Engine=Log AS
 #             SELECT key, value FROM test.nats;
 #         """
@@ -1723,7 +1723,7 @@ def test_nats_select_empty(nats_cluster):
 #     instance.query(
 #         """
 #         DROP TABLE IF EXISTS test.nats;
-        
+
 #         CREATE TABLE test.nats (key UInt64, value UInt64)
 #             ENGINE = NATS
 #             SETTINGS nats_url = 'nats1:4444',
@@ -1803,13 +1803,13 @@ def test_nats_select_empty(nats_cluster):
 #             f"""
 #             DROP TABLE IF EXISTS test.view;
 #             DROP TABLE IF EXISTS test.nats;
-               
+
 #             CREATE TABLE test.nats (key UInt64, value UInt64)
 #                 ENGINE = NATS
 #                 SETTINGS nats_url = 'nats1:4444',
 #                          nats_subjects = '{format_name}',
-#                          nats_format = '{format_name}';      
-    
+#                          nats_format = '{format_name}';
+
 #             CREATE MATERIALIZED VIEW test.view Engine=Log AS
 #             SELECT key, value FROM test.nats;
 #         """
