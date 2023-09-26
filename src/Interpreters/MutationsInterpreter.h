@@ -120,6 +120,8 @@ public:
         bool supportsLightweightDelete() const;
         bool hasLightweightDeleteMask() const;
         bool materializeTTLRecalculateOnly() const;
+        bool hasSecondaryIndex(const String & name) const;
+        bool hasProjection(const String & name) const;
 
         void read(
             Stage & first_stage,

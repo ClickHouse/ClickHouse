@@ -631,3 +631,130 @@ Result:
 │ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
 └──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
 ```
+
+## hasSubsequence
+
+Returns 1 if needle is a subsequence of haystack, or 0 otherwise.
+A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
+
+
+**Syntax**
+
+``` sql
+hasSubsequence(haystack, needle)
+```
+
+**Arguments**
+
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+
+**Returned values**
+
+- 1, if needle is a subsequence of haystack.
+- 0, otherwise.
+
+Type: `UInt8`.
+
+**Examples**
+
+``` sql
+SELECT hasSubsequence('garbage', 'arg') ;
+```
+
+Result:
+
+``` text
+┌─hasSubsequence('garbage', 'arg')─┐
+│                                1 │
+└──────────────────────────────────┘
+```
+
+## hasSubsequenceCaseInsensitive
+
+Like [hasSubsequence](#hasSubsequence) but searches case-insensitively.
+
+## hasSubsequenceUTF8
+
+Like [hasSubsequence](#hasSubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
+
+## hasSubsequenceCaseInsensitiveUTF8
+
+Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
+
+## byteHammingDistance
+
+Calculates the hamming distance between two byte strings.
+
+**Syntax**
+
+```sql
+byteHammingDistance(haystack, needle)
+```
+
+**Examples**
+
+``` sql
+SELECT byteHammingDistance('abc', 'ab') ;
+```
+
+Result:
+
+``` text
+┌─byteHammingDistance('abc', 'ab')─┐
+│                                1 │
+└──────────────────────────────────┘
+```
+
+- Alias: mismatches
+
+## byteJaccardIndex
+
+Calculates the jaccard similarity index between two byte strings.
+
+**Syntax**
+
+```sql
+byteJaccardIndex(haystack, needle)
+```
+
+**Examples**
+
+``` sql
+SELECT byteJaccardIndex('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─byteJaccardIndex('clickhouse', 'mouse')─┐
+│                                     0.4 │
+└─────────────────────────────────────────┘
+```
+
+## byteEditDistance
+
+Calculates the edit distance between two byte strings.
+
+**Syntax**
+
+```sql
+byteEidtDistance(haystack, needle)
+```
+
+**Examples**
+
+``` sql
+SELECT byteEditDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─byteEditDistance('clickhouse', 'mouse')─┐
+│                                       6 │
+└─────────────────────────────────────────┘
+```
+
+- Alias: byteLevenshteinDistance
+

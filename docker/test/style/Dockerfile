@@ -1,5 +1,5 @@
 # docker build -t clickhouse/style-test .
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 ARG ACT_VERSION=0.2.33
 ARG ACTIONLINT_VERSION=1.6.22
 
@@ -18,9 +18,13 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black==23.1.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2 \
+    locales \
+    && pip3 install black==23.1.0 boto3 codespell==2.2.1 mypy==1.3.0 PyGithub unidiff pylint==2.6.2 \
     && apt-get clean \
-    && rm -rf /root/.cache/pip
+    && rm -rf /root/.cache/pip 
+
+RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
+ENV LC_ALL en_US.UTF-8
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

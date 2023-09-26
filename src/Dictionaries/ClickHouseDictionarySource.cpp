@@ -217,7 +217,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::optional<Configuration> configuration;
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
-        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
 
         if (named_collection)
         {

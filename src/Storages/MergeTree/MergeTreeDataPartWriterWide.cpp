@@ -6,9 +6,12 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
+#include <Storages/BlockNumberColumn.h>
 
 namespace DB
 {
+    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -87,7 +90,14 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 {
     const auto & columns = metadata_snapshot->getColumns();
     for (const auto & it : columns_list)
-        addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
+    {
+        ASTPtr compression;
+        if (it.name == BlockNumberColumn::name)
+            compression = BlockNumberColumn::compression_codec->getFullCodecDesc();
+        else
+            compression = columns.getCodecDescOrDefault(it.name, default_codec);
+        addStreams(it, compression);
+    }
 }
 
 void MergeTreeDataPartWriterWide::addStreams(
@@ -275,10 +285,10 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
     Stream & stream = *column_streams[stream_with_mark.stream_name];
     WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
-    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, marks_out);
-    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, marks_out);
+    writeBinaryLittleEndian(stream_with_mark.mark.offset_in_compressed_file, marks_out);
+    writeBinaryLittleEndian(stream_with_mark.mark.offset_in_decompressed_block, marks_out);
     if (settings.can_use_adaptive_granularity)
-        writeIntBinary(rows_in_mark, marks_out);
+        writeBinaryLittleEndian(rows_in_mark, marks_out);
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -452,10 +462,10 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                             "Incorrect number of marks in memory {}, on disk (at least) {}",
                             index_granularity.getMarksCount(), mark_num + 1);
 
-        DB::readBinary(offset_in_compressed_file, *mrk_in);
-        DB::readBinary(offset_in_decompressed_block, *mrk_in);
+        readBinaryLittleEndian(offset_in_compressed_file, *mrk_in);
+        readBinaryLittleEndian(offset_in_decompressed_block, *mrk_in);
         if (settings.can_use_adaptive_granularity)
-            DB::readBinary(index_granularity_rows, *mrk_in);
+            readBinaryLittleEndian(index_granularity_rows, *mrk_in);
         else
             index_granularity_rows = data_part->index_granularity_info.fixed_index_granularity;
 

@@ -123,7 +123,7 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-## Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
+## Storing Dictionaries in Memory {#storing-dictionaries-in-memory}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -247,7 +247,7 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 ### hashed
 
-The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
 The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 
@@ -984,7 +984,7 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronous updates are supported.
+For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronous and asynchronous updates are supported.
 
 It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
@@ -1092,7 +1092,7 @@ Types of sources (`source_type`):
 - [Local file](#local_file)
 - [Executable File](#executable)
 - [Executable Pool](#executable_pool)
-- [HTTP(s)](#http)
+- [HTTP(S)](#http)
 - DBMS
     - [ODBC](#odbc)
     - [MySQL](#mysql)
@@ -1102,7 +1102,7 @@ Types of sources (`source_type`):
     - [Cassandra](#cassandra)
     - [PostgreSQL](#postgresql)
 
-## Local File {#local_file}
+### Local File {#local_file}
 
 Example of settings:
 
@@ -1132,7 +1132,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 - [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-## Executable File {#executable}
+### Executable File {#executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
@@ -1161,7 +1161,7 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
-## Executable Pool {#executable_pool}
+### Executable Pool {#executable_pool}
 
 Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
 
@@ -1196,9 +1196,9 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Http(s) {#https}
+### HTTP(S) {#https}
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(S) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -1243,12 +1243,60 @@ Setting fields:
 - `password` – Password required for the authentication.
 - `headers` – All custom HTTP headers entries used for the HTTP request. Optional parameter.
 - `header` – Single HTTP header entry.
-- `name` – Identifiant name used for the header send on the request.
-- `value` – Value set for a specific identifiant name.
+- `name` – Identifier name used for the header send on the request.
+- `value` – Value set for a specific identifier name.
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
-### Known Vulnerability of the ODBC Dictionary Functionality
+### DBMS
+
+#### ODBC
+
+You can use this method to connect any database that has an ODBC driver.
+
+Example of settings:
+
+``` xml
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
+    </odbc>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+))
+```
+
+Setting fields:
+
+- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+- `table` – Name of the table and schema if exists.
+- `connection_string` – Connection string.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
+- `query` – The custom query. Optional parameter.
+
+:::note
+The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
+:::
+
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
+
+##### Known Vulnerability of the ODBC Dictionary Functionality
 
 :::note
 When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
@@ -1277,7 +1325,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-### Example of Connecting Postgresql
+##### Example of Connecting Postgresql
 
 Ubuntu OS.
 
@@ -1358,7 +1406,7 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of Connecting MS SQL Server
+##### Example of Connecting MS SQL Server
 
 Ubuntu OS.
 
@@ -1462,55 +1510,7 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-## DBMS
-
-### ODBC
-
-You can use this method to connect any database that has an ODBC driver.
-
-Example of settings:
-
-``` xml
-<source>
-    <odbc>
-        <db>DatabaseName</db>
-        <table>ShemaName.TableName</table>
-        <connection_string>DSN=some_parameters</connection_string>
-        <invalidate_query>SQL_QUERY</invalidate_query>
-        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
-    </odbc>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(ODBC(
-    db 'DatabaseName'
-    table 'SchemaName.TableName'
-    connection_string 'DSN=some_parameters'
-    invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-Setting fields:
-
-- `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table and schema if exists.
-- `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
-- `query` – The custom query. Optional parameter.
-
-:::note
-The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
-:::
-
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
-
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
-
-### Mysql
+#### Mysql
 
 Example of settings:
 
@@ -1627,7 +1627,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### ClickHouse
+#### ClickHouse
 
 Example of settings:
 
@@ -1680,7 +1680,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-### Mongodb
+#### Mongodb
 
 Example of settings:
 
@@ -1723,7 +1723,7 @@ Setting fields:
 - `options` -  MongoDB connection string options (optional parameter).
 
 
-### Redis
+#### Redis
 
 Example of settings:
 
@@ -1756,7 +1756,7 @@ Setting fields:
 - `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 - `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-### Cassandra
+#### Cassandra
 
 Example of settings:
 
@@ -1798,7 +1798,7 @@ Setting fields:
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 :::
 
-### PostgreSQL
+#### PostgreSQL
 
 Example of settings:
 
@@ -1855,7 +1855,7 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-## Null
+### Null
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
 
@@ -2280,7 +2280,7 @@ This config consists of a list of regular expression tree nodes. Each node has t
   - The value of an attribute may contain **back references**, referring to capture groups of the matched regular expression. In the example, the value of attribute `version` in the first node consists of a back-reference `\1` to capture group `(\d+[\.\d]*)` in the regular expression. Back-reference numbers range from 1 to 9 and are written as `$1` or `\1` (for number 1). The back reference is replaced by the matched capture group during query execution.
 - **child nodes**: a list of children of a regexp tree node, each of which has its own attributes and (potentially) children nodes. String matching proceeds in a depth-first fashion. If a string matches a regexp node, the dictionary checks if it also matches the nodes' child nodes. If that is the case, the attributes of the deepest matching node are assigned. Attributes of a child node overwrite equally named attributes of parent nodes. The name of child nodes in YAML files can be arbitrary, e.g. `versions` in above example.
 
-Regexp tree dictionaries only allow access using the functions `dictGet` and `dictGetOrDefault`.
+Regexp tree dictionaries only allow access using the functions `dictGet`, `dictGetOrDefault`, and `dictGetAll`.
 
 Example:
 
@@ -2299,6 +2299,73 @@ Result:
 In this case, we first match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)` in the top layer's second node. The dictionary then continues to look into the child nodes and finds that the string also matches `3[12]/tclwebkit`. As a result, the value of attribute `name` is `Android` (defined in the first layer) and the value of attribute `version` is `12` (defined the child node).
 
 With a powerful YAML configure file, we can use a regexp tree dictionaries as a user agent string parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
+
+#### Collecting Attribute Values
+
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictgetall) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+
+By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
+
+Example:
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    tag String,
+    topological_index Int64,
+    captured Nullable(String),
+    parent String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0)
+```
+
+```yaml
+# /var/lib/clickhouse/user_files/regexp_tree.yaml
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  topological_index: 1
+  paths:
+    - regexp: 'clickhouse\.com/docs(.*)'
+      tag: 'ClickHouse Documentation'
+      topological_index: 0
+      captured: '\1'
+      parent: 'ClickHouse'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+  topological_index: 2
+
+- regexp: 'github.com'
+  tag: 'GitHub'
+  topological_index: 3
+  captured: 'NULL'
+```
+
+```sql
+CREATE TABLE urls (url String) ENGINE=MergeTree ORDER BY url;
+INSERT INTO urls VALUES ('clickhouse.com'), ('clickhouse.com/docs/en'), ('github.com/clickhouse/tree/master/docs');
+SELECT url, dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2) FROM urls;
+```
+
+Result:
+
+```text
+┌─url────────────────────────────────────┬─dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2)─┐
+│ clickhouse.com                         │ (['ClickHouse'],[1],[],[])                                                            │
+│ clickhouse.com/docs/en                 │ (['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])              │
+│ github.com/clickhouse/tree/master/docs │ (['Documentation','GitHub'],[2,3],[NULL],[])                                          │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Matching Modes
+
+Pattern matching behavior can be modified with certain dictionary settings:
+- `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
+- `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
 
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 
@@ -2368,55 +2435,6 @@ LAYOUT(regexp_tree);
 ```
 
 ## Embedded Dictionaries {#embedded-dictionaries}
-
-<SelfManaged />
-
-ClickHouse contains a built-in feature for working with a geobase.
-
-This allows you to:
-
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
-- Check whether a region is part of another region.
-- Get a chain of parent regions.
-
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
-
-The internal dictionaries are disabled in the default package.
-To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
-
-The geobase is loaded from text files.
-
-Place the `regions_hierarchy*.txt` files into the `path_to_regions_hierarchy_file` directory. This configuration parameter must contain the path to the `regions_hierarchy.txt` file (the default regional hierarchy), and the other files (`regions_hierarchy_ua.txt`) must be located in the same directory.
-
-Put the `regions_names_*.txt` files in the `path_to_regions_names_files` directory.
-
-You can also create these files yourself. The file format is as follows:
-
-`regions_hierarchy*.txt`: TabSeparated (no header), columns:
-
-- region ID (`UInt32`)
-- parent region ID (`UInt32`)
-- region type (`UInt8`): 1 - continent, 3 - country, 4 - federal district, 5 - region, 6 - city; other types do not have values
-- population (`UInt32`) — optional column
-
-`regions_names_*.txt`: TabSeparated (no header), columns:
-
-- region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
-
-A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
-
-Dictionaries can be updated without restarting the server. However, the set of available dictionaries is not updated.
-For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
-The interval to check for changes is configured in the `builtin_dictionaries_reload_interval` parameter.
-Dictionary updates (other than loading at first use) do not block queries. During updates, queries use the old versions of dictionaries. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
-
-We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
-
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
-
-## Embedded Dictionaries
 
 <SelfManaged />
 

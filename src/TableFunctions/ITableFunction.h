@@ -58,7 +58,7 @@ public:
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
-    virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
+    virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 
     /// Check if table function needs a structure hint from SELECT query in case of
     /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
@@ -76,7 +76,7 @@ public:
     /// because we cannot determine which column from table correspond to this virtual column.
     virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
-    virtual bool supportsReadingSubsetOfColumns() { return true; }
+    virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
     /// Create storage according to the query.
     StoragePtr
@@ -89,7 +89,7 @@ protected:
 
 private:
     virtual StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
+        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
 
     virtual const char * getStorageTypeName() const = 0;
 };

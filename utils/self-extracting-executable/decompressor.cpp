@@ -362,11 +362,12 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #else
 
-    int read_exe_path(char *exe, size_t/* buf_sz*/)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
-        if (realpath("/proc/self/exe", exe) == nullptr)
-            return 1;
-        return 0;
+        ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
+        if (n > 0)
+            exe[n] = '\0';
+        return n > 0 && n < static_cast<ssize_t>(buf_sz);
     }
 
 #endif
@@ -435,7 +436,7 @@ int main(int/* argc*/, char* argv[])
     uint64_t inode = getInode(self);
     if (inode == 0)
     {
-        std::cerr << "Unable to obtain inode." << std::endl;
+        std::cerr << "Unable to obtain inode for exe '" << self << "'." << std::endl;
         return 1;
     }
 
@@ -477,7 +478,7 @@ int main(int/* argc*/, char* argv[])
         if (lock_info.st_size == 1)
             execv(self, argv);
 
-        printf("No target executable - decompression only was performed.\n");
+        printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
         return 0;
     }
 #endif
@@ -497,7 +498,7 @@ int main(int/* argc*/, char* argv[])
     /// Decompress all files
     if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, has_exec, decompressed_suffix, &decompressed_umask))
     {
-        printf("Error happened during decompression.\n");
+        printf("Error happened during decompression.\n"); // NOLINT(modernize-use-std-print)
         if (0 != close(input_fd))
             perror("close");
         return 1;
@@ -513,7 +514,7 @@ int main(int/* argc*/, char* argv[])
     }
 
     if (!have_compressed_analoge)
-        printf("No target executable - decompression only was performed.\n");
+        printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
     else
     {
         const char * const decompressed_name_fmt = "%s.decompressed.%s";
@@ -562,6 +563,6 @@ int main(int/* argc*/, char* argv[])
         ftruncate(lock, 0);
 #endif
 
-        printf("No target executable - decompression only was performed.\n");
+        printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
     }
 }

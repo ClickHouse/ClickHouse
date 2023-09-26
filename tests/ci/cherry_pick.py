@@ -71,11 +71,11 @@ This pull-request will be merged automatically as it reaches the mergeable state
 ### If the PR was closed and then reopened
 
 If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
-necessary. Manually merging will do nothing, since `{label_backports_created}` \
+necessary. Manually merging will do nothing, since `{backport_created_label}` \
 prevents the original PR {pr_url} from being processed.
 
 If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
-You may also need to delete the `{label_backports_created}` label from the original PR.
+You may also need to delete the `{backport_created_label}` label from the original PR.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
@@ -397,12 +397,7 @@ class Backport:
 
     def receive_release_prs(self):
         logging.info("Getting release PRs")
-        self.release_prs = self.gh.get_pulls_from_search(
-            query=f"type:pr repo:{self._repo_name} is:open",
-            sort="created",
-            order="asc",
-            label="release",
-        )
+        self.release_prs = self.gh.get_release_pulls(self._repo_name)
         self.release_branches = [pr.head.ref for pr in self.release_prs]
         self.labels_to_backport = [
             f"v{branch}-must-backport" for branch in self.release_branches

@@ -45,12 +45,12 @@ bool isLargerThanFifty(std::string_view str)
 /// Check for sub-patterns of the form x{n} or x{n,} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 {
-    re2_st::StringPiece haystack(regexp.data(), regexp.size());
-    re2_st::StringPiece matches[2];
+    std::string_view haystack(regexp.data(), regexp.size());
+    std::string_view matches[2];
     size_t start_pos = 0;
     while (start_pos < haystack.size())
     {
-        if (searcher_one_repeat.Match(haystack, start_pos, haystack.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 2))
+        if (searcher_one_repeat.Match(haystack, start_pos, haystack.size(), re2::RE2::Anchor::UNANCHORED, matches, 2))
         {
             const auto & match = matches[0];
             start_pos = (matches[0].data() - haystack.data()) + match.size(); // new start pos = prefix before match + match length
@@ -67,12 +67,12 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
 /// Check if sub-patterns of the form x{n,m} can be expensive. Ignore spaces before/after n and m.
 bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
 {
-    re2_st::StringPiece haystack(regexp.data(), regexp.size());
-    re2_st::StringPiece matches[3];
+    std::string_view haystack(regexp.data(), regexp.size());
+    std::string_view matches[3];
     size_t start_pos = 0;
     while (start_pos < haystack.size())
     {
-        if (searcher_two_repeats.Match(haystack, start_pos, haystack.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 3))
+        if (searcher_two_repeats.Match(haystack, start_pos, haystack.size(), re2::RE2::Anchor::UNANCHORED, matches, 3))
         {
             const auto & match = matches[0];
             start_pos = (matches[0].data() - haystack.data()) + match.size(); // new start pos = prefix before match + match length

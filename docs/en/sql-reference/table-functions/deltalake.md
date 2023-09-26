@@ -1,6 +1,7 @@
 ---
 slug: /en/sql-reference/table-functions/deltalake
-sidebar_label: DeltaLake
+sidebar_position: 45
+sidebar_label: deltaLake
 ---
 
 # deltaLake Table Function

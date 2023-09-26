@@ -28,8 +28,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t zxid = 0;
     size_t session_with_watches = 0;
     size_t paths_watched = 0;
-    size_t snapshot_dir_size = 0;
-    size_t log_dir_size = 0;
+    //size_t snapshot_dir_size = 0;
+    //size_t log_dir_size = 0;
 
     if (keeper_dispatcher.isServerActive())
     {
@@ -49,8 +49,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         latest_snapshot_size = state_machine.getLatestSnapshotBufSize();
         session_with_watches = state_machine.getSessionsWithWatchesCount();
         paths_watched = state_machine.getWatchedPathsCount();
-        snapshot_dir_size = keeper_dispatcher.getSnapDirSize();
-        log_dir_size = keeper_dispatcher.getLogDirSize();
+        //snapshot_dir_size = keeper_dispatcher.getSnapDirSize();
+        //log_dir_size = keeper_dispatcher.getLogDirSize();
 
 #    if defined(__linux__) || defined(__APPLE__)
         open_file_descriptor_count = getCurrentProcessFDCount();
@@ -85,8 +85,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperZxid"] = { zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
     new_values["KeeperSessionWithWatches"] = { session_with_watches, "The number of client sessions of ClickHouse Keeper having watches." };
     new_values["KeeperPathsWatched"] = { paths_watched, "The number of different paths watched by the clients of ClickHouse Keeper." };
-    new_values["KeeperSnapshotDirSize"] = { snapshot_dir_size, "The size of the snapshots directory of ClickHouse Keeper, in bytes." };
-    new_values["KeeperLogDirSize"] = { log_dir_size, "The size of the logs directory of ClickHouse Keeper, in bytes." };
+    //new_values["KeeperSnapshotDirSize"] = { snapshot_dir_size, "The size of the snapshots directory of ClickHouse Keeper, in bytes." };
+    //new_values["KeeperLogDirSize"] = { log_dir_size, "The size of the logs directory of ClickHouse Keeper, in bytes." };
 
     auto keeper_log_info = keeper_dispatcher.getKeeperLogInfo();
 
@@ -108,8 +108,8 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
 }
 
 KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
-    TinyContextPtr tiny_context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), tiny_context(std::move(tiny_context_))
+    ContextPtr context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
+    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_), context(std::move(context_))
 {
 }
 
@@ -117,7 +117,7 @@ void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 {
 #if USE_NURAFT
     {
-        auto keeper_dispatcher = tiny_context->tryGetKeeperDispatcher();
+        auto keeper_dispatcher = context->tryGetKeeperDispatcher();
         if (keeper_dispatcher)
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }

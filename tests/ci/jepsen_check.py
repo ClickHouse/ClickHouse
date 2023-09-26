@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-import time
+import argparse
 import logging
 import os
 import sys
+import time
 
-import argparse
+from pathlib import Path
 
 import boto3  # type: ignore
 import requests  # type: ignore
@@ -25,6 +26,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
+from build_check import get_release_or_pr
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -210,12 +212,7 @@ if __name__ == "__main__":
 
     build_name = get_build_name_for_check(check_name)
 
-    if pr_info.number == 0:
-        version = get_version_from_repo()
-        release_or_pr = f"{version.major}.{version.minor}"
-    else:
-        # PR number for anything else
-        release_or_pr = str(pr_info.number)
+    release_or_pr, _ = get_release_or_pr(pr_info, get_version_from_repo())
 
     # This check run separately from other checks because it requires exclusive
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
@@ -272,8 +269,8 @@ if __name__ == "__main__":
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         compress_fast(
-            os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.zst"),
+            Path(result_path) / "store",
+            Path(result_path) / "jepsen_store.tar.zst",
         )
         additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
     except Exception as ex:

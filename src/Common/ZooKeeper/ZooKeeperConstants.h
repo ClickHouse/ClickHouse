@@ -31,6 +31,7 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
+    Reconfig = 16,
     MultiRead = 22,
     Auth = 100,
 
@@ -41,7 +42,6 @@ enum class OpNum : int32_t
     SessionID = 997, /// Special internal request
 };
 
-std::string toString(OpNum op_num);
 OpNum getOpNum(int32_t raw_op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;

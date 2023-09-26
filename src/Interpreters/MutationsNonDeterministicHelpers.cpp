@@ -63,6 +63,71 @@ public:
 using FirstNonDeterministicFunctionFinder = InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>;
 using FirstNonDeterministicFunctionData = FirstNonDeterministicFunctionMatcher::Data;
 
+/// Executes and replaces with literals
+/// non-deterministic functions in query.
+/// Similar to ExecuteScalarSubqueriesVisitor.
+class ExecuteNonDeterministicConstFunctionsMatcher
+{
+public:
+
+    struct Data
+    {
+        ContextPtr context;
+        std::optional<size_t> max_literal_size;
+    };
+
+    static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
+    {
+        /// Do not visit subqueries because they are executed separately.
+        return !ast->as<ASTSelectQuery>();
+    }
+
+    static void visit(ASTPtr & ast, const Data & data)
+    {
+        if (auto * function = ast->as<ASTFunction>())
+            visit(*function, ast, data);
+    }
+
+    static void visit(ASTFunction & function, ASTPtr & ast, const Data & data)
+    {
+        if (!FunctionFactory::instance().has(function.name))
+            return;
+
+        /// It makes sense to execute functions which are deterministic
+        /// in scope of query because they are usually constant expressions.
+        auto builder = FunctionFactory::instance().get(function.name, data.context);
+        if (builder->isDeterministic() || !builder->isDeterministicInScopeOfQuery())
+            return;
+
+        Field field;
+        DataTypePtr type;
+
+        try
+        {
+            std::tie(field, type) = evaluateConstantExpression(ast, data.context);
+        }
+        catch (...)
+        {
+            /// An exception can be thrown if the expression is not constant.
+            /// It's ok in that context and we just do nothing in that case.
+            /// It's bad pattern but it's quite hard to implement it in another way.
+            return;
+        }
+
+        auto column = type->createColumn();
+        column->insert(field);
+
+        Block scalar{{std::move(column), type, "_constant"}};
+        if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
+        {
+            auto literal = std::make_unique<ASTLiteral>(std::move(field));
+            ast = addTypeConversionToAST(std::move(literal), type->getName());
+        }
+    }
+};
+
+using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteNonDeterministicConstFunctionsMatcher, true>;
+
 }
 
 FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
@@ -95,6 +160,53 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
     }
 
     return {};
+}
+
+ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings.mutations_execute_subqueries_on_initiator
+        && !settings.mutations_execute_nondeterministic_on_initiator)
+        return nullptr;
+
+    auto query = alter_command.clone();
+    auto & new_alter_command = *query->as<ASTAlterCommand>();
+
+    if (settings.mutations_execute_subqueries_on_initiator)
+    {
+        Scalars scalars;
+        Scalars local_scalars;
+
+        ExecuteScalarSubqueriesVisitor::Data data{
+            WithContext{context},
+            /*subquery_depth=*/ 0,
+            scalars,
+            local_scalars,
+            /*only_analyze=*/ false,
+            /*is_create_parameterized_view=*/ false,
+            /*replace_only_to_literals=*/ true,
+            settings.mutations_max_literal_size_to_replace};
+
+        ExecuteScalarSubqueriesVisitor visitor(data);
+        if (new_alter_command.update_assignments)
+            visitor.visit(new_alter_command.update_assignments);
+        if (new_alter_command.predicate)
+            visitor.visit(new_alter_command.predicate);
+    }
+
+    if (settings.mutations_execute_nondeterministic_on_initiator)
+    {
+        ExecuteNonDeterministicConstFunctionsVisitor::Data data{
+            context, settings.mutations_max_literal_size_to_replace};
+
+        ExecuteNonDeterministicConstFunctionsVisitor visitor(data);
+        if (new_alter_command.update_assignments)
+            visitor.visit(new_alter_command.update_assignments);
+        if (new_alter_command.predicate)
+            visitor.visit(new_alter_command.predicate);
+    }
+
+    return query;
 }
 
 }

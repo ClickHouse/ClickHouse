@@ -33,7 +33,7 @@ Columns:
     - `MemoryPeak` represents collecting updates of peak memory usage.
     - `ProfileEvent` represents collecting of increments of profile events.
 
-- `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
+- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
 
@@ -43,7 +43,7 @@ Columns:
 
 - `event` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) - For trace type `ProfileEvent` is the name of updated profile event, for other trace types is an empty string.
 
-- `increment` ([UInt64](../../sql-reference/data-types/int-uint.md)) - For trace type `ProfileEvent` is the amount of incremnt of profile event, for other trace types is 0.
+- `increment` ([UInt64](../../sql-reference/data-types/int-uint.md)) - For trace type `ProfileEvent` is the amount of increment of profile event, for other trace types is 0.
 
 **Example**
 

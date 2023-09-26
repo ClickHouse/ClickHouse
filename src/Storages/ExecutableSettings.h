@@ -14,7 +14,9 @@ class ASTStorage;
     M(UInt64, max_command_execution_time, 10, "Max command execution time in seconds.", 0) \
     M(UInt64, command_termination_timeout, 10, "Command termination timeout in seconds.", 0) \
     M(UInt64, command_read_timeout, 10000, "Timeout for reading data from command stdout in milliseconds.", 0) \
-    M(UInt64, command_write_timeout, 10000, "Timeout for writing data to command stdin in milliseconds.", 0)
+    M(UInt64, command_write_timeout, 10000, "Timeout for writing data to command stdin in milliseconds.", 0) \
+    M(ExternalCommandStderrReaction, stderr_reaction, ExternalCommandStderrReaction::NONE, "Reaction when external command outputs data to its stderr.", 0) \
+    M(Bool, check_exit_code, false, "Throw exception if the command exited with non-zero status code.", 0) \
 
 DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
 

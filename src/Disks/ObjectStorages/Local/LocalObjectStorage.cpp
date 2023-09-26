@@ -4,11 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
-#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/getRandomASCIIString.h>
@@ -59,25 +57,26 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObjects( /// NOL
         return createReadBufferFromFileBase(file_path, modified_settings, read_hint, file_size);
     };
 
-    auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator), objects, modified_settings,
-        global_context->getFilesystemCacheLog());
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator), objects, modified_settings,
+                global_context->getFilesystemCacheLog(), /* use_external_buffer */false);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator), objects, modified_settings,
+                global_context->getFilesystemCacheLog(), /* use_external_buffer */true);
 
-    /// We use `remove_fs_method` (not `local_fs_method`) because we are about to use
-    /// AsynchronousBoundedReadBuffer which works by the remote_fs_* settings.
-    if (modified_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
-    {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(impl), reader, modified_settings,
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
-    }
-    else
-    {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(impl), modified_settings);
-        return std::make_unique<SeekAvoidingReadBuffer>(
-            std::move(buf), modified_settings.remote_read_min_bytes_for_seek);
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
     }
 }
 
@@ -168,10 +167,14 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & /* path
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
-    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> /* object_to_attributes */)
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::optional<ObjectAttributes> /* object_to_attributes */)
 {
-    auto in = readObject(object_from);
-    auto out = writeObject(object_to, WriteMode::Rewrite);
+    auto in = readObject(object_from, read_settings);
+    auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
 }

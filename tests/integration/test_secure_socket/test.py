@@ -58,6 +58,9 @@ def test(started_cluster):
         config.format(sleep_in_send_data_ms=1000000),
     )
 
+    if NODES["node1"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
+
     attempts = 0
     while attempts < 1000:
         setting = NODES["node2"].http_query(
