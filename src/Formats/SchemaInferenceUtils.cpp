@@ -119,8 +119,8 @@ namespace
         {
             for (const auto & [rhs_path, rhs_type] : rhs.paths)
             {
-                auto it = paths.find(rhs_path);
-                if (it != paths.end())
+                auto [it, inserted] = paths.insert({rhs_path, rhs_type});
+                if (!inserted)
                 {
                     auto & type = it->second;
                     /// If types are different, try to apply provided transform function.
@@ -132,10 +132,6 @@ namespace
                         if (!type->equals(*rhs_type_copy))
                             return false;
                     }
-                }
-                else
-                {
-                    paths[rhs_path] = rhs_type;
                 }
             }
 
@@ -1268,7 +1264,7 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
         }
         else
         {
-            /// No we should run transform one more time to convert Nothing to String if needed.
+            /// Now we should run transform one more time to convert Nothing to String if needed.
             if (!remain_nothing_types)
             {
                 for (auto & nested_type : nested_types)
