@@ -56,11 +56,11 @@ ccache_status
 ccache --zero-stats ||:
 
 # Check whether the directory with pre-build scripts exists and not empty.
-if [ -d "/pre-build" ] && [ -z "$(ls -A /pre-build)" ]; then
+if [ -d "/build/packages/pre-build" ] && [ -z "$(ls -A /build/packages/pre-build)" ]; then
    echo "There are no subcommands to execute :)"
 else
   # Execute all commands
-  for file in /pre-build/*.sh ;
+  for file in /build/packages/pre-build/*.sh ;
   do
     bash "$file"
   done
