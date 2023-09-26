@@ -76,7 +76,7 @@ endif ()
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
 else()
-    message(STATUS "Using linker: <default>")
+    message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 endif()
 
 # Archiver
