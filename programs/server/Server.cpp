@@ -1516,11 +1516,13 @@ try
 
     global_context->setStopServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         stopServers(servers, server_type);
     });
 
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         createServers(
             config(),
             listen_hosts,
