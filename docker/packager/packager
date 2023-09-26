@@ -104,7 +104,7 @@ def run_docker_image_with_env(
     if ccache_dir is None:
         ccache_mount = ""
 
-    additional_scripts_mount = "--volume=pre-build:/pre-build"
+    additional_scripts_mount = f"--volume={ch_root}/docker/packager/pre-build:/pre-build"
 
     cmd = (
         f"docker run --network=host --user={user} --rm {ccache_mount} {additional_scripts_mount} "
