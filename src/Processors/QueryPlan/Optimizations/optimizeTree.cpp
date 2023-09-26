@@ -204,7 +204,7 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
             source_step_with_filter->applyFilters();
         }
 
-        addPlansForSets(plan, *frame.node, nodes);
+        addPlansForSets(plan, *frame.node, nodes); 
 
         stack.pop_back();
     }
