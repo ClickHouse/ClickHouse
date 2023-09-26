@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Functions/IFunction.h>
-
+#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -46,12 +47,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
-
+            return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeNothing>()});
         return std::make_shared<DataTypeTuple>(arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);
@@ -63,6 +63,10 @@ public:
                 */
             tuple_columns[i] = arguments[i].column->convertToFullColumnIfConst();
         }
+
+        if (tuple_columns.empty())
+            tuple_columns.push_back(ColumnNothing::create(input_rows_count));
+
         return ColumnTuple::create(tuple_columns);
     }
 };
