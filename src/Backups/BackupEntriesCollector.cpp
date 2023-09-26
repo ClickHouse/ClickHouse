@@ -249,6 +249,8 @@ void BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(int attempt
         if (e.code() != ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP)
             throw;
 
+        /// If gatherDatabasesMetadata() or gatherTablesMetadata() threw a INCONSISTENT_METADATA_FOR_BACKUP error then the metadata is not consistent by itself,
+        /// for example a CREATE QUERY could contain a wrong table name if the table has been just renamed. We need another attempt in that case.
         inconsistency_error = e;
         need_another_attempt = true;
         return;
