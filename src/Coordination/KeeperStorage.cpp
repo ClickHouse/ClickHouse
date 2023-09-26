@@ -956,6 +956,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         std::string path_created = request.path;
         if (request.is_sequential)
         {
+            if (request.not_exists)
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+
             auto seq_num = parent_node->seq_num;
 
             std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -1037,7 +1040,11 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
 
         if (storage.uncommitted_state.deltas.begin()->zxid != zxid)
+        {
+            response.path_created = zk_request->getPath();
+            response.error = Coordination::Error::ZOK;
             return response_ptr;
+        }
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
