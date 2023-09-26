@@ -358,7 +358,7 @@ void QueryCache::Writer::finalizeWrite()
 
     cache.set(key, query_result);
 
-    LOG_TRACE(logger, "Stored result of query: {}", key.query_string);
+    LOG_TRACE(logger, "Stored query result, query: {}", key.query_string);
 
     was_finalized = true;
 }

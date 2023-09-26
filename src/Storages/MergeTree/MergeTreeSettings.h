@@ -24,7 +24,7 @@ struct Settings;
   * and should not be changed by the user without a reason.
   */
 
-#define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
+#define MERGE_TREE_SETTINGS(M, ALIAS) \
     M(UInt64, min_compress_block_size, 0, "When granule is written, compress the data in buffer if the size of pending uncompressed data is larger or equal than the specified threshold. If this setting is not set, the corresponding global setting is used.", 0) \
     M(UInt64, max_compress_block_size, 0, "Compress the pending uncompressed data in buffer if its size is larger or equal than the specified threshold. Block of data will be compressed even if the current granule is not finished. If this setting is not set, the corresponding global setting is used.", 0) \
     M(UInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
@@ -34,7 +34,8 @@ struct Settings;
     M(UInt64, min_bytes_for_wide_part, 10485760, "Minimal uncompressed size in bytes to create part in wide format instead of compact", 0) \
     M(UInt64, min_rows_for_wide_part, 0, "Minimal number of rows to create part in wide format instead of compact", 0) \
     M(Float, ratio_of_defaults_for_sparse_serialization, 0.9375f, "Minimal ratio of number of default values to number of all values in column to store it in sparse serializations. If >= 1, columns will be always written in full serialization.", 0) \
-    \
+    M(Bool, replace_long_file_name_to_hash, false, "If the file name for column is too long (more than 'max_file_name_length' bytes) replace it to SipHash128", 0) \
+    M(UInt64, max_file_name_length, 127, "The maximal length of the file name to keep it as is without hashing", 0) \
     /** Merge settings. */ \
     M(UInt64, merge_max_block_size, 8192, "How many rows in blocks should be formed for merge operations. By default has the same value as `index_granularity`.", 0) \
     M(UInt64, merge_max_block_size_bytes, 10 * 1024 * 1024, "How many bytes in blocks should be formed for merge operations. By default has the same value as `index_granularity_bytes`.", 0) \
@@ -167,6 +168,7 @@ struct Settings;
     M(Bool, allow_vertical_merges_from_compact_to_wide_parts, true, "Allows vertical merges from compact to wide parts. This settings must have the same value on all replicas", 0) \
     M(Bool, enable_the_endpoint_id_with_zookeeper_name_prefix, false, "Enable the endpoint id with zookeeper name prefix for the replicated merge tree table", 0) \
     M(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_before_lock, 1ULL * 1024 * 1024 * 1024, "If zero copy replication is enabled sleep random amount of time before trying to lock depending on parts size for merge or mutation", 0) \
+    M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     M(UInt64, part_moves_between_shards_enable, 0, "Experimental/Incomplete feature to move parts between shards. Does not take into account sharding expressions.", 0) \
@@ -183,31 +185,38 @@ struct Settings;
     M(String, primary_key_compression_codec, "ZSTD(3)", "Compression encoding used by primary, primary key is small enough and cached, so the default compression is ZSTD(3).", 0) \
     M(UInt64, marks_compress_block_size, 65536, "Mark compress block size, the actual size of the block to compress.", 0) \
     M(UInt64, primary_key_compress_block_size, 65536, "Primary compress block size, the actual size of the block to compress.", 0) \
-    \
-    /** Obsolete settings. Kept for backward compatibility only. */ \
-    M(UInt64, min_relative_delay_to_yield_leadership, 120, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, check_delay_period, 60, "Obsolete setting, does nothing.", 0) \
-    M(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
-    M(UInt64, replicated_max_parallel_sends, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replicated_max_parallel_sends_for_table, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replicated_max_parallel_fetches, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replicated_max_parallel_fetches_for_table, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, write_final_mark, true, "Obsolete setting, does nothing.", 0)                                                                                                                                                                                            \
-    M(UInt64, min_bytes_for_compact_part, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, min_rows_for_compact_part, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, in_memory_parts_enable_wal, true, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, write_ahead_log_interval_ms_to_fsync, 100, "Obsolete setting, does nothing.", 0) \
-    M(Bool, in_memory_parts_insert_sync, false, "Obsolete setting, does nothing.", 0) \
-    M(MaxThreads, max_part_loading_threads, 0, "Obsolete setting, does nothing.", 0) \
-    M(MaxThreads, max_part_removal_threads, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, use_metadata_cache, false, "Obsolete setting, does nothing.", 0) \
+
+#define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
+    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
+
+#define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
+    /** Obsolete settings that do nothing but left for compatibility reasons. */ \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_relative_delay_to_yield_leadership, 120) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, check_delay_period, 60) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends_for_table, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_table, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, write_final_mark, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_bytes_for_compact_part, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_rows_for_compact_part, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, in_memory_parts_enable_wal, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, write_ahead_log_interval_ms_to_fsync, 100) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, in_memory_parts_insert_sync, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, MaxThreads, max_part_loading_threads, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, MaxThreads, max_part_removal_threads, 0) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_metadata_cache, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
+
+#define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
+    MERGE_TREE_SETTINGS(M, ALIAS)             \
+    OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
