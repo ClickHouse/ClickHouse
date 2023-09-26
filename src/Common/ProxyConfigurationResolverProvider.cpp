@@ -58,7 +58,7 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(server_configuration, request_protocol, getConnectProtocolPolicy(configuration));
     }
 
-    template <bool flexible_protocol>
+    template <bool match_protocol>
     std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
         ProxyConfiguration::Protocol request_protocol, const String & config_prefix,
         const Poco::Util::AbstractConfiguration & configuration)
@@ -72,7 +72,7 @@ namespace
             if (startsWith(key, "resolver"))
             {
                 auto prefix_with_key = config_prefix + "." + key;
-                if (flexible_protocol)
+                if (!match_protocol)
                 {
                     return extractRemoteResolver(request_protocol, prefix_with_key, configuration);
                 }
@@ -187,7 +187,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     return std::make_shared<EnvironmentProxyConfigurationResolver>(request_protocol, getConnectProtocolPolicy(configuration));
 }
 
-template <bool flexible_protocol>
+template <bool match_protocol>
 std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::getFromSettings(
     Protocol request_protocol,
     const String & config_prefix,
@@ -201,7 +201,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
         std::vector<String> config_keys;
         configuration.keys(proxy_prefix, config_keys);
 
-        if (auto remote_resolver = getRemoteResolver<flexible_protocol>(request_protocol, proxy_prefix, configuration))
+        if (auto remote_resolver = getRemoteResolver<match_protocol>(request_protocol, proxy_prefix, configuration))
         {
             return remote_resolver;
         }
@@ -225,7 +225,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
      * First try to get it from settings only using the combination of config_prefix and configuration.
      * This logic exists for backward compatibility with old S3 storage specific proxy configuration.
      * */
-    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings<true>(request_protocol, config_prefix, configuration))
+    if (auto resolver = ProxyConfigurationResolverProvider::getFromSettings<false>(request_protocol, config_prefix, configuration))
     {
         return resolver;
     }
