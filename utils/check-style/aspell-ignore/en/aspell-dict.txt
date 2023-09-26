@@ -1178,6 +1178,10 @@ builtins
 byteSize
 bytebase
 bytesToCutForIPv
+byteEditDistance
+byteHammingDistance
+byteJaccardIndex
+byteLevenshteinDistance
 cLoki
 caConfig
 cacheSessions
@@ -1906,6 +1910,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overparallelization
 packetpool
 packetsize
 pageviews
