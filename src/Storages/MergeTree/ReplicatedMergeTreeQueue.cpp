@@ -806,6 +806,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
             case LogEntryType::CLEAR_COLUMN:
             case LogEntryType::SYNC_PINNED_PART_UUIDS:
             case LogEntryType::CLONE_PART_FROM_SHARD:
+            case LogEntryType::CLUSTER_SYNC:
             {
                 break;
             }

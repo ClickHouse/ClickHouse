@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartitionSelector.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeClusterPartition.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <atomic>
@@ -64,7 +65,7 @@ private:
     std::optional<ReplicatedMergeTreeClusterPartition> selectPartition();
 
     void migrateOrClonePartitionWithClone(const ReplicatedMergeTreeClusterPartition & target);
-    void clonePartition(const zkutil::ZooKeeperPtr & zookeeper, const String & partition, const String & source_replica);
+    std::list<ReplicatedMergeTreeLogEntryPtr> clonePartition(const zkutil::ZooKeeperPtr & zookeeper, const String & partition, const String & source_replica);
 
     void finish(const ReplicatedMergeTreeClusterPartition & target);
     void revert(const ReplicatedMergeTreeClusterPartition & target);

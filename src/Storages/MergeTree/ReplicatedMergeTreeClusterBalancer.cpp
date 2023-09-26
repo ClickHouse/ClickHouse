@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Parsers/SyncReplicaMode.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/Exception.h>
@@ -277,7 +278,7 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterBal
 void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const ReplicatedMergeTreeClusterPartition & target)
 {
     auto zookeeper = cluster.getZooKeeper();
-    clonePartition(zookeeper, target.getPartitionId(), target.getSourceReplica());
+    const auto & entries = clonePartition(zookeeper, target.getPartitionId(), target.getSourceReplica());
 
     /// clonePartition() insert entries to the queue (not to the common log),
     /// and those entires need to be loaded to the in memory queue to wait them
@@ -285,6 +286,14 @@ void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const 
     storage.queue.load(zookeeper);
 
     Stopwatch watch;
+
+    const auto & stop_waiting = [&]()
+    {
+        bool shutdown = storage.partial_shutdown_called || storage.shutdown_called;
+        bool deadline = watch.elapsedMilliseconds() > DISTRIBUTOR_MIGRATION_TIMEOUT_MS;
+        return deadline || shutdown || storage.is_dropped || storage.is_readonly || is_stopped;
+    };
+
     /// FIXME: Right now we cannot execute DROP_RANGE before all parts had been
     /// fetched from the source replica, since there is no way to ensure that
     /// those parts had been fetched by us.
@@ -292,7 +301,17 @@ void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const 
     /// NOTE: that this is a problem not because it is bad, but also because it
     /// may hang the partition clone, if such part does not already exist on
     /// any replicas, but the fetches had been scheduled (like in 03015_replicated_cluster_mutations).
-    storage.waitForProcessingQueue(DISTRIBUTOR_MIGRATION_TIMEOUT_MS, SyncReplicaMode::DEFAULT);
+    for (const auto & entry : entries)
+    {
+        Stopwatch entry_watch;
+        if (!zookeeper->waitForDisappear(entry->znode_name, stop_waiting))
+        {
+            throw Exception(ErrorCodes::ABORTED, "Processing of {} had been aborted (or timeout had been exceeded, took {} ms).",
+                entry->znode_name, watch.elapsedMilliseconds());
+        }
+        LOG_INFO(log, "Waiting for entry {} ({}). Took {} ms.",
+            entry->getDescriptionForLogs(storage.format_version), entry->znode_name, watch.elapsedMilliseconds());
+    }
     LOG_INFO(log, "Partition {} had been replicated. Took {} ms", target.toStringForLog(), watch.elapsedMilliseconds());
 
     /// NOTE: should we introduce some log entry for DROP_RANGE with dependencies?
@@ -310,7 +329,7 @@ void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const 
 /// - StorageReplicatedMergeTree::cloneReplica()
 /// - StorageReplicatedMergeTree::allocateBlockNumber()
 /// - StorageReplicatedMergeTree::movePartitionToTable() and friends
-void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperPtr & zookeeper, const String & partition, const String & source_replica)
+std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperPtr & zookeeper, const String & partition, const String & source_replica)
 {
     const auto & source_path = cluster.zookeeper_path / "replicas" / source_replica;
     const auto & replica_path = cluster.replica_path;
@@ -566,12 +585,15 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
         return false;
     };
 
+    std::list<LogEntryPtr> fetch_log_entries;
+    std::list<size_t> fetch_log_entries_indexes;
     for (const String & name : active_parts)
     {
         if (should_ignore_log_entry(created_get_parts, name, "Not fetching"))
             continue;
 
-        LogEntry log_entry;
+        LogEntryPtr log_entry_ptr = std::make_shared<LogEntry>();
+        LogEntry & log_entry = *log_entry_ptr;
 
         /// NOTE: Instead of fetching part each time we may check if such part
         /// exists and checksum matches (similar to are_restoring_replica case
@@ -584,6 +606,8 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
         LOG_TEST(log, "Enqueueing {} for fetch", name);
         ops.emplace_back(zkutil::makeCreateRequest(replica_path / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
         created_get_parts.insert(name);
+        fetch_log_entries.emplace_back(log_entry_ptr);
+        fetch_log_entries_indexes.emplace_back(ops.size() - 1);
     }
 
     /// Add content of the reference/master replica queue to the queue.
@@ -612,7 +636,18 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
     }
 
     ops.emplace_back(zkutil::makeCheckRequest(cluster.zookeeper_path / "log", log_stat.version));
-    zookeeper->multi(ops);
+    Coordination::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
+    zkutil::KeeperMultiException::check(code, ops, responses);
+
+    auto it = fetch_log_entries.begin();
+    for (size_t ops_index : fetch_log_entries_indexes)
+    {
+        const auto & response = *responses[ops_index];
+        const auto & path_created = dynamic_cast<const Coordination::CreateResponse &>(response).path_created;
+        it->get()->znode_name = path_created;
+        ++it;
+    }
 
     size_t total_parts_to_fetch = created_get_parts.size();
     LOG_DEBUG(log, "Queued {} parts to be fetched for partition {}, {} parts ignored", total_parts_to_fetch, partition, active_parts.size() - total_parts_to_fetch);
@@ -623,6 +658,8 @@ void ReplicatedMergeTreeClusterBalancer::clonePartition(const zkutil::ZooKeeperP
         LOG_TRACE(log, "{} parts in ZooKeeper after mimic partition {}: {}", parts.size(), partition, fmt::join(parts, ", "));
     }
     LOG_TRACE(log, "Enqueued {} fetches after mimic partition {}: {}", created_get_parts.size(), partition, fmt::join(created_get_parts, ", "));
+
+    return fetch_log_entries;
 }
 
 void ReplicatedMergeTreeClusterBalancer::finish(const ReplicatedMergeTreeClusterPartition & target)

@@ -171,6 +171,10 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "sync_pinned_part_uuids\n";
             break;
 
+        case CLUSTER_SYNC:
+            out << "cluster_sync\n";
+            break;
+
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", static_cast<int>(type));
     }
@@ -381,6 +385,10 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
         in >> new_part_name;
         in >> "\nsource_shard: " >> source_shard;
     }
+    else if (type_str == "cluster_sync")
+    {
+        type = CLUSTER_SYNC;
+    }
 
     if (!trailing_newline_found)
         in >> "\n";
@@ -547,6 +555,10 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
 
     /// Doesn't produce any part by itself.
     if (type == CLONE_PART_FROM_SHARD)
+        return {};
+
+    /// Doesn't produce any part by itself.
+    if (type == CLUSTER_SYNC)
         return {};
 
     return {new_part_name};

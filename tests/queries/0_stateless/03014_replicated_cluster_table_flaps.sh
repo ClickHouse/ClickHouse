@@ -9,19 +9,14 @@ function sync_cluster()
 {
     local table
     # errors are fatal
-    for table in data_r1 data_r2; do
+    for table in data_r1 data_r2 data_r3 data_r4; do
         $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" -d "SYSTEM SYNC REPLICA $table CLUSTER"
     done
-    # errors are ignored
-    for table in data_r3 data_r4; do
-        $CLICKHOUSE_CURL -s "${CLICKHOUSE_URL}" -d "SYSTEM SYNC REPLICA $table CLUSTER"
-    done >& /dev/null
 }
 
 function backup_replicas_thread()
 {
     for i in {0..20}; do
-        # FIXME: this is very slow now due to 5 second delay
         if [[ $i -gt 0 ]]; then
             $CLICKHOUSE_CLIENT -nm -q "
                 system drop cluster replica data_r3;
@@ -52,18 +47,12 @@ $CLICKHOUSE_CLIENT -nm -q "
     insert into data_r1 select number key, number%10 part, number value from numbers(100000);
 "
 
-backup_replicas_thread &
-wait
+backup_replicas_thread
 
 sync_cluster
 
 $CLICKHOUSE_CLIENT -nm -q "
-    select _table, min2(count(), 50000), min2(length(groupArrayDistinct(_partition_id)), 250) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+    select _table, min2(count(), 50000), min2(length(groupArrayDistinct(_partition_id)), 5) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
     select count() from data_r1;
-    -- FIXME: during table flaps it is possible that backup replicas will have
-    -- unique partitions, which will lead to data loss eventually, as a workaround
-    -- right now cluster_replication_factor=1 is not allowed, but better to have
-    -- some command to drop replica with proper migrations
-    --
-    -- select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+    select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 "

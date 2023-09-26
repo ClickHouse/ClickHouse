@@ -20,7 +20,6 @@ system sync replica data_r4;
 select count() from data_r1;
 select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 
--- TODO: force rebalance from other replicas, otherwise each SYSTEM DROP CLUSTER REPLICA will take at least 5 seconds (DISTRIBUTOR_NO_JOB_DELAY_MS).
 system drop cluster replica data_r3;
 system drop cluster replica data_r4;
 select table, is_readonly from system.replicas where database = currentDatabase() and table like 'data_%' order by 1;

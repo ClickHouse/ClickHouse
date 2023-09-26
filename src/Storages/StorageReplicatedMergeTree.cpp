@@ -113,6 +113,7 @@
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
+#include "Coordination/Changelog.h"
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -2032,6 +2033,11 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             return true;
         case LogEntry::CLONE_PART_FROM_SHARD:
             executeClonePartFromShard(entry);
+            return true;
+        case LogEntry::CLUSTER_SYNC:
+            if (!cluster.has_value())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster mode is not enabled to process {} log entry", static_cast<int>(entry.type));
+            cluster->sync();
             return true;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));

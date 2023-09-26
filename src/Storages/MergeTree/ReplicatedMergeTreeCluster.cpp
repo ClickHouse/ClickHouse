@@ -97,20 +97,52 @@ void ReplicatedMergeTreeCluster::dropReplica(ContextPtr)
     balancer.waitSynced(/* throw_if_stopped= */ false);
     is_replica_active = false;
 
-    const auto & active_replicas = getActiveReplicasImpl(zookeeper).size();
-    const auto cluster_replication_factor = storage.getSettings()->cluster_replication_factor;
-    /// Current replica already removed => strict comparison
-    if (active_replicas < cluster_replication_factor)
     {
-        LOG_INFO(log, "Do not wait for partitions migration to other replicas in cluster, since there is only {} replicas (cluster_replication_factor: {})",
-            active_replicas, cluster_replication_factor);
-        return;
+        const auto & active_replicas = getActiveReplicasImpl(zookeeper).size();
+        const auto cluster_replication_factor = storage.getSettings()->cluster_replication_factor;
+        /// Current replica already removed => strict comparison
+        if (active_replicas < cluster_replication_factor)
+        {
+            LOG_INFO(log, "Do not wait for partitions migration to other replicas in cluster, since there is only {} replicas (cluster_replication_factor: {})",
+                active_replicas, cluster_replication_factor);
+            return;
+        }
+        else
+            LOG_INFO(log, "Waiting while all partitions will be migrated from this replica to other replicas in cluster");
     }
-    else
-        LOG_INFO(log, "Waiting while all partitions will be migrated from this replica to other replicas in cluster");
 
     LOG_INFO(log, "Marking replica as removed in the cluster");
     zookeeper->create(cluster_path / "replicas" / replica_name / "removed", "", zkutil::CreateMode::Persistent);
+
+    /// Trigger cluster balancers to stole partitions from this replica.
+    {
+        Strings active_replicas = getActiveReplicasImpl(zookeeper);
+        std::erase(active_replicas, replica_name);
+
+        ReplicatedMergeTreeLogEntryData sync_log_entry;
+
+        sync_log_entry.type = ReplicatedMergeTreeLogEntryData::CLUSTER_SYNC;
+        sync_log_entry.create_time = std::time(nullptr);
+        sync_log_entry.source_replica = storage.replica_name;
+        sync_log_entry.replicas = active_replicas;
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path / "log", "", -1));
+        ops.emplace_back(zkutil::makeCreateRequest(
+            zookeeper_path / "log" / "log-", sync_log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        Coordination::Responses responses;
+        Coordination::Error rc = zookeeper->tryMulti(ops, responses);
+        zkutil::KeeperMultiException::check(rc, ops, responses);
+
+        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+        sync_log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+        LOG_DEBUG(log, "Pushed CLUSTER_SYNC log entry: {}", sync_log_entry.znode_name);
+
+        Stopwatch watch;
+        storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, sync_log_entry, 0);
+        LOG_INFO(log, "Waiting for CLUSTER_SYNC, took {} ms.", watch.elapsedMilliseconds());
+    }
 
     Stopwatch watch;
     while (true)
