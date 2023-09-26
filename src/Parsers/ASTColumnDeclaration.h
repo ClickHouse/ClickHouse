@@ -20,6 +20,7 @@ public:
     ASTPtr comment;
     ASTPtr codec;
     ASTPtr ttl;
+    ASTPtr compress_block_sizes;
     ASTPtr collation;
     bool primary_key_specifier = false;
 

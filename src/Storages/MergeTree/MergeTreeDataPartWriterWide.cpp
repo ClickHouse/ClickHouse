@@ -7,6 +7,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 #include <Storages/BlockNumberColumn.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -142,13 +143,19 @@ void MergeTreeDataPartWriterWide::addStreams(
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
+        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+
+        auto max_compress_block_size = column_desc ? column_desc->compress_block_sizes.second : 0;
+        if (!max_compress_block_size)
+            max_compress_block_size = settings.max_compress_block_size;
+
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             data_part->getDataPartStoragePtr(),
             stream_name, DATA_FILE_EXTENSION,
             stream_name, marks_file_extension,
             compression_codec,
-            settings.max_compress_block_size,
+            max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
             settings.query_write_settings);
@@ -321,6 +328,10 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     WrittenOffsetColumns & offset_columns)
 {
     StreamsWithMarks result;
+    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+    auto min_compress_block_size = column_desc ? column_desc->compress_block_sizes.first : 0;
+    if (!min_compress_block_size)
+        min_compress_block_size = settings.min_compress_block_size;
     data_part->getSerialization(column.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
@@ -333,7 +344,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         Stream & stream = *column_streams[stream_name];
 
         /// There could already be enough data to compress into the new block.
-        if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
+        if (stream.compressed_hashing.offset() >= min_compress_block_size)
             stream.compressed_hashing.next();
 
         StreamNameAndMark stream_with_mark;

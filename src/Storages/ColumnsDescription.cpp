@@ -62,6 +62,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && default_desc == other.default_desc
         && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
+        && compress_block_sizes == other.compress_block_sizes
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
@@ -92,6 +93,16 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     {
         writeChar('\t', buf);
         writeEscapedString(queryToString(codec), buf);
+    }
+
+    if (compress_block_sizes.first || compress_block_sizes.second)
+    {
+        writeChar('\t', buf);
+        DB::writeText("COMPRESSION BLOCK ", buf);
+        Tuple value;
+        value.push_back(compress_block_sizes.first);
+        value.push_back(compress_block_sizes.second);
+        writeEscapedString(queryToString(ASTLiteral(Field(value))), buf);
     }
 
     if (ttl)
@@ -138,6 +149,12 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
+            if (col_ast->compress_block_sizes)
+            {
+                auto sizes = col_ast->compress_block_sizes->as<ASTLiteral &>().value.safeGet<Tuple>();
+                compress_block_sizes.first = sizes[0].safeGet<UInt64>();
+                compress_block_sizes.second = sizes[1].safeGet<UInt64>();
+            }
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");

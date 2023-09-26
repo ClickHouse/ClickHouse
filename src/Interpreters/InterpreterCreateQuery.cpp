@@ -436,6 +436,14 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
+        if (column.compress_block_sizes.first || column.compress_block_sizes.second)
+        {
+            Tuple value;
+            value.push_back(column.compress_block_sizes.first);
+            value.push_back(column.compress_block_sizes.second);
+            column_declaration->compress_block_sizes = std::make_shared<ASTLiteral>(Field(value));
+        }
+
         if (column.ttl)
         {
             column_declaration->ttl = column.ttl;
@@ -636,6 +644,17 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
+        }
+
+        if (col_decl.compress_block_sizes)
+        {
+            auto sizes = col_decl.compress_block_sizes->as<ASTLiteral &>().value.safeGet<Tuple>();
+            if (sizes.size() != 2 || sizes[0].getType() != Field::Types::UInt64 || sizes[0].getType() != Field::Types::UInt64)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Column {}: COMPRESSION BLOCK must be tuple of two unsigned integer", column.name);
+            column.compress_block_sizes.first = sizes[0].safeGet<UInt64>();
+            column.compress_block_sizes.second = sizes[1].safeGet<UInt64>();
+            if (column.compress_block_sizes.first > column.compress_block_sizes.second)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Column {}: min compress block size must smaller than max compress block size", column.name);
         }
 
         if (col_decl.ttl)

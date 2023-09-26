@@ -39,6 +39,12 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
+    if (compress_block_sizes)
+    {
+        res->compress_block_sizes = compress_block_sizes->clone();
+        res->children.push_back(res->compress_block_sizes);
+    }
+
     if (ttl)
     {
         res->ttl = ttl->clone();
@@ -97,6 +103,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         codec->formatImpl(settings, state, frame);
+    }
+
+    if (compress_block_sizes)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMPRESS BLOCK" << (settings.hilite ? hilite_none : "") << ' ';
+        compress_block_sizes->formatImpl(settings,  state, frame);
     }
 
     if (ttl)

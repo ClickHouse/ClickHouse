@@ -136,10 +136,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
     ParserKeyword s_primary_key{"PRIMARY KEY"};
+    ParserKeyword s_compress_block{"COMPRESS BLOCK"};
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
+    ParserTupleOfLiterals compress_block_parser;
     ParserCollation collation_parser;
     ParserExpression expression_parser;
 
@@ -176,6 +178,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
+    ASTPtr compress_block_sizes;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     bool primary_key_specifier = false;
@@ -301,6 +304,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_compress_block.ignore(pos, expected))
+    {
+        if (!compress_block_parser.parse(pos, compress_block_sizes, expected))
+            return false;
+    }
+
     if (s_ttl.ignore(pos, expected))
     {
         if (!expression_parser.parse(pos, ttl_expression, expected))
@@ -342,11 +351,18 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(codec_expression));
     }
 
+    if (compress_block_sizes)
+    {
+        column_declaration->compress_block_sizes = compress_block_sizes;
+        column_declaration->children.push_back(std::move(compress_block_sizes));
+    }
+
     if (ttl_expression)
     {
         column_declaration->ttl = ttl_expression;
         column_declaration->children.push_back(std::move(ttl_expression));
     }
+
     if (collation_expression)
     {
         column_declaration->collation = collation_expression;

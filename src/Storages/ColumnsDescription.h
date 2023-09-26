@@ -82,6 +82,7 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
+    std::pair<size_t, size_t> compress_block_sizes;
     ASTPtr ttl;
 
     ColumnDescription() = default;
