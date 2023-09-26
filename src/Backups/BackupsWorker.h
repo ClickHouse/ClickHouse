@@ -33,7 +33,7 @@ class BackupsStorage;
 class BackupsWorker
 {
 public:
-    BackupsWorker(std::unique_ptr<BackupsStorage> storage_, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(ContextPtr global_context, std::unique_ptr<BackupsStorage> storage_, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
 
     ~BackupsWorker();
 

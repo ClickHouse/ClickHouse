@@ -84,7 +84,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int &
 {
     StoredObject object{fs::path(disk->object_storage_root_path) / SCHEMA_VERSION_OBJECT};
 
-    auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite);
+    auto buf = disk->object_storage->writeObject(object, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     writeIntText(version, *buf);
     buf->finalize();
 
@@ -93,7 +93,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::saveSchemaVersion(const int &
 void DiskObjectStorageRemoteMetadataRestoreHelper::updateObjectMetadata(const String & key, const ObjectAttributes & metadata) const
 {
     StoredObject object{key};
-    disk->object_storage->copyObject(object, object, metadata);
+    disk->object_storage->copyObject(object, object, read_settings, write_settings, metadata);
 }
 
 void DiskObjectStorageRemoteMetadataRestoreHelper::migrateFileToRestorableSchema(const String & path) const
@@ -434,7 +434,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::processRestoreFiles(
 
         /// Copy object if we restore to different bucket / path.
         if (source_object_storage->getObjectsNamespace() != disk->object_storage->getObjectsNamespace() || disk->object_storage_root_path != source_path)
-            source_object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, *disk->object_storage);
+            source_object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, *disk->object_storage);
 
         auto tx = disk->metadata_storage->createTransaction();
         tx->addBlobToMetadata(path, relative_key, meta.size_bytes);

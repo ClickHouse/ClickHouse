@@ -219,10 +219,10 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(std::unique_ptr<BackupsStorage> storage_, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+BackupsWorker::BackupsWorker(ContextPtr global_context, std::unique_ptr<BackupsStorage> storage_, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
-    , storage(std::move(storage_))
+    , storage(std::move(storage_)), backup_log(global_context->getBackupLog())
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
@@ -236,7 +236,6 @@ BackupsWorker::~BackupsWorker() = default;
 
 OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
 {
-    backup_log = context->getBackupLog();
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
         return startMakingBackup(backup_or_restore_query, context);
