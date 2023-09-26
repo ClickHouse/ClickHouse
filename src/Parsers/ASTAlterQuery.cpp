@@ -209,7 +209,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::DROP_STATISTIC)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "INDEX "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "
                       << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         statistic_decl->formatImpl(settings, state, frame);
         if (partition)

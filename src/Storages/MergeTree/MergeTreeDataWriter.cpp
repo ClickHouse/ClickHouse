@@ -569,7 +569,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         metadata_snapshot,
         columns,
         indices,
-        MergeTreeStatisticFactory::instance().getMany(metadata_snapshot->getStatistics()),
+        MergeTreeStatisticFactory::instance().getMany(metadata_snapshot->getColumns()),
         compression_codec,
         context->getCurrentTransaction(),
         false,

@@ -435,6 +435,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
+        if (column.stat)
+        {
+            column_declaration->stat_type = column.stat->ast;
+            column_declaration->children.push_back(column_declaration->stat_type);
+        }
+
         if (column.ttl)
         {
             column_declaration->ttl = column.ttl;
@@ -455,11 +461,6 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
         res->children.push_back(index.definition_ast->clone());
 
     return res;
-}
-
-ASTPtr InterpreterCreateQuery::formatStatistics(const StatisticsDescriptions & statistics)
-{
-    return statistics.getAST();
 }
 
 ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & constraints)
@@ -642,6 +643,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
         }
 
+        if (col_decl.stat_type)
+        {
+            if (!context_->getSettingsRef().allow_experimental_statistic)
+                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
+            column.stat = StatisticDescription::getStatisticFromColumnDeclaration(col_decl);
+        }
+
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
 
@@ -716,18 +724,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 properties.indices.push_back(index_desc);
             }
-
-        if (create.columns_list->stats)
-        {
-            const auto & settings = getContext()->getSettingsRef();
-            if (!settings.allow_experimental_statistic)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
-            for (const auto & statistic : create.columns_list->stats->children)
-            {
-                auto stats = StatisticsDescriptions::getStatisticsFromAST(statistic->clone(), properties.columns, getContext());
-                properties.stats.merge(stats);
-            }
-        }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
@@ -814,13 +810,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
-    ASTPtr new_statistics = formatStatistics(properties.stats);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
     ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
-    create.columns_list->setOrReplace(create.columns_list->stats, new_statistics);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
 

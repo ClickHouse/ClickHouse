@@ -94,7 +94,7 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    auto stats = MergeTreeStatisticFactory::instance().getMany(metadata_snapshot->getStatistics());
+    auto stats = MergeTreeStatisticFactory::instance().getMany(metadata_snapshot->getColumns());
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, stats, compression_codec, NO_TRANSACTION_PTR);
     out.write(block);
 

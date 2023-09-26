@@ -88,7 +88,9 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
                     mutated_columns.emplace(command.column_name);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            else if (command.type == MutationCommand::Type::DROP_INDEX
+                     || command.type == MutationCommand::Type::DROP_PROJECTION
+                     || command.type == MutationCommand::Type::DROP_STATISTIC)
             {
                 for_file_renames.push_back(command);
             }
@@ -204,7 +206,9 @@ static void splitAndModifyMutationCommands(
             {
                 for_interpreter.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            else if (command.type == MutationCommand::Type::DROP_INDEX
+                     || command.type == MutationCommand::Type::DROP_PROJECTION
+                     || command.type == MutationCommand::Type::DROP_STATISTIC)
             {
                 for_file_renames.push_back(command);
             }
@@ -456,12 +460,12 @@ static std::set<StatisticPtr> getStatisticsToRecalculate(const StorageMetadataPt
 {
     const auto & stats_factory = MergeTreeStatisticFactory::instance();
     std::set<StatisticPtr> stats_to_recalc;
-    const auto & stats = metadata_snapshot->getStatistics();
-    for (const auto & stat_desc : stats)
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & col_desc : columns)
     {
-        if (materialized_stats.contains(stat_desc.column_name))
+        if (col_desc.stat && materialized_stats.contains(col_desc.name))
         {
-            stats_to_recalc.insert(stats_factory.get(stat_desc));
+            stats_to_recalc.insert(stats_factory.get(*col_desc.stat));
         }
     }
     return stats_to_recalc;
@@ -667,11 +671,11 @@ static NameToNameVector collectFilesForRenames(
             if (source_part->checksums.has(command.column_name + ".proj"))
                 add_rename(command.column_name + ".proj", "");
         }
-        //else if (command.type == MutationCommand::Type::DROP_STATISTICS)
-        //{
-        //    if (source_part->checksums.has(command.column_name + ".stat"))
-        //        add_rename(command.column_name + ".stat", "");
-        //}
+        else if (command.type == MutationCommand::Type::DROP_STATISTIC)
+        {
+            if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
+                add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, "");
+        }
         else if (isWidePart(source_part))
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
@@ -1315,10 +1319,14 @@ private:
         NameSet entries_to_hardlink;
 
         NameSet removed_indices;
+        NameSet removed_stats;
         for (const auto & command : ctx->for_file_renames)
         {
             if (command.type == MutationCommand::DROP_INDEX)
                 removed_indices.insert(command.column_name);
+            else if (command.type == MutationCommand::DROP_STATISTIC)
+                for (const auto & column_name : command.statistic_columns)
+                    removed_stats.insert(column_name);
         }
 
         bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
@@ -1354,17 +1362,23 @@ private:
             }
         }
 
+        for (auto stat_name : removed_stats)
+            LOG_INFO(ctx->log, "removed stat {}", stat_name);
+
         Statistics stats;
-        const auto & statistics = ctx->metadata_snapshot->getStatistics();
-        for (const auto & stat : statistics)
+        const auto & columns = ctx->metadata_snapshot->getColumns();
+        for (const auto & col : columns)
         {
-            if (ctx->materialized_statistics.contains(stat.column_name))
+            if (!col.stat || removed_stats.contains(col.name))
+                continue;
+
+            if (ctx->materialized_statistics.contains(col.name))
             {
-                stats.push_back(MergeTreeStatisticFactory::instance().get(stat));
+                stats.push_back(MergeTreeStatisticFactory::instance().get(*col.stat));
             }
             else
             {
-                auto prefix = fmt::format("{}{}.", STAT_FILE_PREFIX, stat.column_name);
+                auto prefix = fmt::format("{}{}.", STAT_FILE_PREFIX, col.name);
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {
@@ -1377,6 +1391,9 @@ private:
                 }
             }
         }
+
+        for (auto hardlink : entries_to_hardlink)
+            LOG_INFO(ctx->log, "hard link {}", hardlink);
 
         NameSet removed_projections;
         for (const auto & command : ctx->for_file_renames)
@@ -1638,6 +1655,10 @@ private:
                 }
             }
         }
+
+            LOG_INFO(ctx->log, "hard link size : {}", hardlinked_files.size());
+        for (auto name : hardlinked_files)
+            LOG_INFO(ctx->log, "hard link file : {}", name);
 
         /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because
@@ -1941,7 +1962,6 @@ bool MutateTask::prepare()
 
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
-        LOG_INFO(ctx->log, "stats number {}", ctx->materialized_statistics.size());
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();

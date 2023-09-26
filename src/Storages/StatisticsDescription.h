@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <base/types.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -12,6 +12,8 @@ enum StatisticType
     TDigest = 0,
 };
 
+class ColumnsDescription;
+
 struct StatisticDescription
 {
     /// the type of statistic, right now it's only tdigest.
@@ -20,26 +22,15 @@ struct StatisticDescription
     /// Names of statistic columns
     String column_name;
 
-    /// Data types of statistic columns
-    DataTypePtr data_type;
+    ASTPtr ast;
+
+    String getTypeName() const;
 
     StatisticDescription() = default;
 
-    static StatisticType stringToType(String type);
-};
+    static StatisticDescription getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column);
 
-struct StatisticsDescriptions : public std::vector<StatisticDescription>
-{
-    /// Stat with name exists
-    bool has(const String & name) const;
-    /// merge with other Statistics
-    void merge(const StatisticsDescriptions & other);
-
-    ASTPtr getAST() const;
-    /// Convert description to string
-    String toString() const;
-    /// Parse description from string
-    static StatisticsDescriptions getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
+    static std::vector<StatisticDescription> getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
 };
 
 }

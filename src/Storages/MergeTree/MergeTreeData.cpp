@@ -651,15 +651,10 @@ void MergeTreeData::checkProperties(
         }
     }
 
-    if (!new_metadata.statistics.empty())
+    for (const auto & col : new_metadata.columns)
     {
-        for (const auto & stat : new_metadata.statistics)
-        {
-            auto column = all_columns.tryGetByName(stat.column_name);
-            if (!column.has_value())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "column {} is not found", stat.column_name);
-            MergeTreeStatisticFactory::instance().validate(stat, column->type);
-        }
+        if (col.stat)
+            MergeTreeStatisticFactory::instance().validate(*col.stat, col.type);
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);

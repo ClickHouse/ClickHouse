@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int ILLEGAL_STATISTIC;
 }
 
 namespace
@@ -485,7 +486,6 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// TODO Should we get columns, indices and projections from the part itself? Table metadata may be different
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
-    const StatisticsDescriptions & statistics_desc = metadata_snapshot->getStatistics();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
 
     auto storage_snapshot = std::make_shared<StorageSnapshot>(*source.getStorage(), metadata_snapshot);
@@ -726,16 +726,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
             for (const auto & stat_column_name: command.statistic_columns)
             {
-                auto it = std::find_if(
-                        std::cbegin(statistics_desc), std::end(statistics_desc),
-                        [&](const StatisticDescription & statistic)
-                        {
-                            return statistic.column_name == stat_column_name;
-                        });
-                if (it == std::cend(statistics_desc))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statistic column: {}", stat_column_name);
-
-                dependencies.emplace(it->column_name, ColumnDependency::STATISTIC);
+                if (!columns_desc.has(stat_column_name) || !columns_desc.get(stat_column_name).stat)
+                    throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Unknown statistic column: {}", stat_column_name);
+                dependencies.emplace(stat_column_name, ColumnDependency::STATISTIC);
                 materialized_statistics.emplace(stat_column_name);
             }
         }

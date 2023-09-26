@@ -90,6 +90,12 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         writeEscapedString(queryToString(codec), buf);
     }
 
+    if (stat)
+    {
+        writeChar('\t', buf);
+        writeEscapedString(queryToString(stat->ast), buf);
+    }
+
     if (ttl)
     {
         writeChar('\t', buf);

@@ -134,8 +134,6 @@ ASTPtr ASTColumns::clone() const
         res->set(res->columns, columns->clone());
     if (indices)
         res->set(res->indices, indices->clone());
-    if (stats)
-        res->set(res->stats, stats->clone());
     if (constraints)
         res->set(res->constraints, constraints->clone());
     if (projections)
@@ -167,16 +165,6 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
             auto elem = std::make_shared<ASTColumnsElement>();
             elem->prefix = "INDEX";
             elem->set(elem->elem, index->clone());
-            list.children.push_back(elem);
-        }
-    }
-    if (stats)
-    {
-        for (const auto & stat : stats->children)
-        {
-            auto elem = std::make_shared<ASTColumnsElement>();
-            elem->prefix = "STATISTIC";
-            elem->set(elem->elem, stat->clone());
             list.children.push_back(elem);
         }
     }

@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/Statistic/Statistic.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 
@@ -220,6 +221,11 @@ StorageID IStorage::getStorageID() const
 {
     std::lock_guard lock(id_mutex);
     return storage_id;
+}
+
+ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, ContextPtr) const
+{
+    return {};
 }
 
 void IStorage::renameInMemory(const StorageID & new_table_id)

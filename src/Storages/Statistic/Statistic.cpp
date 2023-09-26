@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/Statistic/Statistic.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/Exception.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -204,11 +205,12 @@ StatisticPtr MergeTreeStatisticFactory::get(const StatisticDescription & stat) c
     return std::make_shared<TDigestStatistic>(stat);
 }
 
-Statistics MergeTreeStatisticFactory::getMany(const StatisticsDescriptions & stats) const
+Statistics MergeTreeStatisticFactory::getMany(const ColumnsDescription & columns) const
 {
     Statistics result;
-    for (const auto & stat : stats)
-        result.push_back(get(stat));
+    for (const auto & col : columns)
+        if (col.stat)
+            result.push_back(get(*col.stat));
     return result;
 }
 

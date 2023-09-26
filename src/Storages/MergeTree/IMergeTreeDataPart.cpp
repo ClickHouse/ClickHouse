@@ -638,7 +638,7 @@ Statistics IMergeTreeDataPart::loadStatistics() const
 {
     const auto & metadata_snaphost = storage.getInMemoryMetadata();
 
-    auto total_statistics = MergeTreeStatisticFactory::instance().getMany(metadata_snaphost.getStatistics());
+    auto total_statistics = MergeTreeStatisticFactory::instance().getMany(metadata_snaphost.getColumns());
 
     Statistics result;
     for (auto & stat : total_statistics)

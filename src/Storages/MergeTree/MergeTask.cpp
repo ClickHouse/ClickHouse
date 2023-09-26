@@ -366,7 +366,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
-        MergeTreeStatisticFactory::instance().getMany(global_ctx->metadata_snapshot->getStatistics()),
+        MergeTreeStatisticFactory::instance().getMany(global_ctx->metadata_snapshot->getColumns()),
         ctx->compression_codec,
         global_ctx->txn,
         /*reset_columns=*/ true,

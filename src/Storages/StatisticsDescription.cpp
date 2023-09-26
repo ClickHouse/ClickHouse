@@ -9,6 +9,7 @@
 #include <Poco/Logger.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <Common/logger_useful.h>
 
@@ -18,42 +19,35 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
-    extern const int ILLEGAL_STATISTIC;
     extern const int LOGICAL_ERROR;
 };
 
-StatisticType StatisticDescription::stringToType(String type)
+StatisticType stringToType(String type)
 {
     if (type == "tdigest")
         return TDigest;
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
 }
 
-namespace
-{
-
-String typeToString(StatisticType type)
+String StatisticDescription::getTypeName() const
 {
     if (type == TDigest)
         return "tdigest";
-    return "unknown";
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
 }
 
-}
-
-StatisticsDescriptions StatisticsDescriptions::getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+std::vector<StatisticDescription> StatisticDescription::getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
 {
     const auto * stat_definition = definition_ast->as<ASTStatisticDeclaration>();
     if (!stat_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create statistic from non ASTStatisticDeclaration AST");
 
-    LOG_INFO(&Poco::Logger::get("stats_desc"), "stat_def is like {}", stat_definition->dumpTree());
-
-    StatisticsDescriptions stats;
+    std::vector<StatisticDescription> stats;
+    stats.reserve(stat_definition->columns->children.size());
     for (const auto & column_ast : stat_definition->columns->children)
     {
         StatisticDescription stat;
-        stat.type = StatisticDescription::stringToType(Poco::toLower(stat_definition->type));
+        stat.type = stringToType(Poco::toLower(stat_definition->type));
         String column_name = column_ast->as<ASTIdentifier &>().name();
 
         if (!columns.hasPhysical(column_name))
@@ -61,64 +55,39 @@ StatisticsDescriptions StatisticsDescriptions::getStatisticsFromAST(const ASTPtr
 
         const auto & column = columns.getPhysical(column_name);
         stat.column_name = column.name;
-        /// TODO: check if it is numeric.
-        stat.data_type = column.type;
+
+        auto function_node = std::make_shared<ASTFunction>();
+        function_node->name = "STATISTIC";
+        function_node->arguments = std::make_shared<ASTExpressionList>();
+        function_node->arguments->children.push_back(std::make_shared<ASTIdentifier>(stat_definition->type));
+        function_node->children.push_back(function_node->arguments);
+
+        stat.ast = function_node;
+
         stats.push_back(stat);
     }
 
     if (stats.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Empty statistic column list");
 
-    LOG_INFO(&Poco::Logger::get("stats_desc"), "there are {} stats", stats.size());
-
-    UNUSED(context);
-
     return stats;
 }
 
-bool StatisticsDescriptions::has(const String & name) const
+String queryToString(const IAST & query);
+
+StatisticDescription StatisticDescription::getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column)
 {
-    for (const auto & statistic : *this)
-        if (statistic.column_name == name)
-            return true;
-    return false;
-}
+    const auto & stat_type_list_ast = column.stat_type->as<ASTFunction &>().arguments;
+    if (stat_type_list_ast->children.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect only one statistic type for column {}", queryToString(column));
+    const auto & stat_type = stat_type_list_ast->children[0]->as<ASTFunction &>().name;
 
-void StatisticsDescriptions::merge(const StatisticsDescriptions & other)
-{
-    /// Check duplicate
-    for (const auto & old_stat : * this)
-        for (const auto & new_stat : other)
-            if (old_stat.column_name == new_stat.column_name)
-                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Statistic column {} has existed", old_stat.column_name);
-    insert(end(), other.begin(), other.end());
-}
+    StatisticDescription stat;
+    stat.type = stringToType(Poco::toLower(stat_type));
+    stat.column_name = column.name;
+    stat.ast = column.stat_type;
 
-ASTPtr StatisticsDescriptions::getAST() const
-{
-
-    auto list = std::make_shared<ASTExpressionList>();
-
-    for (const auto & stat : *this)
-    {
-        auto stat_ast = std::make_shared<ASTStatisticDeclaration>();
-        auto cols_ast  = std::make_shared<ASTExpressionList>();
-        auto col_ast  = std::make_shared<ASTIdentifier>(stat.column_name);
-        cols_ast->children.push_back(col_ast);
-        stat_ast->set(stat_ast->columns, cols_ast);
-        stat_ast->type = typeToString(stat.type);
-
-        list->children.push_back(stat_ast);
-    }
-    return list;
-}
-
-String StatisticsDescriptions::toString() const
-{
-    if (empty())
-        return {};
-
-    return serializeAST(*getAST());
+    return stat;
 }
 
 }

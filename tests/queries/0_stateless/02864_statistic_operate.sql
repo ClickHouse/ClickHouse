@@ -5,10 +5,9 @@ SET allow_statistic_optimize = 1;
 
 CREATE TABLE t1 
 (
-    a Float64,
-    b Int64,
+    a Float64 STATISTIC(tdigest),
+    b Int64 STATISTIC(tdigest),
     pk String,
-    STATISTIC a, b TYPE tdigest,
 ) Engine = MergeTree() ORDER BY pk
 SETTINGS min_bytes_for_wide_part = 0;
 

@@ -307,14 +307,12 @@ bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
-    ParserKeyword s_stat("STATISTIC");
     ParserKeyword s_constraint("CONSTRAINT");
     ParserKeyword s_projection("PROJECTION");
     ParserKeyword s_foreign_key("FOREIGN KEY");
     ParserKeyword s_primary_key("PRIMARY KEY");
 
     ParserIndexDeclaration index_p;
-    ParserStatisticDeclaration stat_p;
     ParserConstraintDeclaration constraint_p;
     ParserProjectionDeclaration projection_p;
     ParserForeignKeyDeclaration foreign_key_p;
@@ -331,11 +329,6 @@ bool ParserTablePropertyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     else if (s_constraint.ignore(pos, expected))
     {
         if (!constraint_p.parse(pos, new_node, expected))
-            return false;
-    }
-    else if (s_stat.ignore(pos, expected))
-    {
-        if (!stat_p.parse(pos, new_node, expected))
             return false;
     }
     else if (s_projection.ignore(pos, expected))
@@ -392,7 +385,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
 
     ASTPtr columns = std::make_shared<ASTExpressionList>();
     ASTPtr indices = std::make_shared<ASTExpressionList>();
-    ASTPtr stats = std::make_shared<ASTExpressionList>();
     ASTPtr constraints = std::make_shared<ASTExpressionList>();
     ASTPtr projections = std::make_shared<ASTExpressionList>();
     ASTPtr primary_key;
@@ -413,8 +405,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         }
         else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
-        else if (elem->as<ASTStatisticDeclaration>())
-            stats->children.push_back(elem);
         else if (elem->as<ASTConstraintDeclaration>())
             constraints->children.push_back(elem);
         else if (elem->as<ASTProjectionDeclaration>())
@@ -443,8 +433,6 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
         res->set(res->columns, columns);
     if (!indices->children.empty())
         res->set(res->indices, indices);
-    if (!stats->children.empty())
-        res->set(res->stats, stats);
     if (!constraints->children.empty())
         res->set(res->constraints, constraints);
     if (!projections->children.empty())

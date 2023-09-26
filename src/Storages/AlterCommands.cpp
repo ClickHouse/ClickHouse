@@ -38,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_STATISTIC;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
@@ -588,46 +589,37 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_STATISTIC)
     {
-        /// TODO: Right now we assume there is only one type of statistics for simple implement.
         for (const auto & statistic_column_name : statistic_columns)
         {
-            if (!if_not_exists && std::any_of(
-                    metadata.statistics.cbegin(),
-                    metadata.statistics.cend(),
-                    [&](const auto & statistic)
-                    {
-                        return statistic.column_name == statistic_column_name;
-                    }))
+            if (!metadata.columns.has(statistic_column_name))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: this column is not found", statistic_column_name, statistic_type);
             }
+            if (metadata.columns.get(statistic_column_name).stat)
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
         }
 
-        auto stats = StatisticsDescriptions::getStatisticsFromAST(statistic_decl, metadata.columns, context);
-        metadata.statistics.merge(stats);
+        auto stats = StatisticDescription::getStatisticsFromAST(statistic_decl, metadata.columns);
+        for (auto && stat : stats)
+        {
+            metadata.columns.modify(stat.column_name,
+                [&](ColumnDescription & column) { column.stat = std::move(stat); });
+        }
     }
     else if (type == DROP_STATISTIC)
     {
-        if (!partition && !clear)
+        for (const auto & stat_column_name : statistic_columns)
         {
-            for (const auto & stat_column_name : statistic_columns)
+            if (!metadata.columns.has(stat_column_name) || !metadata.columns.get(stat_column_name).stat)
             {
-                auto erase_it = std::find_if(
-                        metadata.statistics.begin(),
-                        metadata.statistics.end(),
-                        [stat_column_name](const auto & statistic)
-                        {
-                            return statistic.column_name == stat_column_name;
-                        });
-
-                if (erase_it == metadata.statistics.end())
-                {
-                    if (if_exists)
-                        return;
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong statistic name. Cannot find statistic {} with type {} to drop", backQuote(stat_column_name), statistic_type);
-                }
-                LOG_INFO(&Poco::Logger::get("drop_stat"), "dropping statistic {}", erase_it->column_name);
-                metadata.statistics.erase(erase_it);
+                if (if_exists)
+                    return;
+                throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Wrong statistic name. Cannot find statistic {} with type {} to drop", backQuote(stat_column_name), statistic_type);
+            }
+            if (!partition && !clear)
+            {
+                metadata.columns.modify(stat_column_name,
+                    [&](ColumnDescription & column) { column.stat = std::nullopt; });
             }
         }
     }
@@ -854,7 +846,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTIC)
         return true;
 
     /// Drop alias is metadata alter, in other case mutation is required.

@@ -4,10 +4,10 @@
 #include <memory>
 #include <optional>
 #include <AggregateFunctions/QuantileTDigest.h>
+#include <Core/Block.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
-#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 
 #include <boost/core/noncopyable.hpp>
@@ -105,6 +105,8 @@ public:
     }
 };
 
+class ColumnsDescription;
+
 class MergeTreeStatisticFactory : private boost::noncopyable
 {
 public:
@@ -118,7 +120,7 @@ public:
 
     StatisticPtr get(const StatisticDescription & stat) const;
 
-    Statistics getMany(const StatisticsDescriptions & stats) const;
+    Statistics getMany(const ColumnsDescription & columns) const;
 
     void registerCreator(StatisticType type, Creator creator);
     void registerValidator(StatisticType type, Validator validator);
