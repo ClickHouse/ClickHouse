@@ -3,6 +3,7 @@
 #include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/SipHash.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

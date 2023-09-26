@@ -534,6 +534,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
     M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
     M(S3QueuePullMicroseconds, "Time spent to read file data")\
+    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \

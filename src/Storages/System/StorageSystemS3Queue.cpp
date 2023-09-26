@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#include <Storages/S3Queue/S3QueueMetadataFactory.h>
 #include <Storages/S3Queue/StorageS3Queue.h>
 #include <Disks/IDisk.h>
 
@@ -24,8 +25,7 @@ namespace DB
 NamesAndTypesList StorageSystemS3Queue::getNamesAndTypes()
 {
     return {
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
+        {"zookeeper_path", std::make_shared<DataTypeString>()},
         {"file_name", std::make_shared<DataTypeString>()},
         {"rows_processed", std::make_shared<DataTypeUInt64>()},
         {"status", std::make_shared<DataTypeString>()},
@@ -40,47 +40,29 @@ StorageSystemS3Queue::StorageSystemS3Queue(const StorageID & table_id_)
 {
 }
 
-void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
-    const auto access = context->getAccess();
-    const bool show_tables_granted = access->isGranted(AccessType::SHOW_TABLES);
-
-    if (show_tables_granted)
+    for (const auto & [zookeeper_path, metadata] : S3QueueMetadataFactory::instance().getAll())
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
-        for (const auto & db : databases)
+        for (const auto & [file_name, file_status] : metadata->getFileStateses())
         {
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
-            {
-                StoragePtr storage = iterator->table();
-                if (auto * s3queue_table = dynamic_cast<StorageS3Queue *>(storage.get()))
-                {
-                    const auto & table_id = s3queue_table->getStorageID();
-                    auto file_statuses = s3queue_table->getFileStatuses();
-                    for (const auto & [file_name, file_status] : file_statuses)
-                    {
-                        size_t i = 0;
-                        res_columns[i++]->insert(table_id.database_name);
-                        res_columns[i++]->insert(table_id.table_name);
-                        res_columns[i++]->insert(file_name);
-                        res_columns[i++]->insert(file_status->processed_rows);
-                        res_columns[i++]->insert(magic_enum::enum_name(file_status->state));
+            size_t i = 0;
+            res_columns[i++]->insert(zookeeper_path);
+            res_columns[i++]->insert(file_name);
+            res_columns[i++]->insert(file_status->processed_rows);
+            res_columns[i++]->insert(magic_enum::enum_name(file_status->state));
 
-                        if (file_status->processing_start_time)
-                            res_columns[i++]->insert(file_status->processing_start_time);
-                        else
-                            res_columns[i++]->insertDefault();
-                        if (file_status->processing_end_time)
-                            res_columns[i++]->insert(file_status->processing_end_time);
-                        else
-                            res_columns[i++]->insertDefault();
+            if (file_status->processing_start_time)
+                res_columns[i++]->insert(file_status->processing_start_time);
+            else
+                res_columns[i++]->insertDefault();
+            if (file_status->processing_end_time)
+                res_columns[i++]->insert(file_status->processing_end_time);
+            else
+                res_columns[i++]->insertDefault();
 
-                        ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
-                    }
-                }
-            }
+            ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
         }
-
     }
 }
 
