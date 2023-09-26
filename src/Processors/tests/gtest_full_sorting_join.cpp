@@ -18,19 +18,53 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
+#include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+
+
 #include <QueryPipeline/QueryPipeline.h>
 
 using namespace DB;
 
+namespace
+{
+
+[[ maybe_unused ]]
+String dumpBlock(std::shared_ptr<ISource> source)
+{
+    WriteBufferFromOwnString buf;
+    {
+        Block header = source->getPort().getHeader();
+        QueryPipeline pipeline(source);
+        auto format = std::make_shared<PrettyCompactBlockOutputFormat>(buf, header, FormatSettings{}, false);
+        pipeline.complete(std::move(format));
+
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+    return buf.str();
+}
+
+[[ maybe_unused ]]
+String dumpBlock(const Block & block)
+{
+    Block header = block.cloneEmpty();
+    Chunk data(block.getColumns(), block.rows());
+    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(data));
+    return dumpBlock(std::move(source));
+}
+
 UInt64 getAndPrintRandomSeed()
 {
     UInt64 seed = randomSeed();
-    std::cerr << __FILE__ << "::" << "TEST_RANDOM_SEED = " << seed << "ull" << std::endl;
+    if (const char * random_seed = std::getenv("TEST_RANDOM_SEED")) // NOLINT(concurrency-mt-unsafe)
+        seed = std::stoull(random_seed);
+
+    std::cerr << __FILE__ << " :: " << "TEST_RANDOM_SEED=" << seed << std::endl;
     return seed;
 }
 
 static UInt64 TEST_RANDOM_SEED = getAndPrintRandomSeed();
-
 static pcg64 rng(TEST_RANDOM_SEED);
 
 
@@ -94,40 +128,27 @@ QueryPipeline buildJoinPipeline(
 
 std::shared_ptr<ISource> oneColumnSource(const std::vector<std::vector<UInt64>> & values)
 {
-    Block header = { ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "x") };
+    Block header = {
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "idx"),
+    };
+
+    UInt64 idx = 0;
     Chunks chunks;
     for (const auto & chunk_values : values)
     {
-        auto column = ColumnUInt64::create();
+        auto key_column = ColumnUInt64::create();
+        auto idx_column = ColumnUInt64::create();
+
         for (auto n : chunk_values)
-            column->insertValue(n);
-        chunks.emplace_back(Chunk(Columns{std::move(column)}, chunk_values.size()));
+        {
+            key_column->insertValue(n);
+            idx_column->insertValue(idx);
+            ++idx;
+        }
+        chunks.emplace_back(Chunk(Columns{std::move(key_column), std::move(idx_column)}, chunk_values.size()));
     }
     return std::make_shared<SourceFromChunks>(header, std::move(chunks));
-}
-
-
-TEST(FullSortingJoin, Simple)
-try
-{
-    auto left_source = oneColumnSource({ {1, 2, 3, 4, 5} });
-    auto right_source = oneColumnSource({ {1}, {2}, {3}, {4}, {5} });
-
-    auto pipeline = buildJoinPipeline(left_source, right_source);
-    PullingPipelineExecutor executor(pipeline);
-
-    Block block;
-
-    size_t total_result_rows = 0;
-    while (executor.pull(block))
-        total_result_rows += block.rows();
-
-    ASSERT_EQ(total_result_rows, 5);
-}
-catch (Exception & e)
-{
-    std::cout << e.getStackTraceString() << std::endl;
-    throw;
 }
 
 class SourceChunksBuilder
@@ -163,7 +184,7 @@ public:
         return;
     }
 
-    std::shared_ptr<ISource> build()
+    std::shared_ptr<ISource> getSource()
     {
         addChunk();
 
@@ -215,9 +236,11 @@ Block executePipeline(QueryPipeline && pipeline)
 template <typename T>
 void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, const Block & block, const std::string & name)
 {
-    const auto & actual = assert_cast<const ColumnVector<T> *>(block.getByName(name).column.get())->getData();
-    EXPECT_EQ(actual.size(), expected.size());
-    ASSERT_EQ(actual, expected);
+    const auto * actual = typeid_cast<const ColumnVector<T> *>(block.getByName(name).column.get());
+    ASSERT_TRUE(actual) << "unexpected column type: " << block.getByName(name).column->dumpStructure() << "expected: " << typeid(ColumnVector<T>).name();
+
+    EXPECT_EQ(actual->getData().size(), expected.size());
+    ASSERT_EQ(actual->getData(), expected) << "column name: " << name;
 }
 
 template <typename T>
@@ -263,7 +286,90 @@ void generateNextKey(UInt64 & k1, String & k2)
     k2 = new_k2;
 }
 
-TEST(FullSortingJoin, Any)
+bool isStrict(ASOFJoinInequality inequality)
+{
+    return inequality == ASOFJoinInequality::Less || inequality == ASOFJoinInequality::Greater;
+}
+
+}
+
+TEST(FullSortingJoin, AllAnyOneKey)
+try
+{
+    {
+        SCOPED_TRACE("Inner All");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {1, 2, 3, 4, 5} }),
+            oneColumnSource({ {1}, {2}, {3}, {4}, {5} }),
+            1, JoinKind::Inner, JoinStrictness::All));
+
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 3, 4}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 3, 4}), result, "t2.idx");
+    }
+    {
+        SCOPED_TRACE("Inner Any");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {1, 2, 3, 4, 5} }),
+            oneColumnSource({ {1}, {2}, {3}, {4}, {5} }),
+            1, JoinKind::Inner, JoinStrictness::Any));
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 3, 4}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 3, 4}), result, "t2.idx");
+    }
+    {
+        SCOPED_TRACE("Inner All");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {2, 2, 2}, {2, 3}, {3, 5} }),
+            oneColumnSource({ {1, 1, 1}, {2, 2}, {3, 4} }),
+            1, JoinKind::Inner, JoinStrictness::All));
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 0, 1, 2, 3, 3, 4, 5}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({3, 3, 3, 4, 4, 4, 3, 4, 5, 5}), result, "t2.idx");
+    }
+    {
+        SCOPED_TRACE("Inner Any");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {2, 2, 2}, {2, 3}, {3, 5} }),
+            oneColumnSource({ {1, 1, 1}, {2, 2}, {3, 4} }),
+            1, JoinKind::Inner, JoinStrictness::Any));
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 4}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({3, 5}), result, "t2.idx");
+    }
+    {
+        SCOPED_TRACE("Inner Any");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {2, 2, 2, 2}, {3}, {3, 5} }),
+            oneColumnSource({ {1, 1, 1, 2}, {2}, {3, 4} }),
+            1, JoinKind::Inner, JoinStrictness::Any));
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 4}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({3, 5}), result, "t2.idx");
+    }
+    {
+
+        SCOPED_TRACE("Left Any");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {2, 2, 2}, {2, 3}, {3, 5} }),
+            oneColumnSource({ {1, 1, 1}, {2, 2}, {3, 4} }),
+            1, JoinKind::Left, JoinStrictness::Any));
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 3, 4, 5, 6}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({3, 3, 3, 3, 5, 5, 0}), result, "t2.idx");
+    }
+    {
+        SCOPED_TRACE("Left Any");
+        Block result = executePipeline(buildJoinPipeline(
+            oneColumnSource({ {2, 2, 2, 2}, {3}, {3, 5} }),
+            oneColumnSource({ {1, 1, 1, 2}, {2}, {3, 4} }),
+            1, JoinKind::Left, JoinStrictness::Any));
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({0, 1, 2, 3, 4, 5, 6}), result, "t1.idx");
+        assertColumnVectorEq<UInt64>(ColumnUInt64::Container({3, 3, 3, 3, 5, 5, 0}), result, "t2.idx");
+    }
+}
+catch (Exception & e)
+{
+    std::cout << e.getStackTraceString() << std::endl;
+    throw;
+}
+
+
+TEST(FullSortingJoin, AnyRandomized)
 try
 {
     JoinKind kind = getRandomFrom({JoinKind::Inner, JoinKind::Left, JoinKind::Right});
@@ -288,7 +394,7 @@ try
     auto expected_left = ColumnString::create();
     auto expected_right = ColumnString::create();
 
-    UInt64 k1 = 0;
+    UInt64 k1 = 1;
     String k2 = "";
 
     auto get_attr = [&](const String & side, size_t idx) -> String
@@ -338,7 +444,7 @@ try
     }
 
     Block result_block = executePipeline(buildJoinPipeline(
-        left_source.build(), right_source.build(), /* key_length = */ 2,
+        left_source.getSource(), right_source.getSource(), /* key_length = */ 2,
         kind, JoinStrictness::Any));
     assertColumnEq<ColumnString>(*expected_left, result_block, "t1.attr");
     assertColumnEq<ColumnString>(*expected_right, result_block, "t2.attr");
@@ -356,10 +462,10 @@ try
         {std::make_shared<DataTypeString>(), "key"},
         {std::make_shared<DataTypeUInt64>(), "t"},
     });
-
     left_source.addRow({"AMZN", 3});
     left_source.addRow({"AMZN", 4});
     left_source.addRow({"AMZN", 6});
+    left_source.addRow({"SBUX", 10});
 
     SourceChunksBuilder right_source({
         {std::make_shared<DataTypeString>(), "key"},
@@ -371,14 +477,19 @@ try
     right_source.addRow({"AAPL", 2, 98});
     right_source.addRow({"AAPL", 3, 99});
     right_source.addRow({"AMZN", 1, 100});
+    right_source.addRow({"AMZN", 2, 0});
+    right_source.addChunk();
     right_source.addRow({"AMZN", 2, 110});
     right_source.addChunk();
     right_source.addRow({"AMZN", 4, 130});
     right_source.addRow({"AMZN", 5, 140});
+    right_source.addRow({"SBUX", 8, 180});
+    right_source.addChunk();
+    right_source.addRow({"SBUX", 9, 190});
 
     {
         Block result_block = executePipeline(buildJoinPipeline(
-            left_source.build(), right_source.build(), /* key_length = */ 2,
+            left_source.getSource(), right_source.getSource(), /* key_length = */ 2,
             JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::LessOrEquals));
         auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
 
@@ -388,18 +499,19 @@ try
         }));
     }
 
-    // {
-    //     Block result_block = executePipeline(buildJoinPipeline(
-    //         left_source.build(), right_source.build(), /* key_length = */ 2,
-    //         JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::GreaterOrEquals));
-    //     auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
+    {
+        Block result_block = executePipeline(buildJoinPipeline(
+            left_source.getSource(), right_source.getSource(), /* key_length = */ 2,
+            JoinKind::Inner, JoinStrictness::Asof, ASOFJoinInequality::GreaterOrEquals));
+        auto values = getValuesFromBlock(result_block, {"t1.key", "t1.t", "t2.t", "t2.value"});
 
-    //     ASSERT_EQ(values, (std::vector<std::vector<Field>>{
-    //         {"AMZN", 3u, 2u, 110u},
-    //         {"AMZN", 4u, 4u, 130u},
-    //         {"AMZN", 6u, 5u, 140u},
-    //     }));
-    // }
+        ASSERT_EQ(values, (std::vector<std::vector<Field>>{
+            {"AMZN", 3u, 2u, 110u},
+            {"AMZN", 4u, 4u, 130u},
+            {"AMZN", 6u, 5u, 140u},
+            {"SBUX", 10u, 9u, 190u},
+        }));
+    }
 }
 catch (Exception & e)
 {
@@ -418,8 +530,7 @@ try
         {std::make_shared<DataTypeUInt64>(), "value"},
     });
 
-    UInt64 p = std::uniform_int_distribution<>(0, 2)(rng);
-    double break_prob = p == 0 ? 0.0 : (p == 1 ? 0.5 : 1.0);
+    double break_prob = getRandomDoubleQuantized(2);
     std::uniform_real_distribution<> prob_dis(0.0, 1.0);
     for (const auto & row : std::vector<std::vector<Field>>{ {1, 101}, {2, 102}, {4, 104}, {5, 105}, {11, 111}, {15, 115} })
     {
@@ -427,7 +538,7 @@ try
         if (prob_dis(rng) < break_prob)
             right_source_builder.addChunk();
     }
-    auto right_source = right_source_builder.build();
+    auto right_source = right_source_builder.getSource();
 
     auto pipeline = buildJoinPipeline(
         left_source, right_source, /* key_length = */ 1,
@@ -436,7 +547,7 @@ try
     Block result_block = executePipeline(std::move(pipeline));
 
     ASSERT_EQ(
-        assert_cast<const ColumnUInt64 *>(result_block.getByName("t1.x").column.get())->getData(),
+        assert_cast<const ColumnUInt64 *>(result_block.getByName("t1.key").column.get())->getData(),
         (ColumnUInt64::Container{3, 3, 3, 3, 3, 5, 5, 6, 9, 9, 10})
     );
 
@@ -456,15 +567,14 @@ catch (Exception & e)
     throw;
 }
 
-TEST(FullSortingJoin, AsofGeneratedTestData)
+TEST(FullSortingJoin, AsofLessGeneratedTestData)
 try
 {
-    auto join_kind = getRandomFrom({JoinKind::Inner, JoinKind::Left});
+    auto join_kind = getRandomFrom({ JoinKind::Inner, JoinKind::Left });
 
-    auto asof_inequality = getRandomFrom({
-        ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals,
-        // ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals,
-    });
+    auto asof_inequality = getRandomFrom({ ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals });
+
+    SCOPED_TRACE(fmt::format("{} {}", join_kind, asof_inequality));
 
     SourceChunksBuilder left_source_builder({
         {std::make_shared<DataTypeUInt64>(), "k1"},
@@ -485,11 +595,13 @@ try
 
     ColumnInt64::Container expected;
 
-    UInt64 k1 = 0;
-    String k2 = "asdfg";
+    UInt64 k1 = 1;
+    String k2 = "";
     auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
+        generateNextKey(k1, k2);
+
         Int64 left_t = 0;
         size_t num_left_rows = std::uniform_int_distribution<>(1, 100)(rng);
         for (size_t i = 0; i < num_left_rows; ++i)
@@ -504,18 +616,10 @@ try
             auto right_t = left_t;
             for (size_t j = 0; j < num_matches; ++j)
             {
-                int min_step = 1;
-                if (asof_inequality == ASOFJoinInequality::LessOrEquals || asof_inequality == ASOFJoinInequality::GreaterOrEquals)
-                    min_step = 0;
+                int min_step = isStrict(asof_inequality) ? 1 : 0;
                 right_t += std::uniform_int_distribution<>(min_step, 3)(rng);
 
-                bool is_match = false;
-
-                if (asof_inequality == ASOFJoinInequality::LessOrEquals || asof_inequality == ASOFJoinInequality::Less)
-                    is_match = j == 0;
-                else if (asof_inequality == ASOFJoinInequality::GreaterOrEquals || asof_inequality == ASOFJoinInequality::Greater)
-                    is_match = j == num_matches - 1;
-
+                bool is_match = j == 0;
                 right_source_builder.addRow({k1, k2, right_t, is_match ? 100 * left_t : -1});
             }
             /// next left_t should be greater than right_t not to match with previous rows
@@ -523,7 +627,7 @@ try
         }
 
         /// generate some rows with greater left_t to check that they are not matched
-        num_left_rows = std::uniform_int_distribution<>(1, 100)(rng);
+        num_left_rows = std::bernoulli_distribution(0.5)(rng) ? std::uniform_int_distribution<>(1, 100)(rng) : 0;
         for (size_t i = 0; i < num_left_rows; ++i)
         {
             left_t += std::uniform_int_distribution<>(1, 10)(rng);
@@ -532,12 +636,10 @@ try
             if (join_kind == JoinKind::Left)
                 expected.push_back(-10 * left_t);
         }
-
-        generateNextKey(k1, k2);
     }
 
     Block result_block = executePipeline(buildJoinPipeline(
-        left_source_builder.build(), right_source_builder.build(),
+        left_source_builder.getSource(), right_source_builder.getSource(),
         /* key_length = */ 3,
         join_kind, JoinStrictness::Asof, asof_inequality));
 
@@ -548,7 +650,97 @@ try
 
     assertColumnVectorEq<Int64>(expected, result_block, "t2.attr");
 }
-catch (Exception & e) {
+catch (Exception & e)
+{
+    std::cout << e.getStackTraceString() << std::endl;
+    throw;
+}
+
+TEST(FullSortingJoin, AsofGreaterGeneratedTestData)
+try
+{
+    auto join_kind = getRandomFrom({ JoinKind::Inner, JoinKind::Left });
+
+    auto asof_inequality = getRandomFrom({ ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals });
+
+    SCOPED_TRACE(fmt::format("{} {}", join_kind, asof_inequality));
+
+    SourceChunksBuilder left_source_builder({
+        {std::make_shared<DataTypeUInt64>(), "k1"},
+        {std::make_shared<DataTypeString>(), "k2"},
+        {std::make_shared<DataTypeUInt64>(), "t"},
+        {std::make_shared<DataTypeInt64>(), "attr"},
+    });
+
+    SourceChunksBuilder right_source_builder({
+        {std::make_shared<DataTypeUInt64>(), "k1"},
+        {std::make_shared<DataTypeString>(), "k2"},
+        {std::make_shared<DataTypeUInt64>(), "t"},
+        {std::make_shared<DataTypeInt64>(), "attr"},
+    });
+
+    left_source_builder.break_prob = getRandomDoubleQuantized();
+    right_source_builder.break_prob = getRandomDoubleQuantized();
+
+    ColumnInt64::Container expected;
+
+    UInt64 k1 = 1;
+    String k2 = "";
+    UInt64 left_t = 0;
+
+    auto key_num_total = std::uniform_int_distribution<>(1, 100)(rng);
+    for (size_t key_num = 0; key_num < key_num_total; ++key_num)
+    {
+        generateNextKey(k1, k2);
+
+        /// generate some rows with smaller left_t to check that they are not matched
+        size_t num_left_rows = std::bernoulli_distribution(0.5)(rng) ? std::uniform_int_distribution<>(1, 10)(rng) : 0;
+        for (size_t i = 0; i < num_left_rows; ++i)
+        {
+            left_t += std::uniform_int_distribution<>(1, 10)(rng);
+            left_source_builder.addRow({k1, k2, left_t, -10 * left_t});
+
+            if (join_kind == JoinKind::Left)
+                expected.push_back(-10 * left_t);
+        }
+
+        if (std::bernoulli_distribution(0.1)(rng))
+            continue;
+
+        size_t num_right_matches = std::uniform_int_distribution<>(1, 10)(rng);
+        auto right_t = left_t + std::uniform_int_distribution<>(isStrict(asof_inequality) ? 0 : 1, 10)(rng);
+        for (size_t j = 0; j < num_right_matches; ++j)
+        {
+            right_t += std::uniform_int_distribution<>(0, 3)(rng);
+            bool is_match = j == num_right_matches - 1;
+            right_source_builder.addRow({k1, k2, right_t, is_match ? 100 * right_t : -1});
+        }
+
+        /// next left_t should be greater than (or equals) right_t to match with previous rows
+        left_t = right_t + std::uniform_int_distribution<>(isStrict(asof_inequality) ? 1 : 0, 10)(rng);
+        size_t num_left_matches = std::uniform_int_distribution<>(1, 10)(rng);
+        for (size_t j = 0; j < num_left_matches; ++j)
+        {
+            left_t += std::uniform_int_distribution<>(0, 3)(rng);
+            left_source_builder.addRow({k1, k2, left_t, 10 * right_t});
+            expected.push_back(10 * right_t);
+        }
+    }
+
+    Block result_block = executePipeline(buildJoinPipeline(
+        left_source_builder.getSource(), right_source_builder.getSource(),
+        /* key_length = */ 3,
+        join_kind, JoinStrictness::Asof, asof_inequality));
+
+    assertColumnVectorEq<Int64>(expected, result_block, "t1.attr");
+
+    for (auto & e : expected)
+        e = e < 0 ? 0 : 10 * e; /// non matched rows from left table have negative attr
+
+    assertColumnVectorEq<Int64>(expected, result_block, "t2.attr");
+}
+catch (Exception & e)
+{
     std::cout << e.getStackTraceString() << std::endl;
     throw;
 }

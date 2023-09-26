@@ -34,8 +34,6 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr UInt64 DEFAULT_VALUE_INDEX = std::numeric_limits<UInt64>::max();
-
 FullMergeJoinCursorPtr createCursor(const Block & block, const Names & columns, JoinStrictness strictness)
 {
     SortDescription desc;
@@ -112,7 +110,7 @@ int ALWAYS_INLINE compareCursors(const SortCursorImpl & lhs, const SortCursorImp
 
 int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs)
 {
-    return nullableCompareAt<false, false>(lhs.getAsofColumn(), rhs.getAsofColumn(), lhs->getRow(), rhs->getRow());
+    return nullableCompareAt<false, false>(*lhs.getAsofColumn(), *rhs.getAsofColumn(), lhs->getRow(), rhs->getRow());
 }
 
 bool ALWAYS_INLINE totallyLess(SortCursorImpl & lhs, SortCursorImpl & rhs, int null_direction_hint)
@@ -250,6 +248,87 @@ void inline addMany(PaddedPODArray<UInt64> & values, UInt64 value, size_t num)
 
 }
 
+JoinKeyRow::JoinKeyRow(const FullMergeJoinCursor & cursor, size_t pos)
+{
+    row.reserve(cursor->sort_columns.size());
+    for (const auto & col : cursor->sort_columns)
+    {
+        auto new_col = col->cloneEmpty();
+        new_col->insertFrom(*col, pos);
+        row.push_back(std::move(new_col));
+    }
+    if (auto asof_column = cursor.getAsofColumn())
+    {
+        auto new_col = asof_column->cloneEmpty();
+        new_col->insertFrom(*asof_column, pos);
+        row.push_back(std::move(new_col));
+    }
+}
+
+void JoinKeyRow::reset()
+{
+    row.clear();
+}
+
+bool JoinKeyRow::equals(const FullMergeJoinCursor & cursor) const
+{
+    if (row.empty())
+        return false;
+
+    assert(this->row.size() == cursor->sort_columns_size);
+    for (size_t i = 0; i < cursor->sort_columns_size; ++i)
+    {
+        int cmp = this->row[i]->compareAt(0, cursor->getRow(), *(cursor->sort_columns[i]), cursor->desc[i].nulls_direction);
+        if (cmp != 0)
+            return false;
+    }
+    return true;
+}
+
+bool JoinKeyRow::asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
+{
+    if (!equals(cursor))
+        return false;
+    int cmp = cursor.getAsofColumn()->compareAt(cursor->getRow(), 0, *row.back(), 1);
+    return (asof_inequality == ASOFJoinInequality::Less && cmp < 0)
+        || (asof_inequality == ASOFJoinInequality::LessOrEquals && cmp <= 0)
+        || (asof_inequality == ASOFJoinInequality::Greater && cmp > 0)
+        || (asof_inequality == ASOFJoinInequality::GreaterOrEquals && cmp >= 0);
+}
+
+void AnyJoinState::set(size_t source_num, const FullMergeJoinCursor & cursor)
+{
+    assert(cursor->rows);
+    keys[source_num] = JoinKeyRow(cursor, cursor->rows - 1);
+}
+
+void AnyJoinState::reset(size_t source_num)
+{
+    keys[source_num].reset();
+    value.clear();
+}
+
+void AnyJoinState::setValue(Chunk value_)
+{
+    value = std::move(value_);
+}
+
+bool AnyJoinState::empty() const { return keys[0].row.empty() && keys[1].row.empty(); }
+
+
+void AsofJoinState::set(const FullMergeJoinCursor & rcursor, size_t rpos)
+{
+    key = JoinKeyRow(rcursor, rpos);
+    value = rcursor.getCurrent().clone();
+    value_row = rpos;
+}
+
+void AsofJoinState::reset()
+{
+    key.reset();
+    value.clear();
+}
+
 const Chunk & FullMergeJoinCursor::getCurrent() const
 {
     return current_chunk;
@@ -280,6 +359,31 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
 bool FullMergeJoinCursor::fullyCompleted() const
 {
     return !cursor.isValid() && recieved_all_blocks;
+}
+
+String FullMergeJoinCursor::dump() const
+{
+    Strings row_dump;
+    if (cursor.isValid())
+    {
+        Field val;
+        for (size_t i = 0; i < cursor.sort_columns_size; ++i)
+        {
+            cursor.sort_columns[i]->get(cursor.getRow(), val);
+            row_dump.push_back(val.dump());
+        }
+
+        if (auto * asof_column = getAsofColumn())
+        {
+            asof_column->get(cursor.getRow(), val);
+            row_dump.push_back(val.dump());
+        }
+    }
+
+    return fmt::format("<{}/{}{}>[{}]",
+        cursor.getRow(), cursor.rows,
+        recieved_all_blocks ? "(finished)" : "",
+        fmt::join(row_dump, ", "));
 }
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
@@ -456,7 +560,7 @@ struct AllJoinImpl
                 else
                 {
                     assert(state == nullptr);
-                    state = std::make_unique<AllJoinState>(left_cursor.cursor, lpos, right_cursor.cursor, rpos);
+                    state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
                     return;
@@ -501,6 +605,17 @@ void dispatchKind(JoinKind kind, Args && ... args)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
+MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
+{
+    MutableColumns result_cols;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        for (const auto & col : cursors[i]->sampleColumns())
+            result_cols.push_back(col->cloneEmpty());
+    }
+    return result_cols;
+}
+
 std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState()
 {
     if (all_join_state && all_join_state->finished())
@@ -514,7 +629,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
         /// Accumulate blocks with same key in all_join_state
         for (size_t i = 0; i < 2; ++i)
         {
-            if (cursors[i]->cursor.isValid() && all_join_state->keys[i].equals(cursors[i]->cursor))
+            if (cursors[i]->cursor.isValid() && all_join_state->keys[i].equals(*cursors[i]))
             {
                 size_t pos = cursors[i]->cursor.getRow();
                 size_t num = nextDistinct(cursors[i]->cursor);
@@ -534,12 +649,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
         stat.max_blocks_loaded = std::max(stat.max_blocks_loaded, all_join_state->blocksStored());
 
         /// join all rows with current key
-        MutableColumns result_cols;
-        for (size_t i = 0; i < 2; ++i)
-        {
-            for (const auto & col : cursors[i]->sampleColumns())
-                result_cols.push_back(col->cloneEmpty());
-        }
+        MutableColumns result_cols = getEmptyResultColumns();
 
         size_t total_rows = 0;
         while (!max_block_size || total_rows < max_block_size)
@@ -566,6 +676,52 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
     }
     return {};
 }
+
+std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinState()
+{
+    if (strictness != JoinStrictness::Asof)
+        return {};
+
+    if (!cursors[1]->fullyCompleted())
+        return {};
+
+    auto & left_cursor = *cursors[0];
+    size_t lpos = left_cursor->getRow();
+    const auto & left_columns = left_cursor.getCurrent().getColumns();
+
+    MutableColumns result_cols = getEmptyResultColumns();
+
+    while (left_cursor->isValid() && asof_join_state.hasMatch(left_cursor, asof_inequality))
+    {
+        size_t i = 0;
+        for (const auto & col : left_columns)
+            result_cols[i++]->insertFrom(*col, lpos);
+        for (const auto & col : asof_join_state.value.getColumns())
+            result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
+        chassert(i == result_cols.size());
+        left_cursor->next();
+    }
+
+    while (isLeft(kind) && left_cursor->isValid())
+    {
+        /// return row with default values at right side
+        size_t i = 0;
+        for (const auto & col : left_columns)
+            result_cols[i++]->insertFrom(*col, lpos);
+        for (; i < result_cols.size(); ++i)
+            result_cols[i]->insertDefault();
+        chassert(i == result_cols.size());
+
+        left_cursor->next();
+    }
+
+    size_t result_rows = result_cols.empty() ? 0 : result_cols.front()->size();
+    if (result_rows)
+        return Status(Chunk(std::move(result_cols), result_rows));
+
+    return {};
+}
+
 
 MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
 {
@@ -696,14 +852,14 @@ struct AnyJoinImpl
         any_join_state.setValue({});
         if (!left_cursor->isValid())
         {
-            any_join_state.set(0, left_cursor.cursor);
+            any_join_state.set(0, left_cursor);
             if (cmp == 0 && isLeft(kind))
                 any_join_state.setValue(getRowFromChunk(right_cursor.getCurrent(), rpos));
         }
 
         if (!right_cursor->isValid())
         {
-            any_join_state.set(1, right_cursor.cursor);
+            any_join_state.set(1, right_cursor);
             if (cmp == 0 && isRight(kind))
                 any_join_state.setValue(getRowFromChunk(left_cursor.getCurrent(), lpos));
         }
@@ -720,7 +876,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAnyJoinState
     for (size_t source_num = 0; source_num < 2; ++source_num)
     {
         auto & current = *cursors[source_num];
-        if (any_join_state.keys[source_num].equals(current.cursor))
+        if (any_join_state.keys[source_num].equals(current))
         {
             size_t start_pos = current->getRow();
             size_t length = nextDistinct(current.cursor);
@@ -811,24 +967,35 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
     if (!right_cursor->isValid())
         return Status(1);
 
-    PaddedPODArray<UInt64> left_map;
-    PaddedPODArray<UInt64> right_map;
+    const auto & left_columns = left_cursor.getCurrent().getColumns();
+    const auto & right_columns = right_cursor.getCurrent().getColumns();
+
+    MutableColumns result_cols = getEmptyResultColumns();
 
     while (left_cursor->isValid() && right_cursor->isValid())
     {
         auto lpos = left_cursor->getRow();
         auto rpos = right_cursor->getRow();
         auto cmp = compareCursors(*left_cursor, *right_cursor);
+        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ({}) <=> ({}) -> {}", __FILE__, __LINE__, left_cursor.dump(), right_cursor.dump(), cmp);
+
         if (cmp == 0)
         {
             auto asof_cmp = compareAsofCursors(left_cursor, right_cursor);
+            // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ({}) <=> ({}) -> asof {}", __FILE__, __LINE__, left_cursor.dump(), right_cursor.dump(), asof_cmp);
+
             if ((asof_inequality == ASOFJoinInequality::Less && asof_cmp <= -1)
              || (asof_inequality == ASOFJoinInequality::LessOrEquals && asof_cmp <= 0))
             {
                 /// First row in right table that is greater (or equal) than current row in left table
                 /// matches asof join condition the best
-                left_map.push_back(lpos);
-                right_map.push_back(rpos);
+                size_t i = 0;
+                for (const auto & col : left_columns)
+                    result_cols[i++]->insertFrom(*col, lpos);
+                for (const auto & col : right_columns)
+                    result_cols[i++]->insertFrom(*col, rpos);
+                chassert(i == result_cols.size());
+
                 left_cursor->next();
                 continue;
             }
@@ -839,39 +1006,99 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 right_cursor->next();
                 continue;
             }
+
+            if ((asof_inequality == ASOFJoinInequality::Greater && asof_cmp >= 1)
+             || (asof_inequality == ASOFJoinInequality::GreaterOrEquals && asof_cmp >= 0))
+            {
+                // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+                /// condition is satisfied, remember this row and move next to try to find better match
+                asof_join_state.set(right_cursor, rpos);
+                right_cursor->next();
+                continue;
+            }
+
+            if (asof_inequality == ASOFJoinInequality::Greater || asof_inequality == ASOFJoinInequality::GreaterOrEquals)
+            {
+                /// Asof condition is not satisfied anymore, use last matched row from right table
+                if (asof_join_state.hasMatch(left_cursor, asof_inequality))
+                {
+                    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+                    size_t i = 0;
+                    for (const auto & col : left_columns)
+                        result_cols[i++]->insertFrom(*col, lpos);
+                    for (const auto & col : asof_join_state.value.getColumns())
+                        result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
+                    chassert(i == result_cols.size());
+                }
+                else
+                {
+                    asof_join_state.reset();
+                    if (isLeft(kind))
+                    {
+                        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+
+                        /// return row with default values at right side
+                        size_t i = 0;
+                        for (const auto & col : left_columns)
+                            result_cols[i++]->insertFrom(*col, lpos);
+                        for (; i < result_cols.size(); ++i)
+                            result_cols[i]->insertDefault();
+                        chassert(i == result_cols.size());
+                    }
+                }
+                left_cursor->next();
+                // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+                continue;
+            }
+
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: implement ASOF equality join");
         }
         else if (cmp < 0)
         {
+            // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+            if (asof_join_state.hasMatch(left_cursor, asof_inequality))
+            {
+                // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+
+                size_t i = 0;
+                for (const auto & col : left_columns)
+                    result_cols[i++]->insertFrom(*col, lpos);
+                for (const auto & col : asof_join_state.value.getColumns())
+                    result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
+                chassert(i == result_cols.size());
+                left_cursor->next();
+                continue;
+            }
+            else
+            {
+                // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+                asof_join_state.reset();
+            }
+            // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+
             /// no matches for rows in left table, just pass them through
             size_t num = nextDistinct(*left_cursor);
-            if (isLeft(kind))
+            if (isLeft(kind) && num)
             {
                 /// return them with default values at right side
-                addRange(left_map, lpos, lpos + num);
-                addMany(right_map, DEFAULT_VALUE_INDEX, num);
+                size_t i = 0;
+                for (const auto & col : left_columns)
+                    result_cols[i++]->insertRangeFrom(*col, lpos, num);
+                for (; i < result_cols.size(); ++i)
+                    result_cols[i]->insertManyDefaults(num);
+                chassert(i == result_cols.size());
             }
         }
         else
         {
+            // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} ", __FILE__, __LINE__);
+
             /// skip rows in right table until we find match for current row in left table
             nextDistinct(*right_cursor);
         }
     }
-
-    chassert(left_map.size() == right_map.size());
-    Chunk result;
-    {
-        Columns lcols = indexColumns(left_cursor.getCurrent().getColumns(), left_map);
-        for (auto & col : lcols)
-            result.addColumn(std::move(col));
-
-        Columns rcols = indexColumns(right_cursor.getCurrent().getColumns(), right_map);
-        for (auto & col : rcols)
-            result.addColumn(std::move(col));
-    }
-
-    return Status(std::move(result));
+    size_t num_rows = result_cols.empty() ? 0 : result_cols.front()->size();
+    return Status(Chunk(std::move(result_cols), num_rows));
 }
 
 
@@ -928,6 +1155,9 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     {
         return std::move(*result);
     }
+
+    if (auto result = handleAsofJoinState())
+        return std::move(*result);
 
     if (cursors[0]->fullyCompleted() || cursors[1]->fullyCompleted())
     {
