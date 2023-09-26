@@ -23,9 +23,13 @@ INSERT INTO test SELECT '2', '22', '22' FROM numbers(3);
 select * from test format Null;
 select min(c_id) from test group by d format Null;
 
+set mutations_sync=0;
 
+ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.1)) where 1;
 
-ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`), MATERIALIZE PROJECTION d_order, DROP PROJECTION d_order SETTINGS mutations_sync = 2;
+ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
+ALTER TABLE test MATERIALIZE PROJECTION d_order;
+ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2;
 
 SELECT * FROM system.mutations WHERE database=currentDatabase() AND table='test' AND NOT is_done;
 
