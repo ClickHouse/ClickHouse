@@ -4,8 +4,10 @@
 
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
+// NOLINTBEGIN(clang-analyzer-unix.Malloc)
 #include <annoylib.h>
 #include <kissrandom.h>
+// NOLINTEND(clang-analyzer-unix.Malloc)
 
 namespace DB
 {
