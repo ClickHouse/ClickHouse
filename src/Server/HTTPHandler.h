@@ -69,6 +69,8 @@ private:
 
         bool finalized = false;
 
+        bool exception_is_written = false;
+
         inline bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed;
