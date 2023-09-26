@@ -6,6 +6,7 @@
 #include <Core/Types.h>
 #include <Core/SettingsEnums.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
@@ -18,7 +19,7 @@ class StorageS3Queue;
 class S3QueueFilesMetadata
 {
 public:
-    S3QueueFilesMetadata(const StorageS3Queue * storage_, const S3QueueSettings & settings_, ContextPtr context);
+    S3QueueFilesMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
 
     ~S3QueueFilesMetadata();
 
@@ -52,10 +53,11 @@ public:
 
     std::shared_ptr<FileStatus> getFileStatus(const std::string & path);
 
-    FileStatuses getFileStateses() const;
+    FileStatuses getFileStateses() const { return local_file_statuses.getAll(); }
+
+    bool checkSettings(const S3QueueSettings & settings) const;
 
 private:
-    const StorageS3Queue * storage;
     const S3QueueMode mode;
     const UInt64 max_set_size;
     const UInt64 max_set_age_sec;
@@ -73,16 +75,22 @@ private:
     std::atomic_bool shutdown = false;
     BackgroundSchedulePool::TaskHolder task;
 
-    FileStatuses file_statuses;
-    mutable std::mutex file_statuses_mutex;
+    std::string getNodeName(const std::string & path);
 
-    bool trySetFileAsProcessingForOrderedMode(const std::string & path);
-    bool trySetFileAsProcessingForUnorderedMode(const std::string & path);
+    zkutil::ZooKeeperPtr getZooKeeper() const;
 
     void setFileProcessedForOrderedMode(const std::string & path);
     void setFileProcessedForUnorderedMode(const std::string & path);
 
-    std::string getNodeName(const std::string & path);
+    enum class SetFileProcessingResult
+    {
+        Success,
+        ProcessingByOtherNode,
+        AlreadyProcessed,
+        AlreadyFailed,
+    };
+    SetFileProcessingResult trySetFileAsProcessingForOrderedMode(const std::string & path);
+    SetFileProcessingResult trySetFileAsProcessingForUnorderedMode(const std::string & path);
 
     struct NodeMetadata
     {
@@ -99,6 +107,19 @@ private:
 
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+
+    struct LocalFileStatuses
+    {
+        FileStatuses file_statuses;
+        mutable std::mutex mutex;
+
+        FileStatuses getAll() const;
+        std::shared_ptr<FileStatus> get(const std::string & filename, bool create);
+        bool remove(const std::string & filename, bool if_exists);
+        FileStatus::State state(const std::string & filename) const;
+        std::unique_lock<std::mutex> lock() const;
+    };
+    LocalFileStatuses local_file_statuses;
 };
 
 }

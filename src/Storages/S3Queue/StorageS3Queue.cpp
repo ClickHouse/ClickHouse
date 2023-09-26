@@ -14,6 +14,7 @@
 #include <Storages/S3Queue/S3QueueTableMetadata.h>
 #include <Storages/S3Queue/StorageS3Queue.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
+#include <Storages/S3Queue/S3QueueMetadataFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageSnapshot.h>
@@ -85,7 +86,7 @@ StorageS3Queue::StorageS3Queue(
     , s3queue_settings(std::move(s3queue_settings_))
     , zk_path(chooseZooKeeperPath(table_id_, context_->getSettingsRef(), *s3queue_settings))
     , after_processing(s3queue_settings->after_processing)
-    , files_metadata(std::make_shared<S3QueueFilesMetadata>(this, *s3queue_settings, context_))
+    , files_metadata(S3QueueMetadataFactory::instance().getOrCreate(zk_path, *s3queue_settings))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms(s3queue_settings->s3queue_polling_min_timeout_ms)

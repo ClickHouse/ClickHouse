@@ -54,8 +54,6 @@ public:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    S3QueueFilesMetadata::FileStatuses getFileStatuses() const { return files_metadata->getFileStateses(); }
-
 private:
     using FileIterator = StorageS3QueueSource::FileIterator;
 
