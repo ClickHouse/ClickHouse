@@ -84,7 +84,7 @@ then
     fi
     rm -f CMakeCache.txt
 
-    # Modify CMake flags, so we wouldn't need to build standalone keeper one more time
+    # Modify CMake flags, so we won't overwrite standalone keeper with symlinks
     CMAKE_FLAGS+=("-DBUILD_STANDALONE_KEEPER=0")
     CMAKE_FLAGS+=("-DCREATE_KEEPER_SYMLINK=0")
 fi
