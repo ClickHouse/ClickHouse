@@ -1447,9 +1447,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                 {
                     /// For input function we should check if input format supports reading subset of columns.
                     if (table_function_ptr->getName() == "input")
-                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
+                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat(), shared_from_this());
                     else
-                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(shared_from_this());
                 }
             }
 
