@@ -24,11 +24,18 @@ CREATE TABLE t1
 
 CREATE TABLE t1 
 (
+    a Float64 STATISTIC(xyz),
+    b Int64,
+) Engine = MergeTree() ORDER BY pk; -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE t1 
+(
     a Float64,
     b Int64,
     pk String,
 ) Engine = MergeTree() ORDER BY pk; 
 
+ALTER TABLE t1 ADD STATISTIC a TYPE xyz; -- { serverError INCORRECT_QUERY }
 ALTER TABLE t1 ADD STATISTIC a TYPE tdigest;
 ALTER TABLE t1 ADD STATISTIC a TYPE tdigest; -- { serverError ILLEGAL_STATISTIC }
 ALTER TABLE t1 ADD STATISTIC pk TYPE tdigest; -- { serverError ILLEGAL_STATISTIC }

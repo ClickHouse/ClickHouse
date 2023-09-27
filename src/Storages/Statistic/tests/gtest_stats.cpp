@@ -20,8 +20,8 @@ TEST(Statistic, TDigestLessThan)
 
         DB::QuantileTDigest<Int64> t_digest;
 
-        for (int i = 0; i < data1.size(); i++)
-            t_digest.add(data1[i]);
+        for (Int64 i : data1)
+            t_digest.add(i);
 
         t_digest.compress();
 

@@ -26,14 +26,14 @@ StatisticType stringToType(String type)
 {
     if (type == "tdigest")
         return TDigest;
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}. We only support statistic type `tdigest` right now.", type);
 }
 
 String StatisticDescription::getTypeName() const
 {
     if (type == TDigest)
         return "tdigest";
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}", type);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type: {}. We only support statistic type `tdigest` right now.", type);
 }
 
 std::vector<StatisticDescription> StatisticDescription::getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
