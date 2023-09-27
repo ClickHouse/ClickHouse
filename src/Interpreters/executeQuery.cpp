@@ -174,7 +174,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         elem.stack_trace = getExceptionStackTraceString(e);
     }
-    catch (...) {}
+    catch (...) {} // NOLINT(bugprone-empty-catch)
 }
 
 

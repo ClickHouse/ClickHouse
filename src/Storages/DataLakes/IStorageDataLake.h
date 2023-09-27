@@ -25,7 +25,7 @@ public:
     explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, Args && ...args)
         : Storage(getConfigurationForDataRead(configuration_, context_), context_, std::forward<Args>(args)...)
         , base_configuration(configuration_)
-        , log(&Poco::Logger::get(getName())) {}
+        , log(&Poco::Logger::get(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     String getName() const override { return name; }
 

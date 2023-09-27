@@ -134,7 +134,7 @@ namespace
             if (coordination)
                 coordination->setError(exception);
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     }
