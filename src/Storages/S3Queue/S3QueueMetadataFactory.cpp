@@ -2,6 +2,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 S3QueueMetadataFactory & S3QueueMetadataFactory::instance()
 {
