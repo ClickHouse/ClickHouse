@@ -3,10 +3,15 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/Arena.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -44,6 +49,9 @@ std::string ColumnTuple::getName() const
 
 ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 {
+    if (mutable_columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "This function cannot be used to construct empty tuple. It is a bug");
+
     columns.reserve(mutable_columns.size());
     for (auto & column : mutable_columns)
     {
@@ -52,15 +60,21 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 
         columns.push_back(std::move(column));
     }
+    len = columns[0]->size();
 }
+
+ColumnTuple::ColumnTuple(size_t len_) : len(len_) {}
 
 ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
+    if (columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "This function cannot be used to construct empty tuple. It is a bug");
+
     for (const auto & column : columns)
         if (isColumnConst(*column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
 
-    auto column_tuple = ColumnTuple::create(MutableColumns());
+    auto column_tuple = ColumnTuple::create(columns[0]->size());
     column_tuple->columns.assign(columns.begin(), columns.end());
 
     return column_tuple;
@@ -68,11 +82,14 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 
 ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 {
+    if (columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "This function cannot be used to construct empty tuple. It is a bug");
+
     for (const auto & column : columns)
         if (isColumnConst(*column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnTuple cannot have ColumnConst as its element");
 
-    auto column_tuple = ColumnTuple::create(MutableColumns());
+    auto column_tuple = ColumnTuple::create(columns[0]->size());
     column_tuple->columns = columns;
 
     return column_tuple;
@@ -80,6 +97,9 @@ ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
 
 MutableColumnPtr ColumnTuple::cloneEmpty() const
 {
+    if (columns.empty())
+        return ColumnTuple::create(0);
+
     const size_t tuple_size = columns.size();
     MutableColumns new_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -90,6 +110,9 @@ MutableColumnPtr ColumnTuple::cloneEmpty() const
 
 MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 {
+    if (columns.empty())
+        return ColumnTuple::create(new_size);
+
     const size_t tuple_size = columns.size();
     MutableColumns new_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -107,6 +130,7 @@ Field ColumnTuple::operator[](size_t n) const
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
+    // TODO will Tuple() be a problem?
     const size_t tuple_size = columns.size();
 
     res = Tuple();
@@ -144,6 +168,7 @@ void ColumnTuple::insert(const Field & x)
     if (tuple.size() != tuple_size)
         throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
+    ++len;
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
 }
@@ -181,6 +206,7 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
     if (src.columns.size() != tuple_size)
         throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
+    len += n;
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
@@ -199,18 +225,28 @@ void ColumnTuple::insertManyFrom(const IColumn & src, size_t position, size_t le
 
 void ColumnTuple::insertDefault()
 {
+    ++len;
     for (auto & column : columns)
         column->insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)
 {
+    len -= n;
     for (auto & column : columns)
         column->popBack(n);
 }
 
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
+    if (columns.empty())
+    {
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
+    }
+
     StringRef res(begin, 0);
     for (const auto & column : columns)
     {
@@ -232,6 +268,11 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 {
+    ++len;
+
+    if (columns.empty())
+        return pos + 1;
+
     for (auto & column : columns)
         pos = column->deserializeAndInsertFromArena(pos);
 
@@ -272,6 +313,7 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
 
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
+    len += length;
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertRangeFrom(
@@ -281,6 +323,12 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 
 ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
 {
+    if (columns.empty())
+    {
+        size_t bytes = countBytesInFilter(filt);
+        return cloneResized(bytes);
+    }
+
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
 
@@ -292,12 +340,31 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
 
 void ColumnTuple::expand(const Filter & mask, bool inverted)
 {
+    if (columns.empty())
+    {
+        size_t bytes = countBytesInFilter(mask);
+        if (inverted)
+            bytes = mask.size() - bytes;
+        len = bytes;
+        return;
+    }
+
     for (auto & column : columns)
         column->expand(mask, inverted);
+
+    len = columns[0]->size();
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
+    if (columns.empty())
+    {
+        if (len != perm.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column");
+
+        return cloneResized(limit ? std::min(len, limit) : len);
+    }
+
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
 
@@ -309,6 +376,14 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 
 ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
+    if (columns.empty())
+    {
+        if (indexes.size() < limit)
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required");
+
+        return cloneResized(limit ? limit : len);
+    }
+
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
 
@@ -320,6 +395,14 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 
 ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
+    if (columns.empty())
+    {
+        if (len != offsets.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column");
+
+        return cloneResized(offsets.back());
+    }
+
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
 
@@ -331,6 +414,22 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 
 MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
+    if (columns.empty())
+    {
+        if (len != selector.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
+
+        std::vector<size_t> counts(num_columns);
+        for (auto idx : selector)
+            ++counts[idx];
+
+        MutableColumns res(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+            res[i] = cloneResized(counts[i]);
+
+        return res;
+    }
+
     const size_t tuple_size = columns.size();
     std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
 
@@ -412,6 +511,9 @@ void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction
     size_t rows = size();
     res.resize(rows);
     iota(res.data(), rows, IColumn::Permutation::value_type(0));
+
+    if (columns.empty())
+        return;
 
     if (limit >= rows)
         limit = 0;
@@ -603,6 +705,9 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 
 ColumnPtr ColumnTuple::compress() const
 {
+    if (columns.empty())
+        return Ptr();
+
     size_t byte_size = 0;
     Columns compressed;
     compressed.reserve(columns.size());
@@ -620,6 +725,30 @@ ColumnPtr ColumnTuple::compress() const
                 column = column->decompress();
             return ColumnTuple::create(my_compressed);
         });
+}
+
+double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
+{
+    if (columns.empty())
+        return 1.0;
+
+    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
+}
+
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    if (columns.empty())
+        return len;
+
+    return getNumberOfDefaultRowsImpl<ColumnTuple>();
+}
+
+void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    if (columns.empty())
+        return;
+
+    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
 }
 
 void ColumnTuple::finalize()

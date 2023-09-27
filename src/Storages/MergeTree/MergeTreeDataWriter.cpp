@@ -512,9 +512,10 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    /// If optimize_on_insert is true, block may become empty after merge.
-    /// There is no need to create empty part.
-    if (expected_size == 0)
+    /// If optimize_on_insert is true, block may become empty after merge. There
+    /// is no need to create empty part. Since expected_size could be zero when
+    /// part only contains empty tuples. As a result, check rows instead.
+    if (block.rows() == 0)
         return temp_part;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;

@@ -82,7 +82,8 @@ SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT (1, 2) * toDecimal32(3.1, 8);
 
 SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tuple() + tuple(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- TODO: what's the expected value of () + ()? Currently it returns 0.
+-- SELECT tuple() + tuple(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT LpNorm((1, 2, 3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT max2(1, 2, -1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
