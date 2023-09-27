@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -10,14 +11,17 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
+/** timestamp(expr[, expr_time])
+ *
+ * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
+ * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
+  */
 class FunctionTimestamp : public IFunction
 {
 public:
@@ -30,72 +34,36 @@ public:
     String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Arguments size of function {} should be 1 or 2",
-                getName());
-
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Should be string or fixed string",
-                arguments[0].type->getName(),
-                getName());
-
-        if (arguments.size() == 2)
-            if (!isStringOrFixedString(arguments[1].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 2nd argument of function {}. Should be string or fixed string",
-                    arguments[1].type->getName(),
-                    getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"timestamp", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"time", &isString<IDataType>, nullptr, "String"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Arguments size of function {} should be 1 or 2",
-                getName());
-
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Should be string or fixed string",
-                arguments[0].type->getName(),
-                getName());
-
-        if (arguments.size() == 2)
-            if (!isStringOrFixedString(arguments[1].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of 2nd argument of function {}. Should be string or fixed string",
-                    arguments[1].type->getName(),
-                    getName());
-
         const DateLUTImpl * local_time_zone = &DateLUT::instance();
 
-        auto col_to = ColumnDateTime64::create(input_rows_count, DATETIME_SCALE);
-        ColumnDateTime64::Container & vec_to = col_to->getData();
+        auto col_result = ColumnDateTime64::create(input_rows_count, DATETIME_SCALE);
+        ColumnDateTime64::Container & vec_result = col_result->getData();
 
-        const IColumn * col_date = arguments[0].column.get();
+        const IColumn * col_timestamp = arguments[0].column.get();
 
-        if (const ColumnString * col_date_string = checkAndGetColumn<ColumnString>(col_date))
+        if (const ColumnString * col_timestamp_string = checkAndGetColumn<ColumnString>(col_timestamp))
         {
-            const ColumnString::Chars * chars = &col_date_string->getChars();
-            const IColumn::Offsets * offsets = &col_date_string->getOffsets();
+            const ColumnString::Chars * chars = &col_timestamp_string->getChars();
+            const IColumn::Offsets * offsets = &col_timestamp_string->getOffsets();
 
             size_t current_offset = 0;
 
@@ -107,16 +75,16 @@ public:
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
                 DateTime64 value = 0;
-                readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                vec_to[i] = value;
+                readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
+                vec_result[i] = value;
 
                 current_offset = next_offset;
             }
         }
-        else if (const ColumnFixedString * col_date_fixed_string = checkAndGetColumn<ColumnFixedString>(col_date))
+        else if (const ColumnFixedString * col_timestamp_fixed_string = checkAndGetColumn<ColumnFixedString>(col_timestamp))
         {
-            const ColumnString::Chars * chars = &col_date_fixed_string->getChars();
-            const size_t fixed_string_size = col_date_fixed_string->getN();
+            const ColumnString::Chars * chars = &col_timestamp_fixed_string->getChars();
+            const size_t fixed_string_size = col_timestamp_fixed_string->getN();
 
             size_t current_offset = 0;
 
@@ -127,8 +95,8 @@ public:
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
 
                 DateTime64 value = 0;
-                readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                vec_to[i] = value;
+                readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
+                vec_result[i] = value;
 
                 current_offset = next_offset;
             }
@@ -136,13 +104,13 @@ public:
         else
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of 1st argument of function {}. Must be string or fixed string",
-                col_date->getName(),
+                "Illegal column {} of 1st argument of function {}. Must be String or FixedString",
+                col_timestamp->getName(),
                 getName());
         }
 
         if (arguments.size() == 1)
-            return col_to;
+            return col_result;
 
         const IColumn * col_time = arguments[1].column.get();
 
@@ -161,8 +129,8 @@ public:
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
                 Decimal64 value = 0;
-                readTime64Text(value, col_to->getScale(), read_buffer);
-                vec_to[i] += value;
+                readTime64Text(value, col_result->getScale(), read_buffer);
+                vec_result[i] += value;
 
                 current_offset = next_offset;
             }
@@ -181,8 +149,8 @@ public:
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
 
                 Decimal64 value = 0;
-                readTime64Text(value, col_to->getScale(), read_buffer);
-                vec_to[i] += value;
+                readTime64Text(value, col_result->getScale(), read_buffer);
+                vec_result[i] += value;
 
                 current_offset = next_offset;
             }
@@ -190,12 +158,12 @@ public:
         else
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of 2nd argument of function {}. Must be string or fixed string",
+                "Illegal column {} of 2nd argument of function {}. Must be String or FixedString",
                 col_time->getName(),
                 getName());
         }
 
-        return col_to;
+        return col_result;
     }
 };
 

@@ -1080,8 +1080,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     datetime.second((s[6] - '0') * 10 + (s[7] - '0'));
 }
 
-/// In (hh)h:mm:ss format.
-
+/// In h*:mm:ss format.
 template <typename ReturnType = void>
 inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 {
