@@ -6,7 +6,7 @@ namespace DB
 {
 
 template <typename Key>
-class AggregateFunctionMinMax final : public IAggregateFunctionHelper<AggregateFunctionMinMax<Key>>
+class AggregateFunctionArgMinMax final : public IAggregateFunctionHelper<AggregateFunctionArgMinMax<Key>>
 {
 private:
     AggregateFunctionPtr nested_function;
@@ -18,8 +18,8 @@ private:
     const Key & key(ConstAggregateDataPtr __restrict place) const { return *reinterpret_cast<const Key *>(place + key_offset); }
 
 public:
-    AggregateFunctionMinMax(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionMinMax<Key>>{arguments, params, nested_function_->getResultType()}
+    AggregateFunctionArgMinMax(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionHelper<AggregateFunctionArgMinMax<Key>>{arguments, params, nested_function_->getResultType()}
         , nested_function{nested_function_}
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
