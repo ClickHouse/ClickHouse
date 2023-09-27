@@ -15,6 +15,22 @@ namespace DB
 struct S3QueueSettings;
 class StorageS3Queue;
 
+/**
+ * A class for managing S3Queue metadata in zookeeper, e.g.
+ * the following folders:
+ * - <path_to_metadata>/processing
+ * - <path_to_metadata>/processed
+ * - <path_to_metadata>/failed
+ *
+ * Depending on S3Queue processing mode (ordered or unordered)
+ * we can differently store metadata in /processed node.
+ *
+ * Implements caching of zookeeper metadata for faster responses.
+ * Cached part is located in LocalFileStatuses.
+ *
+ * In case of Unordered mode - if files TTL is enabled or maximum tracked files limit is set
+ * starts a background cleanup thread which is responsible for maintaining them.
+ */
 class S3QueueFilesMetadata
 {
 public:
@@ -25,6 +41,7 @@ public:
 
     ~S3QueueFilesMetadata();
 
+    /// Set file as processing, if it is not alreaty processed, failed or processing.
     ProcessingNodeHolderPtr trySetFileAsProcessing(const std::string & path);
 
     void setFileProcessed(ProcessingNodeHolderPtr holder);
@@ -33,7 +50,6 @@ public:
 
     struct FileStatus
     {
-        size_t processed_rows = 0;
         enum class State
         {
             Processing,
@@ -42,12 +58,12 @@ public:
             None
         };
         State state = State::None;
-        ProfileEvents::Counters profile_counters;
 
+        size_t processed_rows = 0;
         time_t processing_start_time = 0;
         time_t processing_end_time = 0;
-
         size_t retries = 0;
+        ProfileEvents::Counters profile_counters;
 
         std::mutex processing_lock;
     };

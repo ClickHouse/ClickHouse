@@ -33,6 +33,8 @@ NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
     };
 }
 
+/// TODO add last_exception column
+
 void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
