@@ -546,7 +546,7 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
                                                      node_metadata.toString(),
                                                      zkutil::CreateMode::Persistent));
         Coordination::Responses responses;
-        if (holder->remove(&requests,  &responses))
+        if (holder->remove(&requests, &responses))
         {
             LOG_TEST(log, "File `{}` failed to process and will not be retried. "
                      "Error: {}", path, exception_message);
