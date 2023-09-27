@@ -2,7 +2,7 @@
 
 #include <unordered_set>
 
-#include <AggregateFunctions/combinators/AggregateFunctionNull.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Columns/ColumnsNumber.h>
 
