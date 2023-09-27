@@ -211,6 +211,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             << (settings.hilite ? hilite_keyword : "") << " SECOND"
             << (settings.hilite ? hilite_none : "");
     }
+    else if (type == Type::DROP_FORMAT_SCHEMA_CACHE)
+    {
+        if (!schema_cache_format.empty())
+            settings.ostr << (settings.hilite ? hilite_none : "") << " FOR " << backQuoteIfNeed(schema_cache_format);
+    }
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_name.empty())
