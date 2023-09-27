@@ -108,7 +108,6 @@ StorageNATS::StorageNATS(
             }
 
             LOG_DEBUG(log, "Connect attempt #{} failed, error: {}. Reconnecting...", i + 1, nats_GetLastError(nullptr));
-            std::this_thread::sleep_for(std::chrono::milliseconds(configuration.reconnect_wait));
         }
     }
     catch (...)
