@@ -958,7 +958,6 @@ WikiStat
 WindowView
 WithNames
 WithNamesAndTypes
-Woboq
 WordNet
 WriteBuffer
 WriteBuffers
@@ -969,6 +968,8 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDDToDate
+YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -1177,6 +1178,10 @@ builtins
 byteSize
 bytebase
 bytesToCutForIPv
+byteEditDistance
+byteHammingDistance
+byteJaccardIndex
+byteLevenshteinDistance
 cLoki
 caConfig
 cacheSessions
@@ -1809,6 +1814,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1904,6 +1910,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overparallelization
 packetpool
 packetsize
 pageviews
@@ -2212,6 +2219,8 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
+splitBy
+splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp

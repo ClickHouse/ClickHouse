@@ -51,7 +51,7 @@ class CDCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} [path] -- Change the working path (default `.`)"; }
+    String getHelpMessage() const override { return "{} [path] -- Changes the working path (default `.`)"; }
 };
 
 class SetCommand : public IKeeperClientCommand
@@ -64,7 +64,7 @@ class SetCommand : public IKeeperClientCommand
 
     String getHelpMessage() const override
     {
-        return "{} <path> <value> [version] -- Updates the node's value. Only update if version matches (default: -1)";
+        return "{} <path> <value> [version] -- Updates the node's value. Only updates if version matches (default: -1)";
     }
 };
 
@@ -165,7 +165,6 @@ class FindBigFamily : public IKeeperClientCommand
     }
 };
 
-
 class RMCommand : public IKeeperClientCommand
 {
     String getName() const override { return "rm"; }
@@ -174,7 +173,7 @@ class RMCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Remove the node"; }
+    String getHelpMessage() const override { return "{} <path> [version] -- Removes the node only if version matches (default: -1)"; }
 };
 
 class RMRCommand : public IKeeperClientCommand

@@ -347,12 +347,20 @@ bool RMCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node
         return false;
     node->args.push_back(std::move(path));
 
+    ASTPtr version;
+    if (ParserNumber{}.parse(pos, version, expected))
+        node->args.push_back(version->as<ASTLiteral &>().value);
+
     return true;
 }
 
 void RMCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
-    client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()));
+    Int32 version{-1};
+    if (query->args.size() == 2)
+        version = static_cast<Int32>(query->args[1].get<Int32>());
+
+    client->zookeeper->remove(client->getAbsolutePath(query->args[0].safeGet<String>()), version);
 }
 
 bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
@@ -368,8 +376,8 @@ bool RMRCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & nod
 void RMRCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     String path = client->getAbsolutePath(query->args[0].safeGet<String>());
-    client->askConfirmation("You are going to recursively delete path " + path,
-                            [client, path]{ client->zookeeper->removeRecursive(path); });
+    client->askConfirmation(
+        "You are going to recursively delete path " + path, [client, path] { client->zookeeper->removeRecursive(path); });
 }
 
 bool ReconfigCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
