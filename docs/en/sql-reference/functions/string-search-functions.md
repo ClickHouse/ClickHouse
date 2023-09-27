@@ -684,12 +684,12 @@ Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
 
 ## byteHammingDistance
 
-Calculates the hamming distance between two byte strings.
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteHammingDistance(haystack, needle)
+byteHammingDistance(string2, string2)
 ```
 
 **Examples**
@@ -710,12 +710,12 @@ Result:
 
 ## byteJaccardIndex
 
-Calculates the jaccard similarity index between two byte strings.
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteJaccardIndex(haystack, needle)
+byteJaccardIndex(string1, string2)
 ```
 
 **Examples**
@@ -734,12 +734,12 @@ Result:
 
 ## byteEditDistance
 
-Calculates the edit distance between two byte strings.
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteEidtDistance(haystack, needle)
+byteEditDistance(string1, string2)
 ```
 
 **Examples**
