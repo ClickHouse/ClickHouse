@@ -68,16 +68,11 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (attemptedRetries >= maxRetries)
         return false;
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-    /// Check if query is canceled
-    if (auto query_context = CurrentThread::getQueryContext())
+    if (CurrentThread::isInitialized())
     {
-        if (query_context->isCurrentQueryKilled())
-        {
+        if (CurrentThread::get().isQueryCanceled())
             return false;
-        }
     }
-#endif
 
     return error.ShouldRetry();
 }
