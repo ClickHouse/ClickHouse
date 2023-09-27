@@ -71,6 +71,7 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
     try
     {
         impl();
+        typeid_cast<ColumnTuple &>(column).addSize(1);
 
         // Check that all columns now have the same size.
         size_t new_size = column.size();
@@ -97,8 +98,6 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
         throw;
     }
-
-    typeid_cast<ColumnTuple &>(column).addSize(1);
 }
 
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

@@ -56,10 +56,10 @@ ColumnTuple::ColumnTuple(MutableColumns && mutable_columns)
 
         columns.push_back(std::move(column));
     }
-    len = columns[0]->size();
+    column_length = columns[0]->size();
 }
 
-ColumnTuple::ColumnTuple(size_t len_) : len(len_) {}
+ColumnTuple::ColumnTuple(size_t len) : column_length(len) {}
 
 ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
 {
@@ -117,6 +117,12 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
     return ColumnTuple::create(std::move(new_columns));
 }
 
+size_t ColumnTuple::size() const
+{
+    chassert(columns.empty() || columns.at(0)->size() == column_length);
+    return column_length;
+}
+
 Field ColumnTuple::operator[](size_t n) const
 {
     Field res;
@@ -164,7 +170,7 @@ void ColumnTuple::insert(const Field & x)
     if (tuple.size() != tuple_size)
         throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
-    ++len;
+    ++column_length;
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
 }
@@ -177,21 +183,21 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
     if (src.columns.size() != tuple_size)
         throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
-    len += n;
+    column_length += n;
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
 
 void ColumnTuple::insertDefault()
 {
-    ++len;
+    ++column_length;
     for (auto & column : columns)
         column->insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)
 {
-    len -= n;
+    column_length -= n;
     for (auto & column : columns)
         column->popBack(n);
 }
@@ -219,7 +225,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
 
 const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 {
-    ++len;
+    ++column_length;
 
     if (columns.empty())
         return pos + 1;
@@ -264,7 +270,7 @@ void ColumnTuple::updateHashFast(SipHash & hash) const
 
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    len += length;
+    column_length += length;
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertRangeFrom(
@@ -296,24 +302,24 @@ void ColumnTuple::expand(const Filter & mask, bool inverted)
         size_t bytes = countBytesInFilter(mask);
         if (inverted)
             bytes = mask.size() - bytes;
-        len = bytes;
+        column_length = bytes;
         return;
     }
 
     for (auto & column : columns)
         column->expand(mask, inverted);
 
-    len = columns[0]->size();
+    column_length = columns[0]->size();
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     if (columns.empty())
     {
-        if (len != perm.size())
+        if (column_length != perm.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column");
 
-        return cloneResized(limit ? std::min(len, limit) : len);
+        return cloneResized(limit ? std::min(column_length, limit) : column_length);
     }
 
     const size_t tuple_size = columns.size();
@@ -332,7 +338,7 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
         if (indexes.size() < limit)
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required");
 
-        return cloneResized(limit ? limit : len);
+        return cloneResized(limit ? limit : column_length);
     }
 
     const size_t tuple_size = columns.size();
@@ -348,7 +354,7 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
     if (columns.empty())
     {
-        if (len != offsets.size())
+        if (column_length != offsets.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column");
 
         return cloneResized(offsets.back());
@@ -367,7 +373,7 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
 {
     if (columns.empty())
     {
-        if (len != selector.size())
+        if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
         std::vector<size_t> counts(num_columns);
@@ -673,7 +679,7 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 UInt64 ColumnTuple::getNumberOfDefaultRows() const
 {
     if (columns.empty())
-        return len;
+        return column_length;
 
     return getNumberOfDefaultRowsImpl<ColumnTuple>();
 }
