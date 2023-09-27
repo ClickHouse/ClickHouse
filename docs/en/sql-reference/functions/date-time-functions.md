@@ -139,8 +139,8 @@ makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, t
 
 ## timestamp
 
-Converts the first argument 'expr' to type DateTime64(6).
-If the second argument 'expr_time' is provided, it adds the specified time to the converted value.
+Converts the first argument 'expr' to type [DateTime64(6)](../../sql-reference/data-types/datetime64.md).
+If a second argument 'expr_time' is provided, it adds the specified time to the converted value.
 
 **Syntax**
 
@@ -148,33 +148,36 @@ If the second argument 'expr_time' is provided, it adds the specified time to th
 timestamp(expr[, expr_time])
 ```
 
+Alias: `TIMESTAMP`
+
 **Arguments**
+
 - `expr` - Date or date with time. Type: [String](../../sql-reference/data-types/string.md).
-- `expr_time` - Time to add. [String](../../sql-reference/data-types/string.md).
+- `expr_time` - Optional parameter. Time to add. [String](../../sql-reference/data-types/string.md).
 
 **Examples**
 
 ``` sql
-SELECT timestamp('2013-12-31') as ts;
+SELECT timestamp('2023-12-31') as ts;
 ```
 
 Result:
 
 ``` text
 ┌─────────────────────────ts─┐
-│ 2013-12-31 00:00:00.000000 │
+│ 2023-12-31 00:00:00.000000 │
 └────────────────────────────┘
 ```
 
 ``` sql
-SELECT timestamp('2013-12-31 12:00:00', '12:00:00.11') as ts;
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') as ts;
 ```
 
 Result:
 
 ``` text
 ┌─────────────────────────ts─┐
-│ 2014-01-01 00:00:00.110000 │
+│ 2024-01-01 00:00:00.110000 │
 └────────────────────────────┘
 ```
 
