@@ -9,16 +9,26 @@ namespace DB
 class S3QueueMetadataFactory final : private boost::noncopyable
 {
 public:
-    using MetadataPtr = std::shared_ptr<S3QueueFilesMetadata>;
-    using MetadataByPath = std::unordered_map<std::string, MetadataPtr>;
+    using FilesMetadataPtr = std::shared_ptr<S3QueueFilesMetadata>;
 
     static S3QueueMetadataFactory & instance();
 
-    MetadataPtr getOrCreate(const std::string & zookeeper_path, const S3QueueSettings & settings);
+    FilesMetadataPtr getOrCreate(const std::string & zookeeper_path, const S3QueueSettings & settings);
 
-    MetadataByPath getAll() { return metadata_by_path; }
+    void remove(const std::string & zookeeper_path);
+
+    std::unordered_map<std::string, FilesMetadataPtr> getAll();
 
 private:
+    struct Metadata
+    {
+        explicit Metadata(std::shared_ptr<S3QueueFilesMetadata> metadata_) : metadata(metadata_), ref_count(1) {}
+
+        std::shared_ptr<S3QueueFilesMetadata> metadata;
+        size_t ref_count = 0;
+    };
+    using MetadataByPath = std::unordered_map<std::string, Metadata>;
+
     MetadataByPath metadata_by_path;
     std::mutex mutex;
 };

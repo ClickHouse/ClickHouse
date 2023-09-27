@@ -175,13 +175,13 @@ private:
     {
     public:
         ReaderHolder(
-            KeyWithInfo key_with_info_,
+            KeyWithInfoPtr key_with_info_,
             String bucket_,
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : key_with_info(std::move(key_with_info_))
+            : key_with_info(key_with_info_)
             , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
             , source(std::move(source_))
@@ -215,14 +215,14 @@ private:
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        String getPath() const { return fs::path(bucket) / key_with_info.key; }
-        const String & getFile() const { return key_with_info.key; }
-        const KeyWithInfo & getKeyWithInfo() const { return key_with_info; }
+        String getPath() const { return fs::path(bucket) / key_with_info->key; }
+        const String & getFile() const { return key_with_info->key; }
+        const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
 
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
-        KeyWithInfo key_with_info;
+        KeyWithInfoPtr key_with_info;
         String bucket;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;

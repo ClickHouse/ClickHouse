@@ -33,11 +33,9 @@ namespace ErrorCodes
 StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
         const std::string & key_,
         std::optional<S3::ObjectInfo> info_,
-        std::unique_ptr<Metadata::ProcessingHolder> processing_holder_,
-        std::shared_ptr<Metadata::FileStatus> file_status_)
+        Metadata::ProcessingNodeHolderPtr processing_holder_)
     : StorageS3Source::KeyWithInfo(key_, info_)
-    , processing_holder(std::move(processing_holder_))
-    , file_status(file_status_)
+    , processing_holder(processing_holder_)
 {
 }
 
@@ -61,7 +59,7 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
 
         if (auto processing_holder = metadata->trySetFileAsProcessing(val->key); processing_holder)
         {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, std::move(processing_holder), nullptr);
+            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
         }
     }
 }
@@ -151,12 +149,16 @@ Chunk StorageS3QueueSource::generate()
         catch (const Exception & e)
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
-            files_metadata->setFileFailed(reader.getFile(), e.message());
+
+            const StorageS3QueueSource::S3QueueKeyWithInfo * key_with_info = assert_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+            files_metadata->setFileFailed(key_with_info->processing_holder, e.message());
+
             appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
             throw;
         }
 
-        files_metadata->setFileProcessed(reader.getFile());
+        const StorageS3QueueSource::S3QueueKeyWithInfo * key_with_info = assert_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+        files_metadata->setFileProcessed(key_with_info->processing_holder);
         applyActionAfterProcessing(reader.getFile());
 
         appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, true);

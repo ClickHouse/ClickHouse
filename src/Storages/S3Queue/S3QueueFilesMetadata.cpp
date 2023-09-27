@@ -1,4 +1,3 @@
-#include <set>
 #include "config.h"
 
 #include <base/sleep.h>
@@ -25,6 +24,7 @@ namespace ProfileEvents
     extern const Event S3QueueSetFileFailedMicroseconds;
     extern const Event S3QueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event S3QueueLockLocalFileStatusesMicroseconds;
+    extern const Event CannotRemoveEphemeralNode;
 };
 
 namespace DB
@@ -118,7 +118,7 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::NodeMetadata::fromStrin
     metadata.last_processed_timestamp = json->getValue<UInt64>("last_processed_timestamp");
     metadata.last_exception = json->getValue<String>("last_exception");
     metadata.retries = json->getValue<UInt64>("retries");
-    metadata.processing_id = json->getValue<UInt64>("processing_id");
+    metadata.processing_id = json->getValue<String>("processing_id");
     return metadata;
 }
 
@@ -185,10 +185,10 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
-S3QueueFilesMetadata::ProcessingHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
+S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessingMicroseconds);
-    auto file_status = local_file_statuses.get(path, /* create */false);
+    auto file_status = local_file_statuses.get(path, /* create */true);
 
     /// Check locally cached file status.
     switch (file_status->state)
@@ -224,7 +224,7 @@ S3QueueFilesMetadata::ProcessingHolderPtr S3QueueFilesMetadata::trySetFileAsProc
     }
 
     SetFileProcessingResult result;
-    ProcessingHolderPtr processing_holder;
+    ProcessingNodeHolderPtr processing_holder;
     switch (mode)
     {
         case S3QueueMode::ORDERED:
@@ -274,7 +274,7 @@ S3QueueFilesMetadata::ProcessingHolderPtr S3QueueFilesMetadata::trySetFileAsProc
     return processing_holder;
 }
 
-std::pair<S3QueueFilesMetadata::SetFileProcessingResult, S3QueueFilesMetadata::ProcessingHolderPtr>
+std::pair<S3QueueFilesMetadata::SetFileProcessingResult, S3QueueFilesMetadata::ProcessingNodeHolderPtr>
 S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string & path)
 {
     /// Create an ephemenral node in /processing
@@ -296,7 +296,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string &
 
     if (code == Coordination::Error::ZOK)
     {
-        auto holder = std::make_unique<ProcessingHolder>(node_metadata.processing_id, zookeeper_processing_path / node_name, zk_client);
+        auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, zk_client);
         return std::pair{SetFileProcessingResult::Success, std::move(holder)};
     }
 
@@ -310,7 +310,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForUnorderedMode(const std::string &
     return std::pair{SetFileProcessingResult::ProcessingByOtherNode, nullptr};
 }
 
-std::pair<S3QueueFilesMetadata::SetFileProcessingResult, S3QueueFilesMetadata::ProcessingHolderPtr>
+std::pair<S3QueueFilesMetadata::SetFileProcessingResult, S3QueueFilesMetadata::ProcessingNodeHolderPtr>
 S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & path)
 {
     /// Create an ephemenral node in /processing
@@ -356,6 +356,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
 
         requests.clear();
         responses.clear();
+
         zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
         requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
         requests.push_back(zkutil::makeCheckRequest(zookeeper_processed_path, processed_node_stat.version));
@@ -363,7 +364,7 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
         code = zk_client->tryMulti(requests, responses);
         if (code == Coordination::Error::ZOK)
         {
-            auto holder = std::make_unique<ProcessingHolder>(node_metadata.processing_id, zookeeper_processing_path / node_name, zk_client);
+            auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, zk_client);
             return std::pair{SetFileProcessingResult::Success, std::move(holder)};
         }
 
@@ -384,9 +385,11 @@ S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::string & p
     }
 }
 
-void S3QueueFilesMetadata::setFileProcessed(const String & path)
+void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessedMicroseconds);
+    const auto & path = holder->path;
+
     SCOPE_EXIT({
         auto file_status = local_file_statuses.get(path, /* create */false);
         file_status->state = FileStatus::State::Processed;
@@ -399,44 +402,44 @@ void S3QueueFilesMetadata::setFileProcessed(const String & path)
     {
         case S3QueueMode::ORDERED:
         {
-            return setFileProcessedForOrderedMode(path);
+            return setFileProcessedForOrderedMode(holder);
         }
         case S3QueueMode::UNORDERED:
         {
-            return setFileProcessedForUnorderedMode(path);
+            return setFileProcessedForUnorderedMode(holder);
         }
     }
 }
 
-void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(const String & path)
+void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder)
 {
     /// Create a persistent node in /processed and remove ephemeral node from /processing.
 
+    const auto & path = holder->path;
     const auto node_name = getNodeName(path);
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = getZooKeeper();
 
     Coordination::Requests requests;
-    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
     requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, node_metadata, zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
-    auto code = zk_client->tryMulti(requests, responses);
-    if (code == Coordination::Error::ZOK)
+    if (holder->remove(&requests, &responses))
     {
         LOG_TEST(log, "Moved file `{}` to processed", path);
         return;
     }
 
     /// TODO this could be because of the expired session.
-    if (responses[0]->error != Coordination::Error::ZOK)
+    if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set file as processed but it is not processing");
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set file as processed but it is already processed");
 }
 
-void S3QueueFilesMetadata::setFileProcessedForOrderedMode(const String & path)
+void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder)
 {
+    const auto & path = holder->path;
     const auto node_name = getNodeName(path);
     const auto node_metadata = createNodeMetadata(path).toString();
     const auto zk_client = getZooKeeper();
@@ -463,15 +466,22 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(const String & path)
         }
 
         Coordination::Responses responses;
-        auto code = zk_client->tryMulti(requests, responses);
-        if (code == Coordination::Error::ZOK)
+        if (holder->remove(&requests, &responses))
             return;
+
+        if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
+            continue;
+
+        LOG_ERROR(log, "Cannot set file {} as failed - failed to remove ephemeral processing node", path);
+        chassert(false);
+        return;
     }
 }
 
-void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exception_message)
+void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const String & exception_message)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileFailedMicroseconds);
+    const auto & path = holder->path;
 
     auto file_status = local_file_statuses.get(path, /* create */false);
     SCOPE_EXIT({
@@ -488,14 +498,12 @@ void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exc
     if (max_loading_retries == 0)
     {
         Coordination::Requests requests;
-        requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
         requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name,
                                                      node_metadata.toString(),
                                                      zkutil::CreateMode::Persistent));
 
         Coordination::Responses responses;
-        auto code = zk_client->tryMulti(requests, responses);
-        if (code == Coordination::Error::ZOK)
+        if (holder->remove(&requests,  &responses))
         {
             LOG_TEST(log, "File `{}` failed to process and will not be retried. "
                      "Error: {}", path, exception_message);
@@ -563,6 +571,82 @@ void S3QueueFilesMetadata::setFileFailed(const String & path, const String & exc
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file as failed");
     }
+}
+
+S3QueueFilesMetadata::ProcessingNodeHolder::ProcessingNodeHolder(
+    const std::string & processing_id_,
+    const std::string & path_,
+    const std::string & zk_node_path_,
+    zkutil::ZooKeeperPtr zk_client_)
+    : zk_client(zk_client_)
+    , path(path_)
+    , zk_node_path(zk_node_path_)
+    , processing_id(processing_id_)
+    , log(&Poco::Logger::get("ProcessingNodeHolder"))
+{
+}
+
+S3QueueFilesMetadata::ProcessingNodeHolder::~ProcessingNodeHolder()
+{
+    if (!removed)
+        remove();
+}
+
+bool S3QueueFilesMetadata::ProcessingNodeHolder::remove(Coordination::Requests * requests, Coordination::Responses * responses)
+{
+    if (removed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processing file holder is already released");
+
+    removed = true;
+
+    try
+    {
+        if (!zk_client->expired())
+        {
+            /// Is is possible that we created an ephemeral processing node
+            /// but session expired and someone other created an ephemeral processing node.
+            /// To avoid deleting this new node, check processing_id.
+            std::string res;
+            Coordination::Stat stat;
+            if (zk_client->tryGet(zk_node_path, res, &stat))
+            {
+                auto node_metadata = NodeMetadata::fromString(res);
+                if (node_metadata.processing_id == processing_id)
+                {
+                    if (requests)
+                    {
+                        requests->push_back(zkutil::makeRemoveRequest(zk_node_path, stat.version));
+                        auto code = zk_client->tryMulti(*requests, *responses);
+                        return code == Coordination::Error::ZOK;
+                    }
+                    else
+                        zk_client->remove(zk_node_path);
+                    return true;
+                }
+                else
+                    LOG_WARNING(log, "Cannot remove {} since precessing id changed: {} -> {}",
+                                zk_node_path, processing_id, node_metadata.processing_id);
+            }
+            else
+                LOG_DEBUG(log, "Cannot remove {}, node doesn't exist, "
+                          "probably because of session expiration", zk_node_path);
+
+            /// TODO: this actually would mean that we already processed (or partially processed)
+            /// the data but another thread will try processing it again and data can be duplicated.
+            /// This can be solved via persistenly saving last processed offset in the file.
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+            LOG_DEBUG(log, "Cannot remove {} since session has been expired", zk_node_path);
+        }
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove " + zk_node_path);
+    }
+    return false;
 }
 
 void S3QueueFilesMetadata::cleanupThreadFunc()

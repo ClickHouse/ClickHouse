@@ -149,6 +149,11 @@ void StorageS3Queue::shutdown()
     }
 }
 
+void StorageS3Queue::drop()
+{
+    S3QueueMetadataFactory::instance().remove(zk_path);
+}
+
 bool StorageS3Queue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
@@ -420,13 +425,6 @@ std::shared_ptr<StorageS3Queue::FileIterator> StorageS3Queue::createFileIterator
         *configuration.client, configuration.url, query, virtual_columns, local_context,
         /* read_keys */nullptr, configuration.request_settings);
     return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator));
-}
-
-void StorageS3Queue::drop()
-{
-    auto zookeeper = getZooKeeper();
-    if (zookeeper->exists(zk_path))
-        zookeeper->removeRecursive(zk_path);
 }
 
 void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
