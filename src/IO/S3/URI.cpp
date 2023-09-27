@@ -59,6 +59,8 @@ URI::URI(const std::string & uri_)
     static constexpr auto OBS = "OBS";
     static constexpr auto OSS = "OSS";
 
+    uri = Poco::URI(uri_);
+
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
     if (context)
@@ -71,7 +73,6 @@ URI::URI(const std::string & uri_)
             for (const std::string & config_key : config_keys)
                 mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".domain");
         }
-        uri = Poco::URI(uri_);
 
         if (!mapper.empty())
             URIConverter::modifyURI(uri, mapper);
