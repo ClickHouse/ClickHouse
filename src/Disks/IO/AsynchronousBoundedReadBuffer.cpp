@@ -218,7 +218,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
 
     bytes_to_ignore = 0;
-
     chassert(size >= offset);
 
     size_t bytes_read = size - offset;
