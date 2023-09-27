@@ -46,7 +46,7 @@ def test_s3_table_functions(started_cluster):
 
     assert (
         node.query(
-        """
+            """
             SELECT count(*) FROM s3
             (
                 'minio://data/test_file.tsv.gz', 'minio', 'minio123'
