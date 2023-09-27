@@ -852,7 +852,9 @@ struct HashMethodKeysAdaptive
                         return AdaptiveKeysHolder{serialized_keys, value_id_cache_line.cached_values[current_index]};
                     }
                     else
+                    {
                         value_cache_line.allocated_num += 1;
+                    }
                 }
                 else
                 {
