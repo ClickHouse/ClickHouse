@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List, Tuple
 import argparse
 import logging
-import os
 import subprocess
 import sys
 
@@ -169,11 +168,10 @@ def main():
 
     download_builds_filter(args.check_name, reports_path, packages_path, url_filter)
 
-    for f in os.listdir(packages_path):
-        if ".deb" in f:
-            full_path = os.path.join(packages_path, f)
+    for package in packages_path.iterdir():
+        if package.suffix == ".deb":
             subprocess.check_call(
-                f"dpkg -x {full_path} {packages_path} && rm {full_path}", shell=True
+                f"dpkg -x {package} {packages_path} && rm {package}", shell=True
             )
 
     server_log_path = temp_path / "server_log"

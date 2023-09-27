@@ -202,10 +202,12 @@ def main():
         description = format_description(test_results[-1].name)
 
     ch_helper = ClickHouseHelper()
-    s3_path_prefix = os.path.join(
-        get_release_or_pr(pr_info, get_version_from_repo())[0],
-        pr_info.sha,
-        "fast_tests",
+    s3_path_prefix = "/".join(
+        (
+            get_release_or_pr(pr_info, get_version_from_repo())[0],
+            pr_info.sha,
+            "fast_tests",
+        )
     )
     build_urls = s3_helper.upload_build_directory_to_s3(
         output_path / "binaries",
