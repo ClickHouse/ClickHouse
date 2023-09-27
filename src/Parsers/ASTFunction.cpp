@@ -409,6 +409,11 @@ namespace
                 /// PostgreSQL('host:port', 'database', 'user', 'password')
                 findMySQLDatabaseSecretArguments();
             }
+            else if (engine_name == "S3")
+            {
+                /// S3('url', 'access_key_id', 'secret_access_key')
+                findS3DatabaseSecretArguments();
+            }
         }
 
         void findMySQLDatabaseSecretArguments()
@@ -422,6 +427,20 @@ namespace
             {
                 /// MySQL('host:port', 'database', 'user', 'password')
                 markSecretArgument(3);
+            }
+        }
+
+        void findS3DatabaseSecretArguments()
+        {
+            if (isNamedCollectionName(0))
+            {
+                /// S3(named_collection, ..., secret_access_key = 'password', ...)
+                findSecretNamedArgument("secret_access_key", 1);
+            }
+            else
+            {
+                /// S3('url', 'access_key_id', 'secret_access_key')
+                markSecretArgument(2);
             }
         }
 
