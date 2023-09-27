@@ -143,10 +143,10 @@ namespace DB
 struct AdaptiveKeysHolder
 {
     struct State;
-    struct CachedValue
+    struct StateRef
     {
-        CachedValue() = default;
-        CachedValue(const StringRef & serialized_keys_, UInt64 value_id_, UInt64 hash_, State * state_)
+        StateRef() = default;
+        StateRef(const StringRef & serialized_keys_, UInt64 value_id_, UInt64 hash_, State * state_)
             : serialized_keys(serialized_keys_), value_id(value_id_), hash(hash_), state(state_)
         {
         }
@@ -171,7 +171,7 @@ struct AdaptiveKeysHolder
             HASH,
         };
         HashMode hash_mode = VALUE_ID;
-        Arena * pool;
+        std::shared_ptr<Arena> pool;
 #if defined(__AVX512F__) && defined(__AVX512BW__)
         static constexpr size_t cache_line_num = 1;
         static constexpr size_t cache_line_num_mask = cache_line_num - 1;
@@ -179,18 +179,19 @@ struct AdaptiveKeysHolder
         {
             size_t allocated_num = 0;
             alignas(64) UInt64 value_ids[8] = {-1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL};
-            CachedValue * cached_values[8] = {nullptr};
+            StateRef * cached_values[8] = {nullptr};
         };
         ValueIdCacheLine value_cache_lines[cache_line_num];
 #endif
-        std::unordered_map<UInt64, CachedValue> cached_values;
+        std::unordered_map<UInt64, StateRef> cached_values;
 
     };
 
     /// be careful with all fields, their default value must be zero bits.
     /// since hash table allocs cell buffer without calling cell constructor.
     StringRef serialized_keys;
-    CachedValue * value = nullptr;
+    StateRef * state_ref = nullptr;
+    Arena * pool = nullptr;
 };
 }
 
@@ -198,9 +199,9 @@ inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::
 {
     /// a and b may come from different aggregate variants during the merging phase, in this case
     /// we cannot compare the value_ids.
-    if (a.value && a.value->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && b.value && a.value->state == b.value->state)
+    if (a.state_ref && a.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && b.state_ref && a.state_ref->state == b.state_ref->state)
     {
-        return a.value->value_id == b.value->value_id;
+        return a.state_ref->value_id == b.state_ref->value_id;
     }
     return a.serialized_keys == b.serialized_keys;
 }
@@ -216,13 +217,14 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::AdaptiveKeysHolder &)
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::AdaptiveKeysHolder & holder)
 {
-    if (holder.value && holder.value->state->hash_mode != DB::AdaptiveKeysHolder::State::VALUE_ID)
+    if (holder.state_ref && holder.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID)
     {
-        [[maybe_unused]] void * new_head = holder.value->state->pool->rollback(holder.serialized_keys.size);
-        assert(new_head == holder.serialized_keys.data);
-        holder.serialized_keys.data = nullptr;
-        holder.serialized_keys.size = 0;
+        return;
     }
+    [[maybe_unused]] void * new_head = holder.pool->rollback(holder.serialized_keys.size);
+    assert(new_head == holder.serialized_keys.data);
+    holder.serialized_keys.data = nullptr;
+    holder.serialized_keys.size = 0;
 }
 
 template<>
@@ -230,8 +232,8 @@ struct DefaultHash<DB::AdaptiveKeysHolder>
 {
     inline size_t operator()(const DB::AdaptiveKeysHolder & key) const
     {
-        if (key.value)
-            return key.value->hash;
+        if (key.state_ref)
+            return key.state_ref->hash;
         return ::DefaultHash<StringRef>()(key.serialized_keys);
     }
 };

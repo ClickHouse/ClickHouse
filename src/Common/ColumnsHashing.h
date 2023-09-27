@@ -774,6 +774,7 @@ struct HashMethodKeysAdaptive
             {
                 adaptive_ctx->value_id_generators[variant_index] = AdaptiveHashMethodContext::HashValueIdGeneratorState();
                 value_id_generators_state = &adaptive_ctx->value_id_generators[variant_index];
+                value_id_generators_state->shared_keys_holder_state.pool = std::make_shared<Arena>();
             }
             else
             {
@@ -810,10 +811,6 @@ struct HashMethodKeysAdaptive
             if (!has_generated_value_ids) [[unlikely]]
             {
                 has_generated_value_ids = true;
-                if (&pool != value_id_generators_state->shared_keys_holder_state.pool) [[unlikely]]
-                {
-                    value_id_generators_state->shared_keys_holder_state.pool = &pool;
-                }
                 value_ids.clear();
                 value_ids.resize_fill(key_columns[0]->size(), 0);
                 for (size_t i = 0; i < keys_size; ++i)
@@ -843,13 +840,19 @@ struct HashMethodKeysAdaptive
                             row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
                         auto hash = ::DefaultHash<StringRef>()(serialized_keys);
 
-                        cached_values[value_id] = AdaptiveKeysHolder::CachedValue(
-                            serialized_keys, value_id, hash, &value_id_generators_state->shared_keys_holder_state);
+                        cached_values[value_id] = AdaptiveKeysHolder::StateRef(
+                            serialized_keys,
+                            value_id,
+                            hash,
+                            &value_id_generators_state->shared_keys_holder_state);
 
                         value_cache_line.value_ids[current_index] = value_id;
                         value_id_cache_line.cached_values[current_index] = &cached_values[value_id];
 
-                        return AdaptiveKeysHolder{serialized_keys, value_id_cache_line.cached_values[current_index]};
+                        return AdaptiveKeysHolder{
+                            serialized_keys,
+                            value_id_cache_line.cached_values[current_index],
+                            value_id_generators_state->shared_keys_holder_state.pool.get()};
                     }
                     else
                     {
@@ -858,7 +861,10 @@ struct HashMethodKeysAdaptive
                 }
                 else
                 {
-                    return AdaptiveKeysHolder{value_id_cache_line.cached_values[hit_pos]->serialized_keys, value_id_cache_line.cached_values[hit_pos]};
+                    return AdaptiveKeysHolder{
+                        value_id_cache_line.cached_values[hit_pos]->serialized_keys,
+                        value_id_cache_line.cached_values[hit_pos],
+                        value_id_generators_state->shared_keys_holder_state.pool.get()};
                 }
             }
 #endif
@@ -869,19 +875,23 @@ struct HashMethodKeysAdaptive
                     = serializeKeysToPoolContiguous(row, keys_size, key_columns, *value_id_generators_state->shared_keys_holder_state.pool);
                 auto hash = ::DefaultHash<StringRef>()(serialized_keys);
 
-                cached_values[value_id] = AdaptiveKeysHolder::CachedValue(
-                    serialized_keys, value_id, hash, &value_id_generators_state->shared_keys_holder_state);
-                return AdaptiveKeysHolder{serialized_keys, &cached_values[value_id]};
-
+                cached_values[value_id] = AdaptiveKeysHolder::StateRef(
+                    serialized_keys,
+                    value_id,
+                    hash,
+                    &value_id_generators_state->shared_keys_holder_state);
+                return AdaptiveKeysHolder{
+                    serialized_keys, &cached_values[value_id], value_id_generators_state->shared_keys_holder_state.pool.get()};
             }
             else
-                return AdaptiveKeysHolder{cache_it->second.serialized_keys, &cache_it->second};
+                return AdaptiveKeysHolder{
+                    cache_it->second.serialized_keys, &cache_it->second, value_id_generators_state->shared_keys_holder_state.pool.get()};
         }
         else
         {
             auto serialized_keys
                 = serializeKeysToPoolContiguous(row, keys_size, key_columns, pool);
-            return AdaptiveKeysHolder{serialized_keys, nullptr};
+            return AdaptiveKeysHolder{serialized_keys, nullptr, &pool};
         }
     }
 
