@@ -932,11 +932,11 @@ namespace
         return std::make_shared<DataTypeString>();
     }
 
-    [[maybe_unused]] bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
+    bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
     {
         if (depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                            "Maximum parse depth ({}) exceeded. Consider rising max_parser_depth setting.", settings.max_parser_depth);
+                            "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
@@ -961,7 +961,7 @@ namespace
                 return false;
 
             std::vector<String> current_path = path;
-            current_path.push_back(key);
+            current_path.push_back(std::move(key));
 
             skipWhitespaceIfAny(buf);
 
@@ -976,7 +976,7 @@ namespace
                 if (!value_type)
                     return false;
 
-                paths[current_path] = value_type;
+                paths[std::move(current_path)] = value_type;
             }
 
             skipWhitespaceIfAny(buf);
@@ -997,7 +997,7 @@ namespace
         return true;
     }
 
-    [[maybe_unused]] DataTypePtr tryInferJSONPaths(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferJSONPaths(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
     {
         DataTypeJSONPaths::Paths paths;
         if (!tryReadJSONObject(buf, settings, paths, {}, json_info, depth))
@@ -1115,7 +1115,7 @@ namespace
     {
         if (depth > settings.max_parser_depth)
             throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
-                "Maximum parse depth ({}) exceeded. Consider rising max_parser_depth setting.", settings.max_parser_depth);
+                "Maximum parse depth ({}) exceeded. Consider raising max_parser_depth setting.", settings.max_parser_depth);
 
         skipWhitespaceIfAny(buf);
 
