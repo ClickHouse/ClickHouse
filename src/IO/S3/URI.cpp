@@ -1,6 +1,6 @@
 #include <IO/S3/URI.h>
 #include <Poco/URI.h>
-#include <Storages/NamedCollectionsHelpers.h">
+#include <Storages/NamedCollectionsHelpers.h>
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -19,7 +19,7 @@
 namespace DB
 {
 
-struct UriConverter
+struct URIConverter
 {
     static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
@@ -73,7 +73,7 @@ URI::URI(const std::string & uri_)
     uri = Poco::URI(uri_);
 
     if (!mapper.empty())
-        UriConverter::modifyURI(uri, mapper);
+        URIConverter::modifyURI(uri, mapper);
 
     storage_name = S3;
 
