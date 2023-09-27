@@ -122,8 +122,16 @@ bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_
     return clickhouse_port == address.port() && isLocalAddress(address.host());
 }
 
+size_t getHostNamePrefixDistance(const std::string & local_hostname, const std::string & host)
+{
+    size_t hostname_difference = 0;
+    for (size_t i = 0; i < std::min(local_hostname.length(), host.length()); ++i)
+        if (local_hostname[i] != host[i])
+            ++hostname_difference;
+    return hostname_difference;
+}
 
-size_t getHostNameDifference(const std::string & local_hostname, const std::string & host)
+size_t getHostNameLevenshteinDistance(const std::string & local_hostname, const std::string & host)
 {
     return levenshteinDistance(local_hostname, host);
 }
