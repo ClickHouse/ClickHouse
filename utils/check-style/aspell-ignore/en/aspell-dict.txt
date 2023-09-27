@@ -432,6 +432,7 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
+Levenshtein
 LGPL
 LLDB
 LLVM's
@@ -1708,6 +1709,7 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+levenshtein
 lexicographically
 lgamma
 libFuzzer
