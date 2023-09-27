@@ -18,7 +18,7 @@ extern const int TOO_LARGE_STRING_SIZE;
 }
 
 template <typename Op>
-struct FunctionDistanceImpl
+struct FunctionStringDistanceImpl
 {
     using ResultType = typename Op::ResultType;
 
@@ -195,12 +195,11 @@ struct NameByteEditDistance
     static constexpr auto name = "byteEditDistance";
 };
 
-using FunctionByteHammingDistance
-    = FunctionsStringSimilarity<FunctionDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
+using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
 
-using FunctionByteJaccardIndex = FunctionsStringSimilarity<FunctionDistanceImpl<ByteJaccardIndexImpl>, NameByteJaccardIndex>;
+using FunctionByteJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl>, NameByteJaccardIndex>;
 
-using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionDistanceImpl<ByteEditDistanceImpl>, NameByteEditDistance>;
+using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameByteEditDistance>;
 
 REGISTER_FUNCTION(StringHammingDistance)
 {
