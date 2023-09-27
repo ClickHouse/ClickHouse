@@ -358,7 +358,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
         /// Get a /processed node content - max_processed path.
         /// Compare our path to it.
         /// If file is not yet processed, check corresponding /failed node and try create /processing node
-        /// and in the same zookeeper transaction als check that /processed node did not change
+        /// and in the same zookeeper transaction also check that /processed node did not change
         /// in between, e.g. that stat.version remained the same.
         /// If the version did change - retry (since we cannot do Get and Create requests
         /// in the same zookeeper transaction, so we use a while loop with tries).
@@ -462,7 +462,7 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder)
 {
-    /// Update a presistent node in /processed and remove ephemeral node from /processing.
+    /// Update a persistent node in /processed and remove ephemeral node from /processing.
 
     const auto & path = holder->path;
     const auto node_name = getNodeName(path);
@@ -483,7 +483,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
                 if (metadata.file_path >= path)
                 {
                     /// Here we get in the case that maximum processed file is bigger than ours.
-                    /// This is possible to achive in case of parallel processing
+                    /// This is possible to achieve in case of parallel processing
                     /// but for local processing we explicitly disable parallel mode and do everything in a single thread
                     /// (see constructor of StorageS3Queue where s3queue_processing_threads_num is explicitly set to 1 in case of Ordered mode).
                     /// Nevertheless, in case of distributed processing we cannot do anything with parallelism.
@@ -587,7 +587,7 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
     LOG_TEST(log, "File `{}` failed to process, try {}/{} (Error: {})",
              path, node_metadata.retries, max_loading_retries, exception_message);
 
-    /// Check if file can be retried futher or not.
+    /// Check if file can be retried further or not.
     if (node_metadata.retries >= max_loading_retries)
     {
         /// File is no longer retriable.
@@ -689,7 +689,7 @@ bool S3QueueFilesMetadata::ProcessingNodeHolder::remove(Coordination::Requests *
                     return removed;
                 }
                 else
-                    LOG_WARNING(log, "Cannot remove {} since precessing id changed: {} -> {}",
+                    LOG_WARNING(log, "Cannot remove {} since processing id changed: {} -> {}",
                                 zk_node_path, processing_id, node_metadata.processing_id);
             }
             else
