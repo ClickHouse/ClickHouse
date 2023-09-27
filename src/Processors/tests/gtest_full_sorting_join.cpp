@@ -54,20 +54,6 @@ String dumpBlock(const Block & block)
     return dumpBlockSource(std::move(source));
 }
 
-UInt64 getAndPrintRandomSeed()
-{
-    UInt64 seed = randomSeed();
-    if (const char * random_seed = std::getenv("TEST_RANDOM_SEED")) // NOLINT(concurrency-mt-unsafe)
-        seed = std::stoull(random_seed);
-
-    std::cerr << __FILE__ << " :: " << "TEST_RANDOM_SEED=" << seed << std::endl;
-    return seed;
-}
-
-static UInt64 TEST_RANDOM_SEED = getAndPrintRandomSeed();
-static pcg64 rng(TEST_RANDOM_SEED);
-
-
 QueryPipeline buildJoinPipeline(
     std::shared_ptr<ISource> left_source,
     std::shared_ptr<ISource> right_source,
@@ -154,7 +140,6 @@ std::shared_ptr<ISource> oneColumnSource(const std::vector<std::vector<UInt64>> 
 class SourceChunksBuilder
 {
 public:
-    double break_prob = 0.0;
 
     explicit SourceChunksBuilder(const Block & header_)
         : header(header_)
@@ -163,13 +148,20 @@ public:
         chassert(!current_chunk.empty());
     }
 
+    void setBreakProbability(pcg64 & rng_)
+    {
+        /// random probability with possibility to have exact 0.0 and 1.0 values
+        break_prob = std::uniform_int_distribution<size_t>(0, 5)(rng_) / static_cast<double>(5);
+        rng = &rng_;
+    }
+
     void addRow(const std::vector<Field> & row)
     {
         chassert(row.size() == current_chunk.size());
         for (size_t i = 0; i < current_chunk.size(); ++i)
             current_chunk[i]->insert(row[i]);
 
-        if (break_prob > 0.0 && std::uniform_real_distribution<>(0.0, 1.0)(rng) < break_prob)
+        if (rng && std::uniform_real_distribution<>(0.0, 1.0)(*rng) < break_prob)
             addChunk();
     }
 
@@ -200,6 +192,9 @@ private:
     Block header;
     Chunks chunks;
     MutableColumns current_chunk;
+
+    pcg64 * rng = nullptr;
+    double break_prob = 0.0;
 };
 
 
@@ -239,8 +234,20 @@ void assertColumnVectorEq(const typename ColumnVector<T>::Container & expected, 
     const auto * actual = typeid_cast<const ColumnVector<T> *>(block.getByName(name).column.get());
     ASSERT_TRUE(actual) << "unexpected column type: " << block.getByName(name).column->dumpStructure() << "expected: " << typeid(ColumnVector<T>).name();
 
+    auto get_first_diff = [&]() -> String
+    {
+        const auto & actual_data = actual->getData();
+        size_t num_rows = std::min(expected.size(), actual_data.size());
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            if (expected[i] != actual_data[i])
+                return fmt::format(", expected: {}, actual: {} at row {}", expected[i], actual_data[i], i);
+        }
+        return "";
+    };
+
     EXPECT_EQ(actual->getData().size(), expected.size());
-    ASSERT_EQ(actual->getData(), expected) << "column name: " << name;
+    ASSERT_EQ(actual->getData(), expected) << "column name: " << name << get_first_diff();
 }
 
 template <typename T>
@@ -264,20 +271,14 @@ void assertColumnEq(const IColumn & expected, const Block & block, const std::st
 }
 
 template <typename T>
-T getRandomFrom(const std::initializer_list<T> & opts)
+T getRandomFrom(pcg64 & rng, const std::initializer_list<T> & opts)
 {
     std::vector<T> options(opts.begin(), opts.end());
     size_t idx = std::uniform_int_distribution<size_t>(0, options.size() - 1)(rng);
     return options[idx];
 }
 
-/// Used to have accurate 0.0 and 1.0 probabilities
-double getRandomDoubleQuantized(size_t quants = 5)
-{
-    return std::uniform_int_distribution<size_t>(0, quants)(rng) / static_cast<double>(quants);
-}
-
-void generateNextKey(UInt64 & k1, String & k2)
+void generateNextKey(pcg64 & rng, UInt64 & k1, String & k2)
 {
     size_t str_len = std::uniform_int_distribution<>(1, 10)(rng);
     String new_k2 = getRandomASCIIString(str_len, rng);
@@ -292,6 +293,28 @@ bool isStrict(ASOFJoinInequality inequality)
 }
 
 }
+
+class FullSortingJoinRandomized : public ::testing::Test
+{
+public:
+    FullSortingJoinRandomized() = default;
+
+    void SetUp() override
+    {
+        UInt64 seed = randomSeed();
+        if (const char * random_seed = std::getenv("TEST_RANDOM_SEED")) // NOLINT(concurrency-mt-unsafe)
+            seed = std::stoull(random_seed);
+
+        std::cerr << "TEST_RANDOM_SEED=" << seed << std::endl;
+        rng = pcg64(seed);
+    }
+
+    void TearDown() override
+    {
+    }
+
+    pcg64 rng;
+};
 
 TEST(FullSortingJoin, AllAnyOneKey)
 try
@@ -369,10 +392,10 @@ catch (Exception & e)
 }
 
 
-TEST(FullSortingJoin, AnyRandomized)
+TEST_F(FullSortingJoinRandomized, Any)
 try
 {
-    JoinKind kind = getRandomFrom({JoinKind::Inner, JoinKind::Left, JoinKind::Right});
+    JoinKind kind = getRandomFrom(rng, {JoinKind::Inner, JoinKind::Left, JoinKind::Right});
 
     SourceChunksBuilder left_source({
         {std::make_shared<DataTypeUInt64>(), "k1"},
@@ -386,8 +409,8 @@ try
         {std::make_shared<DataTypeString>(), "attr"},
     });
 
-    left_source.break_prob = getRandomDoubleQuantized();
-    right_source.break_prob = getRandomDoubleQuantized();
+    left_source.setBreakProbability(rng);
+    right_source.setBreakProbability(rng);
 
     size_t num_keys = std::uniform_int_distribution<>(100, 1000)(rng);
 
@@ -404,7 +427,7 @@ try
 
     for (size_t i = 0; i < num_keys; ++i)
     {
-        generateNextKey(k1, k2);
+        generateNextKey(rng, k1, k2);
 
         /// Key is present in left, right or both tables. Both tables is more probable.
         size_t key_presence = std::uniform_int_distribution<>(0, 10)(rng);
@@ -520,7 +543,7 @@ catch (Exception & e)
 }
 
 
-TEST(FullSortingJoin, AsofOnlyColumn)
+TEST_F(FullSortingJoinRandomized, AsofOnlyColumn)
 try
 {
     auto left_source = oneColumnSource({ {3}, {3, 3, 3}, {3, 5, 5, 6}, {9, 9}, {10, 20} });
@@ -530,14 +553,11 @@ try
         {std::make_shared<DataTypeUInt64>(), "value"},
     });
 
-    double break_prob = getRandomDoubleQuantized(2);
-    std::uniform_real_distribution<> prob_dis(0.0, 1.0);
+    right_source_builder.setBreakProbability(rng);
+
     for (const auto & row : std::vector<std::vector<Field>>{ {1, 101}, {2, 102}, {4, 104}, {5, 105}, {11, 111}, {15, 115} })
-    {
         right_source_builder.addRow(row);
-        if (prob_dis(rng) < break_prob)
-            right_source_builder.addChunk();
-    }
+
     auto right_source = right_source_builder.getSource();
 
     auto pipeline = buildJoinPipeline(
@@ -567,12 +587,12 @@ catch (Exception & e)
     throw;
 }
 
-TEST(FullSortingJoin, AsofLessGeneratedTestData)
+TEST_F(FullSortingJoinRandomized, AsofLessGeneratedTestData)
 try
 {
-    auto join_kind = getRandomFrom({ JoinKind::Inner, JoinKind::Left });
+    auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
 
-    auto asof_inequality = getRandomFrom({ ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals });
+    auto asof_inequality = getRandomFrom(rng, { ASOFJoinInequality::Less, ASOFJoinInequality::LessOrEquals });
 
     SCOPED_TRACE(fmt::format("{} {}", join_kind, asof_inequality));
 
@@ -590,8 +610,8 @@ try
         {std::make_shared<DataTypeInt64>(), "attr"},
     });
 
-    left_source_builder.break_prob = getRandomDoubleQuantized();
-    right_source_builder.break_prob = getRandomDoubleQuantized();
+    left_source_builder.setBreakProbability(rng);
+    right_source_builder.setBreakProbability(rng);
 
     ColumnInt64::Container expected;
 
@@ -600,7 +620,7 @@ try
     auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
-        generateNextKey(k1, k2);
+        generateNextKey(rng, k1, k2);
 
         Int64 left_t = 0;
         size_t num_left_rows = std::uniform_int_distribution<>(1, 100)(rng);
@@ -656,12 +676,12 @@ catch (Exception & e)
     throw;
 }
 
-TEST(FullSortingJoin, AsofGreaterGeneratedTestData)
+TEST_F(FullSortingJoinRandomized, AsofGreaterGeneratedTestData)
 try
 {
-    auto join_kind = getRandomFrom({ JoinKind::Inner, JoinKind::Left });
+    auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
 
-    auto asof_inequality = getRandomFrom({ ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals });
+    auto asof_inequality = getRandomFrom(rng, { ASOFJoinInequality::Greater, ASOFJoinInequality::GreaterOrEquals });
 
     SCOPED_TRACE(fmt::format("{} {}", join_kind, asof_inequality));
 
@@ -679,8 +699,8 @@ try
         {std::make_shared<DataTypeInt64>(), "attr"},
     });
 
-    left_source_builder.break_prob = getRandomDoubleQuantized();
-    right_source_builder.break_prob = getRandomDoubleQuantized();
+    left_source_builder.setBreakProbability(rng);
+    right_source_builder.setBreakProbability(rng);
 
     ColumnInt64::Container expected;
 
@@ -691,7 +711,7 @@ try
     auto key_num_total = std::uniform_int_distribution<>(1, 100)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
-        generateNextKey(k1, k2);
+        generateNextKey(rng, k1, k2);
 
         /// generate some rows with smaller left_t to check that they are not matched
         size_t num_left_rows = std::bernoulli_distribution(0.5)(rng) ? std::uniform_int_distribution<>(1, 10)(rng) : 0;
@@ -731,10 +751,6 @@ try
         left_source_builder.getSource(), right_source_builder.getSource(),
         /* key_length = */ 3,
         join_kind, JoinStrictness::Asof, asof_inequality));
-
-    // std::cerr << "============ left ============" << std::endl << dumpBlockSource(left_source_builder.getSource()) << std::endl;
-    // std::cerr << "============ right ============" << std::endl << dumpBlockSource(right_source_builder.getSource()) << std::endl;
-    // std::cerr << "============ result ============" << std::endl << dumpBlock(result_block) << std::endl;
 
     assertColumnVectorEq<Int64>(expected, result_block, "t1.attr");
 
