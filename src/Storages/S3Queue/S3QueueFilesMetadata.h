@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AWS_S3
 #include <filesystem>
 #include <Core/Types.h>
 #include <Core/SettingsEnums.h>
@@ -123,5 +122,3 @@ private:
 };
 
 }
-
-#endif
