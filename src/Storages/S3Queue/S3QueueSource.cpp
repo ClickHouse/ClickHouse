@@ -139,7 +139,6 @@ Chunk StorageS3QueueSource::generate()
                 LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), reader.getPath());
 
                 file_status->processed_rows += chunk.getNumRows();
-                // file_status->profile_counters.increment(ProfileEvents::S3QueuePullMicroseconds, timer.get());
                 processed_rows_from_file += chunk.getNumRows();
 
                 VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());

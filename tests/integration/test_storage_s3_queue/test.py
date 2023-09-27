@@ -558,7 +558,7 @@ def test_multiple_tables_meta_mismatch(started_cluster):
             },
         )
     except QueryRuntimeException as e:
-        assert "Existing table metadata in ZooKeeper differs in engine mode" in str(e)
+        assert "Metadata with the same `s3queue_zookeeper_path` was already created but with different settings" in str(e)
         failed = True
 
     assert failed is True
@@ -836,15 +836,16 @@ def test_max_set_size(started_cluster):
             "s3queue_tracked_files_limit": 9,
             "s3queue_cleanup_interval_min_ms": 0,
             "s3queue_cleanup_interval_max_ms": 0,
+            "s3queue_processing_threads_num": 1,
         },
     )
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    get_query = f"SELECT * FROM {table_name}"
+    get_query = f"SELECT * FROM {table_name} ORDER BY column1, column2, column3"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
-    assert res1 == total_values
+    assert res1 == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
     print(total_values)
 
     time.sleep(10)

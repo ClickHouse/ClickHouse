@@ -430,11 +430,12 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
         return;
     }
 
-    /// TODO this could be because of the expired session.
     if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set file as processed but it is not processing");
-    else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set file as processed but it is already processed");
+
+    LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
+                "does not exist with expected processing id does not exist, "
+                "this could be a result of expired zookeeper session", path);
 }
 
 void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder)
@@ -472,8 +473,9 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
         if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
             continue;
 
-        LOG_ERROR(log, "Cannot set file {} as failed - failed to remove ephemeral processing node", path);
-        chassert(false);
+        LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
+                    "does not exist with expected processing id does not exist, "
+                    "this could be a result of expired zookeeper session", path);
         return;
     }
 }
@@ -531,7 +533,6 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
     {
         /// File is no longer retriable.
         /// Make a failed/node_name node and remove failed/node_name.retriable node.
-        /// TODO: always add version for processing node.
 
         Coordination::Requests requests;
         requests.push_back(zkutil::makeRemoveRequest(zookeeper_processing_path / node_name, -1));
@@ -595,9 +596,9 @@ S3QueueFilesMetadata::ProcessingNodeHolder::~ProcessingNodeHolder()
 bool S3QueueFilesMetadata::ProcessingNodeHolder::remove(Coordination::Requests * requests, Coordination::Responses * responses)
 {
     if (removed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processing file holder is already released");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processing node is already removed");
 
-    removed = true;
+    LOG_TEST(log, "Removing processing node {} ({})", zk_node_path, path);
 
     try
     {
@@ -617,11 +618,14 @@ bool S3QueueFilesMetadata::ProcessingNodeHolder::remove(Coordination::Requests *
                     {
                         requests->push_back(zkutil::makeRemoveRequest(zk_node_path, stat.version));
                         auto code = zk_client->tryMulti(*requests, *responses);
-                        return code == Coordination::Error::ZOK;
+                        removed = code == Coordination::Error::ZOK;
                     }
                     else
+                    {
                         zk_client->remove(zk_node_path);
-                    return true;
+                        removed = true;
+                    }
+                    return removed;
                 }
                 else
                     LOG_WARNING(log, "Cannot remove {} since precessing id changed: {} -> {}",

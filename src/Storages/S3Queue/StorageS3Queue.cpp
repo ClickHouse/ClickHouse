@@ -101,6 +101,12 @@ StorageS3Queue::StorageS3Queue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
     }
 
+    if (s3queue_settings->mode == S3QueueMode::ORDERED && s3queue_settings->s3queue_processing_threads_num > 1)
+    {
+        LOG_WARNING(log, "Parallel processing is not yet supported for Ordered mode");
+        s3queue_settings->s3queue_processing_threads_num = 1;
+    }
+
     configuration.update(context_);
     FormatFactory::instance().checkFormatName(configuration.format);
     context_->getRemoteHostFilter().checkURL(configuration.url.uri);
@@ -181,7 +187,8 @@ Pipe StorageS3Queue::read(
     }
 
     Pipes pipes;
-    for (size_t i = 0; i < num_streams; ++i)
+    const size_t adjusted_num_streams = std::min<size_t>(num_streams, s3queue_settings->s3queue_processing_threads_num);
+    for (size_t i = 0; i < adjusted_num_streams; ++i)
         pipes.emplace_back(createSource(column_names, storage_snapshot, query_info.query, max_block_size, local_context));
     return Pipe::unitePipes(std::move(pipes));
 }
