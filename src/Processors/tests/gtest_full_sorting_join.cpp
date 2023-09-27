@@ -30,13 +30,13 @@ namespace
 {
 
 [[ maybe_unused ]]
-String dumpBlock(std::shared_ptr<ISource> source)
+String dumpBlockSource(std::shared_ptr<ISource> source, bool mono_block = false)
 {
     WriteBufferFromOwnString buf;
     {
         Block header = source->getPort().getHeader();
         QueryPipeline pipeline(source);
-        auto format = std::make_shared<PrettyCompactBlockOutputFormat>(buf, header, FormatSettings{}, false);
+        auto format = std::make_shared<PrettyCompactBlockOutputFormat>(buf, header, FormatSettings{}, mono_block);
         pipeline.complete(std::move(format));
 
         CompletedPipelineExecutor executor(pipeline);
@@ -51,7 +51,7 @@ String dumpBlock(const Block & block)
     Block header = block.cloneEmpty();
     Chunk data(block.getColumns(), block.rows());
     auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(data));
-    return dumpBlock(std::move(source));
+    return dumpBlockSource(std::move(source));
 }
 
 UInt64 getAndPrintRandomSeed()
@@ -731,6 +731,10 @@ try
         left_source_builder.getSource(), right_source_builder.getSource(),
         /* key_length = */ 3,
         join_kind, JoinStrictness::Asof, asof_inequality));
+
+    // std::cerr << "============ left ============" << std::endl << dumpBlockSource(left_source_builder.getSource()) << std::endl;
+    // std::cerr << "============ right ============" << std::endl << dumpBlockSource(right_source_builder.getSource()) << std::endl;
+    // std::cerr << "============ result ============" << std::endl << dumpBlock(result_block) << std::endl;
 
     assertColumnVectorEq<Int64>(expected, result_block, "t1.attr");
 
