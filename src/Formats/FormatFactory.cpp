@@ -1,7 +1,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
-#include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -228,6 +227,12 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
         const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
+    }
+
+    if (context->getClientInfo().interface == ClientInfo::Interface::HTTP && context->getSettingsRef().http_write_exception_in_output_format.value)
+    {
+        format_settings.json.valid_output_on_exception = true;
+        format_settings.xml.valid_output_on_exception = true;
     }
 
     return format_settings;
