@@ -72,6 +72,11 @@ CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
 CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
 
 
+# raised if docker compose failed to start because a port is busy
+class PortCollisionException(Exception):
+    pass
+
+
 # to create docker-compose env file
 def _create_env_file(path, variables):
     logging.debug(f"Env {variables} stored in {path}")
@@ -117,38 +122,98 @@ def run_and_check(
         if env:
             logging.debug(f"Env:{env}")
         if not nothrow:
-            raise Exception(
-                f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
-            )
+            logging.debug("raising Exception")
+            if err.find("failed: port is already allocated"):
+                raise PortCollisionException(
+                    f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                )
+            else:
+                raise Exception(
+                    f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                )
     return out
 
 
 # Based on https://stackoverflow.com/a/1365284/3706827
+#  Not reliable - collisions are possible
 def get_free_port():
     with socket.socket() as s:
         s.bind(("", 0))
         return s.getsockname()[1]
 
 
-def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
+# Facilitate using ports that are dinamically set
+class FreePort(object):
+    known_ports = []
+
+    def __init__(self):
+        logging.debug("FreePort init")
+        self._port = 0
+        self._env_name = ""
+        FreePort.known_ports.append(self)
+
+    def assign(self):
+        if not self._port:
+            self._port = get_free_port()
+        return self._port
+
+    # redistribute all ports
+    def change_ports(instances):
+        for p in FreePort.known_ports:
+            if p._port:
+                p._port = get_free_port()
+                for instance in instances:
+                    if p._env_name in instance.env_variables:
+                        instance.env_variables[p._env_name] = str(p._port)
+
+    def set_env(self, name):
+        self._env_name = name
+
+
+def retry_exception(
+    num,
+    delay,
+    func,
+    exception=Exception,
+    throworig=False,
+    cleanup=None,
+    *args,
+    **kwargs,
+):
     """
     Retry if `func()` throws, `num` times.
 
     :param func: func to run
     :param num: number of retries
+    :param exception: exception to retry upon
+    :param cleanup: func to run if exception
+    :param throworig: throw original exception if true or StopIteration otherwise
 
-    :throws StopIteration
+    :throws StopIteration or original exception
     """
     i = 0
+    ex = exception()
     while i <= num:
         try:
             func(*args, **kwargs)
             time.sleep(delay)
-        except exception:  # pylint: disable=broad-except
-            i += 1
-            continue
+        except Exception as exx:  # pylint: disable=broad-except
+            ex = exx
+            if type(exx) == exception:
+                i += 1
+                if cleanup:
+                    try:
+                        cleanup()
+                    except:
+                        pass
+                continue
+            else:
+                break
         return
-    raise StopIteration("Function did not finished successfully")
+    if throworig:
+        raise ex
+    else:
+        raise StopIteration("Function did not finished successfully")
 
 
 def subprocess_check_call(args, detach=False, nothrow=False):
@@ -539,12 +604,12 @@ class ClickHouseCluster:
         # available when with_kafka == True
         self.kafka_host = "kafka1"
         self.kafka_dir = os.path.join(self.instances_dir, "kafka")
-        self._kafka_port = 0
+        self._kafka_port = FreePort()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
-        self._schema_registry_port = 0
+        self._schema_registry_port = FreePort()
         self.schema_registry_auth_host = "schema-registry-auth"
-        self._schema_registry_auth_port = 0
+        self._schema_registry_auth_port = FreePort()
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
@@ -552,7 +617,7 @@ class ClickHouseCluster:
         # available when with_kerberozed_kafka == True
         # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
-        self._kerberized_kafka_port = 0
+        self._kerberized_kafka_port = FreePort()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
             self.kerberized_kafka_host
         )
@@ -563,9 +628,9 @@ class ClickHouseCluster:
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
-        self._mongo_port = 0
+        self._mongo_port = FreePort()
         self.mongo_no_cred_host = "mongo2"
-        self._mongo_no_cred_port = 0
+        self._mongo_no_cred_port = FreePort()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -604,7 +669,7 @@ class ClickHouseCluster:
 
         # available when with_redis == True
         self.redis_host = "redis1"
-        self._redis_port = 0
+        self._redis_port = FreePort()
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -707,52 +772,31 @@ class ClickHouseCluster:
 
     @property
     def kafka_port(self):
-        if self._kafka_port:
-            return self._kafka_port
-        self._kafka_port = get_free_port()
-        return self._kafka_port
+        return self._kafka_port.assign()
 
     @property
     def schema_registry_port(self):
-        if self._schema_registry_port:
-            return self._schema_registry_port
-        self._schema_registry_port = get_free_port()
-        return self._schema_registry_port
+        return self._schema_registry_port.assign()
 
     @property
     def schema_registry_auth_port(self):
-        if self._schema_registry_auth_port:
-            return self._schema_registry_auth_port
-        self._schema_registry_auth_port = get_free_port()
-        return self._schema_registry_auth_port
+        return self._schema_registry_auth_port.assign()
 
     @property
     def kerberized_kafka_port(self):
-        if self._kerberized_kafka_port:
-            return self._kerberized_kafka_port
-        self._kerberized_kafka_port = get_free_port()
-        return self._kerberized_kafka_port
+        return self._kerberized_kafka_port.assign()
 
     @property
     def mongo_port(self):
-        if self._mongo_port:
-            return self._mongo_port
-        self._mongo_port = get_free_port()
-        return self._mongo_port
+        return self._mongo_port.assign()
 
     @property
     def mongo_no_cred_port(self):
-        if self._mongo_no_cred_port:
-            return self._mongo_no_cred_port
-        self._mongo_no_cred_port = get_free_port()
-        return self._mongo_no_cred_port
+        return self._mongo_no_cred_port.assign()
 
     @property
     def redis_port(self):
-        if self._redis_port:
-            return self._redis_port
-        self._redis_port = get_free_port()
-        return self._redis_port
+        return self._redis_port.assign()
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -848,6 +892,10 @@ class ClickHouseCluster:
             logging.debug(f"Volumes pruned: {result}")
         except:
             pass
+
+    def setup_port(self, port, env, name):
+        port.set_env(name)
+        env[name] = str(port.assign())
 
     def get_docker_handle(self, docker_id):
         exception = None
@@ -1217,11 +1265,15 @@ class ClickHouseCluster:
     def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_kafka = True
         env_variables["KAFKA_HOST"] = self.kafka_host
-        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
+        self.setup_port(self._kafka_port, env_variables, "KAFKA_EXTERNAL_PORT")
         env_variables["SCHEMA_REGISTRY_DIR"] = instance.path + "/"
-        env_variables["SCHEMA_REGISTRY_EXTERNAL_PORT"] = str(self.schema_registry_port)
-        env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
-            self.schema_registry_auth_port
+        self.setup_port(
+            self._schema_registry_port, env_variables, "SCHEMA_REGISTRY_EXTERNAL_PORT"
+        )
+        self.setup_port(
+            self._schema_registry_auth_port,
+            env_variables,
+            "SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT",
         )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
@@ -1243,8 +1295,8 @@ class ClickHouseCluster:
         self.with_kerberized_kafka = True
         env_variables["KERBERIZED_KAFKA_DIR"] = instance.path + "/"
         env_variables["KERBERIZED_KAFKA_HOST"] = self.kerberized_kafka_host
-        env_variables["KERBERIZED_KAFKA_EXTERNAL_PORT"] = str(
-            self.kerberized_kafka_port
+        self.setup_port(
+            self._kerberized_kafka_port, env_variables, "KERBERIZED_KAFKA_EXTERNAL_PORT"
         )
         self.base_cmd.extend(
             [
@@ -1287,7 +1339,7 @@ class ClickHouseCluster:
     def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_redis = True
         env_variables["REDIS_HOST"] = self.redis_host
-        env_variables["REDIS_EXTERNAL_PORT"] = str(self.redis_port)
+        self.setup_port(self._redis_port, env_variables, "REDIS_EXTERNAL_PORT")
         env_variables["REDIS_INTERNAL_PORT"] = "6379"
 
         self.base_cmd.extend(
@@ -1351,7 +1403,7 @@ class ClickHouseCluster:
     def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = self.with_mongo_secure = True
         env_variables["MONGO_HOST"] = self.mongo_host
-        env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
+        self.setup_port(self._mongo_port, env_variables, "MONGO_EXTERNAL_PORT")
         env_variables["MONGO_INTERNAL_PORT"] = "27017"
         env_variables["MONGO_CONFIG_PATH"] = HELPERS_DIR
         self.base_cmd.extend(
@@ -1374,9 +1426,11 @@ class ClickHouseCluster:
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
-        env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
+        self.setup_port(self._mongo_port, env_variables, "MONGO_EXTERNAL_PORT")
         env_variables["MONGO_INTERNAL_PORT"] = "27017"
-        env_variables["MONGO_NO_CRED_EXTERNAL_PORT"] = str(self.mongo_no_cred_port)
+        self.setup_port(
+            self._mongo_no_cred_port, env_variables, "MONGO_NO_CRED_EXTERNAL_PORT"
+        )
         env_variables["MONGO_NO_CRED_INTERNAL_PORT"] = "27017"
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_mongo.yml")]
@@ -2621,7 +2675,12 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait LDAP to start")
 
-    def start(self):
+    def cleanup_if_retry(self):
+        self.cleanup()
+        shutil.rmtree(self.instances_dir, ignore_errors=True)
+        FreePort.change_ports(self.instances.values())
+
+    def start_impl(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
         if not os.path.exists(self.instances_dir):
@@ -2635,11 +2694,6 @@ class ClickHouseCluster:
 
         if self.is_up:
             return
-
-        try:
-            self.cleanup()
-        except Exception as e:
-            logging.warning("Cleanup failed:{e}")
 
         try:
             for instance in list(self.instances.values()):
@@ -2988,6 +3042,29 @@ class ClickHouseCluster:
                     instance.ip_address, command=self.client_bin_path
                 )
 
+            self.is_up = True
+
+        except BaseException as e:
+            logging.debug("Failed to start cluster: ")
+            logging.debug(str(e))
+            logging.debug(traceback.print_exc())
+            raise
+
+    def start(self):
+        try:
+            self.cleanup()
+        except Exception as e:
+            logging.warning("Cleanup failed:{e}")
+
+        try:
+            retry_exception(
+                2,
+                1,
+                self.start_impl,
+                throworig=True,
+                cleanup=self.cleanup_if_retry,
+                exception=PortCollisionException,
+            )
             self.is_up = True
 
         except BaseException as e:
