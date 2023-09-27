@@ -639,7 +639,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 
-    return ReaderHolder{*key_with_info, bucket, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader)};
+    return ReaderHolder{key_with_info, bucket, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageS3Source::ReaderHolder> StorageS3Source::createReaderAsync()

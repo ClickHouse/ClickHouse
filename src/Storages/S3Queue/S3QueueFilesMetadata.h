@@ -18,29 +18,18 @@ class StorageS3Queue;
 class S3QueueFilesMetadata
 {
 public:
+    class ProcessingNodeHolder;
+    using ProcessingNodeHolderPtr = std::shared_ptr<ProcessingNodeHolder>;
+
     S3QueueFilesMetadata(const fs::path & zookeeper_path_, const S3QueueSettings & settings_);
 
     ~S3QueueFilesMetadata();
 
-    struct ProcessingHolder
-    {
-        ProcessingHolder(const std::string & processing_id_, const std::string & zk_node_path_, zkutil::ZooKeeperPtr zk_client_)
-            : zk_client(zk_client_), zk_node_path(zk_node_path_), processing_id(processing_id_) {}
+    ProcessingNodeHolderPtr trySetFileAsProcessing(const std::string & path);
 
-        zkutil::ZooKeeperPtr zk_client;
-        std::string zk_node_path;
-        std::string processing_id;
-    };
-    using ProcessingHolderPtr = std::unique_ptr<ProcessingHolder>;
-    ProcessingHolderPtr trySetFileAsProcessing(const std::string & path);
+    void setFileProcessed(ProcessingNodeHolderPtr holder);
 
-    void setFileProcessed(const std::string & path);
-
-    void setFileFailed(const std::string & path, const std::string & exception_message);
-
-    using OnProgress = std::function<void(size_t)>;
-
-    void deactivateCleanupTask();
+    void setFileFailed(ProcessingNodeHolderPtr holder, const std::string & exception_message);
 
     struct FileStatus
     {
@@ -70,6 +59,8 @@ public:
 
     bool checkSettings(const S3QueueSettings & settings) const;
 
+    void deactivateCleanupTask();
+
 private:
     const S3QueueMode mode;
     const UInt64 max_set_size;
@@ -92,8 +83,8 @@ private:
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
-    void setFileProcessedForOrderedMode(const std::string & path);
-    void setFileProcessedForUnorderedMode(const std::string & path);
+    void setFileProcessedForOrderedMode(ProcessingNodeHolderPtr holder);
+    void setFileProcessedForUnorderedMode(ProcessingNodeHolderPtr holder);
 
     enum class SetFileProcessingResult
     {
@@ -102,8 +93,8 @@ private:
         AlreadyProcessed,
         AlreadyFailed,
     };
-    std::pair<SetFileProcessingResult, ProcessingHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
-    std::pair<SetFileProcessingResult, ProcessingHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
+    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
+    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
 
     struct NodeMetadata
     {
@@ -133,6 +124,25 @@ private:
         std::unique_lock<std::mutex> lock() const;
     };
     LocalFileStatuses local_file_statuses;
+};
+
+class S3QueueFilesMetadata::ProcessingNodeHolder
+{
+    friend class S3QueueFilesMetadata;
+public:
+    ProcessingNodeHolder(const std::string & processing_id_, const std::string & path_, const std::string & zk_node_path_, zkutil::ZooKeeperPtr zk_client_);
+
+    ~ProcessingNodeHolder();
+
+private:
+    bool remove(Coordination::Requests * requests = nullptr, Coordination::Responses * responses = nullptr);
+
+    zkutil::ZooKeeperPtr zk_client;
+    std::string path;
+    std::string zk_node_path;
+    std::string processing_id;
+    bool removed = false;
+    Poco::Logger * log;
 };
 
 }
