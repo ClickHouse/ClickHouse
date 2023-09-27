@@ -61,7 +61,7 @@ SYSTEM SYNC REPLICA quorum2;
 SYSTEM START FETCHES quorum3;
 SYSTEM SYNC REPLICA quorum3;
 
-SET insert_quorum_timeout = 600000; -- default value
+SET insert_quorum_timeout = 600000; -- set default value back
 INSERT INTO quorum1 VALUES (3, '2018-11-15');
 SELECT x FROM quorum1 ORDER BY x;
 SYSTEM SYNC REPLICA quorum2;
