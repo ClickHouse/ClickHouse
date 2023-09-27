@@ -185,28 +185,7 @@ public:
 class FullMergeJoinCursor : boost::noncopyable
 {
 public:
-    FullMergeJoinCursor(
-        const Block & sample_block_,
-        const SortDescription & description_,
-        bool is_asof = false)
-        : sample_block(sample_block_.cloneEmpty())
-        , desc(description_)
-    {
-        if (desc.size() == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty sort description for FullMergeJoinCursor");
-
-        if (is_asof)
-        {
-            /// For ASOF join prefix of sort description is used for equality comparison
-            /// and the last column is used for inequality comparison and is handled separately
-
-            auto asof_column_description = desc.back();
-            desc.pop_back();
-
-            chassert(asof_column_description.direction == 1 && asof_column_description.nulls_direction == 1);
-            asof_column_position = sample_block.getPositionByName(asof_column_description.column_name);
-        }
-    }
+    FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_, bool is_asof = false);
 
     bool fullyCompleted() const;
     void setChunk(Chunk && chunk);

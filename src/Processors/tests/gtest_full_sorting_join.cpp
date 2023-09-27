@@ -2,6 +2,7 @@
 
 #include <pcg_random.hpp>
 #include <random>
+#include <Poco/ConsoleChannel.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/getRandomASCIIString.h>
@@ -294,18 +295,25 @@ bool isStrict(ASOFJoinInequality inequality)
 
 }
 
-class FullSortingJoinRandomized : public ::testing::Test
+class FullSortingJoinTest : public ::testing::Test
 {
 public:
-    FullSortingJoinRandomized() = default;
+    FullSortingJoinTest() = default;
 
     void SetUp() override
     {
+        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+        Poco::Logger::root().setChannel(channel);
+        if (const char * test_log_level = std::getenv("TEST_LOG_LEVEL")) // NOLINT(concurrency-mt-unsafe)
+            Poco::Logger::root().setLevel(test_log_level);
+        else
+            Poco::Logger::root().setLevel("none");
+
+
         UInt64 seed = randomSeed();
         if (const char * random_seed = std::getenv("TEST_RANDOM_SEED")) // NOLINT(concurrency-mt-unsafe)
             seed = std::stoull(random_seed);
-
-        std::cerr << "TEST_RANDOM_SEED=" << seed << std::endl;
+        std::cout << "TEST_RANDOM_SEED=" << seed << std::endl;
         rng = pcg64(seed);
     }
 
@@ -316,7 +324,7 @@ public:
     pcg64 rng;
 };
 
-TEST(FullSortingJoin, AllAnyOneKey)
+TEST_F(FullSortingJoinTest, AllAnyOneKey)
 try
 {
     {
@@ -392,7 +400,7 @@ catch (Exception & e)
 }
 
 
-TEST_F(FullSortingJoinRandomized, Any)
+TEST_F(FullSortingJoinTest, AnySimple)
 try
 {
     JoinKind kind = getRandomFrom(rng, {JoinKind::Inner, JoinKind::Left, JoinKind::Right});
@@ -478,7 +486,7 @@ catch (Exception & e)
     throw;
 }
 
-TEST(FullSortingJoin, Asof)
+TEST_F(FullSortingJoinTest, AsofSimple)
 try
 {
     SourceChunksBuilder left_source({
@@ -543,7 +551,7 @@ catch (Exception & e)
 }
 
 
-TEST_F(FullSortingJoinRandomized, AsofOnlyColumn)
+TEST_F(FullSortingJoinTest, AsofOnlyColumn)
 try
 {
     auto left_source = oneColumnSource({ {3}, {3, 3, 3}, {3, 5, 5, 6}, {9, 9}, {10, 20} });
@@ -587,7 +595,7 @@ catch (Exception & e)
     throw;
 }
 
-TEST_F(FullSortingJoinRandomized, AsofLessGeneratedTestData)
+TEST_F(FullSortingJoinTest, AsofLessGeneratedTestData)
 try
 {
     auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
@@ -676,7 +684,7 @@ catch (Exception & e)
     throw;
 }
 
-TEST_F(FullSortingJoinRandomized, AsofGreaterGeneratedTestData)
+TEST_F(FullSortingJoinTest, AsofGreaterGeneratedTestData)
 try
 {
     auto join_kind = getRandomFrom(rng, { JoinKind::Inner, JoinKind::Left });
@@ -708,13 +716,13 @@ try
     String k2 = "";
     UInt64 left_t = 0;
 
-    auto key_num_total = std::uniform_int_distribution<>(1, 100)(rng);
+    auto key_num_total = std::uniform_int_distribution<>(1, 1000)(rng);
     for (size_t key_num = 0; key_num < key_num_total; ++key_num)
     {
         generateNextKey(rng, k1, k2);
 
         /// generate some rows with smaller left_t to check that they are not matched
-        size_t num_left_rows = std::bernoulli_distribution(0.5)(rng) ? std::uniform_int_distribution<>(1, 10)(rng) : 0;
+        size_t num_left_rows = std::bernoulli_distribution(0.5)(rng) ? std::uniform_int_distribution<>(1, 100)(rng) : 0;
         for (size_t i = 0; i < num_left_rows; ++i)
         {
             left_t += std::uniform_int_distribution<>(1, 10)(rng);
@@ -737,8 +745,8 @@ try
         }
 
         /// next left_t should be greater than (or equals) right_t to match with previous rows
-        left_t = right_t + std::uniform_int_distribution<>(isStrict(asof_inequality) ? 1 : 0, 10)(rng);
-        size_t num_left_matches = std::uniform_int_distribution<>(1, 10)(rng);
+        left_t = right_t + std::uniform_int_distribution<>(isStrict(asof_inequality) ? 1 : 0, 100)(rng);
+        size_t num_left_matches = std::uniform_int_distribution<>(1, 100)(rng);
         for (size_t j = 0; j < num_left_matches; ++j)
         {
             left_t += std::uniform_int_distribution<>(0, 3)(rng);
