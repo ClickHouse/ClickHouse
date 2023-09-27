@@ -61,19 +61,21 @@ URI::URI(const std::string & uri_)
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
-    chassert(context);
-    const auto *config = &context->getConfigRef();
-    if (config->has("url_scheme_mappers"))
+    if(context)
     {
-        std::vector<String> config_keys;
-        config->keys("url_scheme_mappers", config_keys);
-        for (const std::string & config_key : config_keys)
-            mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".domain");
-    }
-    uri = Poco::URI(uri_);
+        const auto *config = &context->getConfigRef();
+        if (config->has("url_scheme_mappers"))
+        {
+            std::vector<String> config_keys;
+            config->keys("url_scheme_mappers", config_keys);
+            for (const std::string & config_key : config_keys)
+                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".domain");
+        }
+        uri = Poco::URI(uri_);
 
-    if (!mapper.empty())
-        URIConverter::modifyURI(uri, mapper);
+        if (!mapper.empty())
+            URIConverter::modifyURI(uri, mapper);
+    }
 
     storage_name = S3;
 
