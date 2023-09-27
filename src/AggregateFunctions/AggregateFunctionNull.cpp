@@ -44,7 +44,7 @@ public:
                                                        const DataTypes & arguments,
                                                        const Array & params) const
     {
-        if (const auto function_state = typeid_cast<const T *>(nested_function.get()))
+        if (const T * function_state = typeid_cast<const T *>(nested_function.get()))
         {
             auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
 
