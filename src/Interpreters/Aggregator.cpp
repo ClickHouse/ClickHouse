@@ -2278,6 +2278,11 @@ void Aggregator::addArenasToAggregateColumns(
     }
 }
 
+void Aggregator::createStates(AggregatedDataVariants & data_variants) const {
+    AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+    createAggregateStates(place);
+}
+
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     AggregatedDataVariants & data_variants,
     Columns & key_columns,

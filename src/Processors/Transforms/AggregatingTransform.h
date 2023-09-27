@@ -210,7 +210,9 @@ private:
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
     bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
-    bool flush_next = false;
+
+    bool block_end_reached = false;
+    bool need_generate = false;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -223,6 +225,7 @@ private:
     bool is_pipeline_created = false;
 
     Chunk current_chunk;
+    Chunk to_push_chunk;
     bool read_current_chunk = false;
 
     bool is_consume_started = false;

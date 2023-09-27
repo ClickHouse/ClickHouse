@@ -1221,6 +1221,7 @@ private:
     friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class AggregatingInOrderTransform;
     friend class AggregatingPartialResultTransform;
+    friend class AggregatingTransform;
 
     /// Data structure of source blocks.
     Block header;
@@ -1505,6 +1506,8 @@ private:
     void addArenasToAggregateColumns(
         const AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
+
+    void createStates(AggregatedDataVariants & data_variants) const;
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
