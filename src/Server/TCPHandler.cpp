@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <exception>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -98,6 +99,8 @@ namespace DB::ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int CLIENT_INFO_DOES_NOT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -885,7 +888,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
-        PullingAsyncPipelineExecutor executor(pipeline);
+        bool has_partial_result_setting = query_context->getSettingsRef().partial_result_update_duration_ms.totalMilliseconds() > 0;
+        PullingAsyncPipelineExecutor executor(pipeline, has_partial_result_setting);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;
@@ -1239,6 +1243,17 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
+[[ maybe_unused ]] String createChallenge()
+{
+#if USE_SSL
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+    return encodeSHA256(&rand, sizeof(rand));
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
+#endif
+}
+
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1256,6 +1271,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     return res;
 }
 
+String TCPHandler::prepareStringForSshValidation(String username, String challenge)
+{
+    String output;
+    output.append(std::to_string(client_tcp_protocol_version));
+    output.append(default_database);
+    output.append(username);
+    output.append(challenge);
+    return output;
+}
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -1265,6 +1290,7 @@ void TCPHandler::receiveHello()
     String default_db;
 
     readVarUInt(packet_type, *in);
+
     if (packet_type != Protocol::Client::Hello)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
@@ -1302,7 +1328,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
+    is_interserver_mode = (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
@@ -1310,6 +1336,12 @@ void TCPHandler::receiveHello()
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         receiveClusterNameAndSalt();
         return;
+    }
+
+    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    if (is_ssh_based_auth)
+    {
+        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
     }
 
     session = makeSession();
@@ -1334,6 +1366,35 @@ void TCPHandler::receiveHello()
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
+    }
+
+    /// Perform handshake for SSH authentication
+    if (is_ssh_based_auth)
+    {
+        if (session->getAuthenticationTypeOrLogInFailure(user) != AuthenticationType::SSH_KEY)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
+
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeRequest)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
+
+        auto challenge = createChallenge();
+        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeStringBinary(challenge, *out);
+        out->next();
+
+        String signature;
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeResponse)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
+        readStringBinary(signature, *in);
+
+        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
+        session->authenticate(cred, getClientAddress(client_info));
+        return;
     }
 #endif
 

@@ -68,6 +68,7 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
+addDate
 addDays
 addHours
 addMicroseconds
@@ -668,6 +669,7 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
+subDate
 substring
 substringIndex
 substringIndexUTF8
