@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import os
 import logging
 import sys
@@ -8,6 +7,7 @@ import json
 import subprocess
 import traceback
 import re
+from pathlib import Path
 from typing import Dict
 
 from github import Github
@@ -20,11 +20,15 @@ from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
+from clickhouse_helper import get_instance_type, get_instance_id
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
 
 def get_run_command(
+    check_start_time,
+    check_name,
     workspace,
     result_path,
     repo_tests_path,
@@ -33,12 +37,26 @@ def get_run_command(
     additional_env,
     image,
 ):
+    instance_type = get_instance_type()
+    instance_id = get_instance_id()
+
+    envs = [
+        f"-e CHECK_START_TIME='{check_start_time}'",
+        f"-e CHECK_NAME='{check_name}'",
+        f"-e INSTANCE_TYPE='{instance_type}'",
+        f"-e INSTANCE_ID='{instance_id}'",
+        f"-e PR_TO_TEST={pr_to_test}",
+        f"-e SHA_TO_TEST={sha_to_test}",
+    ]
+
+    env_str = " ".join(envs)
+
     return (
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
-        f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} "
+        f"{env_str} {additional_env} "
         f"{image}"
     )
 
@@ -62,6 +80,9 @@ class RamDrive:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     repo_tests_path = os.path.join(repo_path, "tests")
@@ -157,6 +178,8 @@ if __name__ == "__main__":
     docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
+        stopwatch.start_time_str,
+        check_name,
         result_path,
         result_path,
         repo_tests_path,
@@ -168,6 +191,7 @@ if __name__ == "__main__":
     logging.info("Going to run command %s", run_command)
 
     run_log_path = os.path.join(temp_path, "run.log")
+    compare_log_path = os.path.join(result_path, "compare.log")
 
     popen_env = os.environ.copy()
     popen_env.update(env_extra)
@@ -181,7 +205,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     paths = {
-        "compare.log": os.path.join(result_path, "compare.log"),
+        "compare.log": compare_log_path,
         "output.7z": os.path.join(result_path, "output.7z"),
         "report.html": os.path.join(result_path, "report.html"),
         "all-queries.html": os.path.join(result_path, "all-queries.html"),
@@ -197,15 +221,17 @@ if __name__ == "__main__":
     uploaded = {}  # type: Dict[str, str]
     for name, path in paths.items():
         try:
-            uploaded[name] = s3_helper.upload_test_report_to_s3(path, s3_prefix + name)
+            uploaded[name] = s3_helper.upload_test_report_to_s3(
+                Path(path), s3_prefix + name
+            )
         except Exception:
             uploaded[name] = ""
             traceback.print_exc()
 
     # Upload all images and flamegraphs to S3
     try:
-        s3_helper.upload_test_folder_to_s3(
-            os.path.join(result_path, "images"), s3_prefix + "images"
+        s3_helper.upload_test_directory_to_s3(
+            Path(result_path) / "images", s3_prefix + "images"
         )
     except Exception:
         traceback.print_exc()

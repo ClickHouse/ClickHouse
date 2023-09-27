@@ -317,7 +317,7 @@
     <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
-    <max_concurrent_queries>100</max_concurrent_queries>
+    <max_concurrent_queries>1000</max_concurrent_queries>
 
     <!-- Maximum memory usage (resident set size) for server process.
          Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
@@ -419,6 +419,8 @@
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
+    <validate_tcp_client_information>false</validate_tcp_client_information>
+
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
@@ -446,8 +448,6 @@
                 <account_name>account</account_name>
                 <account_key>pass123</account_key>
                 <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </blob_storage_disk>
         </disks>
@@ -969,7 +969,6 @@
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
-        status_info - send data from different component from CH, ex: Dictionaries status
     -->
     <!--
     <prometheus>
@@ -979,7 +978,6 @@
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
     </prometheus>
     -->
 
@@ -1217,6 +1215,16 @@
         <partition_by>event_date</partition_by>
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
+
+    <!-- Backup/restore log.
+         Uncomment to write backup/restore log records into a system table.
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>0</flush_interval_milliseconds>
+    </backup_log>
+    -->
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
@@ -1483,4 +1491,10 @@
     <!-- On Linux systems this can control the behavior of OOM killer.
     <oom_score>-1000</oom_score>
     -->
+
+    <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
+    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
+
+    <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
+    <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
 </clickhouse>

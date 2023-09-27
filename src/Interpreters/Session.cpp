@@ -299,9 +299,9 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
             session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
@@ -320,6 +320,7 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
     catch (const Exception & e)
     {
+        LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
@@ -620,7 +621,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
-        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+        LOG_TRACE(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
                   toString(auth_id),
                   from_session_context ? "session" : "global",
                   toString(*user_id),
@@ -685,9 +686,9 @@ void Session::recordLoginSucess(ContextPtr login_context) const
                                      access,
                                      getClientInfo(),
                                      user);
-
-        notified_session_log_about_login = true;
     }
+
+    notified_session_log_about_login = true;
 }
 
 

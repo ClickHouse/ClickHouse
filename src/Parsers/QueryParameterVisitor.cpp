@@ -31,7 +31,7 @@ private:
 
     void visitQueryParameter(const ASTQueryParameter & query_parameter)
     {
-        query_parameters[query_parameter.name]= query_parameter.type;
+        query_parameters[query_parameter.name] = query_parameter.type;
     }
 };
 

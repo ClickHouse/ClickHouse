@@ -315,10 +315,9 @@ struct Adder
             {
                 StringRef value = column.getDataAt(row_num);
 
-                UInt128 key;
                 SipHash hash;
                 hash.update(value.data, value.size);
-                hash.get128(key);
+                const auto key = hash.get128();
 
                 data.set.template insert<const UInt128 &, use_single_level_hash_table>(key);
             }

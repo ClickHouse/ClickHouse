@@ -110,7 +110,7 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
 WebObjectStorage::WebObjectStorage(
     const String & url_,
     ContextPtr context_)
-    : WithContext(context_->getBufferContext())
+    : WithContext(context_->getGlobalContext())
     , url(url_)
     , log(&Poco::Logger::get("WebObjectStorage"))
 {
@@ -264,7 +264,7 @@ void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, std::optional<ObjectAttributes>) // NOLINT
+void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
 {
     throwNotAllowed();
 }

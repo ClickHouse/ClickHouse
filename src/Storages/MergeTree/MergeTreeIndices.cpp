@@ -132,6 +132,11 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerValidator("annoy", annoyIndexValidator);
 #endif
 
+#ifdef ENABLE_USEARCH
+    registerCreator("usearch", usearchIndexCreator);
+    registerValidator("usearch", usearchIndexValidator);
+#endif
+
     registerCreator("inverted", invertedIndexCreator);
     registerValidator("inverted", invertedIndexValidator);
 

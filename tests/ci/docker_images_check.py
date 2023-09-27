@@ -8,9 +8,8 @@ import shutil
 import subprocess
 import time
 import sys
-from glob import glob
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -24,23 +23,11 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
+from docker_images_helper import ImagesDict, IMAGES_FILE_PATH, get_images_dict
 
 NAME = "Push to Dockerhub"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
-
-ImagesDict = Dict[str, dict]
-
-
-# workaround for mypy issue [1]:
-#
-#    "Argument 1 to "map" has incompatible type overloaded function" [1]
-#
-#  [1]: https://github.com/python/mypy/issues/9864
-#
-# NOTE: simply lambda will do the trick as well, but pylint will not like it
-def realpath(*args, **kwargs):
-    return os.path.realpath(*args, **kwargs)
 
 
 class DockerImage:
@@ -90,21 +77,6 @@ class DockerImage:
         return f"DockerImage(path={self.path},repo={self.repo},parent={self.parent})"
 
 
-def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
-    """Return images suppose to build on the current architecture host"""
-    images_dict = {}
-    path_to_images_file = os.path.join(repo_path, image_file_path)
-    if os.path.exists(path_to_images_file):
-        with open(path_to_images_file, "rb") as dict_file:
-            images_dict = json.load(dict_file)
-    else:
-        logging.info(
-            "Image file %s doesn't exist in repo %s", image_file_path, repo_path
-        )
-
-    return images_dict
-
-
 def get_changed_docker_images(
     pr_info: PRInfo, images_dict: ImagesDict
 ) -> Set[DockerImage]:
@@ -123,23 +95,8 @@ def get_changed_docker_images(
     changed_images = []
 
     for dockerfile_dir, image_description in images_dict.items():
-        source_dir = GITHUB_WORKSPACE.rstrip("/") + "/"
-        dockerfile_files = glob(f"{source_dir}/{dockerfile_dir}/**", recursive=True)
-        # resolve symlinks
-        dockerfile_files = list(map(realpath, dockerfile_files))
-        # trim prefix to get relative path again, to match with files_changed
-        dockerfile_files = list(map(lambda x: x[len(source_dir) :], dockerfile_files))
-        logging.info(
-            "Docker %s (source_dir=%s) build context for PR %s @ %s: %s",
-            dockerfile_dir,
-            source_dir,
-            pr_info.number,
-            pr_info.sha,
-            str(dockerfile_files),
-        )
-
         for f in files_changed:
-            if f in dockerfile_files:
+            if f.startswith(dockerfile_dir):
                 name = image_description["name"]
                 only_amd64 = image_description.get("only_amd64", False)
                 logging.info(
@@ -192,7 +149,7 @@ def gen_versions(
     pr_commit_version = str(pr_info.number) + "-" + pr_info.sha
     # The order is important, PR number is used as cache during the build
     versions = [str(pr_info.number), pr_commit_version]
-    result_version = pr_commit_version
+    result_version = pr_commit_version  # type: Union[str, List[str]]
     if pr_info.number == 0 and pr_info.base_ref == "master":
         # First get the latest for cache
         versions.insert(0, "latest")
@@ -272,8 +229,6 @@ def build_and_push_one_image(
         cache_from = f"{cache_from} --cache-from type=registry,ref={image.repo}:{tag}"
 
     cmd = (
-        # tar is requried to follow symlinks, since docker-build cannot do this
-        f"tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#{image.full_path.lstrip('/')}#./#' --dereference --create {image.full_path} | "
         "docker buildx build --builder default "
         f"--label build-url={GITHUB_RUN_URL} "
         f"{from_tag_arg}"
@@ -283,7 +238,7 @@ def build_and_push_one_image(
         f"{cache_from} "
         f"--cache-to type=inline,mode=max "
         f"{push_arg}"
-        f"--progress plain -"
+        f"--progress plain {image.full_path}"
     )
     logging.info("Docker command to run: %s", cmd)
     with TeePopen(cmd, build_log) as proc:
@@ -439,7 +394,7 @@ def main():
         shutil.rmtree(TEMP_PATH)
     os.makedirs(TEMP_PATH)
 
-    images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
+    images_dict = get_images_dict(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
 
     pr_info = PRInfo()
     if args.all:

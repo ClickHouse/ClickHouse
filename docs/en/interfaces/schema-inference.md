@@ -228,8 +228,8 @@ For most input formats schema inference reads some data to determine its structu
 To prevent inferring the same schema every time ClickHouse read the data from the same file, the inferred schema is cached and when accessing the same file again, ClickHouse will use the schema from the cache.
 
 There are special settings that control this cache:
-- `schema_inference_cache_max_elements_for_{file/s3/hdfs/url}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
-- `schema_inference_use_cache_for_{file,s3,hdfs,url}` - allows turning on/off using cache for schema inference. These settings can be used in queries.
+- `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
+- `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - allows turning on/off using cache for schema inference. These settings can be used in queries.
 
 The schema of the file can be changed by modifying the data or by changing format settings.
 For this reason, the schema inference cache identifies the schema by file source, format name, used format settings, and the last modification time of the file.

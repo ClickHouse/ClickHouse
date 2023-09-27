@@ -1,8 +1,6 @@
 import os
-
 import grpc
 import pymysql.connections
-import psycopg2 as py_psql
 import pytest
 import random
 import sys
@@ -10,27 +8,19 @@ import threading
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+
+
 POSTGRES_SERVER_PORT = 5433
 MYSQL_SERVER_PORT = 9001
 GRPC_PORT = 9100
 SESSION_LOG_MATCHING_FIELDS = "auth_id, auth_type, client_version_major, client_version_minor, client_version_patch, interface"
-
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    f"python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} {proto_dir}/clickhouse_grpc.proto",
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -45,6 +35,7 @@ instance = cluster.add_instance(
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
     },
+    with_postgres=True,
 )
 
 
@@ -89,16 +80,19 @@ def grpc_query(query, user_, pass_, raise_exception):
 
 def postgres_query(query, user_, pass_, raise_exception):
     try:
-        client = py_psql.connect(
-            host=instance.ip_address,
-            port=POSTGRES_SERVER_PORT,
-            user=user_,
-            password=pass_,
-            database="default",
+        connection_string = f"host={instance.hostname} port={POSTGRES_SERVER_PORT} dbname=default user={user_} password={pass_}"
+        cluster.exec_in_container(
+            cluster.postgres_id,
+            [
+                "/usr/bin/psql",
+                connection_string,
+                "--no-align",
+                "--field-separator=' '",
+                "-c",
+                query,
+            ],
+            shell=True,
         )
-        cursor = client.cursor()
-        cursor.execute(query)
-        cursor.fetchall()
     except Exception:
         assert raise_exception
 
@@ -127,6 +121,10 @@ def mysql_query(query, user_, pass_, raise_exception):
 def started_cluster():
     try:
         cluster.start()
+        # Wait for the PostgreSQL handler to start.
+        # Cluster.start waits until port 9000 becomes accessible.
+        # Server opens the PostgreSQL compatibility port a bit later.
+        instance.wait_for_log_line("PostgreSQL compatibility protocol")
         yield cluster
     finally:
         cluster.shutdown()

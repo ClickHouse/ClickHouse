@@ -1,0 +1,28 @@
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_skip_idx)
+    Indexes:
+      Skip
+        Name: name_idx_g2
+        Description: minmax GRANULARITY 2
+        Parts: 1/1
+        Granules: 2/5
+      Skip
+        Name: name_idx_g1
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/2
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.test_skip_idx)
+    Indexes:
+      Skip
+        Name: name_idx_g2
+        Description: minmax GRANULARITY 2
+        Parts: 1/1
+        Granules: 2/5
+      Skip
+        Name: name_idx_g1
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 2/2

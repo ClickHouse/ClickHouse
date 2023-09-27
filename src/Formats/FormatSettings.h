@@ -175,6 +175,7 @@ struct FormatSettings
         EscapingRule escaping_rule = EscapingRule::Escaped;
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
+        bool allow_variable_number_of_columns = false;
     } custom;
 
     struct
@@ -197,6 +198,8 @@ struct FormatSettings
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
         bool allow_object_type = false;
+        bool valid_output_on_exception = false;
+        bool compact_allow_variable_number_of_columns = false;
     } json;
 
     struct
@@ -229,6 +232,7 @@ struct FormatSettings
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
+        bool filter_push_down = true;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
@@ -241,6 +245,7 @@ struct FormatSettings
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        size_t local_read_min_bytes_for_seek = 8192;
     } parquet;
 
     struct Pretty
@@ -282,6 +287,14 @@ struct FormatSettings
         uint32_t client_capabilities = 0;
         size_t max_packet_size = 0;
         uint8_t * sequence_id = nullptr; /// Not null if it's MySQLWire output format used to handle MySQL protocol connections.
+        /**
+         * COM_QUERY uses Text ResultSet
+         * https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset.html
+         * COM_STMT_EXECUTE uses Binary Protocol ResultSet
+         * https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_execute_response.html
+         * By default, use Text ResultSet.
+         */
+        bool binary_protocol = false;
     } mysql_wire;
 
     struct
@@ -316,6 +329,7 @@ struct FormatSettings
         UInt64 skip_first_lines = 0;
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
+        bool allow_variable_number_of_columns = false;
     } tsv;
 
     struct
@@ -343,6 +357,7 @@ struct FormatSettings
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
+        bool use_fast_decoder = true;
     } orc;
 
     /// For capnProto format we should determine how to
@@ -399,6 +414,16 @@ struct FormatSettings
     {
         bool allow_types_conversion = true;
     } native;
+
+    struct
+    {
+        bool valid_output_on_exception = false;
+    } xml;
+
+    struct
+    {
+        bool escape_special_characters = false;
+    } markdown;
 };
 
 }

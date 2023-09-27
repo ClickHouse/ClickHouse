@@ -6,7 +6,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-bool addPlansForSets(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+bool addPlansForSets(QueryPlan & root_plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(node.step.get());
     if (!delayed)
@@ -23,7 +23,9 @@ bool addPlansForSets(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         input_streams.push_back(plan->getCurrentDataStream());
         node.children.push_back(plan->getRootNode());
-        nodes.splice(nodes.end(), QueryPlan::detachNodes(std::move(*plan)));
+        auto [add_nodes, add_resources] = QueryPlan::detachNodesAndResources(std::move(*plan));
+        nodes.splice(nodes.end(), std::move(add_nodes));
+        root_plan.addResources(std::move(add_resources));
     }
 
     auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));

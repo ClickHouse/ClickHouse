@@ -5,6 +5,9 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
+# TODO: Once clang(-tidy) 17 is the minimum, we can convert this list to YAML
+# See https://releases.llvm.org/17.0.1/tools/clang/tools/extra/docs/ReleaseNotes.html#improvements-to-clang-tidy
+
 # TODO Let clang-tidy check headers in further directories
 #      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
 HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
@@ -25,6 +28,7 @@ Checks: '*,
     -bugprone-not-null-terminated-result,
     -bugprone-reserved-identifier, # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
     -bugprone-unchecked-optional-access,
+    -bugprone-*, -- category temporarily disabled because some check(s) in it are slow
 
     -cert-dcl16-c,
     -cert-dcl37-c,
@@ -39,6 +43,7 @@ Checks: '*,
     -clang-analyzer-optin.portability.UnixAPI,
     -clang-analyzer-security.insecureAPI.bzero,
     -clang-analyzer-security.insecureAPI.strcpy,
+    -clang-analyzer-*, -- category temporarily disabled because some check(s) in it are slow
 
     -cppcoreguidelines-avoid-c-arrays,
     -cppcoreguidelines-avoid-const-or-ref-data-members,
@@ -67,6 +72,7 @@ Checks: '*,
     -cppcoreguidelines-pro-type-vararg,
     -cppcoreguidelines-slicing,
     -cppcoreguidelines-special-member-functions,
+    -cppcoreguidelines-*, -- category temporarily disabled because some check(s) in it are slow
 
     -darwin-*,
 
@@ -108,6 +114,7 @@ Checks: '*,
     -openmp-*,
 
     -misc-const-correctness,
+    -misc-include-cleaner, # useful but far too many occurrences
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
     -misc-confusable-identifiers, # useful but slooow
@@ -127,10 +134,12 @@ Checks: '*,
 
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
+    -performance-avoid-endl,
     -performance-unnecessary-value-param,
 
     -portability-simd-intrinsics,
 
+    -readability-avoid-unconditional-preprocessor-if,
     -readability-braces-around-statements,
     -readability-convert-member-functions-to-static,
     -readability-else-after-return,
@@ -153,6 +162,13 @@ Checks: '*,
 '
 
 WarningsAsErrors: '*'
+
+ExtraArgs:
+# clang-tidy 17 started to complain (for unknown reasons) that various pragmas are unknown ("clang-diagnostic-unknown-pragmas").
+# This is technically a compiler error, not a clang-tidy error. We could litter the code base with more pragmas that suppress
+# this error but it is better to pass the following flag to the compiler:
+- '-Wno-unknown-pragmas'
+- '-Wno-unused-command-line-argument' # similar issue
 
 CheckOptions:
   readability-identifier-naming.ClassCase: CamelCase

@@ -318,7 +318,7 @@ def test_virtual_columns(started_cluster):
     hdfs_api.write_data("/file1", "1\n")
     hdfs_api.write_data("/file2", "2\n")
     hdfs_api.write_data("/file3", "3\n")
-    expected = "1\tfile1\thdfs://hdfs1:9000//file1\n2\tfile2\thdfs://hdfs1:9000//file2\n3\tfile3\thdfs://hdfs1:9000//file3\n"
+    expected = "1\tfile1\thdfs://hdfs1:9000/file1\n2\tfile2\thdfs://hdfs1:9000/file2\n3\tfile3\thdfs://hdfs1:9000/file3\n"
     assert (
         node1.query(
             "select id, _file as file_name, _path as file_path from virtual_cols order by id"
@@ -661,55 +661,40 @@ def test_virtual_columns_2(started_cluster):
     assert result.strip() == "kek"
 
 
-def get_profile_event_for_query(node, query, profile_event):
+def check_profile_event_for_query(node, file, profile_event, amount=1):
     node.query("system flush logs")
-    query = query.replace("'", "\\'")
-    return int(
-        node.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+    query_pattern = f"hdfs('hdfs://hdfs1:9000/{file}'".replace("'", "\\'")
+    assert (
+        int(
+            node.query(
+                f"select ProfileEvents['{profile_event}'] from system.query_log where query like '%{query_pattern}%' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
+            )
         )
+        == amount
     )
 
 
 def check_cache_misses(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1,
-            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-            "SchemaInferenceCacheMisses",
-        )
-        == amount
-    )
+    check_profile_event_for_query(node1, file, "SchemaInferenceCacheMisses", amount)
 
 
 def check_cache_hits(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')", "SchemaInferenceCacheHits"
-        )
-        == amount
-    )
+    check_profile_event_for_query(node1, file, "SchemaInferenceCacheHits", amount)
 
 
 def check_cache_invalidations(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1,
-            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-            "SchemaInferenceCacheInvalidations",
-        )
-        == amount
+    check_profile_event_for_query(
+        node1, file, "SchemaInferenceCacheInvalidations", amount
     )
 
 
 def check_cache_evictions(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1,
-            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-            "SchemaInferenceCacheEvictions",
-        )
-        == amount
+    check_profile_event_for_query(node1, file, "SchemaInferenceCacheEvictions", amount)
+
+
+def check_cache_num_rows_hits(node1, file, amount=1):
+    check_profile_event_for_query(
+        node1, file, "SchemaInferenceCacheNumRowsHits", amount
     )
 
 
@@ -723,6 +708,11 @@ def check_cache(node1, expected_files):
 def run_describe_query(node, file):
     query = f"desc hdfs('hdfs://hdfs1:9000/{file}')"
     node.query(query)
+
+
+def run_count_query(node, file):
+    query = f"select count() from hdfs('hdfs://hdfs1:9000/{file}', auto, 'x UInt64')"
+    return node.query(query)
 
 
 def test_schema_inference_cache(started_cluster):
@@ -811,6 +801,72 @@ def test_schema_inference_cache(started_cluster):
 
     run_describe_query(node1, files)
     check_cache_misses(node1, files, 4)
+
+    node1.query("system drop schema cache")
+    check_cache(node1, [])
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.csv') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    time.sleep(1)
+
+    res = run_count_query(node1, "test_cache0.csv")
+    assert int(res) == 100
+    check_cache(node1, ["test_cache0.csv"])
+    check_cache_misses(node1, "test_cache0.csv")
+
+    res = run_count_query(node1, "test_cache0.csv")
+    assert int(res) == 100
+    check_cache_hits(node1, "test_cache0.csv")
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.csv') select * from numbers(200) settings hdfs_truncate_on_insert=1"
+    )
+    time.sleep(1)
+
+    res = run_count_query(node1, "test_cache0.csv")
+    assert int(res) == 200
+    check_cache_invalidations(node1, "test_cache0.csv")
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.csv') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    time.sleep(1)
+
+    res = run_count_query(node1, "test_cache1.csv")
+    assert int(res) == 100
+    check_cache(node1, ["test_cache0.csv", "test_cache1.csv"])
+    check_cache_misses(node1, "test_cache1.csv")
+
+    res = run_count_query(node1, "test_cache1.csv")
+    assert int(res) == 100
+    check_cache_hits(node1, "test_cache1.csv")
+
+    res = run_count_query(node1, "test_cache{0,1}.csv")
+    assert int(res) == 300
+    check_cache_hits(node1, "test_cache{0,1}.csv", 2)
+
+    node1.query(f"system drop schema cache for hdfs")
+    check_cache(node1, [])
+
+    res = run_count_query(node1, "test_cache{0,1}.csv")
+    assert int(res) == 300
+    check_cache_misses(node1, "test_cache{0,1}.csv", 2)
+
+    node1.query(f"system drop schema cache for hdfs")
+    check_cache(node1, [])
+
+    node1.query(
+        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache.parquet') select * from numbers(100) settings hdfs_truncate_on_insert=1"
+    )
+    time.sleep(1)
+    res = node1.query(
+        f"select count() from hdfs('hdfs://hdfs1:9000/test_cache.parquet')"
+    )
+    assert int(res) == 100
+    check_cache_misses(node1, "test_cache.parquet")
+    check_cache_hits(node1, "test_cache.parquet")
+    check_cache_num_rows_hits(node1, "test_cache.parquet")
 
 
 def test_hdfsCluster_skip_unavailable_shards(started_cluster):
