@@ -19,19 +19,30 @@ class StorageS3QueueSource : public ISource, WithContext
 {
 public:
     using IIterator = StorageS3Source::IIterator;
+    using KeyWithInfoPtr = StorageS3Source::KeyWithInfoPtr;
     using GlobIterator = StorageS3Source::DisclosedGlobIterator;
-    using KeyWithInfo = StorageS3Source::KeyWithInfo;
     using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
     using RemoveFileFunc = std::function<void(std::string)>;
+    using Metadata = S3QueueFilesMetadata;
+
+    struct S3QueueKeyWithInfo : public StorageS3Source::KeyWithInfo
+    {
+        S3QueueKeyWithInfo(
+                const std::string & key_,
+                std::optional<S3::ObjectInfo> info_,
+                std::unique_ptr<Metadata::ProcessingHolder> processing_holder_,
+                std::shared_ptr<Metadata::FileStatus> file_status_);
+
+        std::unique_ptr<Metadata::ProcessingHolder> processing_holder;
+        std::shared_ptr<Metadata::FileStatus> file_status;
+    };
 
     class FileIterator : public IIterator
     {
     public:
-        FileIterator(
-            std::shared_ptr<S3QueueFilesMetadata> metadata_,
-            std::unique_ptr<GlobIterator> glob_iterator_);
+        FileIterator(std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_);
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
 
         size_t estimatedKeysCount() override;
 
@@ -71,6 +82,7 @@ private:
     const std::atomic<bool> & shutdown_called;
     const std::shared_ptr<S3QueueLog> s3_queue_log;
     const StorageID storage_id;
+    const std::string s3_queue_user_id;
 
     RemoveFileFunc remove_file_func;
     Poco::Logger * log;
