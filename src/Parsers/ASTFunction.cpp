@@ -80,6 +80,8 @@ namespace
 
         void markSecretArgument(size_t index, bool argument_is_named = false)
         {
+            if (index >= arguments->size())
+                return;
             if (!result.count)
             {
                 result.start = index;
@@ -100,7 +102,8 @@ namespace
                 /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
                 findMySQLFunctionSecretArguments();
             }
-            else if ((function.name == "s3") || (function.name == "cosn") || (function.name == "oss"))
+            else if ((function.name == "s3") || (function.name == "cosn") || (function.name == "oss") ||
+                     (function.name == "deltaLake") || (function.name == "hudi") || (function.name == "iceberg"))
             {
                 /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
                 findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -351,7 +354,8 @@ namespace
                 /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
                 findMySQLFunctionSecretArguments();
             }
-            else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS"))
+            else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
+                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg"))
             {
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 findS3TableEngineSecretArguments();
