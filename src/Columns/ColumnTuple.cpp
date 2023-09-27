@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
     extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -123,8 +124,12 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 
 size_t ColumnTuple::size() const
 {
-    chassert(columns.empty() || columns.at(0)->size() == column_length);
-    return column_length;
+    if (columns.empty())
+        return column_length;
+
+    /// It's difficult to maintain a consistent `column_length` because there
+    /// are many places that manipulates sub-columns directly.
+    return columns.at(0)->size();
 }
 
 Field ColumnTuple::operator[](size_t n) const
@@ -136,7 +141,6 @@ Field ColumnTuple::operator[](size_t n) const
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
-    // TODO will Tuple() be a problem?
     const size_t tuple_size = columns.size();
 
     res = Tuple();
