@@ -293,7 +293,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-## KEY_COLUMN_USAGE (#key_column_usage)
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 Contains columns from the [system.tables](../../operations/system-tables/tables.md) system table which are restricted by constraints.
 
@@ -352,7 +352,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-## REFERENTIAL_CONSTRAINTS (#referential_constraints)
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 Contains information about foreign keys. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
 
