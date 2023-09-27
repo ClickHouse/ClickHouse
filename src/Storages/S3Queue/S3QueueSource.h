@@ -80,7 +80,6 @@ private:
     const std::atomic<bool> & shutdown_called;
     const std::shared_ptr<S3QueueLog> s3_queue_log;
     const StorageID storage_id;
-    const std::string s3_queue_user_id;
 
     RemoveFileFunc remove_file_func;
     Poco::Logger * log;

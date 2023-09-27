@@ -91,7 +91,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     , shutdown_called(shutdown_called_)
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
-    , s3_queue_user_id(fmt::format("{}:{}", CurrentThread::getQueryId(), getRandomASCIIString(8)))
     , remove_file_func(remove_file_func_)
     , log(&Poco::Logger::get("StorageS3QueueSource"))
 {
