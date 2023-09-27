@@ -26,6 +26,11 @@ private:
     explicit ColumnTuple(MutableColumns && columns);
     ColumnTuple(const ColumnTuple &) = default;
 
+    /// Empty tuple needs a dedicated field to store its size.
+    size_t len;
+
+    /// Dedicated constructor for empty tuples.
+    explicit ColumnTuple(size_t len_);
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -39,6 +44,8 @@ public:
     requires std::is_rvalue_reference_v<Arg &&>
     static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
 
+    static MutablePtr create(size_t len_) { return Base::create(len_); }
+
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
     TypeIndex getDataType() const override { return TypeIndex::Tuple; }
@@ -46,10 +53,7 @@ public:
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    size_t size() const override
-    {
-        return columns.at(0)->size();
-    }
+    size_t size() const override { return len; }
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -117,6 +121,9 @@ public:
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
     ColumnPtr & getColumnPtr(size_t idx) { return columns[idx]; }
+
+    /// Empty tuple needs a public method to manage its size.
+    void addSize(size_t delta) { len += delta; }
 
 private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

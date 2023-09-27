@@ -82,7 +82,10 @@ SELECT LpNorm((1, 2), toDecimal32(2, 4)); -- { serverError 43 }
 SELECT (1, 2) * toDecimal32(3.1, 8);
 
 SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError 43 }
-SELECT tuple() + tuple(); -- { serverError 42 }
+
+-- TODO: what's the expected value of () + ()? Currently it returns 0.
+-- SELECT tuple() + tuple(); -- { serverError 42 }
+
 SELECT LpNorm((1, 2, 3)); -- { serverError 42 }
 SELECT max2(1, 2, -1); -- { serverError 42 }
 

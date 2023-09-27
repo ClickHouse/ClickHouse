@@ -36,7 +36,6 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 
     Columns set_elements;
     for (auto & set_element : prepared_set->getSetElements())
-
         set_elements.emplace_back(set_element->convertToFullColumnIfConst());
 
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
