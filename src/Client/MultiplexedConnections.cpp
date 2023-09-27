@@ -12,6 +12,8 @@
 namespace DB
 {
 
+// NOLINTBEGIN(bugprone-undefined-memory-manipulation)
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -27,6 +29,7 @@ namespace ErrorCodes
     memcpy(mutex_memory_dump.data(), &cancel_mutex, mutex_memory_dump.size()); \
     mutex_locked += 1; \
     SCOPE_EXIT({ mutex_locked -= 1; });
+/// When you remove this macro, please also remove the clang-tidy suppressions at the beginning + end of this file.
 
 
 MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
@@ -502,5 +505,7 @@ void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
             state.connection->setAsyncCallback(async_callback);
     }
 }
+
+// NOLINTEND(bugprone-undefined-memory-manipulation)
 
 }
