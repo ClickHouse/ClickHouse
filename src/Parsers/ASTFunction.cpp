@@ -20,6 +20,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Core/QualifiedTableName.h>
 
+#include <boost/algorithm/string.hpp>
+
 
 using namespace std::literals;
 
@@ -153,41 +155,26 @@ namespace
                 return;
             }
 
+            /// We should check other arguments first because we don't need to do any replacement in case of
+            /// s3('url', NOSIGN, 'format' [, 'compression'])
+            /// s3('url', 'format', 'structure' [, 'compression'])
+            if ((url_arg_idx + 3 <= arguments->size()) && (arguments->size() <= url_arg_idx + 4))
+            {
+                String second_arg;
+                if (tryGetStringFromArgument(url_arg_idx + 1, &second_arg))
+                {
+                    if (boost::iequals(second_arg, "NOSIGN"))
+                        return; /// The argument after 'url' is "NOSIGN".
+
+                    if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
+                        return; /// The argument after 'url' is a format: s3('url', 'format', ...)
+                }
+            }
+
             /// We're going to replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-
-            /// But we should check the number of arguments first because we don't need to do any replacements in case of
-            /// s3('url' [, 'format']) or s3Cluster('cluster_name', 'url' [, 'format'])
-            if (arguments->size() < url_arg_idx + 3)
-                return;
-
-            if (arguments->size() >= url_arg_idx + 5)
-            {
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'structure', ...)
-                markSecretArgument(url_arg_idx + 2);
-            }
-            else
-            {
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-                /// We need to distinguish that from s3('url', 'format', 'structure' [, 'compression_method']).
-                /// So we will check whether the argument after 'url' is a format.
-                String format;
-                if (!tryGetStringFromArgument(url_arg_idx + 1, &format, /* allow_identifier= */ false))
-                {
-                    /// We couldn't evaluate the argument after 'url' so we don't know whether it is a format or `aws_access_key_id`.
-                    /// So it's safer to wipe the next argument just in case.
-                    markSecretArgument(url_arg_idx + 2); /// Wipe either `aws_secret_access_key` or `structure`.
-                    return;
-                }
-
-                if (KnownFormatNames::instance().exists(format))
-                    return; /// The argument after 'url' is a format: s3('url', 'format', ...)
-
-                /// The argument after 'url' is not a format so we do our replacement:
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...) -> s3('url', 'aws_access_key_id', '[HIDDEN]', ...)
-                markSecretArgument(url_arg_idx + 2);
-            }
+            markSecretArgument(url_arg_idx + 2);
         }
 
         bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -385,15 +372,29 @@ namespace
                 return;
             }
 
+            /// We should check other arguments first because we don't need to do any replacement in case of
+            /// S3('url', NOSIGN, 'format' [, 'compression'])
+            /// S3('url', 'format', 'compression')
+            if ((3 <= arguments->size()) && (arguments->size() <= 4))
+            {
+                String second_arg;
+                if (tryGetStringFromArgument(1, &second_arg))
+                {
+                    if (boost::iequals(second_arg, "NOSIGN"))
+                        return; /// The argument after 'url' is "NOSIGN".
+
+                    if (arguments->size() == 3)
+                    {
+                        if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
+                            return; /// The argument after 'url' is a format: S3('url', 'format', ...)
+                    }
+                }
+            }
+
             /// We replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
+            /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-
-            /// But we should check the number of arguments first because we don't need to do that replacements in case of
-            /// S3('url' [, 'format' [, 'compression']])
-            if (arguments->size() < 4)
-                return;
-
             markSecretArgument(2);
         }
 
