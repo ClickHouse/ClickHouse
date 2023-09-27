@@ -55,6 +55,17 @@ ccache_status
 # clear cache stats
 ccache --zero-stats ||:
 
+# Check whether the directory with pre-build scripts exists and not empty.
+if [ ! -d "/build/packages/pre-build" ] || [ -n "$(ls -A /build/packages/pre-build)" ]; then
+   echo "There are no subcommands to execute :)"
+else
+  # Execute all commands
+  for file in /build/packages/pre-build/*.sh ;
+  do
+    bash "$file"
+  done
+fi
+
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
@@ -73,12 +84,12 @@ then
     fi
     rm -f CMakeCache.txt
 
-    # Build the rest of binaries
-    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-else
-    # Build everything
-    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    # Modify CMake flags, so we won't overwrite standalone keeper with symlinks
+    CMAKE_FLAGS+=(-DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0)
 fi
+
+# Build everything
+cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
