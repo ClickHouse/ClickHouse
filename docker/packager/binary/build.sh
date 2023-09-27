@@ -57,7 +57,7 @@ ccache --zero-stats ||:
 
 function check_prebuild_exists() {
   local path="$1"
-  [ -d "$path" ] && [ "$(ls -A $path)" ]
+  [ -d "$path" ] && [ "$(ls -A "$path")" ]
 }
 
 # Check whether the directory with pre-build scripts exists and not empty.
