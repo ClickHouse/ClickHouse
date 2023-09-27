@@ -55,17 +55,9 @@ ccache_status
 # clear cache stats
 ccache --zero-stats ||:
 
-function check_prebuild_exists()
-{
-  local path=$1
-  if [ -d "$path" ]
-  then
-    if [ "$(ls -A $path)" ]
-    then
-      return 0
-    fi
-  fi
-  return 1
+function check_prebuild_exists() {
+  local path="$1"
+  [ -d "$path" ] && [ "$(ls -A $path)" ]
 }
 
 # Check whether the directory with pre-build scripts exists and not empty.
