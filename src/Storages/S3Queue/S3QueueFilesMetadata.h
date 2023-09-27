@@ -22,7 +22,17 @@ public:
 
     ~S3QueueFilesMetadata();
 
-    bool trySetFileAsProcessing(const std::string & path);
+    struct ProcessingHolder
+    {
+        ProcessingHolder(const std::string & processing_id_, const std::string & zk_node_path_, zkutil::ZooKeeperPtr zk_client_)
+            : zk_client(zk_client_), zk_node_path(zk_node_path_), processing_id(processing_id_) {}
+
+        zkutil::ZooKeeperPtr zk_client;
+        std::string zk_node_path;
+        std::string processing_id;
+    };
+    using ProcessingHolderPtr = std::unique_ptr<ProcessingHolder>;
+    ProcessingHolderPtr trySetFileAsProcessing(const std::string & path);
 
     void setFileProcessed(const std::string & path);
 
@@ -47,6 +57,10 @@ public:
 
         time_t processing_start_time = 0;
         time_t processing_end_time = 0;
+
+        size_t retries = 0;
+
+        std::mutex processing_lock;
     };
     using FileStatuses = std::unordered_map<std::string, std::shared_ptr<FileStatus>>;
 
@@ -88,8 +102,8 @@ private:
         AlreadyProcessed,
         AlreadyFailed,
     };
-    SetFileProcessingResult trySetFileAsProcessingForOrderedMode(const std::string & path);
-    SetFileProcessingResult trySetFileAsProcessingForUnorderedMode(const std::string & path);
+    std::pair<SetFileProcessingResult, ProcessingHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
+    std::pair<SetFileProcessingResult, ProcessingHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
 
     struct NodeMetadata
     {
@@ -97,6 +111,7 @@ private:
         UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
+        std::string processing_id; /// For ephemeral processing node.
 
         std::string toString() const;
         static NodeMetadata fromString(const std::string & metadata_str);
@@ -115,7 +130,6 @@ private:
         FileStatuses getAll() const;
         std::shared_ptr<FileStatus> get(const std::string & filename, bool create);
         bool remove(const std::string & filename, bool if_exists);
-        FileStatus::State state(const std::string & filename) const;
         std::unique_lock<std::mutex> lock() const;
     };
     LocalFileStatuses local_file_statuses;

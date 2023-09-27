@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
+#include <Common/getRandomASCIIString.h>
 #include <Storages/S3Queue/S3QueueSource.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -29,24 +30,39 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
+        const std::string & key_,
+        std::optional<S3::ObjectInfo> info_,
+        std::unique_ptr<Metadata::ProcessingHolder> processing_holder_,
+        std::shared_ptr<Metadata::FileStatus> file_status_)
+    : StorageS3Source::KeyWithInfo(key_, info_)
+    , processing_holder(std::move(processing_holder_))
+    , file_status(file_status_)
+{
+}
+
 StorageS3QueueSource::FileIterator::FileIterator(
     std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_)
     : metadata(metadata_) , glob_iterator(std::move(glob_iterator_))
 {
 }
 
-StorageS3QueueSource::KeyWithInfo StorageS3QueueSource::FileIterator::next()
+StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
 {
     /// List results in s3 are always returned in UTF-8 binary order.
     /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
 
     while (true)
     {
-        KeyWithInfo val = glob_iterator->next();
-        if (val.key.empty())
+        KeyWithInfoPtr val = glob_iterator->next();
+
+        if (!val)
             return {};
-        if (metadata->trySetFileAsProcessing(val.key))
-            return val;
+
+        if (auto processing_holder = metadata->trySetFileAsProcessing(val->key); processing_holder)
+        {
+            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, std::move(processing_holder), nullptr);
+        }
     }
 }
 
@@ -77,6 +93,7 @@ StorageS3QueueSource::StorageS3QueueSource(
     , shutdown_called(shutdown_called_)
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
+    , s3_queue_user_id(fmt::format("{}:{}", CurrentThread::getQueryId(), getRandomASCIIString(8)))
     , remove_file_func(remove_file_func_)
     , log(&Poco::Logger::get("StorageS3QueueSource"))
 {

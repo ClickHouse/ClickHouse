@@ -43,22 +43,21 @@ public:
     struct KeyWithInfo
     {
         KeyWithInfo() = default;
-        KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_)
-            : key(std::move(key_)), info(std::move(info_))
-        {
-        }
+        explicit KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_ = std::nullopt)
+            : key(std::move(key_)), info(std::move(info_)) {}
 
         String key;
         std::optional<S3::ObjectInfo> info;
     };
+    using KeyWithInfoPtr = std::shared_ptr<KeyWithInfo>;
 
-    using KeysWithInfo = std::vector<KeyWithInfo>;
+    using KeysWithInfo = std::vector<KeyWithInfoPtr>;
 
     class IIterator
     {
     public:
         virtual ~IIterator() = default;
-        virtual KeyWithInfo next() = 0;
+        virtual KeyWithInfoPtr next() = 0;
 
         /// Estimates how many streams we need to process all files.
         /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
@@ -66,7 +65,7 @@ public:
         /// fixme: May underestimate if the glob has a strong filter, so there are few matches among the first 1000 ListObjects results.
         virtual size_t estimatedKeysCount() = 0;
 
-        KeyWithInfo operator ()() { return next(); }
+        KeyWithInfoPtr operator ()() { return next(); }
     };
 
     class DisclosedGlobIterator : public IIterator
@@ -82,7 +81,7 @@ public:
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -106,7 +105,7 @@ public:
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -120,7 +119,7 @@ public:
     public:
         explicit ReadTaskIterator(const ReadTaskCallback & callback_, const size_t max_threads_count);
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
