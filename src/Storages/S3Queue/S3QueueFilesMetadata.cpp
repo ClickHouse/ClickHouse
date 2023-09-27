@@ -1,12 +1,6 @@
 #include <set>
-#include "Common/Exception.h"
-#include "Common/ZooKeeper/Types.h"
-#include "Common/scope_guard_safe.h"
-#include "Interpreters/Context_fwd.h"
-#include "Storages/S3Queue/S3QueueSettings.h"
 #include "config.h"
 
-#if USE_AWS_S3
 #include <base/sleep.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/randomSeed.h>
@@ -14,12 +8,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
-#include <Storages/S3Queue/StorageS3Queue.h>
 #include <Storages/StorageS3Settings.h>
 #include <Storages/StorageSnapshot.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+
 
 namespace ProfileEvents
 {
@@ -226,6 +220,7 @@ bool S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
             break;
         }
     }
+    /// TODO lock file token not to go to keeper simultaneously from this server.
 
     SetFileProcessingResult result;
     switch (mode)
@@ -742,5 +737,3 @@ bool S3QueueFilesMetadata::checkSettings(const S3QueueSettings & settings) const
 }
 
 }
-
-#endif
