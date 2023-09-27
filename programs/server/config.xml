@@ -91,6 +91,18 @@
         </formatting> -->
     </logger>
 
+    <url_scheme_mappers>
+        <s3>
+            <domain>.s3.amazonaws.com</domain>
+        </s3>
+        <gs>
+            <domain>.storage.googleapis.com</domain>
+        </gs>
+        <oss>
+            <domain>.oss.aliyuncs.com</domain>
+        </oss>
+    </url_scheme_mappers>
+
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
     <!-- It is off by default. Next headers are obligate for CORS.-->
     <!-- http_options_response>

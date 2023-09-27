@@ -1,5 +1,6 @@
 #include <IO/S3/URI.h>
-
+#include <Poco/URI.h>
+#include <Storages/NamedCollectionsHelpers.h">
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -20,22 +21,16 @@ namespace DB
 
 struct UriConverter
 {
-    static void modifyURI(Poco::URI & uri)
+    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
-        std::string domain;
-        if (uri.getScheme() == "s3")
-            domain = S3_DOMAIN;
-        else if (uri.getScheme() == "oss")
-            domain = OSS_DOMAIN;
-        else if (uri.getScheme() == "gs")
-            domain = GCS_DOMAIN;
-        uri.setScheme("https");
-        uri.setHost(uri.getHost() + domain);
+        if (uri.getScheme() == "s3" || uri.getScheme() == "oss" || uri.getScheme() == "gs")
+        {
+            uri.setHost(uri.getHost() + mapper[uri.getScheme()]);
+            uri.setScheme("https");
+        }
+        else if (!mapper["nc_s3"].empty()) /// Case for tests
+            uri = Poco::URI(mapper["nc_s3"] + "/" + uri.getHost() + uri.getPath());
     }
-private:
-    static constexpr auto S3_DOMAIN = ".s3.amazonaws.com";
-    static constexpr auto OSS_DOMAIN = ".oss.aliyuncs.com";
-    static constexpr auto GCS_DOMAIN = ".storage.googleapis.com";
 };
 
 namespace ErrorCodes
@@ -64,10 +59,21 @@ URI::URI(const std::string & uri_)
     static constexpr auto OBS = "OBS";
     static constexpr auto OSS = "OSS";
 
+    std::unordered_map<std::string, std::string> mapper;
+    auto context = Context::getGlobalContextInstance();
+    chassert(context);
+    const auto *config = &context->getConfigRef();
+    if (config->has("url_scheme_mappers"))
+    {
+        std::vector<String> config_keys;
+        config->keys("url_scheme_mappers", config_keys);
+        for (const std::string & config_key : config_keys)
+            mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".domain");
+    }
     uri = Poco::URI(uri_);
 
-    if (uri.getScheme() == "s3" || uri.getScheme() == "oss" || uri.getScheme() == "gs")
-        UriConverter::modifyURI(uri);
+    if (!mapper.empty())
+        UriConverter::modifyURI(uri, mapper);
 
     storage_name = S3;
 
