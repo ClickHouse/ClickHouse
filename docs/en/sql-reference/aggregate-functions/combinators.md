@@ -317,15 +317,15 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-## -Min
+## -ArgMin
 
-The suffix -Min can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
+The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
 
-Examples: `sumMin(column, expr)`, `countMin(expr)`, `avgMin(x, expr)` and so on.
+Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` and so on.
 
-## -Max
+## -ArgMax
 
-Similar to suffix -Min but processes only the rows that have the maximum value for the specified extra expression.
+Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
 ## Related Content
 
