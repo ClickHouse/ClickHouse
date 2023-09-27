@@ -55,15 +55,29 @@ ccache_status
 # clear cache stats
 ccache --zero-stats ||:
 
+function check_prebuild_exists()
+{
+  local path=$1
+  if [ -d "$path" ]
+  then
+    if [ "$(ls -A $path)" ]
+    then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 # Check whether the directory with pre-build scripts exists and not empty.
-if [ ! -d "/build/packages/pre-build" ] || [ -n "$(ls -A /build/packages/pre-build)" ]; then
-   echo "There are no subcommands to execute :)"
-else
+if check_prebuild_exists /build/packages/pre-build
+then
   # Execute all commands
   for file in /build/packages/pre-build/*.sh ;
   do
     bash "$file"
   done
+else
+  echo "There are no subcommands to execute :)"
 fi
 
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
