@@ -26,9 +26,6 @@ fi
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
-# Read cmake arguments into array (possibly empty)
-read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
-env
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
@@ -72,11 +69,17 @@ else
   echo "There are no subcommands to execute :)"
 fi
 
+# Read cmake arguments into array (possibly empty)
+# The name of local variable has to be different from the name of environment variable
+# not to override it. And make it usable for other processes.
+read -ra CMAKE_FLAGS_VAR <<< "${CMAKE_FLAGS:-}"
+env
+
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
     # and without rust bindings
-    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS_VAR[@]}" ..
     # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS clickhouse-keeper
 
@@ -91,11 +94,11 @@ then
     rm -f CMakeCache.txt
 
     # Modify CMake flags, so we won't overwrite standalone keeper with symlinks
-    CMAKE_FLAGS+=(-DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0)
+    CMAKE_FLAGS_VAR+=(-DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0)
 fi
 
 # Build everything
-cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS_VAR[@]}" ..
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
