@@ -61,7 +61,7 @@ URI::URI(const std::string & uri_)
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
-    if(context)
+    if (context)
     {
         const auto *config = &context->getConfigRef();
         if (config->has("url_scheme_mappers"))
