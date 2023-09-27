@@ -7,6 +7,7 @@ namespace DB
 
 class RPNBuilderTreeNode;
 
+/// It estimates the selectivity of a condition.
 class ConditionEstimator
 {
 private:
@@ -20,11 +21,13 @@ private:
 
     UInt64 total_count = 0;
 
+    /// Minimum estimator for values in a part. It can contains multiple types of statistics.
+    /// But right now we only have tdigest;
     struct PartColumnEstimator
     {
         UInt64 part_count = 0;
 
-        std::shared_ptr<TDigestStatistic> t_digest;
+        std::shared_ptr<TDigestStatistic> tdigest;
 
         void merge(StatisticPtr statistic)
         {
@@ -34,25 +37,27 @@ private:
 
             if (typeid_cast<TDigestStatistic *>(statistic.get()))
             {
-                t_digest = std::static_pointer_cast<TDigestStatistic>(statistic);
+                tdigest = std::static_pointer_cast<TDigestStatistic>(statistic);
             }
         }
 
         Float64 estimateLess(Float64 val) const
         {
-            if (t_digest != nullptr)
-                return t_digest -> estimateLess(val);
+            if (tdigest != nullptr)
+                return tdigest -> estimateLess(val);
             return part_count * default_normal_cond_factor;
         }
 
         Float64 estimateGreator(Float64 val) const
         {
-            if (t_digest != nullptr)
-                return part_count - t_digest -> estimateLess(val);
+            if (tdigest != nullptr)
+                return part_count - tdigest -> estimateLess(val);
             return part_count * default_normal_cond_factor;
         }
     };
 
+    /// An estimator for a column consists of several PartColumnEstimator.
+    /// We simply get selectivity for every part estimator and combine the result.
     struct ColumnEstimator
     {
         std::map<std::string, PartColumnEstimator> estimators;

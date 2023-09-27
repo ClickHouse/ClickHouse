@@ -23,7 +23,7 @@ class IStatistic;
 using StatisticPtr = std::shared_ptr<IStatistic>;
 using Statistics = std::vector<StatisticPtr>;
 
-/// Statistic for a column
+/// Statistic contains the distribution of values in a column.
 /// right now we support
 /// - tdigest
 class IStatistic
@@ -60,6 +60,7 @@ protected:
 
 };
 
+/// TDigestStatistic is a kind of histogram.
 class TDigestStatistic : public IStatistic
 {
     QuantileTDigest<Float64> data;

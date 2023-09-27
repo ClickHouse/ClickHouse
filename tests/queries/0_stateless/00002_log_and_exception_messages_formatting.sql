@@ -45,7 +45,7 @@ create temporary table known_short_messages (s String) as select * from (select
 'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
 'Attempt to read after eof', 'String size is too big ({}), maximum: {}',
 'Processed: {}%', 'Creating {}: {}', 'Table {}.{} doesn''t exist', 'Invalid cache key hex: {}',
-'User has been dropped', 'Illegal type {} of argument of function {}. Should be DateTime or DateTime64'
+'User has been dropped', 'Illegal type {} of argument of function {}. Should be DateTime or DateTime64',
 'Unknown statistic column: {}'
 ] as arr) array join arr;
 
