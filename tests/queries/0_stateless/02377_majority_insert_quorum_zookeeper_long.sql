@@ -3,8 +3,6 @@
 -- no-replicated-database:
 --   The number of replicas is doubled, so `SYSTEM STOP FETCHES` stop not enough replicas.
 
-SET insert_keeper_fault_injection_probability=0;
-
 SET insert_quorum_parallel = false;
 
 SET select_sequential_consistency = 1;
@@ -18,6 +16,7 @@ CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/t
 
 -- insert_quorum = n/2 + 1 , so insert will be written to both replica
 SET insert_quorum = 'auto';
+SET insert_keeper_fault_injection_probability=0;
 
 INSERT INTO quorum1 VALUES (1, '2018-11-15');
 INSERT INTO quorum1 VALUES (2, '2018-11-15');
