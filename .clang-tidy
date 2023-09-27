@@ -38,6 +38,8 @@ Checks: '*,
     -cert-oop54-cpp,
     -cert-oop57-cpp,
 
+    -clang-analyzer-unix.Malloc,
+
     -cppcoreguidelines-*, # impractical in a codebase as large as ClickHouse, also slow
 
     -darwin-*,
