@@ -27,10 +27,10 @@ private:
     ColumnTuple(const ColumnTuple &) = default;
 
     /// Empty tuple needs a dedicated field to store its size.
-    size_t len;
+    size_t column_length;
 
     /// Dedicated constructor for empty tuples.
-    explicit ColumnTuple(size_t len_);
+    explicit ColumnTuple(size_t len);
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -53,7 +53,7 @@ public:
     MutableColumnPtr cloneEmpty() const override;
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    size_t size() const override { return len; }
+    size_t size() const override;
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -122,7 +122,7 @@ public:
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     /// Empty tuple needs a public method to manage its size.
-    void addSize(size_t delta) { len += delta; }
+    void addSize(size_t delta) { column_length += delta; }
 
 private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;

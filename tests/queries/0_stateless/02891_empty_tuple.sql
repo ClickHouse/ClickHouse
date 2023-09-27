@@ -11,3 +11,18 @@ select * from x order by ();
 select ();
 
 drop table x;
+
+drop table if exists x;
+
+create table x (i Nullable(Tuple())) engine MergeTree order by (); -- { serverError 43 }
+create table x (i LowCardinality(Tuple())) engine MergeTree order by (); -- { serverError 43 }
+create table x (i Tuple(), j Array(Tuple())) engine MergeTree order by ();
+
+insert into x values ((), [(), ()]);
+insert into x values ((), []);
+
+select count() from x;
+
+select * from x order by ();
+
+drop table x;
