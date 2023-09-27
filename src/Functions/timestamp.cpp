@@ -110,9 +110,6 @@ public:
                 readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                 vec_to[i] = value;
 
-                // if (!isAllRead(read_buffer))
-                //     throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
-
                 current_offset = next_offset;
             }
         }
@@ -133,9 +130,6 @@ public:
                 readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                 vec_to[i] = value;
 
-                // if (!isAllRead(read_buffer))
-                //     throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
-
                 current_offset = next_offset;
             }
         }
@@ -149,9 +143,6 @@ public:
 
         if (arguments.size() == 1)
             return col_to;
-
-        /// hh-mm-ss
-        static constexpr auto time_length = 8;
 
         const IColumn * col_time = arguments[1].column.get();
 
@@ -167,20 +158,11 @@ public:
                 const size_t next_offset = (*offsets)[i];
                 const size_t string_size = next_offset - current_offset - 1;
 
-                if (string_size != time_length)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal size of argument of argument of 2nd argument of function {}",
-                        col_date->getName());
+                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
-                const UInt8 * s = chars->data() + current_offset;
-
-                UInt8 hour = (s[0] - '0') * 10 + (s[1] - '0');
-                UInt8 minute = (s[3] - '0') * 10 + (s[4] - '0');
-                UInt8 second = (s[6] - '0') * 10 + (s[7] - '0');
-
-                time_t time_offset = hour * 3600 + minute * 60 + second;
-
-                vec_to[i] += time_offset * common::exp10_i32(DATETIME_SCALE);
+                Decimal64 value = 0;
+                readTime64Text(value, col_to->getScale(), read_buffer);
+                vec_to[i] += value;
 
                 current_offset = next_offset;
             }
@@ -190,26 +172,17 @@ public:
             const ColumnString::Chars * chars = &col_time_fixed_string->getChars();
             const size_t fixed_string_size = col_time_fixed_string->getN();
 
-            if (fixed_string_size != time_length)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal size of argument of argument of 2nd argument of function {}",
-                    getName());
-
             size_t current_offset = 0;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = current_offset + fixed_string_size;
 
-                const UInt8 * s = chars->data() + current_offset;
+                ReadBufferFromMemory read_buffer(&(*chars)[current_offset], fixed_string_size);
 
-                UInt8 hour = (s[0] - '0') * 10 + (s[1] - '0');
-                UInt8 minute = (s[3] - '0') * 10 + (s[4] - '0');
-                UInt8 second = (s[6] - '0') * 10 + (s[7] - '0');
-
-                time_t time_offset = hour * 3600 + minute * 60 + second;
-
-                vec_to[i] += time_offset * common::exp10_i32(DATETIME_SCALE);
+                Decimal64 value = 0;
+                readTime64Text(value, col_to->getScale(), read_buffer);
+                vec_to[i] += value;
 
                 current_offset = next_offset;
             }
@@ -230,7 +203,23 @@ public:
 
 REGISTER_FUNCTION(Timestamp)
 {
-    factory.registerFunction<FunctionTimestamp>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionTimestamp>(FunctionDocumentation{
+        .description = R"(
+Converts the first argument 'expr' to type DateTime64(6).
+If the second argument 'expr_time' is provided, it adds the specified time to the converted value.
+:::)",
+        .syntax = "timestamp(expr[, expr_time])",
+        .arguments = {
+            {"expr", "Date or date with time. Type: String."},
+            {"expr_time", "Time to add. Type: String."}
+        },
+        .returned_value = "The result of conversion and, optionally, addition. Type: DateTime64(6).",
+        .examples = {
+            {"timestamp", "SELECT timestamp('2013-12-31')", "2013-12-31 00:00:00.000000"},
+            {"timestamp", "SELECT timestamp('2013-12-31 12:00:00')", "2013-12-31 12:00:00.000000"},
+            {"timestamp", "SELECT timestamp('2013-12-31 12:00:00', '12:00:00.11')", "2014-01-01 00:00:00.110000"},
+        },
+        .categories{"DateTime"}}, FunctionFactory::CaseInsensitive);
 }
 
 }
