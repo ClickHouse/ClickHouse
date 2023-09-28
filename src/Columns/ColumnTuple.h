@@ -27,6 +27,8 @@ private:
     ColumnTuple(const ColumnTuple &) = default;
 
     /// Empty tuple needs a dedicated field to store its size.
+    /// This field used *only* for zero-sized tuples.
+    /// Otherwise `columns[0].size()` should be used to get a size of tuple column
     size_t column_length;
 
     /// Dedicated constructor for empty tuples.
