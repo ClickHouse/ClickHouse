@@ -68,9 +68,7 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (attemptedRetries >= maxRetries)
         return false;
 
-    if (CurrentThread::isInitialized())
-    {
-        if (CurrentThread::get().isQueryCanceled())
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             return false;
     }
 
