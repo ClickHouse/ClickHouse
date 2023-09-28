@@ -216,7 +216,7 @@ void ColumnTuple::insertFrom(const IColumn & src_, size_t n)
     if (src.columns.size() != tuple_size)
         throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
 
-    column_length += n;
+    ++column_length;
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
