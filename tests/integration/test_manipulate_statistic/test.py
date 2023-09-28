@@ -27,6 +27,9 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
             table, part_name
         )
     ).strip()
+
+    assert len(part_path) != 0
+
     output = node.exec_in_container(
         [
             "bash",
@@ -38,7 +41,7 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
         privileged=True,
     )
     logging.debug(
-        f"stat file ls in {part_path} for column {column_name}, shows {output}"
+        f"Checking stat file in {part_path} for column {column_name}, got {output}"
     )
     if exist:
         assert len(output) != 0
@@ -46,16 +49,7 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
         assert len(output) == 0
 
 
-def test_single_node(started_cluster):
-    node1.query("DROP TABLE IF EXISTS test_stat")
-
-    node1.query(
-        """
-        CREATE TABLE test_stat(a Int64 STATISTIC(tdigest), b Int64 STATISTIC(tdigest), c Int64 STATISTIC(tdigest))
-        ENGINE = MergeTree() ORDER BY a;
-    """
-    )
-
+def run_test_single_node(started_cluster):
     node1.query("INSERT INTO test_stat VALUES (1,2,3), (4,5,6)")
 
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "a", True)
@@ -76,12 +70,43 @@ def test_single_node(started_cluster):
 
     node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC b, c type tdigest")
 
-    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "a", False)
-    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "b", True)
-    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_2", "c", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "a", False)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "b", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_4", "c", True)
 
     node1.query("ALTER TABLE test_stat ADD STATISTIC a type tdigest")
+    node1.query("ALTER TABLE test_stat MATERIALIZE STATISTIC a type tdigest")
 
-    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "a", True)
-    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "b", True)
-    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0", "c", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "a", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "b", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_5", "c", True)
+
+    node1.query("ALTER TABLE test_stat DROP COLUMN c")
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_6", "a", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_6", "b", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_6", "c", False)
+
+
+def test_single_node_wide(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_stat")
+
+    node1.query(
+        """
+        CREATE TABLE test_stat(a Int64 STATISTIC(tdigest), b Int64 STATISTIC(tdigest), c Int64 STATISTIC(tdigest))
+        ENGINE = MergeTree() ORDER BY a
+        SETTINGS min_bytes_for_wide_part = 0;
+    """
+    )
+    run_test_single_node(started_cluster)
+
+
+def test_single_node_normal(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_stat")
+
+    node1.query(
+        """
+        CREATE TABLE test_stat(a Int64 STATISTIC(tdigest), b Int64 STATISTIC(tdigest), c Int64 STATISTIC(tdigest))
+        ENGINE = MergeTree() ORDER BY a;
+    """
+    )
+    run_test_single_node(started_cluster)

@@ -675,8 +675,9 @@ static NameToNameVector collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_STATISTIC)
         {
-            if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
-                add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, "");
+            for (const auto & statistic_column_name : command.statistic_columns)
+                if (source_part->checksums.has(STAT_FILE_PREFIX + statistic_column_name + STAT_FILE_SUFFIX))
+                    add_rename(STAT_FILE_PREFIX + statistic_column_name + STAT_FILE_SUFFIX, "");
         }
         else if (isWidePart(source_part))
         {
@@ -696,6 +697,10 @@ static NameToNameVector collectFilesForRenames(
 
                 if (auto serialization = source_part->tryGetSerialization(command.column_name))
                     serialization->enumerateStreams(callback);
+
+                /// if we drop a column with statistic, we should also drop the stat file.
+                if (source_part->checksums.has(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX))
+                    add_rename(STAT_FILE_PREFIX + command.column_name + STAT_FILE_SUFFIX, "");
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -1377,7 +1382,7 @@ private:
             }
         }
 
-        Statistics stats;
+        Statistics stats_to_rewrite;
         const auto & columns = ctx->metadata_snapshot->getColumns();
         for (const auto & col : columns)
         {
@@ -1386,20 +1391,19 @@ private:
 
             if (ctx->materialized_statistics.contains(col.name))
             {
-                stats.push_back(MergeTreeStatisticFactory::instance().get(*col.stat));
+                stats_to_rewrite.push_back(MergeTreeStatisticFactory::instance().get(*col.stat));
             }
             else
             {
+                /// We only hard-link statistics which
+                /// 1. not in `DROP STATISTIC` statement. It is filtered by `removed_stats`
+                /// 2. not in column list anymore, including `DROP COLUMN`. It is not touched by this loop.
                 auto prefix = fmt::format("{}{}.", STAT_FILE_PREFIX, col.name);
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
-                while (it != ctx->source_part->checksums.files.end())
+                if (it != ctx->source_part->checksums.files.end() && startsWith(it->first, prefix))
                 {
-                    if (!startsWith(it->first, prefix))
-                        break;
-
                     entries_to_hardlink.insert(it->first);
                     ctx->existing_indices_checksums.addFile(it->first, it->second.file_size, it->second.file_hash);
-                    ++it;
                 }
             }
         }
@@ -1497,7 +1501,7 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
-            stats,
+            stats_to_rewrite,
             ctx->compression_codec,
             ctx->txn,
             /*reset_columns=*/ true,
