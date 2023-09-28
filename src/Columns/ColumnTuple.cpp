@@ -361,8 +361,6 @@ void ColumnTuple::expand(const Filter & mask, bool inverted)
 
     for (auto & column : columns)
         column->expand(mask, inverted);
-
-    column_length = columns[0]->size();
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
