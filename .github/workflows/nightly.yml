@@ -53,6 +53,7 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true
+          fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:
@@ -81,8 +82,8 @@ jobs:
       SONAR_SCANNER_VERSION: 4.8.0.2856
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
-      CC: clang-16
-      CXX: clang++-16
+      CC: clang-17
+      CXX: clang++-17
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
