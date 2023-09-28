@@ -594,18 +594,6 @@ private:
 #endif
     }
 
-    ALWAYS_INLINE void buildStringToIntMask(const UInt64 * str_lens, UInt64 * masks)
-    {
-        auto str_lens_v = _mm512_loadu_epi64(str_lens);
-        auto const_9_v = _mm512_set1_epi64(9);
-        auto const_8_v = _mm512_set1_epi64(8);
-        auto masks_v = _mm512_sub_epi64(const_9_v, str_lens_v);
-        masks_v = _mm512_mullox_epi64(masks_v, const_8_v);
-        auto const_max_val_v = _mm512_set1_epi64(-1UL);
-        masks_v = _mm512_srlv_epi64(const_max_val_v, masks_v);
-        _mm512_storeu_epi64(masks, masks_v);
-    }
-
     ALWAYS_INLINE void innerComputeLocalValueIdsForOneBatch(UInt64 * value_ids, size_t n, const UInt8 * data_pos, const UInt64 * element_bytes, const UInt8 * null_map)
     {
         if (enable_range_mode)

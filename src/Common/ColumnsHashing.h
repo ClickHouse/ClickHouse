@@ -755,8 +755,6 @@ struct HashMethodKeysAdaptive
     HashMethodContextPtr ctx;
     AdaptiveHashMethodContext::HashValueIdGeneratorState * value_id_generators_state = nullptr;
 
-    mutable bool has_generated_value_ids = false;
-
     mutable PaddedPODArray<UInt64> value_ids;
 
     HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
@@ -800,6 +798,13 @@ struct HashMethodKeysAdaptive
                 value_id_generators_state->value_id_generators[i]->release();
             }
         }
+        if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            value_ids.clear();
+            value_ids.resize_fill(key_columns[0]->size(), 0);
+            for (size_t i = 0; i < keys_size; ++i)
+                value_id_generators_state->value_id_generators[i]->computeValueId(key_columns[i], &value_ids[0]);
+        }
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -808,16 +813,6 @@ struct HashMethodKeysAdaptive
     {
         if (value_id_generators_state->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
-            if (!has_generated_value_ids) [[unlikely]]
-            {
-                has_generated_value_ids = true;
-                value_ids.clear();
-                value_ids.resize_fill(key_columns[0]->size(), 0);
-                for (size_t i = 0; i < keys_size; ++i)
-                {
-                    value_id_generators_state->value_id_generators[i]->computeValueId(key_columns[i], &value_ids[0]);
-                }
-            }
             auto & value_id = value_ids[row];
             auto & cached_values = value_id_generators_state->shared_keys_holder_state.cached_values;
 
