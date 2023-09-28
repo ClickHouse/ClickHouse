@@ -143,7 +143,7 @@ def test_backward_compatability_for_uniq_exact(start_cluster, uniq_keys):
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version()
+    node1.restart_with_latest_version(fix_metadata=True)
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
@@ -216,7 +216,7 @@ def test_backward_compatability_for_uniq_exact_variadic(start_cluster, uniq_keys
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version()
+    node1.restart_with_latest_version(fix_metadata=True)
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
