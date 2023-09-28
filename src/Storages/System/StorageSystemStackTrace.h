@@ -2,7 +2,6 @@
 
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
-#include <mutex>
 #include <Storages/IStorage.h>
 
 namespace Poco
@@ -33,12 +32,11 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
 
 protected:
-    mutable std::mutex mutex;
     Poco::Logger * log;
 };
 

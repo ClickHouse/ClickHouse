@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/bitmap-functions
 sidebar_position: 49
 sidebar_label: "Функции для битмапов"
 ---
@@ -432,4 +433,3 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
 │   2 │
 └─────┘
 ```
-

@@ -3,6 +3,7 @@
 #!/usr/bin/env python3
 import pytest
 from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -50,10 +51,16 @@ def get_connection_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
+def restart_clickhouse():
+    node.restart_clickhouse(kill=True)
+    keeper_utils.wait_until_connected(cluster, node)
+
+
 def test_state_after_restart(started_cluster):
+    keeper_utils.wait_until_connected(started_cluster, node)
+    node_zk = None
+    node_zk2 = None
     try:
-        node_zk = None
-        node_zk2 = None
         node_zk = get_connection_zk("node")
 
         node_zk.create("/test_state_after_restart", b"somevalue")
@@ -69,7 +76,7 @@ def test_state_after_restart(started_cluster):
             else:
                 existing_children.append("node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 
@@ -102,9 +109,10 @@ def test_state_after_restart(started_cluster):
 
 
 def test_ephemeral_after_restart(started_cluster):
+    keeper_utils.wait_until_connected(started_cluster, node)
+    node_zk = None
+    node_zk2 = None
     try:
-        node_zk = None
-        node_zk2 = None
         node_zk = get_connection_zk("node")
 
         session_id = node_zk._session_id
@@ -123,7 +131,7 @@ def test_ephemeral_after_restart(started_cluster):
             else:
                 existing_children.append("node" + str(i))
 
-        node.restart_clickhouse(kill=True)
+        restart_clickhouse()
 
         node_zk2 = get_connection_zk("node")
 

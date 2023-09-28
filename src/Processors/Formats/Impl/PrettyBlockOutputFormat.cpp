@@ -1,32 +1,20 @@
-#include <sys/ioctl.h>
-#if defined(OS_SUNOS)
-#  include <sys/termios.h>
-#endif
-#include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/PODArray.h>
+
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
-
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations())
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
 {
-    struct winsize w;
-    if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
-        terminal_width = w.ws_col;
 }
 
 
@@ -38,8 +26,8 @@ void PrettyBlockOutputFormat::calculateWidths(
 {
     size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
 
-    /// len(num_rows) + len(". ")
-    row_number_width = std::floor(std::log10(num_rows)) + 3;
+    /// len(num_rows + total_rows) + len(". ")
+    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
 
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -142,17 +130,34 @@ GridSymbols ascii_grid_symbols {
 
 }
 
-
 void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
-    UInt64 max_rows = format_settings.pretty.max_rows;
-
-    if (total_rows >= max_rows)
+    if (total_rows >= format_settings.pretty.max_rows)
     {
-        total_rows += chunk.getNumRows();
+        if (port_kind != PortKind::PartialResult)
+            total_rows += chunk.getNumRows();
         return;
     }
+    if (mono_block)
+    {
+        if (port_kind == PortKind::Main)
+        {
+            if (mono_chunk)
+                mono_chunk.append(chunk);
+            else
+                mono_chunk = std::move(chunk);
+            return;
+        }
 
+        /// Should be written from writeSuffix()
+        assert(!mono_chunk);
+    }
+
+    writeChunk(chunk, port_kind);
+}
+
+void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
+{
     auto num_rows = chunk.getNumRows();
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
@@ -265,7 +270,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
     }
     writeString(middle_names_separator_s, out);
 
-    for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
+    for (size_t i = 0; i < num_rows && total_rows + i < format_settings.pretty.max_rows; ++i)
     {
         if (i != 0)
         {
@@ -280,7 +285,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         if (format_settings.pretty.output_format_pretty_row_numbers)
         {
             // Write row number;
-            auto row_num_string = std::to_string(i + 1) + ". ";
+            auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
             for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
             {
                 writeCString(" ", out);
@@ -311,7 +316,8 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
     }
     writeString(bottom_separator_s, out);
 
-    total_rows += num_rows;
+    if (port_kind != PortKind::PartialResult)
+        total_rows += num_rows;
 }
 
 
@@ -384,9 +390,48 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
     write(std::move(chunk), PortKind::Extremes);
 }
 
+void PrettyBlockOutputFormat::clearLastLines(size_t lines_number)
+{
+    /// http://en.wikipedia.org/wiki/ANSI_escape_code
+    #define MOVE_TO_PREV_LINE "\033[A"
+    #define CLEAR_TO_END_OF_LINE "\033[K"
+
+    static const char * clear_prev_line = MOVE_TO_PREV_LINE \
+                                          CLEAR_TO_END_OF_LINE;
+
+    /// Move cursor to the beginning of line
+    writeCString("\r", out);
+
+    for (size_t line = 0; line < lines_number; ++line)
+    {
+        writeCString(clear_prev_line, out);
+    }
+}
+
+void PrettyBlockOutputFormat::consumePartialResult(Chunk chunk)
+{
+    if (prev_partial_block_rows > 0)
+        /// number of rows + header line + footer line
+        clearLastLines(prev_partial_block_rows + 2);
+
+    prev_partial_block_rows = chunk.getNumRows();
+    write(std::move(chunk), PortKind::PartialResult);
+}
+
+
+void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
+{
+    if (mono_chunk)
+    {
+        writeChunk(mono_chunk, PortKind::Main);
+        mono_chunk.clear();
+    }
+}
 
 void PrettyBlockOutputFormat::writeSuffix()
 {
+    writeMonoChunkIfNeeded();
+
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("  Showed first ", out);
@@ -395,32 +440,9 @@ void PrettyBlockOutputFormat::writeSuffix()
     }
 }
 
-
 void registerOutputFormatPretty(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Pretty", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams &,
-        const FormatSettings & format_settings)
-    {
-        return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
-    });
-
-    factory.markOutputFormatSupportsParallelFormatting("Pretty");
-
-    factory.registerOutputFormat("PrettyNoEscapes", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams &,
-        const FormatSettings & format_settings)
-    {
-        FormatSettings changed_settings = format_settings;
-        changed_settings.pretty.color = false;
-        return std::make_shared<PrettyBlockOutputFormat>(buf, sample, changed_settings);
-    });
-
-    factory.markOutputFormatSupportsParallelFormatting("PrettyNoEscapes");
+    registerPrettyFormatWithNoEscapesAndMonoBlock<PrettyBlockOutputFormat>(factory, "Pretty");
 }
 
 }

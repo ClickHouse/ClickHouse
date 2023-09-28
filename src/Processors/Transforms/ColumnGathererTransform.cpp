@@ -22,7 +22,7 @@ ColumnGathererStream::ColumnGathererStream(
     , block_preferred_size(block_preferred_size_)
 {
     if (num_inputs == 0)
-        throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
 }
 
 void ColumnGathererStream::initialize(Inputs inputs)
@@ -77,7 +77,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
     }
 
     if (next_required_source != -1 && sources[next_required_source].size == 0)
-        throw Exception("Cannot fetch required block. Source " + toString(next_required_source), ErrorCodes::RECEIVED_EMPTY_DATA);
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Cannot fetch required block. Source {}", toString(next_required_source));
 
     /// Surprisingly this call may directly change some internal state of ColumnGathererStream.
     /// output_column. See ColumnGathererStream::gather.
@@ -116,8 +116,7 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 
     if (0 == source.size)
     {
-        throw Exception("Fetched block is empty. Source " + toString(source_num),
-                        ErrorCodes::RECEIVED_EMPTY_DATA);
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Fetched block is empty. Source {}", source_num);
     }
 }
 
@@ -127,14 +126,13 @@ ColumnGathererTransform::ColumnGathererTransform(
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_)
     : IMergingTransform<ColumnGathererStream>(
-        num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
+        num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
         num_inputs, row_sources_buf_, block_preferred_size_)
     , log(&Poco::Logger::get("ColumnGathererStream"))
 {
     if (header.columns() != 1)
-        throw Exception(
-            "Header should have 1 column, but contains " + toString(header.columns()),
-            ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Header should have 1 column, but contains {}",
+            toString(header.columns()));
 }
 
 void ColumnGathererTransform::work()
@@ -155,7 +153,7 @@ void ColumnGathererTransform::onFinish()
     double seconds = static_cast<double>(elapsed_ns) / 1000000000ULL;
     const auto & column_name = getOutputPort().getHeader().getByPosition(0).name;
 
-    if (!seconds)
+    if (seconds == 0.0)
         LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in 0 sec.",
             column_name, static_cast<double>(merged_bytes) / merged_rows);
     else

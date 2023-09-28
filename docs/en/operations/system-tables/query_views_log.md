@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/query_views_log
+---
 # query_views_log
 
 Contains information about the dependent views executed when running a query, for example, the view type or the execution time.
@@ -15,33 +18,33 @@ You can use the [log_queries_probability](../../operations/settings/settings.md#
 
 Columns:
 
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the last event of the view happened.
--   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution.
--   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
--   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of view execution (sum of its stages) in milliseconds.
--   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
--   `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
--   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.
--   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Values:
-    -   `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). Should not appear in this log.
-    -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
-    -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
--   `view_query` ([String](../../sql-reference/data-types/string.md)) — The query executed by the view.
--   `view_target` ([String](../../sql-reference/data-types/string.md)) — The name of the view target table.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
--   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events).
--   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
-    -   `'QueryStart' = 1` — Successful start the view execution. Should not appear.
-    -   `'QueryFinish' = 2` — Successful end of the view execution.
-    -   `'ExceptionBeforeStart' = 3` — Exception before the start of the view execution.
-    -   `'ExceptionWhileProcessing' = 4` — Exception during the view execution.
--   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
--   `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
--   `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
+- `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the last event of the view happened.
+- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution.
+- `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
+- `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of view execution (sum of its stages) in milliseconds.
+- `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
+- `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
+- `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.
+- `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Values:
+    - `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). Should not appear in this log.
+    - `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
+    - `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
+- `view_query` ([String](../../sql-reference/data-types/string.md)) — The query executed by the view.
+- `view_target` ([String](../../sql-reference/data-types/string.md)) — The name of the view target table.
+- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
+- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
+- `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
+- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
+- `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
+- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events).
+- `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
+    - `'QueryStart' = 1` — Successful start the view execution. Should not appear.
+    - `'QueryFinish' = 2` — Successful end of the view execution.
+    - `'ExceptionBeforeStart' = 3` — Exception before the start of the view execution.
+    - `'ExceptionWhileProcessing' = 4` — Exception during the view execution.
+- `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
+- `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
+- `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
 
 **Example**
 
@@ -80,7 +83,5 @@ stack_trace:
 
 **See Also**
 
--   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
-
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/query_thread_log) <!--hide-->
+- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.

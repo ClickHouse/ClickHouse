@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/data-types/map
 sidebar_position: 65
 sidebar_label: Map(key, value)
 ---
@@ -101,7 +102,5 @@ SELECT a.values FROM t_map;
 
 **另请参阅**
 
--   [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
+-   [map()](../../sql-reference/functions/tuple-map-functions.mdx#function-map) function
 -   [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
-
-[Original article](https://clickhouse.com/docs/zh/sql-reference/data-types/map/) <!--hide-->

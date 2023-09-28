@@ -28,7 +28,7 @@ WITH
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
-SELECT uniqExact(thread_id)
+SELECT uniqExact(thread_id) > 2
 FROM system.query_thread_log
 WHERE (event_date >= (today() - 1)) AND (query_id = id) AND (thread_id != master_thread_id);
 

@@ -2,8 +2,9 @@
 
 #include "Epoll.h"
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
+#include <base/defines.h>
 #include <unistd.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -34,10 +35,10 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
     return *this;
 }
 
-void Epoll::add(int fd, void * ptr)
+void Epoll::add(int fd, void * ptr, uint32_t events)
 {
     epoll_event event;
-    event.events = EPOLLIN | EPOLLPRI;
+    event.events = events | EPOLLPRI;
     if (ptr)
         event.data.ptr = ptr;
     else
@@ -57,24 +58,35 @@ void Epoll::remove(int fd)
         throwFromErrno("Cannot remove descriptor from epoll", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
+size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout) const
 {
     if (events_count == 0)
-        throw Exception("There are no events in epoll", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
+    Stopwatch watch;
     int ready_size;
-    int timeout = blocking ? -1 : 0;
-    do
+    while (true)
     {
         ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);
 
-        if (ready_size == -1 && errno != EINTR)
-            throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
-
-        if (errno == EINTR)
-            LOG_TEST(&Poco::Logger::get("Epoll"), "EINTR");
+        /// If `ready_size` = 0, it's timeout.
+        if (ready_size < 0)
+        {
+            if (errno == EINTR)
+            {
+                if (timeout >= 0)
+                {
+                    timeout = std::max(0, static_cast<int>(timeout - watch.elapsedMilliseconds()));
+                    watch.restart();
+                }
+                continue;
+            }
+            else
+                throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
+        }
+        else
+            break;
     }
-    while (ready_size <= 0 && (ready_size != 0 || blocking));
 
     return ready_size;
 }
@@ -82,7 +94,10 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 Epoll::~Epoll()
 {
     if (epoll_fd != -1)
-        close(epoll_fd);
+    {
+        int err = close(epoll_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 }

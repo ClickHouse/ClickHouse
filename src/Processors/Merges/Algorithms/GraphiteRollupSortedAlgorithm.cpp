@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const Graphite::Params & params)
 {
@@ -26,6 +32,9 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
         if (i != def.time_column_num && i != def.value_column_num && i != def.version_column_num)
             def.unmodified_column_numbers.push_back(i);
 
+    if (!WhichDataType(header.getByPosition(def.value_column_num).type).isFloat64())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only `Float64` data type is allowed for the value column of GraphiteMergeTree");
+
     return def;
 }
 
@@ -33,11 +42,12 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
-    size_t max_block_size,
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_,
     Graphite::Params params_,
     time_t time_of_merge_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), false, max_block_size)
+    , merged_data(header_.cloneEmptyColumns(), false, max_block_size_rows_, max_block_size_bytes_)
     , params(std::move(params_))
     , time_of_merge(time_of_merge_)
 {

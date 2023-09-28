@@ -37,7 +37,12 @@ std::string IProcessor::statusToName(Status status)
             return "ExpandPipeline";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
+}
+
+ProcessorPtr IProcessor::getPartialResultProcessorPtr(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    return current_processor->getPartialResultProcessor(current_processor, partial_result_limit, partial_result_duration_ms);
 }
 
 }

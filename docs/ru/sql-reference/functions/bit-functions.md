@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/bit-functions
 sidebar_position: 48
 sidebar_label: "Битовые функции"
 ---

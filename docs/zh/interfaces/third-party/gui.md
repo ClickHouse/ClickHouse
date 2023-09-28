@@ -1,3 +1,6 @@
+---
+slug: /zh/interfaces/third-party/gui
+---
 # 第三方开发的可视化界面 {#di-san-fang-kai-fa-de-ke-shi-hua-jie-mian}
 
 ## 开源 {#kai-yuan}
@@ -126,5 +129,3 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   数据编辑器。
 -   重构。
 -   搜索和导航。
-
-[来源文章](https://clickhouse.com/docs/zh/interfaces/third-party/gui/) <!--hide-->

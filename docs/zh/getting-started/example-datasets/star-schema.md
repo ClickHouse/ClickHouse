@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/example-datasets/star-schema
 sidebar_position: 16
 sidebar_label: Star Schema Benchmark
 ---
@@ -361,5 +362,3 @@ ORDER BY
     S_CITY ASC,
     P_BRAND ASC;
 ```
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

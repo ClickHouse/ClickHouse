@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_GRPC
 #include <Poco/Net/SocketAddress.h>

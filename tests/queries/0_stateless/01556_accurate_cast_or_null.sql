@@ -35,3 +35,17 @@ SELECT accurateCastOrNull(nan, 'UInt64');
 SELECT accurateCastOrNull(nan, 'UInt256');
 
 SELECT accurateCastOrNull(number + 127, 'Int8') AS x FROM numbers (2) ORDER BY x;
+
+SELECT accurateCastOrNull(-1, 'DateTime');
+SELECT accurateCastOrNull(5000000000, 'DateTime');
+SELECT accurateCastOrNull('1xxx', 'DateTime');
+select toString(accurateCastOrNull('2023-05-30 14:38:20', 'DateTime'), timezone());
+SELECT toString(accurateCastOrNull(19, 'DateTime'), 'UTC');
+SELECT toString(accurateCastOrNull(70000, 'DateTime'), 'UTC');
+
+SELECT accurateCastOrNull(-1, 'Date');
+SELECT accurateCastOrNull(5000000000, 'Date');
+SELECT accurateCastOrNull('1xxx', 'Date');
+SELECT accurateCastOrNull('2023-05-30', 'Date');
+SELECT accurateCastOrNull('2180-01-01', 'Date');
+SELECT accurateCastOrNull(19, 'Date');

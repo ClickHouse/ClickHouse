@@ -21,19 +21,19 @@ namespace ErrorCodes
 std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const ASTFunction & node)
 {
     if (node.arguments->children.size() != 2)
-        throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
 
     const auto * lambda_args_tuple = node.arguments->children[0]->as<ASTFunction>();
 
     if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
-        throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
 
     std::vector<String> names;
     for (auto & child : lambda_args_tuple->arguments->children)
     {
         const auto * identifier = child->as<ASTIdentifier>();
         if (!identifier)
-            throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "lambda argument declarations must be identifiers");
 
         names.push_back(identifier->name());
     }
@@ -52,10 +52,8 @@ bool RequiredSourceColumnsMatcher::needChildVisit(const ASTPtr & node, const AST
 
     if (const auto * f = node->as<ASTFunction>())
     {
-        /// "indexHint" is a special function for index analysis.
-        /// Everything that is inside it is not calculated. See KeyCondition
         /// "lambda" visit children itself.
-        if (f->name == "indexHint" || f->name == "lambda")
+        if (f->name == "lambda")
             return false;
     }
 
@@ -73,6 +71,11 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
     }
     if (auto * t = ast->as<ASTFunction>())
     {
+        /// "indexHint" is a special function for index analysis.
+        /// Everything that is inside it is not calculated. See KeyCondition
+        if (!data.visit_index_hint && t->name == "indexHint")
+            return;
+
         data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
@@ -151,17 +154,6 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
             find_columns(interpolate->as<ASTInterpolateElement>()->expr.get());
     }
 
-    if (const auto & with = select.with())
-    {
-        for (auto & node : with->children)
-        {
-            if (const auto * identifier = node->as<ASTIdentifier>())
-                data.addColumnIdentifier(*identifier);
-            else
-                data.addColumnAliasIfAny(*node);
-        }
-    }
-
     std::vector<ASTPtr *> out;
     for (const auto & node : select.children)
     {
@@ -179,7 +171,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPt
 {
     // FIXME(ilezhankin): shouldn't ever encounter
     if (node.name().empty())
-        throw Exception("Expected not empty name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not empty name");
 
     if (!data.private_aliases.contains(node.name()))
         data.addColumnIdentifier(node);
@@ -219,7 +211,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr
 {
     ASTPtr expression_list = node.expression_list;
     if (!expression_list || expression_list->children.empty())
-        throw Exception("Expected not empty expression_list", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected not empty expression_list");
 
     std::vector<ASTPtr *> out;
 

@@ -33,21 +33,22 @@ void IMySQLReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
 
 void LimitedReadPacket::readPayload(ReadBuffer &in, uint8_t &sequence_id)
 {
-    LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
+    LimitReadBuffer limited(in, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
     IMySQLReadPacket::readPayload(limited, sequence_id);
 }
 
 void LimitedReadPacket::readPayloadWithUnpacked(ReadBuffer & in)
 {
-    LimitReadBuffer limited(in, 10000, true, "too long MySQL packet.");
+    LimitReadBuffer limited(in, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
     IMySQLReadPacket::readPayloadWithUnpacked(limited);
 }
 
-uint64_t readLengthEncodedNumber(ReadBuffer & buffer)
+uint64_t readLengthEncodedNumber(ReadBuffer & buffer, UInt16 & bytes_read)
 {
     char c{};
     uint64_t buf = 0;
     buffer.readStrict(c);
+    bytes_read = 1;
     auto cc = static_cast<uint8_t>(c);
     switch (cc)
     {
@@ -56,17 +57,26 @@ uint64_t readLengthEncodedNumber(ReadBuffer & buffer)
             break;
         case 0xfc:
             buffer.readStrict(reinterpret_cast<char *>(&buf), 2);
+            bytes_read += 2;
             break;
         case 0xfd:
             buffer.readStrict(reinterpret_cast<char *>(&buf), 3);
+            bytes_read += 3;
             break;
         case 0xfe:
             buffer.readStrict(reinterpret_cast<char *>(&buf), 8);
+            bytes_read += 8;
             break;
         default:
             return cc;
     }
     return buf;
+}
+
+uint64_t readLengthEncodedNumber(ReadBuffer & buffer)
+{
+    UInt16 bytes_read = 0;
+    return readLengthEncodedNumber(buffer, bytes_read);
 }
 
 void readLengthEncodedString(String & s, ReadBuffer & buffer)

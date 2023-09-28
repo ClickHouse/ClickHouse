@@ -1,5 +1,6 @@
 ---
-sidebar_position: 71
+slug: /en/development/contrib
+sidebar_position: 72
 sidebar_label: Third-Party Libraries
 description: A list of third-party libraries used
 ---

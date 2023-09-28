@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -13,19 +14,20 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
+#include <Common/filesystemHelpers.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
-#    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
 #    include <Storages/MySQL/MySQLSettings.h>
+#    include <Storages/StorageMySQL.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <mysqlxx/Pool.h>
 #endif
@@ -46,6 +48,14 @@
 #include <Databases/SQLite/DatabaseSQLite.h>
 #endif
 
+#if USE_AWS_S3
+#include <Databases/DatabaseS3.h>
+#endif
+
+#if USE_HDFS
+#include <Databases/DatabaseHDFS.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -60,10 +70,42 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+{
+    const String & engine_name = create.storage->engine->name;
+    const String & database_name = create.getDatabase();
+
+    if (engine_name != "Ordinary")
+        return;
+
+    if (!FS::isSymlink(metadata_path))
+        return;
+
+    String target_path = FS::readSymlink(metadata_path).string();
+    fs::path path_to_remove = metadata_path;
+    if (path_to_remove.filename().empty())
+        path_to_remove = path_to_remove.parent_path();
+
+    /// Before 20.7 metadata/db_name.sql file might absent and Ordinary database was attached if there's metadata/db_name/ dir.
+    /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
+    /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
+    /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
+    /// then it's considered as Ordinary database. And it even works somehow
+    /// until background task tries to remove unused dir from store/...
+    throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE,
+                    "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
+                    "It may be a result of manual intervention, crash on very first server start or a bug. "
+                    "Database cannot be attached (it's kind of protection from potential data loss). "
+                    "Metadata directory must not be a symlink and must contain tables metadata files itself. "
+                    "You have to resolve this manually. It can be done like this: rm {}; sudo -u clickhouse mv {} {};",
+                    metadata_path, database_name, target_path,
+                    quoteString(path_to_remove.string()), quoteString(target_path), quoteString(path_to_remove.string()));
+
+}
+
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
-    /// Creates store/xxx/ for Atomic
-    fs::create_directories(fs::path(metadata_path).parent_path());
+    cckMetadataPathForOrdinary(create, metadata_path);
 
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
@@ -81,7 +123,7 @@ template <typename ValueType>
 static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
 {
     if (!ast || !ast->as<ASTLiteral>())
-        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
 
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
@@ -95,13 +137,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -127,19 +169,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                             "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
 
-        /// Before 20.7 metadata/db_name.sql file might absent and Ordinary database was attached if there's metadata/db_name/ dir.
-        /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
-        /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
-        /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
-        /// then it's considered as Ordinary database. And it even works somehow
-        /// until background task tries to remove onused dir from store/...
-        if (fs::is_symlink(metadata_path))
-            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
-                            "It may be a result of manual intervention, crash on very first server start or a bug. "
-                            "Database cannot be attached (it's kind of protection from potential data loss). "
-                            "Metadata directory must not be a symlink and must contain tables metadata files itself. "
-                            "You have to resolve this manually.",
-                            metadata_path, database_name, fs::read_symlink(metadata_path).string());
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     }
 
@@ -158,21 +187,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        StorageMySQLConfiguration configuration;
+        StorageMySQL::Configuration configuration;
         ASTs & arguments = engine->arguments->children;
-        MySQLSettings mysql_settings;
+        auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, mysql_settings))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, context))
         {
-            auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
-
-            configuration.set(common_configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            mysql_settings.applyChanges(settings_changes);
-
-            if (!storage_specific_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, context, false);
         }
         else
         {
@@ -205,15 +226,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             if (engine_name == "MySQL")
             {
-                auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                auto mysql_pool = createMySQLPoolWithFailover(configuration, mysql_settings);
+                mysql_settings->loadFromQueryContext(context, *engine_define);
+                if (engine_define->settings)
+                    mysql_settings->loadFromQuery(*engine_define);
 
-                mysql_database_settings->loadFromQueryContext(context);
-                mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
+                auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 
                 return std::make_shared<DatabaseMySQL>(
                     context, database_name, metadata_path, engine_define, configuration.database,
-                    std::move(mysql_database_settings), std::move(mysql_pool), create.attach);
+                    std::move(mysql_settings), std::move(mysql_pool), create.attach);
             }
 
             MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);
@@ -228,13 +249,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             {
                 auto print_create_ast = create.clone();
                 print_create_ast->as<ASTCreateQuery>()->attach = false;
-                throw Exception(
-                    fmt::format(
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
                         "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
                         metadata_path,
-                        queryToString(print_create_ast)),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                        queryToString(print_create_ast));
             }
 
             return std::make_shared<DatabaseMaterializedMySQL>(
@@ -244,7 +263,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         catch (...)
         {
             const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
+            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     }
 #endif
@@ -254,7 +273,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("Lazy database require cache_expiration_time_seconds argument", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
 
         const auto & arguments = engine->arguments->children;
 
@@ -267,7 +286,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 3)
-            throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
 
         auto & arguments = engine->arguments->children;
         for (auto & engine_arg : arguments)
@@ -300,25 +319,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         ASTs & engine_args = engine->arguments->children;
         auto use_table_cache = false;
-        StoragePostgreSQLConfiguration configuration;
+        StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            auto [common_configuration, storage_specific_args, _] = named_collection.value();
-
-            configuration.set(common_configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-
-            for (const auto & [arg_name, arg_value] : storage_specific_args)
-            {
-                if (arg_name == "use_table_cache")
-                    use_table_cache = true;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unexpected key-value argument."
-                            "Got: {}, but expected one of:"
-                            "host, port, username, password, database, schema, use_table_cache.", arg_name);
-            }
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
+            use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
         {
@@ -376,16 +382,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        StoragePostgreSQLConfiguration configuration;
+        StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            auto [common_configuration, storage_specific_args, _] = named_collection.value();
-            configuration.set(common_configuration);
-
-            if (!storage_specific_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
         }
         else
         {
@@ -427,7 +428,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
 
         const auto & arguments = engine->arguments->children;
 
@@ -437,7 +438,64 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 #endif
 
-    throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    else if (engine_name == "Filesystem")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        /// If init_path is empty, then the current path will be used
+        std::string init_path;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
+
+            const auto & arguments = engine->arguments->children;
+            init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseFilesystem>(database_name, init_path, context);
+    }
+
+#if USE_AWS_S3
+    else if (engine_name == "S3")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        DatabaseS3::Configuration config;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            ASTs & engine_args = engine->arguments->children;
+            config = DatabaseS3::parseArguments(engine_args, context);
+        }
+
+        return std::make_shared<DatabaseS3>(database_name, config, context);
+    }
+#endif
+
+#if USE_HDFS
+    else if (engine_name == "HDFS")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        /// If source_url is empty, then table name must contain full url
+        std::string source_url;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS database requires at most 1 argument: source_url");
+
+            const auto & arguments = engine->arguments->children;
+            source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseHDFS>(database_name, source_url, context);
+    }
+#endif
+
+    throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
 }
 
 }

@@ -1,5 +1,15 @@
 -- Tags: no-fasttest
 
+select javaHash(toInt8(123));
+select javaHash(toInt8(-123));
+select javaHash(toInt16(123));
+select javaHash(toInt16(-123));
+select javaHash(toInt32(123));
+select javaHash(toInt32(-123));
+select javaHash(toInt64(123));
+select javaHash(toInt64(-123));
+select javaHash(toInt64(12345678901));
+select javaHash(toInt64(-12345678901));
 select javaHash('abc');
 select javaHash('874293087');
 select javaHashUTF16LE(convertCharset('a1가', 'utf-8', 'utf-16le'));

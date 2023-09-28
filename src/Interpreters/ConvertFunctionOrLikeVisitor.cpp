@@ -1,9 +1,9 @@
-#include <Functions/likePatternToRegexp.h>
 #include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 
 
@@ -15,7 +15,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
     if (function.name != "or")
         return;
 
-    std::unordered_map<ASTPtr, std::shared_ptr<ASTLiteral>> identifier_to_literals;
+    std::unordered_map<String, std::shared_ptr<ASTLiteral>> identifier_to_literals;
     for (auto & child : function.children)
     {
         if (auto * expr_list_fn = child->as<ASTExpressionList>())
@@ -51,10 +51,11 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
                         regexp = "(?i)" + regexp;
 
                     unique_elems.pop_back();
-                    auto it = identifier_to_literals.find(identifier);
+                    auto it = identifier_to_literals.find(identifier->getAliasOrColumnName());
+
                     if (it == identifier_to_literals.end())
                     {
-                        it = identifier_to_literals.insert({identifier, std::make_shared<ASTLiteral>(Field{Array{}})}).first;
+                        it = identifier_to_literals.insert({identifier->getAliasOrColumnName(), std::make_shared<ASTLiteral>(Field{Array{}})}).first;
                         auto match = makeASTFunction("multiMatchAny");
                         match->arguments->children.push_back(arguments[0]);
                         match->arguments->children.push_back(it->second);

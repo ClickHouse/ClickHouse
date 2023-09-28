@@ -1,10 +1,11 @@
 #include <DataTypes/Serializations/SerializationEnum.h>
 
+#include <Columns/ColumnVector.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ void SerializationEnum<Type>::serializeTextEscaped(const IColumn & column, size_
 template <typename Type>
 void SerializationEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.tsv.input_format_enum_as_number)
+    if (settings.tsv.enum_as_number)
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
@@ -52,7 +53,7 @@ void SerializationEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer
 template <typename Type>
 void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.tsv.input_format_enum_as_number)
+    if (settings.tsv.enum_as_number)
     {
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
         if (!istr.eof())
@@ -100,7 +101,7 @@ void SerializationEnum<Type>::serializeTextCSV(const IColumn & column, size_t ro
 template <typename Type>
 void SerializationEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.csv.input_format_enum_as_number)
+    if (settings.csv.enum_as_number)
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
@@ -108,6 +109,16 @@ void SerializationEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & 
         readCSVString(field_name, istr, settings.csv);
         assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name), true));
     }
+}
+
+template <typename Type>
+void SerializationEnum<Type>::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+        writeMarkdownEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
 }
 
 template class SerializationEnum<Int8>;

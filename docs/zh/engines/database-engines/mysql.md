@@ -1,4 +1,5 @@
 ---
+slug: /zh/engines/database-engines/mysql
 sidebar_position: 30
 sidebar_label: MySQL
 ---
@@ -146,5 +147,3 @@ SELECT * FROM mysql_db.mysql_table
 │      3 │     4 │
 └────────┴───────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->

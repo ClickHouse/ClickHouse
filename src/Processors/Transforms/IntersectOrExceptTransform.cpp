@@ -111,7 +111,10 @@ size_t IntersectOrExceptTransform::buildFilter(
     for (size_t i = 0; i < rows; ++i)
     {
         auto find_result = state.findKey(method.data, i, variants.string_pool);
-        filter[i] = current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT ? !find_result.isFound() : find_result.isFound();
+        filter[i] = (current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL
+                     || current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
+            ? !find_result.isFound()
+            : find_result.isFound();
         if (filter[i])
             ++new_rows_num;
     }
@@ -121,6 +124,8 @@ size_t IntersectOrExceptTransform::buildFilter(
 
 void IntersectOrExceptTransform::accumulate(Chunk chunk)
 {
+    convertToFullIfSparse(chunk);
+
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
@@ -128,7 +133,11 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     column_ptrs.reserve(key_columns_pos.size());
 
     for (auto pos : key_columns_pos)
+    {
+        /// Hash methods expect non-const column
+        columns[pos] = columns[pos]->convertToFullColumnIfConst();
         column_ptrs.emplace_back(columns[pos].get());
+    }
 
     if (!data)
         data.emplace();
@@ -153,6 +162,8 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
 
 void IntersectOrExceptTransform::filter(Chunk & chunk)
 {
+    convertToFullIfSparse(chunk);
+
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
@@ -160,8 +171,11 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     column_ptrs.reserve(key_columns_pos.size());
 
     for (auto pos : key_columns_pos)
+    {
+        /// Hash methods expect non-const column
+        columns[pos] = columns[pos]->convertToFullColumnIfConst();
         column_ptrs.emplace_back(columns[pos].get());
-
+    }
     if (!data)
         data.emplace();
 

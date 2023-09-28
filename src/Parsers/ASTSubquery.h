@@ -21,15 +21,9 @@ public:
 
     ASTPtr clone() const override
     {
-        const auto res = std::make_shared<ASTSubquery>(*this);
-        ASTPtr ptr{res};
-
-        res->children.clear();
-
-        for (const auto & child : children)
-            res->children.emplace_back(child->clone());
-
-        return ptr;
+        auto clone = std::make_shared<ASTSubquery>(*this);
+        clone->cloneChildren();
+        return clone;
     }
 
     void updateTreeHashImpl(SipHash & hash_state) const override;

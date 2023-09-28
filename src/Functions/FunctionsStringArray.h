@@ -23,21 +23,19 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
 /** Functions that split strings into an array of strings or vice versa.
   *
-  * splitByChar(sep, s)
-  * splitByString(sep, s)
-  * splitByRegexp(regexp, s)
+  * splitByChar(sep, s[, max_substrings])
+  * splitByString(sep, s[, max_substrings])
+  * splitByRegexp(regexp, s[, max_substrings])
   *
-  * splitByWhitespace(s)      - split the string by whitespace characters
-  * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
+  * splitByWhitespace(s[, max_substrings])      - split the string by whitespace characters
+  * splitByNonAlpha(s[, max_substrings])        - split the string by whitespace and punctuation characters
   *
   * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
   * - first subpattern, if regexp has subpattern;
@@ -48,7 +46,7 @@ namespace ErrorCodes
   * arrayStringConcat(arr, delimiter)
   * - join an array of strings into one string via a separator.
   *
-  * alphaTokens(s)            - select from the string subsequence `[a-zA-Z]+`.
+  * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
   *
   * URL functions are located separately.
   */
@@ -56,46 +54,54 @@ namespace ErrorCodes
 
 using Pos = const char *;
 
+std::optional<size_t> extractMaxSplits(const ColumnsWithTypeAndName & arguments, size_t max_substrings_argument_position);
 
 /// Substring generators. All of them have a common interface.
 
-class AlphaTokensImpl
+class SplitByAlphaImpl
 {
 private:
     Pos pos;
     Pos end;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
-    /// Get the name of the function.
     static constexpr auto name = "alphaTokens";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
+    static bool isVariadic() { return true; }
 
-    static size_t getNumberOfArguments() { return 1; }
+    static size_t getNumberOfArguments() { return 0; }
 
-    /// Check the type of the function's arguments.
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", &isString<IDataType>, nullptr, "String"},
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"max_substrings", &isNativeInteger<IDataType>, isColumnConst, "const Number"},
+        };
+
+        validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
     }
 
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    static constexpr auto strings_argument_position = 0uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
+    {
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 1);
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
-    }
-
-    /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 0;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -110,10 +116,27 @@ public:
 
         token_begin = pos;
 
+        if (max_splits)
+        {
+            if (max_substrings_includes_remaining_string)
+            {
+                if (splits == *max_splits - 1)
+                {
+                    token_end = end;
+                    pos = end;
+                    return true;
+                }
+            }
+            else
+                if (splits == *max_splits)
+                    return false;
+        }
+
         while (pos < end && isAlphaASCII(*pos))
             ++pos;
 
         token_end = pos;
+        ++splits;
 
         return true;
     }
@@ -124,37 +147,37 @@ class SplitByNonAlphaImpl
 private:
     Pos pos;
     Pos end;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
     /// Get the name of the function.
     static constexpr auto name = "splitByNonAlpha";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 1; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
-    /// Check the type of the function's arguments.
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        SplitByAlphaImpl::checkArguments(func, arguments);
     }
 
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    static constexpr auto strings_argument_position = 0uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
+    {
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 1);
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
-    }
-
-    /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 0;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -169,10 +192,27 @@ public:
 
         token_begin = pos;
 
+        if (max_splits)
+        {
+            if (max_substrings_includes_remaining_string)
+            {
+                if (splits == *max_splits - 1)
+                {
+                    token_end = end;
+                    pos = end;
+                    return true;
+                }
+            }
+            else
+                if (splits == *max_splits)
+                    return false;
+        }
+
         while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
             ++pos;
 
         token_end = pos;
+        splits++;
 
         return true;
     }
@@ -183,37 +223,36 @@ class SplitByWhitespaceImpl
 private:
     Pos pos;
     Pos end;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
-    /// Get the name of the function.
     static constexpr auto name = "splitByWhitespace";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 1; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
-    /// Check the type of the function's arguments.
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return SplitByNonAlphaImpl::checkArguments(func, arguments);
     }
 
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+    static constexpr auto strings_argument_position = 0uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
+    {
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 1);
+    }
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
-    }
-
-    /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 0;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -228,10 +267,27 @@ public:
 
         token_begin = pos;
 
+        if (max_splits)
+        {
+            if (max_substrings_includes_remaining_string)
+            {
+                if (splits == *max_splits - 1)
+                {
+                    token_end = end;
+                    pos = end;
+                    return true;
+                }
+            }
+            else
+                if (splits == *max_splits)
+                    return false;
+        }
+
         while (pos < end && !isWhitespaceASCII(*pos))
             ++pos;
 
         token_end = pos;
+        splits++;
 
         return true;
     }
@@ -242,10 +298,10 @@ class SplitByCharImpl
 private:
     Pos pos;
     Pos end;
-
-    char sep;
-    std::optional<UInt64> max_split;
-    UInt64 curr_split = 0;
+    char separator;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByChar";
@@ -253,91 +309,46 @@ public:
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
 
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        if (arguments.size() < 2 || arguments.size() > 3)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function '{}' needs at least 2 arguments, at most 3 arguments; passed {}.",
-                name, arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"separator", &isString<IDataType>, isColumnConst, "const String"},
+            {"s", &isString<IDataType>, nullptr, "String"}
+        };
 
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        FunctionArgumentDescriptors optional_args{
+            {"max_substrings", &isNativeInteger<IDataType>, isColumnConst, "const Number"},
+        };
 
-        if (!isString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 3 && !isNativeInteger(arguments[2]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Third argument for function '{}' must be integer, got '{}' instead",
-                getName(),
-                arguments[2]->getName());
+        validateFunctionArgumentTypes(func, arguments, mandatory_args, optional_args);
     }
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    static constexpr auto strings_argument_position = 1uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
         if (!col)
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + getName() + ". Must be constant string.",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                "Must be constant string.", arguments[0].column->getName(), getName());
 
         String sep_str = col->getValue<String>();
 
         if (sep_str.size() != 1)
-            throw Exception("Illegal separator for function " + getName() + ". Must be exactly one byte.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal separator for function {}. Must be exactly one byte.", getName());
 
-        sep = sep_str[0];
+        separator = sep_str[0];
 
-        if (arguments.size() > 2)
-        {
-            if (!((max_split = getMaxSplit<UInt8>(arguments[2]))
-                || (max_split = getMaxSplit<Int8>(arguments[2]))
-                || (max_split = getMaxSplit<UInt16>(arguments[2]))
-                || (max_split = getMaxSplit<Int16>(arguments[2]))
-                || (max_split = getMaxSplit<UInt32>(arguments[2]))
-                || (max_split = getMaxSplit<Int32>(arguments[2]))
-                || (max_split = getMaxSplit<UInt64>(arguments[2]))
-                || (max_split = getMaxSplit<Int64>(arguments[2]))))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of third argument of function {}",
-                    arguments[2].column->getName(),
-                    getName());
-            }
-        }
-    }
-
-    template <typename DataType>
-    std::optional<UInt64> getMaxSplit(const ColumnWithTypeAndName & argument)
-    {
-        const auto * col = checkAndGetColumnConst<ColumnVector<DataType>>(argument.column.get());
-        if (!col)
-            return std::nullopt;
-
-        auto value = col->template getValue<DataType>();
-        if (value < 0)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of third argument of function {}", argument.column->getName(), getName());
-        return value;
-    }
-
-    /// Returns the position of the argument, that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 1;
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     void set(Pos pos_, Pos end_)
     {
         pos = pos_;
         end = end_;
-        curr_split = 0;
+        splits = 0;
     }
 
     bool get(Pos & token_begin, Pos & token_end)
@@ -346,19 +357,29 @@ public:
             return false;
 
         token_begin = pos;
-        if (unlikely(max_split && curr_split >= *max_split))
+
+        if (max_splits)
         {
-            token_end = end;
-            pos = nullptr;
-            return true;
+            if (max_substrings_includes_remaining_string)
+            {
+                if (splits == *max_splits - 1)
+                {
+                    token_end = end;
+                    pos = nullptr;
+                    return true;
+                }
+            }
+            else
+               if (splits == *max_splits)
+                   return false;
         }
 
-        pos = reinterpret_cast<Pos>(memchr(pos, sep, end - pos));
+        pos = reinterpret_cast<Pos>(memchr(pos, separator, end - pos));
         if (pos)
         {
             token_end = pos;
             ++pos;
-            ++curr_split;
+            ++splits;
         }
         else
             token_end = end;
@@ -373,36 +394,36 @@ class SplitByStringImpl
 private:
     Pos pos;
     Pos end;
-
-    String sep;
+    String separator;
+    std::optional<size_t> max_splits;
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByString";
     static String getName() { return name; }
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 2; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        SplitByCharImpl::checkArguments(arguments);
+        SplitByCharImpl::checkArguments(func, arguments);
     }
 
-    void init(const ColumnsWithTypeAndName & arguments)
+    static constexpr auto strings_argument_position = 1uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
         if (!col)
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + getName() + ". Must be constant string.",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                "Must be constant string.", arguments[0].column->getName(), getName());
 
-        sep = col->getValue<String>();
-    }
+        separator = col->getValue<String>();
 
-    /// Returns the position of the argument that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 1;
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     /// Called for each next string.
@@ -410,19 +431,38 @@ public:
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (sep.empty())
+        if (separator.empty())
         {
             if (pos == end)
                 return false;
 
             token_begin = pos;
+
+            if (max_splits)
+            {
+                if (max_substrings_includes_remaining_string)
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                }
+                else
+                    if (splits == *max_splits)
+                        return false;
+            }
+
             pos += 1;
             token_end = pos;
+            ++splits;
         }
         else
         {
@@ -431,12 +471,28 @@ public:
 
             token_begin = pos;
 
-            pos = reinterpret_cast<Pos>(memmem(pos, end - pos, sep.data(), sep.size()));
+            if (max_splits)
+            {
+                if (max_substrings_includes_remaining_string)
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = nullptr;
+                        return true;
+                    }
+                }
+                else
+                    if (splits == *max_splits)
+                        return false;
+            }
 
+            pos = reinterpret_cast<Pos>(memmem(pos, end - pos, separator.data(), separator.size()));
             if (pos)
             {
                 token_end = pos;
-                pos += sep.size();
+                pos += separator.size();
+                ++splits;
             }
             else
                 token_end = end;
@@ -454,38 +510,38 @@ private:
 
     Pos pos;
     Pos end;
+
+    std::optional<size_t> max_splits;
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
+
 public:
     static constexpr auto name = "splitByRegexp";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
-    static size_t getNumberOfArguments() { return 2; }
+    static bool isVariadic() { return true; }
+    static size_t getNumberOfArguments() { return 0; }
 
-    /// Check the type of function arguments.
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        SplitByStringImpl::checkArguments(arguments);
+        SplitByStringImpl::checkArguments(func, arguments);
     }
 
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & arguments)
+    static constexpr auto strings_argument_position = 1uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool max_substrings_includes_remaining_string_)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[0].column.get());
 
         if (!col)
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of first argument of function " + getName() + ". Must be constant string.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                            "Must be constant string.", arguments[0].column->getName(), getName());
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<Regexps::Regexp>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
 
-    }
-
-    /// Returns the position of the argument that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 1;
+        max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
+        max_splits = extractMaxSplits(arguments, 2);
     }
 
     /// Called for each next string.
@@ -493,6 +549,7 @@ public:
     {
         pos = pos_;
         end = end_;
+        splits = 0;
     }
 
     /// Get the next token, if any, or return false.
@@ -504,8 +561,26 @@ public:
                 return false;
 
             token_begin = pos;
+
+            if (max_splits)
+            {
+                if (max_substrings_includes_remaining_string)
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = end;
+                        return true;
+                    }
+                }
+                else
+                    if (splits == *max_splits)
+                        return false;
+            }
+
             pos += 1;
             token_end = pos;
+            ++splits;
         }
         else
         {
@@ -513,6 +588,22 @@ public:
                 return false;
 
             token_begin = pos;
+
+            if (max_splits)
+            {
+                if (max_substrings_includes_remaining_string)
+                {
+                    if (splits == *max_splits - 1)
+                    {
+                        token_end = end;
+                        pos = nullptr;
+                        return true;
+                    }
+                }
+                else
+                    if (splits == *max_splits)
+                        return false;
+            }
 
             if (!re->match(pos, end - pos, matches) || !matches[0].length)
             {
@@ -523,6 +614,7 @@ public:
             {
                 token_end = pos + matches[0].offset;
                 pos = token_end + matches[0].length;
+                ++splits;
             }
         }
 
@@ -545,32 +637,30 @@ public:
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 2; }
 
-    /// Check the type of function arguments.
-    static void checkArguments(const DataTypes & arguments)
+    static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
-        SplitByStringImpl::checkArguments(arguments);
+        FunctionArgumentDescriptors mandatory_args{
+            {"haystack", &isString<IDataType>, nullptr, "String"},
+            {"pattern", &isString<IDataType>, isColumnConst, "const String"}
+        };
+
+        validateFunctionArgumentTypes(func, arguments, mandatory_args);
     }
 
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & arguments)
+    static constexpr auto strings_argument_position = 0uz;
+
+    void init(const ColumnsWithTypeAndName & arguments, bool /*max_substrings_includes_remaining_string*/)
     {
         const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
 
         if (!col)
-            throw Exception("Illegal column " + arguments[1].column->getName()
-                + " of first argument of function " + getName() + ". Must be constant string.",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
+                "Must be constant string.", arguments[1].column->getName(), getName());
 
-        re = std::make_shared<Regexps::Regexp>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);
-    }
-
-    /// Returns the position of the argument that is the column of strings
-    static size_t getStringsArgumentPosition()
-    {
-        return 0;
     }
 
     /// Called for each next string.
@@ -611,14 +701,20 @@ public:
 template <typename Generator>
 class FunctionTokens : public IFunction
 {
+private:
+    bool max_substrings_includes_remaining_string;
+
 public:
     static constexpr auto name = Generator::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokens>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTokens>(context); }
 
-    String getName() const override
+    explicit FunctionTokens<Generator>(ContextPtr context)
     {
-        return name;
+        const Settings & settings = context->getSettingsRef();
+        max_substrings_includes_remaining_string = settings.splitby_max_substrings_includes_remaining_string;
     }
+
+    String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -626,9 +722,9 @@ public:
 
     size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        Generator::checkArguments(arguments);
+        Generator::checkArguments(*this, arguments);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -636,18 +732,20 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         Generator generator;
-        generator.init(arguments);
-        const auto & array_argument = arguments[generator.getStringsArgumentPosition()];
+        generator.init(arguments, max_substrings_includes_remaining_string);
+
+        const auto & array_argument = arguments[generator.strings_argument_position];
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(array_argument.column.get());
-        const ColumnConst * col_const_str =
-                checkAndGetColumnConstStringOrFixedString(array_argument.column.get());
+        const ColumnConst * col_str_const = checkAndGetColumnConstStringOrFixedString(array_argument.column.get());
 
         auto col_res = ColumnArray::create(ColumnString::create());
+
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
+
+        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
 
         if (col_str)
         {
@@ -672,7 +770,6 @@ public:
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
 
                 generator.set(pos, end);
-
                 size_t j = 0;
                 while (generator.get(token_begin, token_end))
                 {
@@ -693,9 +790,9 @@ public:
 
             return col_res;
         }
-        else if (col_const_str)
+        else if (col_str_const)
         {
-            String src = col_const_str->getValue<String>();
+            String src = col_str_const->getValue<String>();
             Array dst;
 
             generator.set(src.data(), src.data() + src.size());
@@ -705,13 +802,11 @@ public:
             while (generator.get(token_begin, token_end))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
-            return result_type->createColumnConst(col_const_str->size(), dst);
+            return result_type->createColumnConst(col_str_const->size(), dst);
         }
         else
-            throw Exception("Illegal columns " + array_argument.column->getName()
-                    + ", " + array_argument.column->getName()
-                    + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {}, {} of arguments of function {}",
+                    array_argument.column->getName(), array_argument.column->getName(), getName());
     }
 };
 
@@ -756,7 +851,7 @@ private:
             /// Loop through the rows within the array. /// NOTE You can do everything in one copy, if the separator has a size of 1.
             for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
             {
-                if (unlikely(null_map && null_map[current_src_array_offset]))
+                if (null_map && null_map[current_src_array_offset]) [[unlikely]]
                     continue;
 
                 if (!first_non_null)
@@ -834,7 +929,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
@@ -843,7 +938,7 @@ public:
         {
             const ColumnConst * col_delim = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
             if (!col_delim)
-                throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant string.", getName());
 
             delimiter = col_delim->getValue<String>();
         }
@@ -884,7 +979,7 @@ public:
 };
 
 
-using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
+using FunctionSplitByAlpha = FunctionTokens<SplitByAlphaImpl>;
 using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
 using FunctionSplitByWhitespace = FunctionTokens<SplitByWhitespaceImpl>;
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;

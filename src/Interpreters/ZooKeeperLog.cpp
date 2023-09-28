@@ -73,6 +73,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"Create",              static_cast<Int16>(Coordination::OpNum::Create)},
                 {"Remove",              static_cast<Int16>(Coordination::OpNum::Remove)},
                 {"Exists",              static_cast<Int16>(Coordination::OpNum::Exists)},
+                {"Reconfig",            static_cast<Int16>(Coordination::OpNum::Reconfig)},
                 {"Get",                 static_cast<Int16>(Coordination::OpNum::Get)},
                 {"Set",                 static_cast<Int16>(Coordination::OpNum::Set)},
                 {"GetACL",              static_cast<Int16>(Coordination::OpNum::GetACL)},
@@ -83,9 +84,12 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"List",                static_cast<Int16>(Coordination::OpNum::List)},
                 {"Check",               static_cast<Int16>(Coordination::OpNum::Check)},
                 {"Multi",               static_cast<Int16>(Coordination::OpNum::Multi)},
+                {"MultiRead",           static_cast<Int16>(Coordination::OpNum::MultiRead)},
                 {"Auth",                static_cast<Int16>(Coordination::OpNum::Auth)},
                 {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
                 {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
+                {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
+                {"CreateIfNotExists",   static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();

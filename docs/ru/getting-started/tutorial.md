@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/tutorial
 sidebar_position: 12
 sidebar_label: Tutorial
 ---
@@ -90,7 +91,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Import Sample Dataset {#import-sample-dataset}
 
-Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use the anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
+Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use some anonymized metric data. There are [multiple ways to import the dataset](../getting-started/example-datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
 
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
@@ -115,7 +116,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 2.  Table schema, i.e. list of columns and their [data types](../sql-reference/data-types/index.md).
 3.  [Table engine](../engines/table-engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
-Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
+There are only two tables to create:
 
 -   `hits` is a table with each action done by all users on all websites covered by the service.
 -   `visits` is a table that contains pre-built sessions instead of individual actions.
@@ -476,7 +477,7 @@ clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse has a lot of [settings to tune](../operations/settings/) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
+ClickHouse has a lot of [settings to tune](../operations/settings/index.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
 
 ``` sql
 SELECT name, value, changed, description
@@ -487,7 +488,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Optionally you can [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) the tables after import. Tables that are configured with an engine from MergeTree-family always do merges of data parts in the background to optimize data storage (or at least check if it makes sense). These queries force the table engine to do storage optimization right now instead of some time later:
+Optionally you can [OPTIMIZE](../sql-reference/statements/optimize.md) the tables after import. Tables that are configured with an engine from MergeTree-family always do merges of data parts in the background to optimize data storage (or at least check if it makes sense). These queries force the table engine to do storage optimization right now instead of some time later:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
@@ -522,7 +523,7 @@ SELECT
     sumIf(Sign, has(Goals.ID, 1105530)) AS goal_visits,
     (100. * goal_visits) / visits AS goal_percent
 FROM tutorial.visits_v1
-WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
+WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403)
 ```
 
 ## Cluster Deployment {#cluster-deployment}
@@ -543,19 +544,19 @@ Example config for a cluster with three shards, one replica each:
     <perftest_3shards_1replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j.clickhouse.com</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j.clickhouse.com</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j.clickhouse.com</host>
                 <port>9000</port>
             </replica>
         </shard>
@@ -584,8 +585,9 @@ Let’s run [INSERT SELECT](../sql-reference/statements/insert-into.md) into the
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-:::danger "Notice"
-    This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utilities/clickhouse-copier.md) that can re-shard arbitrary large tables.
+:::danger Notice
+This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utilities/clickhouse-copier.md) that can re-shard arbitrary large tables.
+:::
 
 As you could expect, computationally heavy queries run N times faster if they utilize 3 servers instead of one.
 
@@ -601,15 +603,15 @@ Example config for a cluster of one shard containing three replicas:
     <perftest_1shards_3replicas>
         <shard>
             <replica>
-                <host>example-perftest01j.yandex.ru</host>
+                <host>example-perftest01j.clickhouse.com</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest02j.yandex.ru</host>
+                <host>example-perftest02j.clickhouse.com</host>
                 <port>9000</port>
              </replica>
              <replica>
-                <host>example-perftest03j.yandex.ru</host>
+                <host>example-perftest03j.clickhouse.com</host>
                 <port>9000</port>
              </replica>
         </shard>
@@ -619,23 +621,24 @@ Example config for a cluster of one shard containing three replicas:
 
 To enable native replication [ZooKeeper](http://zookeeper.apache.org/) is required. ClickHouse takes care of data consistency on all replicas and runs restore procedure after failure automatically. It’s recommended to deploy the ZooKeeper cluster on separate servers (where no other processes including ClickHouse are running).
 
-    :::note "Note"
-    ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to guarantee data consistency on all replicas. Thus it becomes the responsibility of your application.
-    :::
+:::note Note
+ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to guarantee data consistency on all replicas. Thus it becomes the responsibility of your application.
+:::
+
 ZooKeeper locations are specified in the configuration file:
 
 ``` xml
 <zookeeper>
     <node>
-        <host>zoo01.yandex.ru</host>
+        <host>zoo01.clickhouse.com</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo02.yandex.ru</host>
+        <host>zoo02.clickhouse.com</host>
         <port>2181</port>
     </node>
     <node>
-        <host>zoo03.yandex.ru</host>
+        <host>zoo03.clickhouse.com</host>
         <port>2181</port>
     </node>
 </zookeeper>
@@ -668,5 +671,3 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
 Replication operates in multi-master mode. Data can be loaded into any replica, and the system then syncs it with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. At least one replica should be up to allow data ingestion. Others will sync up data and repair consistency once they will become active again. Note that this approach allows for the low possibility of a loss of recently inserted data.
-
-[Original article](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->

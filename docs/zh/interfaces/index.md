@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/
 sidebar_label: 接口
 sidebar_position: 14
 ---
@@ -22,5 +23,3 @@ ClickHouse提供了两个网络接口(两个都可以选择包装在TLS中以增
 -   [客户端库](../interfaces/third-party/client-libraries.md)
 -   [第三方集成库](../interfaces/third-party/integrations.md)
 -   [可视化UI](../interfaces/third-party/gui.md)
-
-[来源文章](https://clickhouse.com/docs/en/interfaces/) <!--hide-->

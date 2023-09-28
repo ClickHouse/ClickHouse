@@ -20,7 +20,6 @@ def start_cluster():
 
 
 def test_reload_auxiliary_zookeepers(start_cluster):
-
     node.query(
         "CREATE TABLE simple (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', 'node') ORDER BY tuple() PARTITION BY date;"
     )

@@ -12,10 +12,8 @@ using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQua
 REGISTER_FUNCTION(ToQuarter)
 {
     factory.registerFunction<FunctionToQuarter>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToQuarter>("QUARTER", FunctionFactory::CaseInsensitive);
+    /// MySQL compatibility alias.
+    factory.registerAlias("QUARTER", "toQuarter", FunctionFactory::CaseInsensitive);
 }
 
 }
-
-

@@ -1,4 +1,3 @@
-<?xml version="1.0"?>
 <clickhouse>
     <profiles>
         <default>
@@ -15,6 +14,7 @@
                 <ip>::/0</ip>
             </networks>
             <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
         </default>
     </users>
 </clickhouse>

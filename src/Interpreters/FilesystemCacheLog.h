@@ -8,27 +8,18 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
-///
-/// -------- Column --------- Type ------
-/// |  event_date         |  DateTime   |
-/// |  event_time         |  UInt64     |
-/// |  query_id           |  String     |
-/// |  remote_file_path   |  String     |
-/// |  segment_range      |  Tuple      |
-/// |  read_type          |  String     |
-/// -------------------------------------
-///
+
 struct FilesystemCacheLogElement
 {
-    enum class ReadType
+    enum class CacheType
     {
         READ_FROM_CACHE,
         READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
         READ_FROM_FS_BYPASSING_CACHE,
+        WRITE_THROUGH_CACHE,
     };
 
     time_t event_time{};
@@ -38,11 +29,13 @@ struct FilesystemCacheLogElement
 
     std::pair<size_t, size_t> file_segment_range{};
     std::pair<size_t, size_t> requested_range{};
-    ReadType read_type{};
-    size_t file_segment_size;
-    bool cache_attempted;
-    String read_buffer_id;
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    CacheType cache_type{};
+    std::string file_segment_key{};
+    size_t file_segment_offset = 0;
+    size_t file_segment_size = 0;
+    bool read_from_cache_attempted;
+    String read_buffer_id{};
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters = nullptr;
 
     static std::string name() { return "FilesystemCacheLog"; }
 

@@ -15,7 +15,7 @@ class ExpressionStep : public ITransformingStep
 {
 public:
 
-    explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
+    explicit ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_);
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

@@ -76,8 +76,8 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
 
     static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
     {
@@ -107,7 +107,7 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
@@ -390,8 +390,9 @@ public:
         {
             if (!array_type && !map_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array or map.",
-                    getName());
+                    "First argument for function {} must be an array or map. Actual {}",
+                    getName(),
+                    first_argument_type->getName());
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -399,8 +400,9 @@ public:
         {
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array.",
-                    getName());
+                    "First argument for function {} must be an array. Actual {}",
+                    getName(),
+                    first_argument_type->getName());
 
             inner_type = array_type->getNestedType();
         }
@@ -583,9 +585,7 @@ private:
                 if (auto res = executeLowCardinality(arguments))
                     return res;
 
-                throw Exception(
-                    "Illegal internal type of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
             }
         }
 
@@ -594,9 +594,7 @@ private:
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
               || (res = executeGeneric(arguments))))
-            throw Exception(
-                "Illegal internal type of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
     }
@@ -740,42 +738,34 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
-        const IColumn& col_arg = *arguments[1].column.get();
-
-        if (const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg))
+        if (const ColumnConst * col_arg_const = checkAndGetColumn<ColumnConst>(*arguments[1].column))
         {
-            const IColumnUnique& col_lc_dict = col_lc->getDictionary();
-
-            const bool different_inner_types = col_lc_dict.isNullable()
-                ? !col_arg_const->structureEquals(*col_lc_dict.getNestedColumn().get())
-                : true; // Can't compare so ignore this check
-
-            const bool use_cloned_arg = col_arg_const->isNumeric()
-                // outer types do not match
-                && !col_arg_const->structureEquals(col_lc_dict)
-                // inner types do not match (like A and Nullable(B) or A and Const(B));
-                && different_inner_types;
+            const IColumnUnique & col_lc_dict = col_lc->getDictionary();
 
             const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
             const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
 
-            const ColumnPtr col_arg_cloned = use_cloned_arg
-                ? castColumn(arguments[1], target_type_ptr)
-                : col_arg_const->getPtr();
+            ColumnPtr col_arg_cloned = castColumn(
+                {col_arg_const->getDataColumnPtr(), arguments[1].type, arguments[1].name}, target_type_ptr);
 
-            const StringRef elem = col_arg_cloned->getDataAt(0);
             ResultColumnPtr col_result = ResultColumnType::create();
-
             UInt64 index = 0;
 
-            if (elem != EMPTY_STRING_REF)
+            if (!col_arg_cloned->isNullAt(0))
             {
+                if (col_arg_cloned->isNullable())
+                    col_arg_cloned = checkAndGetColumn<ColumnNullable>(*col_arg_cloned)->getNestedColumnPtr();
+
+                StringRef elem = col_arg_cloned->getDataAt(0);
+
                 if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
+                {
                     index = *maybe_index;
+                }
                 else
                 {
                     const size_t offsets_size = col_array->getOffsets().size();
-                    auto& data = col_result->getData();
+                    auto & data = col_result->getData();
 
                     data.resize_fill(offsets_size);
 
@@ -786,7 +776,7 @@ private:
             Impl::Main<ConcreteAction, true>::vector(
                 col_lc->getIndexes(),
                 col_array->getOffsets(),
-                index,
+                index, /** Assuming LowCardinality has index of NULL always as zero. */
                 col_result->getData(),
                 null_map_data,
                 null_map_item);
@@ -800,9 +790,9 @@ private:
 
             const NullMap * const null_map_left_casted = &left_nullable.getNullMapColumn().getData();
 
-            const IColumn& left_ptr = left_nullable.getNestedColumn();
+            const IColumn & left_ptr = left_nullable.getNestedColumn();
 
-            const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
+            const ColumnPtr right_casted = arguments[1].column->convertToFullColumnIfLowCardinality();
             const ColumnNullable * const right_nullable = checkAndGetColumn<ColumnNullable>(right_casted.get());
 
             const NullMap * const null_map_right_casted = right_nullable
@@ -825,17 +815,17 @@ private:
         }
         else // LowCardinality(T) and U, T not Nullable
         {
-            if (col_arg.isNullable())
+            if (arguments[1].column->isNullable())
                 return nullptr;
 
-            if (const auto* const arg_lc = checkAndGetColumn<ColumnLowCardinality>(&col_arg);
+            if (const auto* const arg_lc = checkAndGetColumn<ColumnLowCardinality>(arguments[1].column.get());
                 arg_lc && arg_lc->isNullable())
                 return nullptr;
 
             // LowCardinality(T) and U (possibly LowCardinality(V))
 
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality();
-            const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
+            const ColumnPtr right_casted = arguments[1].column->convertToFullColumnIfLowCardinality();
 
             ExecutionData data =
             {
@@ -936,9 +926,7 @@ private:
                     null_map_data,
                     null_map_item);
             else
-                throw Exception(
-                    "Logical error: ColumnConst contains not String nor FixedString column",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {

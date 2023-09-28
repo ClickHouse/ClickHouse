@@ -2,23 +2,22 @@
 
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
 
-/** The stream for outputting data in JSON format, by object per line.
-  * Does not validate UTF-8.
+/** The stream for outputting data in JSON format, by JSON array per line.
   */
-class JSONCompactEachRowRowOutputFormat final : public IRowOutputFormat
+class JSONCompactEachRowRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
     JSONCompactEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_,
@@ -35,10 +34,12 @@ private:
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
+    void writeSuffix() override;
 
+    void resetFormatterImpl() override;
+
+    bool supportTotals() const override { return true; }
     void consumeTotals(Chunk) override;
-    /// No extremes.
-    void consumeExtremes(Chunk) override {}
 
     void writeLine(const std::vector<String> & values);
 
@@ -46,5 +47,7 @@ private:
     bool with_names;
     bool with_types;
     bool yield_strings;
+
+    WriteBuffer * ostr;
 };
 }

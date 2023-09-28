@@ -1,8 +1,8 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Common/Exception.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
-#include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -110,7 +110,7 @@ namespace
     }
 
     /// Returns the host name by its address.
-    Strings getHostsByAddress(const IPAddress & address)
+    std::unordered_set<String> getHostsByAddress(const IPAddress & address)
     {
         auto hosts = DNSResolver::instance().reverseResolve(address);
 
@@ -236,7 +236,7 @@ void AllowedClientHosts::IPSubnet::set(const IPAddress & prefix_, const IPAddres
 
 void AllowedClientHosts::IPSubnet::set(const IPAddress & prefix_, size_t num_prefix_bits)
 {
-    set(prefix_, IPAddress(num_prefix_bits, prefix_.family()));
+    set(prefix_, IPAddress(static_cast<unsigned>(num_prefix_bits), prefix_.family()));
 }
 
 void AllowedClientHosts::IPSubnet::set(const IPAddress & address)
@@ -526,7 +526,7 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             return true;
 
     /// Check `name_regexps`.
-    std::optional<Strings> resolved_hosts;
+    std::optional<std::unordered_set<String>> resolved_hosts;
     auto check_name_regexp = [&](const String & name_regexp_)
     {
         try

@@ -50,7 +50,7 @@ struct AggregateFunctionSequenceMatchData final
     bool sorted = true;
     PODArrayWithStackMemory<TimestampEvents, 64> events_list;
     /// sequenceMatch conditions met at least once in events_list
-    std::bitset<max_events> conditions_met;
+    Events conditions_met;
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -101,6 +101,11 @@ struct AggregateFunctionSequenceMatchData final
         size_t size;
         readBinary(size, buf);
 
+        /// If we lose these flags, functionality is broken
+        /// If we serialize/deserialize these flags, we have compatibility issues
+        /// If we set these flags to 1, we have a minor performance penalty, which seems acceptable
+        conditions_met.set();
+
         events_list.clear();
         events_list.reserve(size);
 
@@ -126,8 +131,8 @@ template <typename T, typename Data, typename Derived>
 class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<Data, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_, const DataTypePtr & result_type_)
+        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params, result_type_)
         , pattern(pattern_)
     {
         arg_count = arguments.size();
@@ -163,7 +168,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -210,7 +215,7 @@ private:
 
         auto throw_exception = [&](const std::string & msg)
         {
-            throw Exception{msg + " '" + std::string(pos, end) + "' at position " + toString(pos - begin), ErrorCodes::SYNTAX_ERROR};
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "{} '{}' at position {}", msg, std::string(pos, end), toString(pos - begin));
         };
 
         auto match = [&pos, end](const char * str) mutable
@@ -254,7 +259,7 @@ private:
                     if (actions.back().type != PatternActionType::SpecificEvent &&
                         actions.back().type != PatternActionType::AnyEvent &&
                         actions.back().type != PatternActionType::KleeneStar)
-                        throw Exception{"Temporal condition should be preceded by an event condition", ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporal condition should be preceded by an event condition");
 
                     pattern_has_time = true;
                     actions.emplace_back(type, duration);
@@ -268,11 +273,11 @@ private:
                         throw_exception("Could not parse number");
 
                     if (event_number > arg_count - 1)
-                        throw Exception{"Event number " + toString(event_number) + " is out of range", ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
                     dfa_states.back().transition = DFATransition::SpecificEvent;
-                    dfa_states.back().event = event_number - 1;
+                    dfa_states.back().event = static_cast<uint32_t>(event_number - 1);
                     dfa_states.emplace_back();
                     conditions_in_pattern.set(event_number - 1);
                 }
@@ -479,11 +484,11 @@ protected:
                     break;
             }
             else
-                throw Exception{"Unknown PatternActionType", ErrorCodes::LOGICAL_ERROR};
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown PatternActionType");
 
             if (++i > sequence_match_max_iterations)
-                throw Exception{"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
-                    ErrorCodes::TOO_SLOW};
+                throw Exception(ErrorCodes::TOO_SLOW, "Pattern application proves too difficult, exceeding max iterations ({})",
+                    sequence_match_max_iterations);
         }
 
         /// if there are some actions remaining
@@ -543,8 +548,8 @@ protected:
                 }
 
                 if (limit_iterations && ++events_processed > sequence_match_max_iterations)
-                    throw Exception{"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
-                        ErrorCodes::TOO_SLOW};
+                    throw Exception(ErrorCodes::TOO_SLOW, "Pattern application proves too difficult, exceeding max iterations ({})",
+                        sequence_match_max_iterations);
             }
 
             return det_part_it == actions_it;
@@ -617,13 +622,11 @@ class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBas
 {
 public:
     AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_) {}
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeUInt8>()) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceMatch"; }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -655,13 +658,11 @@ class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBas
 {
 public:
     AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_) {}
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeUInt64>()) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceCount"; }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 

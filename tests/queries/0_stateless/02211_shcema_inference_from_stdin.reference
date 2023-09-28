@@ -1,4 +1,4 @@
-x	Nullable(Float64)					
+x	Nullable(Int64)					
 0
 1
 2
@@ -9,7 +9,7 @@ x	Nullable(Float64)
 7
 8
 9
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
-c3	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
+c3	Nullable(Int64)					
 1	2	3

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
+
+#include <base/simd.h>
 
 #include <Core/Defines.h>
 
@@ -50,7 +53,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= min_size)
                 break;
@@ -82,7 +85,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= min_size)
                 break;
@@ -123,7 +126,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= max_size)
                 return 0;
@@ -150,7 +153,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t siz
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= size)
                 return 0;
@@ -180,7 +183,7 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
             return offset >= a_size;
         }
     }
@@ -203,7 +206,7 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
             return detail::cmp(a[offset], b[offset]);
         }
     }
@@ -222,7 +225,7 @@ inline int memcmp16(const Char * a, const Char * b)
 
     if (mask)
     {
-        auto offset = __builtin_ctz(mask);
+        auto offset = std::countr_zero(mask);
         return detail::cmp(a[offset], b[offset]);
     }
 
@@ -252,7 +255,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
             return offset >= size;
         }
     }
@@ -285,7 +288,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= min_size)
                 break;
@@ -317,7 +320,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= min_size)
                 break;
@@ -359,7 +362,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= max_size)
                 return 0;
@@ -386,7 +389,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t siz
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
 
             if (offset >= size)
                 return 0;
@@ -416,7 +419,7 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
             return offset >= a_size;
         }
     }
@@ -439,7 +442,7 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
             return detail::cmp(a[offset], b[offset]);
         }
     }
@@ -459,7 +462,7 @@ inline int memcmp16(const Char * a, const Char * b)
 
     if (mask)
     {
-        auto offset = __builtin_ctz(mask);
+        auto offset = std::countr_zero(mask);
         return detail::cmp(a[offset], b[offset]);
     }
 
@@ -490,7 +493,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 
         if (mask)
         {
-            offset += __builtin_ctz(mask);
+            offset += std::countr_zero(mask);
             return offset >= size;
         }
     }
@@ -501,14 +504,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
-
-inline uint64_t getNibbleMask(uint8x16_t res)
-{
-    return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(res), 4)), 0);
-}
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
@@ -523,7 +519,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
 
             if (offset >= min_size)
                 break;
@@ -548,7 +544,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
 
             if (offset >= min_size)
                 break;
@@ -589,7 +585,7 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
 
             if (offset >= max_size)
                 return 0;
@@ -611,7 +607,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t siz
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
 
             if (offset >= size)
                 return 0;
@@ -637,7 +633,7 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
             return offset >= a_size;
         }
     }
@@ -656,7 +652,7 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
             return detail::cmp(a[offset], b[offset]);
         }
     }
@@ -672,7 +668,7 @@ inline int memcmp16(const Char * a, const Char * b)
     mask = ~mask;
     if (mask)
     {
-        auto offset = __builtin_ctzll(mask) >> 2;
+        auto offset = std::countr_zero(mask) >> 2;
         return detail::cmp(a[offset], b[offset]);
     }
     return 0;
@@ -694,7 +690,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 
         if (mask)
         {
-            offset += __builtin_ctzll(mask) >> 2;
+            offset += std::countr_zero(mask) >> 2;
             return offset >= size;
         }
     }

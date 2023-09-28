@@ -229,19 +229,12 @@ class MergeJoinAlgorithm final : public IMergingAlgorithm
 public:
     explicit MergeJoinAlgorithm(JoinPtr table_join, const Blocks & input_headers, size_t max_block_size_);
 
+    const char * getName() const override { return "MergeJoinAlgorithm"; }
     virtual void initialize(Inputs inputs) override;
     virtual void consume(Input & input, size_t source_num) override;
     virtual Status merge() override;
 
-    void logElapsed(double seconds)
-    {
-        LOG_TRACE(log,
-            "Finished pocessing in {} seconds"
-            ", left: {} blocks, {} rows; right: {} blocks, {} rows"
-            ", max blocks loaded to memory: {}",
-            seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
-            stat.max_blocks_loaded);
-    }
+    void logElapsed(double seconds);
 
 private:
     std::optional<Status> handleAnyJoinState();

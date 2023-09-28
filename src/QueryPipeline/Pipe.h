@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/SizeLimits.h>
+
 
 namespace DB
 {
@@ -27,13 +28,13 @@ class Pipe
 public:
     /// Default constructor creates empty pipe. Generally, you cannot do anything with it except to check it is empty().
     /// You cannot get empty pipe in any other way. All transforms check that result pipe is not empty.
-    Pipe() = default;
+    Pipe();
     /// Create from source. Source must have no input ports and single output.
     explicit Pipe(ProcessorPtr source);
     /// Create from source with specified totals end extremes (may be nullptr). Ports should be owned by source.
     explicit Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, OutputPort * extremes);
     /// Create from processors. Use all not-connected output ports as output_ports. Check invariants.
-    explicit Pipe(Processors processors_);
+    explicit Pipe(std::shared_ptr<Processors> processors_);
 
     Pipe(const Pipe & other) = delete;
     Pipe(Pipe && other) = default;
@@ -41,12 +42,15 @@ public:
     Pipe & operator=(Pipe && other) = default;
 
     const Block & getHeader() const { return header; }
-    bool empty() const { return processors.empty(); }
+    bool empty() const { return processors->empty(); }
     size_t numOutputPorts() const { return output_ports.size(); }
     size_t maxParallelStreams() const { return max_parallel_streams; }
     OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
+    OutputPort * getPartialResultPort(size_t pos) const { return partial_result_ports.empty() ? nullptr : partial_result_ports[pos]; }
+
+    bool isPartialResultActive() { return is_partial_result_active; }
 
     /// Add processor to list, add it output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
@@ -57,9 +61,13 @@ public:
     void addTotalsSource(ProcessorPtr source);
     void addExtremesSource(ProcessorPtr source);
 
-    /// Drop totals and extremes (create NullSink for them).
+    /// Activate sending partial result during main pipeline execution
+    void activatePartialResult(UInt64 partial_result_limit_, UInt64 partial_result_duration_ms_);
+
+    /// Drop totals, extremes and partial result (create NullSink for them).
     void dropTotals();
     void dropExtremes();
+    void dropPartialResult();
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.
@@ -68,11 +76,16 @@ public:
     void addTransform(ProcessorPtr transform, OutputPort * totals, OutputPort * extremes);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
+    void addPartialResultTransform(const ProcessorPtr & transform);
+    void addPartialResultSimpleTransform(const ProcessorPtr & transform, size_t partial_result_port_id);
+    void connectPartialResultPort(OutputPort * partial_result_port, InputPort & partial_result_transform_port);
+
     enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
         Totals,  /// Stream for totals. No more than one.
         Extremes, /// Stream for extremes. No more than one.
+        PartialResult, /// Stream for partial result data. There may be several streams of this type.
     };
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
@@ -85,31 +98,40 @@ public:
     /// Add chain to every output port.
     void addChains(std::vector<Chain> chains);
 
-    /// Changes the number of output ports if needed. Adds ResizeTransform.
+    /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
 
     /// Transform Pipe in general way.
-    void transform(const Transformer & transformer);
+    void transform(const Transformer & transformer, bool check_ports = true);
 
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);
 
-    /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
-    static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
+    /// Get processors from Pipe. Use it with caution, it is easy to lose totals and extremes ports.
+    static Processors detachProcessors(Pipe pipe) { return *std::move(pipe.processors); }
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
-    const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const { return *processors; }
+
+    std::shared_ptr<Processors> getProcessorsPtr() { return processors; }
 
 private:
     /// Header is common for all output below.
     Block header;
-    Processors processors;
+    std::shared_ptr<Processors> processors;
 
-    /// Output ports. Totals and extremes are allowed to be empty.
+    /// If the variable is true, then each time a processor is added pipe will try
+    /// to add processor which will send partial result from original processor
+    bool is_partial_result_active = false;
+    UInt64 partial_result_limit = 0;
+    UInt64 partial_result_duration_ms = 0;
+
+    /// Output ports. Totals, extremes and partial results are allowed to be empty.
     OutputPortRawPtrs output_ports;
     OutputPort * totals_port = nullptr;
     OutputPort * extremes_port = nullptr;
+    OutputPortRawPtrs partial_result_ports;
 
     /// It is the max number of processors which can be executed in parallel for each step.
     /// Usually, it's the same as the number of output ports.
@@ -124,6 +146,8 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
+
+    void addProcessor(ProcessorPtr processor);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

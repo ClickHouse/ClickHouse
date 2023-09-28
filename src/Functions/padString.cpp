@@ -5,7 +5,6 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -17,12 +16,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE;
 }
 
 namespace
 {
     /// The maximum new padded length.
-    constexpr size_t MAX_NEW_LENGTH = 1000000;
+    constexpr ssize_t MAX_NEW_LENGTH = 1000000;
 
     /// Appends padding characters to a sink based on a pad string.
     /// Depending on how many padding characters are required to add
@@ -59,10 +59,10 @@ namespace
             {
                 if (num_chars <= step)
                 {
-                    writeSlice(StringSource::Slice{bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
+                    writeSlice(StringSource::Slice{std::bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
                     break;
                 }
-                writeSlice(StringSource::Slice{bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
+                writeSlice(StringSource::Slice{std::bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
                 num_chars -= step;
             }
         }
@@ -165,7 +165,7 @@ namespace
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                     getName(),
-                    std::to_string(number_of_arguments));
+                    number_of_arguments);
 
             if (!isStringOrFixedString(arguments[0]))
                 throw Exception(
@@ -174,7 +174,7 @@ namespace
                     arguments[0]->getName(),
                     getName());
 
-            if (!isUnsignedInteger(arguments[1]))
+            if (!isInteger(arguments[1]))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of the second argument of function {}, should be unsigned integer",
@@ -255,7 +255,7 @@ namespace
             StringSink & res_sink) const
         {
             bool is_const_new_length = lengths.isConst();
-            size_t new_length = 0;
+            ssize_t new_length = 0;
 
             /// Insert padding characters to each string from `strings`, write the result strings into `res_sink`.
             /// If for some input string its current length is greater than the specified new length then that string
@@ -263,18 +263,22 @@ namespace
             for (; !res_sink.isEnd(); res_sink.next(), strings.next(), lengths.next())
             {
                 auto str = strings.getWhole();
-                size_t current_length = getLengthOfSlice<is_utf8>(str);
+                ssize_t current_length = getLengthOfSlice<is_utf8>(str);
 
                 if (!res_sink.rowNum() || !is_const_new_length)
                 {
                     /// If `is_const_new_length` is true we can get and check the new length only once.
                     auto new_length_slice = lengths.getWhole();
-                    new_length = new_length_slice.elements->getUInt(new_length_slice.position);
+                    new_length = new_length_slice.elements->getInt(new_length_slice.position);
                     if (new_length > MAX_NEW_LENGTH)
                     {
+                        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "New padded length ({}) is too big, maximum is: {}",
+                            std::to_string(new_length), std::to_string(MAX_NEW_LENGTH));
+                    }
+                    if (new_length < 0)
+                    {
                         throw Exception(
-                            "New padded length (" + std::to_string(new_length) + ") is too big, maximum is: " + std::to_string(MAX_NEW_LENGTH),
-                            ErrorCodes::TOO_LARGE_STRING_SIZE);
+                            ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE, "New padded length ({}) is negative", std::to_string(new_length));
                     }
                     if (is_const_new_length)
                     {

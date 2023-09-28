@@ -1,6 +1,8 @@
+SET allow_experimental_analyzer = 1;
+
 DROP TABLE IF EXISTS test_tuple_filter;
 
-CREATE TABLE test_tuple_filter (id UInt32, value String, log_date Date) Engine=MergeTree() ORDER BY id PARTITION BY log_date SETTINGS index_granularity = 3;
+CREATE TABLE test_tuple_filter (id UInt32, value String, log_date Date) Engine=MergeTree() ORDER BY id PARTITION BY log_date SETTINGS index_granularity = 3, index_granularity_bytes = '10Mi';
 
 INSERT INTO test_tuple_filter VALUES (1,'A','2021-01-01'),(2,'B','2021-01-01'),(3,'C','2021-01-01'),(4,'D','2021-01-02'),(5,'E','2021-01-02');
 
@@ -16,13 +18,11 @@ SELECT * FROM test_tuple_filter WHERE ((id, value), log_date) = ((1, 'A'), '2021
 -- not supported functions (concat) do not lost
 SELECT * FROM test_tuple_filter WHERE (id, value, value||'foo') = ('1', 'A', 'A');
 
--- Condition fully moved to PREWHERE and such conditions does not supported yet.
-SELECT * FROM test_tuple_filter WHERE (1, (1, (1, (1, (id, value))))) = (1, (1, (1, (1, (1, 'A'))))); -- { serverError INDEX_NOT_USED }
+SELECT * FROM test_tuple_filter WHERE (1, (1, (1, (1, (id, value))))) = (1, (1, (1, (1, (1, 'A')))));
 
--- not implemented yet
-SELECT * FROM test_tuple_filter WHERE (1, value) = (id, 'A'); -- { serverError INDEX_NOT_USED }
-SELECT * FROM test_tuple_filter WHERE (1, (1, (1, (1, tuple(id))))) = (1, (1, (1, (1, tuple(1))))); -- { serverError INDEX_NOT_USED }
-SELECT * FROM test_tuple_filter WHERE ((id, value), tuple(log_date)) = ((1, 'A'), tuple('2021-01-01')); -- { serverError INDEX_NOT_USED }
+SELECT * FROM test_tuple_filter WHERE (1, value) = (id, 'A');
+SELECT * FROM test_tuple_filter WHERE (1, (1, (1, (1, tuple(id))))) = (1, (1, (1, (1, tuple(1)))));
+SELECT * FROM test_tuple_filter WHERE ((id, value), tuple(log_date)) = ((1, 'A'), tuple('2021-01-01'));
 
 SET force_index_by_date = 1;
 SET force_primary_key = 0;

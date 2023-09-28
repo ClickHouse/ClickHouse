@@ -8,7 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
-#include "config_functions.h"
+#include "config.h"
 
 /** FastOps is a fast vector math library from Mikhail Parakhin, https://www.linkedin.com/in/mikhail-parakhin/
   * Enabled by default.
@@ -154,6 +154,8 @@ private:
             using ColVecType = ColumnVectorOrDecimal<Type>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
+            if (col_vec == nullptr)
+                return false;
             return (res = execute<Type, ReturnType>(col_vec)) != nullptr;
         };
 

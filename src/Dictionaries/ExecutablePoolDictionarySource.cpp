@@ -193,7 +193,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
         if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
-            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
+            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED,
+                            "Dictionaries with executable pool dictionary source are not allowed "
+                            "to be created from DDL query");
 
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
@@ -230,6 +232,8 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
+            .stderr_reaction = parseExternalCommandStderrReaction(config.getString(settings_config_prefix + ".stderr_reaction", "none")),
+            .check_exit_code = config.getBool(settings_config_prefix + ".check_exit_code", true),
             .pool_size = config.getUInt64(settings_config_prefix + ".pool_size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,
             .is_executable_pool = true,

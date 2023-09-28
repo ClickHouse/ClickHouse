@@ -3,9 +3,16 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
 
 static void replaceFilterToConstant(Block & block, const String & filter_column_name)
 {
@@ -36,6 +43,12 @@ Block FilterTransform::transformHeader(
     if (expression)
         header = expression->updateHeader(std::move(header));
 
+    auto filter_type = header.getByName(filter_column_name).type;
+    if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
+            filter_type->getName(), filter_column_name);
+
     if (remove_filter_column)
         header.erase(filter_column_name);
     else
@@ -49,7 +62,8 @@ FilterTransform::FilterTransform(
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
-    bool on_totals_)
+    bool on_totals_,
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -58,6 +72,7 @@ FilterTransform::FilterTransform(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
+    , rows_filtered(rows_filtered_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -100,6 +115,14 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 }
 
 void FilterTransform::transform(Chunk & chunk)
+{
+    auto chunk_rows_before = chunk.getNumRows();
+    doTransform(chunk);
+    if (rows_filtered)
+        *rows_filtered += chunk_rows_before - chunk.getNumRows();
+}
+
+void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();

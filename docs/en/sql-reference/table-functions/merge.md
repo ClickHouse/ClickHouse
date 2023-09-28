@@ -1,5 +1,6 @@
 ---
-sidebar_position: 38
+slug: /en/sql-reference/table-functions/merge
+sidebar_position: 130
 sidebar_label: merge
 ---
 
@@ -15,7 +16,7 @@ merge('db_name', 'tables_regexp')
 **Arguments**
 
 - `db_name` — Possible values:
-    - database name, 
+    - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
@@ -23,5 +24,4 @@ merge('db_name', 'tables_regexp')
 
 **See Also**
 
--   [Merge](../../engines/table-engines/special/merge.md) table engine
-
+- [Merge](../../engines/table-engines/special/merge.md) table engine

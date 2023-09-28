@@ -208,8 +208,6 @@ public:
 
     ASTPtr clone() const override;
 
-    static const char * typeToString(Type type);
-
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -239,6 +237,8 @@ public:
 
     bool isDropPartitionAlter() const;
 
+    bool isMovePartitionToDiskOrVolumeAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
@@ -254,6 +254,11 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&command_list));
+    }
 };
 
 }

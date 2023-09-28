@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTSelectQuery.h>
+#include "Parsers/ExpressionListParsers.h"
 
 
 namespace DB
@@ -16,15 +17,19 @@ public:
     enum class Operator
     {
         UNKNOWN,
-        INTERSECT,
-        EXCEPT
+        EXCEPT_ALL,
+        EXCEPT_DISTINCT,
+        INTERSECT_ALL,
+        INTERSECT_DISTINCT,
     };
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    QueryKind getQueryKind() const override { return QueryKind::SelectIntersectExcept; }
+    QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     ASTs getListOfSelects() const;
+
+    static const char * fromOperator(Operator op);
 
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;

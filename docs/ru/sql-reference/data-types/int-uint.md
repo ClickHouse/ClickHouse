@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/int-uint
 sidebar_position: 40
 sidebar_label: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 ---

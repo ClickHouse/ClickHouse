@@ -23,9 +23,12 @@ public:
     /** Set setting for current context (query context).
       * It is used for interpretation of SETTINGS clause in SELECT query.
       */
-    void executeForCurrentContext();
+    void executeForCurrentContext(bool ignore_setting_constraints = false);
 
     bool supportsTransactions() const override { return true; }
+
+    /// To apply SETTINGS clauses from query as early as possible
+    static void applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_);
 
 private:
     ASTPtr query_ptr;

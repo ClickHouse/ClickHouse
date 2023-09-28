@@ -81,7 +81,7 @@ class QuantileTDigest
       */
     struct Params
     {
-        Value epsilon = 0.01;
+        Value epsilon = 0.01f;
         size_t max_centroids = 2048;
         size_t max_unmerged = 2048;
     };
@@ -99,13 +99,12 @@ class QuantileTDigest
     BetterFloat count = 0;
     size_t unmerged = 0;
 
-    /** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
-      */
+    /// Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
         /// Symmetric interpolation for better results with infinities.
         double k = (x - x1) / (x2 - x1);
-        return (1 - k) * y1 + k * y2;
+        return static_cast<Value>((1 - k) * y1 + k * y2);
     }
 
     struct RadixSortTraits
@@ -166,8 +165,8 @@ class QuantileTDigest
                 {
                     l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                 }
-                l->mean = l_mean;
-                l->count = l_count;
+                l->mean = static_cast<Value>(l_mean);
+                l->count = static_cast<Value>(l_count);
                 batch_pos += 1;
             }
             else
@@ -253,8 +252,8 @@ public:
                     {
                         l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                     }
-                    l->mean = l_mean;
-                    l->count = l_count;
+                    l->mean = static_cast<Value>(l_mean);
+                    l->count = static_cast<Value>(l_count);
                 }
                 else
                 {
@@ -310,19 +309,19 @@ public:
         readVarUInt(size, buf);
 
         if (size > max_centroids_deserialize)
-            throw Exception("Too large t-digest centroids size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large t-digest centroids size");
 
         count = 0;
         unmerged = 0;
 
         centroids.resize(size);
         // From now, TDigest will be in invalid state if exception is thrown.
-        buf.read(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
+        buf.readStrict(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
 
         for (const auto & c : centroids)
         {
             if (c.count <= 0 || std::isnan(c.count)) // invalid count breaks compress()
-                throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", c.count, std::to_string(c.mean));
             if (!std::isnan(c.mean))
             {
                 count += c.count;
@@ -370,7 +369,12 @@ public:
                 else if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
                 else
-                    return checkOverflow<ResultType>(interpolate(x, left, prev_mean, right, c.mean));
+                    return checkOverflow<ResultType>(interpolate(
+                        static_cast<Value>(x),
+                        static_cast<Value>(left),
+                        prev_mean,
+                        static_cast<Value>(right),
+                        c.mean));
             }
 
             sum += c.count;
@@ -402,7 +406,7 @@ public:
         if (centroids.size() == 1)
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-                result[result_num] = centroids.front().mean;
+                result[result_num] = static_cast<ResultType>(centroids.front().mean);
             return;
         }
 
@@ -426,11 +430,12 @@ public:
                 while (current_x >= x)
                 {
                     if (x <= left)
-                        result[levels_permutation[result_num]] = prev_mean;
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(prev_mean);
                     else if (x >= right)
-                        result[levels_permutation[result_num]] = c.mean;
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(c.mean);
                     else
-                        result[levels_permutation[result_num]] = interpolate(x, left, prev_mean, right, c.mean);
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(interpolate(
+                            static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
 
                     ++result_num;
                     if (result_num >= size)
@@ -448,7 +453,7 @@ public:
 
         auto rest_of_results = centroids.back().mean;
         for (; result_num < size; ++result_num)
-            result[levels_permutation[result_num]] = rest_of_results;
+            result[levels_permutation[result_num]] = static_cast<ResultType>(rest_of_results);
     }
 
     T get(Float64 level)
@@ -478,7 +483,7 @@ private:
         ResultType result;
         if (accurate::convertNumeric(val, result))
             return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 };
 

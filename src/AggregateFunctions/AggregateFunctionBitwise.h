@@ -9,7 +9,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -97,11 +97,12 @@ class AggregateFunctionBitwise final : public IAggregateFunctionDataHelper<Data,
 {
 public:
     explicit AggregateFunctionBitwise(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}) {}
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitwise<T, Data>>({type}, {}, createResultType())
+    {}
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<T>>();
     }
@@ -137,30 +138,26 @@ public:
 
     bool isCompilable() const override
     {
-        auto return_type = getReturnType();
+        auto return_type = this->getResultType();
         return canBeNativeType(*return_type);
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
     {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        auto * return_type = toNativeType(b, getReturnType());
-        auto * value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * value_ptr = aggregate_data_ptr;
         Data::compileCreate(builder, value_ptr);
     }
 
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes &, const std::vector<llvm::Value *> & argument_values) const override
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
-        auto * value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * value_ptr = aggregate_data_ptr;
         auto * value = b.CreateLoad(return_type, value_ptr);
 
-        const auto & argument_value = argument_values[0];
-        auto * result_value = Data::compileUpdate(builder, value, argument_value);
+        auto * result_value = Data::compileUpdate(builder, value, arguments[0].value);
 
         b.CreateStore(result_value, value_ptr);
     }
@@ -169,12 +166,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
-        auto * value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
+        auto * value_dst_ptr = aggregate_data_dst_ptr;
         auto * value_dst = b.CreateLoad(return_type, value_dst_ptr);
 
-        auto * value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
+        auto * value_src_ptr = aggregate_data_src_ptr;
         auto * value_src = b.CreateLoad(return_type, value_src_ptr);
 
         auto * result_value = Data::compileUpdate(builder, value_dst, value_src);
@@ -186,8 +183,8 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
-        auto * value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * return_type = toNativeType(b, this->getResultType());
+        auto * value_ptr = aggregate_data_ptr;
 
         return b.CreateLoad(return_type, value_ptr);
     }

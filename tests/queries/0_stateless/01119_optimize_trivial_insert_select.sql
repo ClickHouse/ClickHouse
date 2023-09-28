@@ -1,6 +1,7 @@
 drop table if exists t;
 create table t(n int, a Int64, s String) engine = MergeTree() order by a;
 
+set enable_positional_arguments=0;
 set optimize_trivial_insert_select=1;
 
 -- due to aggregate functions, optimize_trivial_insert_select will not be applied

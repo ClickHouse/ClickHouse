@@ -5,8 +5,8 @@
 namespace DB
 {
 
-MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_) {}
+MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), format_settings(format_settings_) {}
 
 void MarkdownRowOutputFormat::writePrefix()
 {
@@ -52,7 +52,7 @@ void MarkdownRowOutputFormat::writeRowEndDelimiter()
 
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    serialization.serializeTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextMarkdown(column, row_num, out, format_settings);
 }
 
 void registerOutputFormatMarkdown(FormatFactory & factory)
@@ -60,10 +60,9 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     factory.registerOutputFormat("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");

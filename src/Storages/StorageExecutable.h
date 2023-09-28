@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Storages/ExecutableSettings.h>
@@ -41,7 +40,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned threads) override;
+        size_t threads) override;
 
 private:
     ExecutableSettings settings;

@@ -12,10 +12,23 @@
 #include <Access/SettingsProfile.h>
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <Common/SettingConstraintWritability.h>
 
 
 namespace DB
 {
+
+const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
+{
+    static const std::vector<std::pair<String, Int8>> values = []
+    {
+        std::vector<std::pair<String, Int8>> res;
+        for (auto value : collections::range(SettingConstraintWritability::MAX))
+            res.emplace_back(toString(value), static_cast<Int8>(value));
+        return res;
+    }();
+    return values;
+}
 
 NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 {
@@ -28,7 +41,7 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
         {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"readonly", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+        {"writability", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getSettingConstraintWritabilityEnumValues()))},
         {"inherit_profile", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
     };
     return names_and_types;
@@ -62,8 +75,8 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
     auto & column_min_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_max = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_max_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
-    auto & column_readonly = assert_cast<ColumnUInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn()).getData();
-    auto & column_readonly_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
+    auto & column_writability = assert_cast<ColumnInt8 &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
+    auto & column_writability_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
     auto & column_inherit_profile = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_inherit_profile_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
 
@@ -74,42 +87,42 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         size_t current_index = index++;
 
         bool inserted_value = false;
-        if (!element.value.isNull() && !element.setting_name.empty())
+        if (element.value && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, element.value);
+            String str = Settings::valueToStringUtil(element.setting_name, *element.value);
             column_value.insertData(str.data(), str.length());
             column_value_null_map.push_back(false);
             inserted_value = true;
         }
 
         bool inserted_min = false;
-        if (!element.min_value.isNull() && !element.setting_name.empty())
+        if (element.min_value && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, element.min_value);
+            String str = Settings::valueToStringUtil(element.setting_name, *element.min_value);
             column_min.insertData(str.data(), str.length());
             column_min_null_map.push_back(false);
             inserted_min = true;
         }
 
         bool inserted_max = false;
-        if (!element.max_value.isNull() && !element.setting_name.empty())
+        if (element.max_value && !element.setting_name.empty())
         {
-            String str = Settings::valueToStringUtil(element.setting_name, element.max_value);
+            String str = Settings::valueToStringUtil(element.setting_name, *element.max_value);
             column_max.insertData(str.data(), str.length());
             column_max_null_map.push_back(false);
             inserted_max = true;
         }
 
-        bool inserted_readonly = false;
-        if (element.readonly && !element.setting_name.empty())
+        bool inserted_writability = false;
+        if (element.writability && !element.setting_name.empty())
         {
-            column_readonly.push_back(*element.readonly);
-            column_readonly_null_map.push_back(false);
-            inserted_readonly = true;
+            column_writability.insertValue(static_cast<Int8>(*element.writability));
+            column_writability_null_map.push_back(false);
+            inserted_writability = true;
         }
 
         bool inserted_setting_name = false;
-        if (inserted_value || inserted_min || inserted_max || inserted_readonly)
+        if (inserted_value || inserted_min || inserted_max || inserted_writability)
         {
             const auto & setting_name = element.setting_name;
             column_setting_name.insertData(setting_name.data(), setting_name.size());

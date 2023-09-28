@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_ORC
 #include <IO/WriteBuffer.h>
@@ -8,10 +8,12 @@
 #include <Formats/FormatSettings.h>
 #include <orc/OrcFile.hh>
 
+
 namespace DB
 {
 
 class WriteBuffer;
+
 
 /// orc::Writer writes only in orc::OutputStream
 class ORCOutputStream : public orc::OutputStream
@@ -21,7 +23,7 @@ public:
 
     uint64_t getLength() const override;
     uint64_t getNaturalWriteSize() const override;
-    void write(const void* buf, size_t length) override;
+    void write(const void * buf, size_t length) override;
 
     void close() override {}
     const std::string& getName() const override { return name; }
@@ -30,6 +32,7 @@ private:
     WriteBuffer & out;
     std::string name = "ORCOutputStream";
 };
+
 
 class ORCBlockOutputFormat : public IOutputFormat
 {
@@ -41,8 +44,9 @@ public:
 private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
-    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type);
+    std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be
     /// converted to unsigned char (bugprone-signed-char-misuse in clang).
@@ -75,8 +79,8 @@ private:
     const FormatSettings format_settings;
     ORCOutputStream output_stream;
     DataTypes data_types;
-    ORC_UNIQUE_PTR<orc::Writer> writer;
-    ORC_UNIQUE_PTR<orc::Type> schema;
+    std::unique_ptr<orc::Writer> writer;
+    std::unique_ptr<orc::Type> schema;
     orc::WriterOptions options;
 };
 

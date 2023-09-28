@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/special-data-types/interval
 sidebar_position: 61
 sidebar_label: Interval
 ---
@@ -7,25 +8,24 @@ sidebar_label: Interval
 
 The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
 
-:::warning    
-`Interval` data type values can’t be stored in tables.
-:::
-
 Structure:
 
--   Time interval as an unsigned integer value.
--   Type of an interval.
+- Time interval as an unsigned integer value.
+- Type of an interval.
 
 Supported interval types:
 
--   `SECOND`
--   `MINUTE`
--   `HOUR`
--   `DAY`
--   `WEEK`
--   `MONTH`
--   `QUARTER`
--   `YEAR`
+- `NANOSECOND`
+- `MICROSECOND`
+- `MILLISECOND`
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
 
 For each interval type, there is a separate data type. For example, the `DAY` interval corresponds to the `IntervalDay` data type:
 
@@ -80,5 +80,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## See Also
 
--   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
--   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
+- [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
+- [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions

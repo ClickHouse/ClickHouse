@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/select/all
 sidebar_label: ALL
 ---
 
@@ -17,5 +18,3 @@ equals to
 ```sql
 SELECT sum(number) FROM numbers(10);
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/all) <!--hide-->

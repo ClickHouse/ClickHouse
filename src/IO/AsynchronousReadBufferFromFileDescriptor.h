@@ -3,6 +3,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/AsynchronousReader.h>
 #include <Interpreters/Context.h>
+#include <Common/Throttler_fwd.h>
+#include <Common/Priority.h>
 
 #include <optional>
 #include <unistd.h>
@@ -16,8 +18,8 @@ namespace DB
 class AsynchronousReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
-    AsynchronousReaderPtr reader;
-    Int32 priority;
+    IAsynchronousReader & reader;
+    Priority base_priority;
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
@@ -26,6 +28,7 @@ protected:
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
     size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
+    ThrottlerPtr throttler;
 
     bool nextImpl() override;
 
@@ -36,17 +39,18 @@ protected:
 
 public:
     AsynchronousReadBufferFromFileDescriptor(
-        AsynchronousReaderPtr reader_,
-        Int32 priority_,
+        IAsynchronousReader & reader_,
+        Priority priority_,
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt);
+        std::optional<size_t> file_size_ = std::nullopt,
+        ThrottlerPtr throttler_ = {});
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
-    void prefetch() override;
+    void prefetch(Priority priority) override;
 
     int getFD() const
     {
@@ -67,7 +71,7 @@ public:
     size_t getFileSize() override;
 
 private:
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 };
 
 }

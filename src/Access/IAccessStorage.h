@@ -3,6 +3,8 @@
 #include <Access/IAccessEntity.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Parsers/IParser.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -42,14 +44,25 @@ public:
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
 
-    /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
-    virtual void reload() {}
-
-    /// Starts periodic reloading and update of entities in this storage.
+    /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
 
-    /// Stops periodic reloading and update of entities in this storage.
+    /// Stops periodic reloading and updating of entities in this storage.
     virtual void stopPeriodicReloading() {}
+
+    enum class ReloadMode
+    {
+        /// Try to reload all access storages (including users.xml, local(disk) access storage, replicated(in zk) access storage.
+        /// This mode is invoked by the SYSTEM RELOAD USERS command.
+        ALL,
+
+        /// Only reloads users.xml
+        /// This mode is invoked by the SYSTEM RELOAD CONFIG command.
+        USERS_CONFIG_ONLY,
+    };
+
+    /// Makes this storage to reload and update access entities right now.
+    virtual void reload(ReloadMode /* reload_mode */) {}
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
@@ -81,6 +94,7 @@ public:
 
     /// Returns whether there is an entity with such identifier in the storage.
     virtual bool exists(const UUID & id) const = 0;
+    bool exists(const std::vector<UUID> & ids) const;
 
     /// Reads an entity. Throws an exception if not found.
     template <typename EntityClassT = IAccessEntity>
@@ -88,6 +102,9 @@ public:
 
     template <typename EntityClassT = IAccessEntity>
     std::shared_ptr<const EntityClassT> read(const String & name, bool throw_if_not_exists = true) const;
+
+    template <typename EntityClassT = IAccessEntity>
+    std::vector<AccessEntityPtr> read(const std::vector<UUID> & ids, bool throw_if_not_exists = true) const;
 
     /// Reads an entity. Returns nullptr if not found.
     template <typename EntityClassT = IAccessEntity>
@@ -117,7 +134,9 @@ public:
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
     std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
+    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     std::optional<UUID> tryInsert(const AccessEntityPtr & entity);
@@ -168,7 +187,7 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const;
@@ -177,6 +196,7 @@ protected:
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
+    static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, const Poco::Logger * log_);
     [[noreturn]] void throwNotFound(const UUID & id) const;
     [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
@@ -229,6 +249,19 @@ std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name, bo
 
 
 template <typename EntityClassT>
+std::vector<AccessEntityPtr> IAccessStorage::read(const std::vector<UUID> & ids, bool throw_if_not_exists) const
+{
+    std::vector<AccessEntityPtr> result;
+    result.reserve(ids.size());
+
+    for (const auto & id : ids)
+        result.push_back(read<EntityClassT>(id, throw_if_not_exists));
+
+    return result;
+}
+
+
+template <typename EntityClassT>
 std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const UUID & id) const
 {
     return read<EntityClassT>(id, false);
@@ -251,6 +284,11 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
             entities.emplace_back(id, entity);
     }
     return entities;
+}
+
+inline bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
+{
+    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
 }
 
 }

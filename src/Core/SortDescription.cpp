@@ -3,6 +3,8 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -40,6 +42,36 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Column", column_name);
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);
+}
+
+bool SortDescription::hasPrefix(const SortDescription & prefix) const
+{
+    if (prefix.empty())
+        return true;
+
+    if (prefix.size() > size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if ((*this)[i] != prefix[i])
+            return false;
+    }
+    return true;
+}
+
+SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
+{
+    size_t i = 0;
+    for (; i < std::min(lhs.size(), rhs.size()); ++i)
+    {
+        if (lhs[i] != rhs[i])
+            break;
+    }
+
+    auto res = lhs;
+    res.erase(res.begin() + i, res.end());
+    return res;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -101,8 +133,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     SipHash sort_description_dump_hash;
     sort_description_dump_hash.update(description_dump);
 
-    UInt128 sort_description_hash_key;
-    sort_description_dump_hash.get128(sort_description_hash_key);
+    const auto sort_description_hash_key = sort_description_dump_hash.get128();
 
     {
         std::lock_guard lock(mutex);

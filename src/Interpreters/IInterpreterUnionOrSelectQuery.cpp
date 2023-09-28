@@ -6,27 +6,24 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Processors/QueryPlan/FilterStep.h>
+
 
 namespace DB
 {
 
-void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
-{
-    elem.query_kind = "Select";
-}
-
-
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
     QueryPlan query_plan;
+    return buildQueryPipeline(query_plan);
+}
 
+QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
+{
     buildQueryPlan(query_plan);
-
     return std::move(*query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
@@ -106,14 +103,14 @@ static ActionsDAGPtr makeAdditionalPostFilter(ASTPtr & ast, ContextPtr context, 
     auto syntax_result = TreeRewriter(context).analyze(ast, header.getNamesAndTypesList());
     String result_column_name = ast->getColumnName();
     auto dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(false, false);
-    const ActionsDAG::Node * result_node = &dag->findInIndex(result_column_name);
-    auto & index = dag->getIndex();
-    index.clear();
-    index.reserve(dag->getInputs().size() + 1);
+    const ActionsDAG::Node * result_node = &dag->findInOutputs(result_column_name);
+    auto & outputs = dag->getOutputs();
+    outputs.clear();
+    outputs.reserve(dag->getInputs().size() + 1);
     for (const auto * node : dag->getInputs())
-        index.push_back(node);
+        outputs.push_back(node);
 
-    index.push_back(result_node);
+    outputs.push_back(result_node);
 
     return dag;
 }
@@ -128,7 +125,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
         return;
 
     auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentDataStream().header);
-    std::string filter_name = dag->getIndex().back()->result_name;
+    std::string filter_name = dag->getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentDataStream(), std::move(dag), std::move(filter_name), true);
     filter_step->setStepDescription("Additional result filter");

@@ -30,9 +30,9 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     const SortDescription & description_,
-    size_t max_block_size_,
-    size_t max_block_bytes_)
-    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size(max_block_size_), max_block_bytes(max_block_bytes_)
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_)
+    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
 {
     for (const auto & column_description : description_)
         description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
@@ -55,11 +55,12 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
     if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
 
-    const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get());
-    if (!arenas_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have ChunkInfoWithAllocatedBytes in FinishAggregatingInOrderAlgorithm");
+    Int64 allocated_bytes = 0;
+    /// Will be set by AggregatingInOrderTransform during local aggregation; will be nullptr during merging on initiator.
+    if (const auto * arenas_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+        allocated_bytes = arenas_info->allocated_bytes;
 
-    states[source_num] = State{input.chunk, description, arenas_info->allocated_bytes};
+    states[source_num] = State{input.chunk, description, allocated_bytes};
 }
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
@@ -117,7 +118,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     inputs_to_update.pop_back();
 
     /// Do not merge blocks, if there are too few rows or bytes.
-    if (accumulated_rows >= max_block_size || accumulated_bytes >= max_block_bytes)
+    if (accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes)
         status.chunk = prepareToMerge();
 
     return status;
@@ -130,6 +131,7 @@ Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
 
     auto info = std::make_shared<ChunksToMerge>();
     info->chunks = std::make_unique<Chunks>(std::move(chunks));
+    info->chunk_num = chunk_num++;
 
     Chunk chunk;
     chunk.setChunkInfo(std::move(info));
@@ -163,9 +165,8 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         states[i].current_row = states[i].to_row;
 
         /// We assume that sizes in bytes of rows are almost the same.
-        accumulated_bytes += states[i].total_bytes * (static_cast<double>(current_rows) / states[i].num_rows);
+        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
         accumulated_rows += current_rows;
-
 
         if (!states[i].isValid())
             inputs_to_update.push_back(i);

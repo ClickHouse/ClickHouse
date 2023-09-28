@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/troubleshooting
 sidebar_position: 46
 sidebar_label: "Устранение неисправностей"
 ---

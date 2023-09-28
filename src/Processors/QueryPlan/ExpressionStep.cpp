@@ -5,21 +5,19 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Interpreters/JoinSwitcher.h>
-
 #include <Common/JSONBuilder.h>
 
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions)
+static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const Block & header, const SortDescription & sort_description)
 {
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = !actions->hasArrayJoin(),
+            .preserves_sorting = actions->isSortingPreserved(header, sort_description),
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
@@ -27,15 +25,13 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions)
     };
 }
 
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_)
+ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_)
     : ITransformingStep(
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
-        getTraits(actions_dag_))
-    , actions_dag(std::move(actions_dag_))
+        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
+    , actions_dag(actions_dag_)
 {
-    /// Some columns may be removed by expression.
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -64,22 +60,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
-    bool first = true;
-
+    String prefix(settings.offset, settings.indent_char);
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
-    for (const auto & action : expression->getActions())
-    {
-        settings.out << prefix << (first ? "Actions: "
-                                         : "         ");
-        first = false;
-        settings.out << action.toString() << '\n';
-    }
-
-    settings.out << prefix << "Positions:";
-    for (const auto & pos : expression->getResultPositions())
-        settings.out << ' ' << pos;
-    settings.out << '\n';
+    expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -92,6 +75,20 @@ void ExpressionStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
+
+    if (!getDataStreamTraits().preserves_sorting)
+        return;
+
+    FindAliasForInputName alias_finder(actions_dag);
+    const auto & input_sort_description = getInputStreams().front().sort_description;
+    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
+    {
+        String alias;
+        const auto & original_column = input_sort_description[i].column_name;
+        const auto * alias_node = alias_finder.find(original_column);
+        if (alias_node)
+            output_stream->sort_description[i].column_name = alias_node->result_name;
+    }
 }
 
 }

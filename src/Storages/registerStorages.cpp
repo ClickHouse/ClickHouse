@@ -1,9 +1,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
-#include <Common/config.h>
-#include "config_core.h"
-#include "config_formats.h"
+#include "config.h"
 
 namespace DB
 {
@@ -34,6 +32,16 @@ void registerStorageMeiliSearch(StorageFactory& factory);
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
 void registerStorageCOS(StorageFactory & factory);
+void registerStorageOSS(StorageFactory & factory);
+void registerStorageHudi(StorageFactory & factory);
+void registerStorageS3Queue(StorageFactory & factory);
+
+#if USE_PARQUET
+void registerStorageDeltaLake(StorageFactory & factory);
+#endif
+#if USE_AVRO
+void registerStorageIceberg(StorageFactory & factory);
+#endif
 #endif
 
 #if USE_HDFS
@@ -53,6 +61,7 @@ void registerStorageMySQL(StorageFactory & factory);
 #endif
 
 void registerStorageMongoDB(StorageFactory & factory);
+void registerStorageRedis(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -88,6 +97,11 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
+void registerStorageKeeperMap(StorageFactory & factory);
+
+#if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureBlob(StorageFactory & factory);
+#endif
 
 void registerStorages()
 {
@@ -119,6 +133,18 @@ void registerStorages()
     #if USE_AWS_S3
     registerStorageS3(factory);
     registerStorageCOS(factory);
+    registerStorageOSS(factory);
+    registerStorageHudi(factory);
+    registerStorageS3Queue(factory);
+
+    #if USE_PARQUET
+    registerStorageDeltaLake(factory);
+    #endif
+
+    #if USE_AVRO
+    registerStorageIceberg(factory);
+    #endif
+
     #endif
 
     #if USE_HDFS
@@ -138,6 +164,7 @@ void registerStorages()
     #endif
 
     registerStorageMongoDB(factory);
+    registerStorageRedis(factory);
 
     #if USE_RDKAFKA
     registerStorageKafka(factory);
@@ -170,6 +197,12 @@ void registerStorages()
 
     #if USE_SQLITE
     registerStorageSQLite(factory);
+    #endif
+
+    registerStorageKeeperMap(factory);
+
+    #if USE_AZURE_BLOB_STORAGE
+    registerStorageAzureBlob(factory);
     #endif
 }
 

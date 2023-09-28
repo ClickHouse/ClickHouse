@@ -6,7 +6,6 @@ users:
   default:
     password: ''
     networks:
-      "@replace": replace
       ip: '::/0'
     profile: default
 

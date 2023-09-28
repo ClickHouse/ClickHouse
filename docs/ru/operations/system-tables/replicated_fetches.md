@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/replicated_fetches
+---
 # system.replicated_fetches {#system_tables-replicated_fetches}
 
 Содержит информацию о выполняемых в данный момент фоновых операциях скачивания кусков данных с других реплик.
@@ -65,5 +68,4 @@ thread_id:                   54
 
 **Смотрите также**
 
--   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system/#query-language-system-replicated)
-
+-   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system.md#query-language-system-replicated)

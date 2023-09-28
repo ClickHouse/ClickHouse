@@ -4,6 +4,8 @@
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/VersionNumber.h>
+#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
@@ -47,7 +49,6 @@ public:
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
-
     QueryKind query_kind = QueryKind::NO_QUERY;
 
     /// Current values are not serialized, because it is passed separately.
@@ -62,14 +63,14 @@ public:
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
-    // OpenTelemetry trace context we received from client, or which we are going
-    // to send to server.
-    OpenTelemetryTraceContext client_trace_context;
+    /// OpenTelemetry trace context we received from client, or which we are going to send to server.
+    OpenTelemetry::TracingContext client_trace_context;
 
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
     bool is_secure = false;
+    String certificate;
 
     /// For tcp
     String os_user;
@@ -101,6 +102,14 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
+    String getLastForwardedFor() const
+    {
+        if (forwarded_for.empty())
+            return {};
+        String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
+        boost::trim(last);
+        return last;
+    }
 
     /// Common
     String quota_key;
@@ -126,8 +135,15 @@ public:
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
 
+    bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
+
+    String getVersionStr() const;
+    VersionNumber getVersionNumber() const;
+
 private:
     void fillOSUserHostNameAndVersionInfo();
 };
+
+String toString(ClientInfo::Interface interface);
 
 }

@@ -42,7 +42,7 @@ public:
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override;
-    void sendMergeTreeReadTaskResponse(PartitionReadResponse response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     Packet receivePacket() override;
 
@@ -64,8 +64,11 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
+    void setAsyncCallback(AsyncCallback async_callback) override;
+
 private:
-    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -78,17 +81,12 @@ private:
     };
 
     /// Get a replica where you can read the data.
-    ReplicaState & getReplicaForReading(bool is_draining);
+    ReplicaState & getReplicaForReading();
 
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
     const Settings & settings;
-
-    /// The following two fields are from settings but can be referenced outside the lifetime of
-    /// settings when connection is drained asynchronously.
-    Poco::Timespan drain_timeout;
-    Poco::Timespan receive_timeout;
 
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count = 0;
@@ -104,11 +102,18 @@ private:
     bool sent_query = false;
     bool cancelled = false;
 
-    ReplicaInfo replica_info;
+    /// std::nullopt if parallel reading from replicas is not used
+    std::optional<ReplicaInfo> replica_info;
 
-    /// A mutex for the sendCancel function to execute safely
-    /// in separate thread.
-    mutable std::mutex cancel_mutex;
+    /// A mutex for the sendCancel function to execute safely in separate thread.
+    mutable std::timed_mutex cancel_mutex;
+
+    /// Temporary instrumentation to debug a weird deadlock on cancel_mutex.
+    /// TODO: Once the investigation is done, get rid of these, and of INSTRUMENTED_LOCK_MUTEX, and
+    ///       change cancel_mutex to std::mutex.
+    mutable std::atomic<UInt64> mutex_last_locked_by{0};
+    mutable std::atomic<Int64> mutex_locked{0};
+    mutable std::array<UInt8, sizeof(std::timed_mutex)> mutex_memory_dump;
 
     friend struct RemoteQueryExecutorRoutine;
 };

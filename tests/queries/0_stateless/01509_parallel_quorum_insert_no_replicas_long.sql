@@ -16,6 +16,9 @@ CREATE TABLE r2 (
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01509_parallel_quorum_insert_no_replicas', '2')
 ORDER BY tuple();
 
+SET insert_keeper_max_retries=100;
+SET insert_keeper_retry_max_backoff_ms=10;
+
 SET insert_quorum_parallel=1;
 
 SET insert_quorum=3;
@@ -79,11 +82,11 @@ SYSTEM STOP FETCHES r2;
 
 SET insert_quorum_timeout=0;
 
-INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
 
 -- retry should fail despite the insert_deduplicate enabled
-INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
-INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
+INSERT INTO r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (4, '4'); -- { serverError 319 }
 SELECT * FROM r2 WHERE key=4;
 
 SYSTEM START FETCHES r2;
@@ -99,5 +102,5 @@ SELECT 'insert happened';
 SELECT COUNT() FROM r1;
 SELECT COUNT() FROM r2;
 
-DROP TABLE IF EXISTS r1;
-DROP TABLE IF EXISTS r2;
+DROP TABLE IF EXISTS r1 SYNC;
+DROP TABLE IF EXISTS r2 SYNC;

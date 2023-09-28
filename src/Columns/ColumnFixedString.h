@@ -115,7 +115,7 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -200,6 +200,11 @@ public:
         return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnFixedString>();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
@@ -209,7 +214,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return n; }
-    StringRef getRawData() const override { return StringRef(chars.data(), chars.size()); }
+    std::string_view getRawData() const override { return {reinterpret_cast<const char *>(chars.data()), chars.size()}; }
 
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }

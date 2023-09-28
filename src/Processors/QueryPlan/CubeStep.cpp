@@ -14,7 +14,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
@@ -32,25 +31,22 @@ CubeStep::CubeStep(const DataStream & input_stream_, Aggregator::Params params_,
     , final(final_)
     , use_nulls(use_nulls_)
 {
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
 }
 
 ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, bool use_nulls, const BuildQueryPipelineSettings & settings, UInt64 grouping_set_number)
 {
     auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-    auto & index = dag->getIndex();
+    auto & outputs = dag->getOutputs();
 
     if (use_nulls)
     {
         auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
         for (const auto & key : keys)
         {
-            const auto * node = dag->getIndex()[header.getPositionByName(key)];
+            const auto * node = dag->getOutputs()[header.getPositionByName(key)];
             if (node->result_type->canBeInsideNullable())
             {
-                dag->addOrReplaceInIndex(dag->addFunction(to_nullable, { node }, node->result_name));
+                dag->addOrReplaceInOutputs(dag->addFunction(to_nullable, { node }, node->result_name));
             }
         }
     }
@@ -60,7 +56,7 @@ ProcessorPtr addGroupingSetForTotals(const Block & header, const Names & keys, b
         {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
     grouping_node = &dag->materializeNode(*grouping_node);
-    index.insert(index.begin(), grouping_node);
+    outputs.insert(outputs.begin(), grouping_node);
 
     auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
     return std::make_shared<ExpressionTransform>(header, expression);
@@ -89,9 +85,5 @@ void CubeStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), generateOutputHeader(params.getHeader(input_streams.front().header, final), params.keys, use_nulls), getDataStreamTraits());
-
-    /// Aggregation keys are distinct
-    for (const auto & key : params.keys)
-        output_stream->distinct_columns.insert(key);
 }
 }

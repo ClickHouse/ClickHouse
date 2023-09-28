@@ -65,7 +65,7 @@ public:
 private:
     using Small = SmallSet<Key, small_set_size_max>;
     using Medium = HashContainer;
-    using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
+    using Large = HyperLogLogCounter<K, Key, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
 
 public:
     CombinedCardinalityEstimator()
