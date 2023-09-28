@@ -65,7 +65,7 @@ size_t DataTypeArray::getNumberOfDimensions() const
 String DataTypeArray::doGetPrettyName(size_t indent) const
 {
     WriteBufferFromOwnString s;
-    s << "Array(" << nested->getPrettyName(indent + 1) << ')';
+    s << "Array(" << nested->getPrettyName(indent) << ')';
     return s.str();
 }
 
