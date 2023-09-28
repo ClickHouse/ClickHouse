@@ -164,14 +164,14 @@ struct NameByteHammingDistance
     static constexpr auto name = "byteHammingDistance";
 };
 
-struct NameByteEditDistance
+struct NameEditDistance
 {
-    static constexpr auto name = "byteEditDistance";
+    static constexpr auto name = "editDistance";
 };
 
 using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
 
-using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameByteEditDistance>;
+using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
 
 REGISTER_FUNCTION(StringDistance)
 {
@@ -182,6 +182,6 @@ REGISTER_FUNCTION(StringDistance)
     factory.registerFunction<FunctionByteEditDistance>(
         FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
 
-    factory.registerAlias("byteLevenshteinDistance", NameByteEditDistance::name);
+    factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 }
 }
