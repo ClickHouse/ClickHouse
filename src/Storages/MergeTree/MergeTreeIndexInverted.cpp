@@ -123,7 +123,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", *pos, block.rows());
+                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
     auto row_id = store->getNextRowIDRange(rows_read);
@@ -377,21 +377,15 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
         if (node.tryGetConstant(const_value, const_type))
         {
             /// Check constant like in KeyCondition
-            if (const_value.getType() == Field::Types::UInt64)
+            if (const_value.getType() == Field::Types::UInt64
+                || const_value.getType() == Field::Types::Int64
+                || const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
+                /// Zero in all types is represented in memory the same way as in UInt64.
+                out.function = const_value.get<UInt64>()
+                            ? RPNElement::ALWAYS_TRUE
+                            : RPNElement::ALWAYS_FALSE;
 
-            if (const_value.getType() == Field::Types::Int64)
-            {
-                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
-
-            if (const_value.getType() == Field::Types::Float64)
-            {
-                out.function = const_value.get<Float64>() != 0.00 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -497,10 +491,6 @@ bool MergeTreeConditionInverted::traverseASTEquals(
                 DataTypePtr const_type;
                 if (argument.tryGetConstant(const_value, const_type))
                 {
-                    auto const_data_type = WhichDataType(const_type);
-                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
-                        return false;
-
                     key_column_num = header.getPositionByName(map_keys_index_column_name);
                     key_exists = true;
                 }
@@ -665,11 +655,7 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = rhs.tryGetPreparedSet();
-    if (!future_set)
-        return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
@@ -708,14 +694,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexInverted::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleInverted>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator() const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store) const
 {
     return std::make_shared<MergeTreeIndexAggregatorInverted>(store, index.column_names, index.name, params, token_extractor.get());
 }

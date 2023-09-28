@@ -8,19 +8,16 @@ from pathlib import Path
 from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
     RerunHelper,
     format_description,
     get_commit,
     post_commit_status,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
+from docker_pull_helper import get_image_with_version
 from env_helper import (
+    GITHUB_RUN_URL,
     REPORTS_PATH,
     TEMP_PATH,
 )
@@ -29,8 +26,6 @@ from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
@@ -39,7 +34,6 @@ def get_run_command(
     pr_info: PRInfo,
     build_url: str,
     workspace_path: Path,
-    ci_logs_args: str,
     image: DockerImage,
 ) -> str:
     envs = [
@@ -55,7 +49,6 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
-        f"{ci_logs_args}"
         f"--volume={workspace_path}:/workspace "
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
@@ -96,23 +89,17 @@ def main():
             build_url = url
             break
     else:
-        raise Exception("Cannot find the clickhouse binary among build results")
+        raise Exception("Cannot binary clickhouse among build results")
 
     logging.info("Got build url %s", build_url)
 
     workspace_path = temp_path / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
-    ci_logs_args = ci_logs_credentials.get_docker_arguments(
-        pr_info, stopwatch.start_time_str, check_name
-    )
-
     run_command = get_run_command(
         pr_info,
         build_url,
         workspace_path,
-        ci_logs_args,
         docker_image,
     )
     logging.info("Going to run %s", run_command)

@@ -10,6 +10,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -383,7 +384,7 @@ public:
         if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
         else if (result_type_is_datetime)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         else
         {
             auto scale = 0;
@@ -395,7 +396,7 @@ public:
             else if (interval_type->getKind() == IntervalKind::Millisecond)
                 scale = 3;
 
-            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
 
     }
@@ -476,7 +477,7 @@ private:
         if (num_units <= 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());
 
-        switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
+        switch (interval_type->getKind())
         {
             case IntervalKind::Nanosecond:
                 return execute<FromDataType, DataTypeDateTime64, IntervalKind::Nanosecond>(from, time_column, num_units, result_type, time_zone, scale);

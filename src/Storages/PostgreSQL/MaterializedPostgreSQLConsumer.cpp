@@ -236,7 +236,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
+        switch (identifier)
         {
             case 'n': /// NULL
             {
@@ -269,20 +269,6 @@ void MaterializedPostgreSQLConsumer::readTupleData(
                 insertDefaultValue(buffer, column_idx);
                 break;
             }
-            case 'b': /// Binary data.
-            {
-                LOG_WARNING(log, "We do not yet process this format of data, will insert default value");
-                insertDefaultValue(buffer, column_idx);
-                break;
-            }
-            default:
-            {
-                LOG_WARNING(log, "Unexpected identifier: {}. This is a bug! Please report an issue on github", identifier);
-                chassert(false);
-
-                insertDefaultValue(buffer, column_idx);
-                break;
-            }
         }
     };
 
@@ -295,10 +281,6 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
         catch (...)
         {
-            LOG_ERROR(log,
-                      "Got error while receiving value for column {}, will insert default value. Error: {}",
-                      column_idx, getCurrentExceptionMessage(true));
-
             insertDefaultValue(buffer, column_idx);
             /// Let's collect only the first exception.
             /// This delaying of error throw is needed because
@@ -399,7 +381,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
-                switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
+                switch (identifier)
                 {
                     /// Only if changed column(s) are part of replica identity index (or primary keys if they are used instead).
                     /// In this case, first comes a tuple with old replica identity indexes and all other values will come as
@@ -574,9 +556,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
-    while (!tables_to_sync.empty())
+    for (const auto & table_name : tables_to_sync)
     {
-        auto table_name = *tables_to_sync.begin();
         auto & storage_data = storages.find(table_name)->second;
         Block result_rows = storage_data.buffer.description.sample_block.cloneWithColumns(std::move(storage_data.buffer.columns));
         storage_data.buffer.columns = storage_data.buffer.description.sample_block.cloneEmptyColumns();
@@ -608,12 +589,8 @@ void MaterializedPostgreSQLConsumer::syncTables()
         }
         catch (...)
         {
-            /// Retry this buffer later.
-            storage_data.buffer.columns = result_rows.mutateColumns();
-            throw;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
-        tables_to_sync.erase(tables_to_sync.begin());
     }
 
     LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
@@ -765,12 +742,8 @@ void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 /// Read binary changes from replication slot via COPY command (starting from current lsn in a slot).
 bool MaterializedPostgreSQLConsumer::consume()
 {
-    if (!tables_to_sync.empty())
-    {
-        syncTables();
-    }
-
     bool slot_empty = true;
+
     try
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());

@@ -29,8 +29,7 @@ public:
         int flags = -1,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler = {});
+        std::optional<size_t> file_size_ = std::nullopt);
 
     /// Use pre-opened file descriptor.
     explicit ReadBufferFromFile(
@@ -39,8 +38,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler = {});
+        std::optional<size_t> file_size_ = std::nullopt);
 
     ~ReadBufferFromFile() override;
 
@@ -90,9 +88,8 @@ public:
         int flags = -1,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        std::optional<size_t> file_size_ = std::nullopt,
-        ThrottlerPtr throttler_ = {})
-        : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment, file_size_, throttler_)
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment, file_size_)
         , file_name(file_name_)
     {
         file = OpenedFileCache::instance().get(file_name, flags);

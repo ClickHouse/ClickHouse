@@ -12,8 +12,6 @@
 #include <cstdlib>
 #include <bit>
 
-#include <base/simd.h>
-
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -33,7 +31,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
-    extern const int CANNOT_PARSE_UUID;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
@@ -49,34 +46,48 @@ inline void parseHex(IteratorSrc src, IteratorDst dst)
         dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
 }
 
-UUID parseUUID(std::span<const UInt8> src)
+void parseUUID(const UInt8 * src36, UInt8 * dst16)
 {
-    UUID uuid;
-    const auto * src_ptr = src.data();
-    const auto size = src.size();
+    /// If string is not like UUID - implementation specific behaviour.
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
-#else
-    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
-#endif
-    if (size == 36)
-    {
-        parseHex<4>(src_ptr, dst + 8);
-        parseHex<2>(src_ptr + 9, dst + 12);
-        parseHex<2>(src_ptr + 14, dst + 14);
-        parseHex<2>(src_ptr + 19, dst);
-        parseHex<6>(src_ptr + 24, dst + 2);
-    }
-    else if (size == 32)
-    {
-        parseHex<8>(src_ptr, dst + 8);
-        parseHex<8>(src_ptr + 16, dst);
-    }
-    else
-        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
+    parseHex<4>(&src36[0], &dst16[0]);
+    parseHex<2>(&src36[9], &dst16[4]);
+    parseHex<2>(&src36[14], &dst16[6]);
+    parseHex<2>(&src36[19], &dst16[8]);
+    parseHex<6>(&src36[24], &dst16[10]);
+}
 
-    return uuid;
+void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex<16>(&src36[0], &dst16[0]);
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    /// FIXME This code looks like trash.
+    parseHex<4>(&src36[0], dst16 + 8);
+    parseHex<2>(&src36[9], dst16 + 12);
+    parseHex<2>(&src36[14], dst16 + 14);
+    parseHex<2>(&src36[19], dst16);
+    parseHex<6>(&src36[24], dst16 + 2);
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex<8>(&src36[0], dst16 + 8);
+    parseHex<8>(&src36[16], dst16);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -309,20 +320,13 @@ template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8
 template <typename Vector, typename ReturnType = void>
 static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
-    {
-        if constexpr (throw_exception)
-            throw Exception::createDeprecated(message, code);
-        return ReturnType(false);
-    };
-
     ++buf.position();
-
     if (buf.eof())
     {
-        return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+        if constexpr (std::is_same_v<ReturnType, void>)
+            throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
+        else
+            return ReturnType(false);
     }
 
     char char_after_backslash = *buf.position();
@@ -332,14 +336,7 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         ++buf.position();
         /// escape sequence of the form \xAA
         char hex_code[2];
-
-        auto bytes_read = buf.read(hex_code, sizeof(hex_code));
-
-        if (bytes_read != sizeof(hex_code))
-        {
-            return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
-        }
-
+        readPODBinary(hex_code, buf);
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -373,10 +370,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-bool parseComplexEscapeSequence(String & s, ReadBuffer & buf)
-{
-    return parseComplexEscapeSequence<String, bool>(s, buf);
-}
 
 template <typename Vector, typename ReturnType>
 static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
@@ -810,11 +803,14 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 auto rc = vdupq_n_u8('\r');
                 auto nc = vdupq_n_u8('\n');
                 auto dc = vdupq_n_u8(delimiter);
+                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
+                auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
+                { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
                 for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
                 {
                     uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(next_pos));
                     auto eq = vorrq_u8(vorrq_u8(vceqq_u8(bytes, rc), vceqq_u8(bytes, nc)), vceqq_u8(bytes, dc));
-                    uint64_t bit_mask = getNibbleMask(eq);
+                    uint64_t bit_mask = get_nibble_mask(eq);
                     if (bit_mask)
                     {
                         next_pos += std::countr_zero(bit_mask) >> 2;
@@ -835,18 +831,15 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             if constexpr (WithResize<Vector>)
             {
-                if (settings.trim_whitespaces) [[likely]]
-                {
-                    /** CSV format can contain insignificant spaces and tabs.
-                    * Usually the task of skipping them is for the calling code.
-                    * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
-                    */
-                    size_t size = s.size();
-                    while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
-                        --size;
+                /** CSV format can contain insignificant spaces and tabs.
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
+                size_t size = s.size();
+                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                    --size;
 
-                    s.resize(size);
-                }
+                s.resize(size);
             }
             return;
         }
@@ -989,8 +982,8 @@ template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
 
-template <typename Vector, typename ReturnType, char opening_bracket, char closing_bracket>
-ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1001,8 +994,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         return ReturnType(false);
     };
 
-    if (buf.eof() || *buf.position() != opening_bracket)
-        return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
+    if (buf.eof() || *buf.position() != '{')
+        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
 
     s.push_back(*buf.position());
     ++buf.position();
@@ -1012,7 +1005,7 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', opening_bracket, closing_bracket, '"'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -1035,37 +1028,22 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
         if (*buf.position() == '"')
             quotes = !quotes;
-        else if (!quotes) // can be only opening_bracket or closing_bracket
-            balance += *buf.position() == opening_bracket ? 1 : -1;
+        else if (!quotes) // can be only '{' or '}'
+            balance += *buf.position() == '{' ? 1 : -1;
 
         ++buf.position();
 
         if (balance == 0)
             return ReturnType(true);
 
-        if (balance < 0)
+        if (balance <    0)
             break;
     }
 
-    return error("JSON object/array should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
-}
-
-template <typename Vector, typename ReturnType>
-ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
-{
-    return readJSONObjectOrArrayPossiblyInvalid<Vector, ReturnType, '{', '}'>(s, buf);
+    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
 }
 
 template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
-template void readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-
-template <typename Vector>
-void readJSONArrayInto(Vector & s, ReadBuffer & buf)
-{
-    readJSONObjectOrArrayPossiblyInvalid<Vector, void, '[', ']'>(s, buf);
-}
-
-template void readJSONArrayInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
@@ -1357,7 +1335,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     String stack_trace;
     bool has_nested = false;    /// Obsolete
 
-    readBinaryLittleEndian(code, buf);
+    readBinary(code, buf);
     readBinary(name, buf);
     readBinary(message, buf);
     readBinary(stack_trace, buf);

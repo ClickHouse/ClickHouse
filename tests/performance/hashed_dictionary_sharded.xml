@@ -22,7 +22,7 @@
         CREATE TABLE simple_key_dictionary_source_table
         (
             id UInt64,
-            value_int UInt16
+            value_int UInt64
         ) ENGINE = Memory
     </create_query>
 

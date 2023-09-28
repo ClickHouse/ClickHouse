@@ -192,10 +192,7 @@ void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, cons
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextQuotedImpl(subcolumn, buf, settings, subcolumn_serialization);
-            else
-                subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
+            subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
         });
 
     if (whole && !istr.eof())
@@ -217,43 +214,6 @@ void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num,
             subcolumn_serialization->serializeTextJSON(subcolumn, pos, buf, settings);
         });
 }
-
-void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    const auto & column_map = assert_cast<const ColumnMap &>(column);
-
-    const auto & nested_array = column_map.getNestedColumn();
-    const auto & nested_tuple = column_map.getNestedData();
-    const auto & offsets = nested_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    if (offset == next_offset)
-    {
-        writeCString("{}", ostr);
-        return;
-    }
-
-    writeCString("{\n", ostr);
-    for (size_t i = offset; i < next_offset; ++i)
-    {
-        if (i != offset)
-            writeCString(",\n", ostr);
-
-        WriteBufferFromOwnString str_buf;
-        key->serializeText(nested_tuple.getColumn(0), i, str_buf, settings);
-
-        writeChar(' ', (indent + 1) * 4, ostr);
-        writeJSONString(str_buf.str(), ostr, settings);
-        writeCString(": ", ostr);
-        value->serializeTextJSONPretty(nested_tuple.getColumn(1), i, ostr, settings, indent + 1);
-    }
-    writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
-    writeChar('}', ostr);
-}
-
 
 void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

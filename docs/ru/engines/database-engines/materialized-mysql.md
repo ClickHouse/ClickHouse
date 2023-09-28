@@ -49,9 +49,9 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 - `default_authentication_plugin = mysql_native_password` — `MaterializedMySQL` может авторизоваться только с помощью этого метода.
 - `gtid_mode = on` — ведение журнала на основе GTID является обязательным для обеспечения правильной репликации.
 
-:::note Внимание
-При включении `gtid_mode` вы также должны указать `enforce_gtid_consistency = on`.
-:::
+    :::note "Внимание"
+    При включении `gtid_mode` вы также должны указать `enforce_gtid_consistency = on`.
+    :::
 ## Виртуальные столбцы {#virtual-columns}
 
 При работе с движком баз данных `MaterializedMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.

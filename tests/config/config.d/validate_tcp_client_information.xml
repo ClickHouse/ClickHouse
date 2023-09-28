@@ -1,3 +1,0 @@
-<clickhouse>
-    <validate_tcp_client_information>true</validate_tcp_client_information>
-</clickhouse>

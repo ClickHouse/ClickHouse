@@ -5,10 +5,8 @@
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <Common/LoggingFormatStringHelpers.h>
+#include <Common/logger_useful.h>
 
-
-namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -62,12 +60,13 @@ public:
 
 private:
     template <typename UpdateF, typename ElemsT>
+
     bool updateCacheImpl(
         UpdateF && update_func,
         ElemsT && elems,
         UInt32 max_consecutive_failures,
-        FormatStringHelper<String> notfound_log_msg,
-        FormatStringHelper<String> dropped_log_msg);
+        const String & notfound_log_msg,
+        const String & dropped_log_msg);
 
     DNSResolver();
 

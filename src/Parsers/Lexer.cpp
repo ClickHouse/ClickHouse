@@ -375,14 +375,9 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::NotEquals, token_begin, ++pos);
             return Token(TokenType::ErrorSingleExclamationMark, token_begin, pos);
         }
-        case '<':   /// <, <=, <>, <=>
+        case '<':   /// <, <=, <>
         {
             ++pos;
-            if (pos + 1 < end && *pos == '=' && *(pos + 1) == '>')
-            {
-                pos += 2;
-                return Token(TokenType::Spaceship, token_begin, pos);
-            }
             if (pos < end && *pos == '=')
                 return Token(TokenType::LessOrEquals, token_begin, ++pos);
             if (pos < end && *pos == '>')

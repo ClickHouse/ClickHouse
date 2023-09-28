@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
 
+#include <iostream>
 
 namespace DB
 {
