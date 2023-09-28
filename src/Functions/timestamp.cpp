@@ -130,7 +130,7 @@ public:
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
-                vec_result[i] += value;
+                vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
             }
@@ -150,7 +150,7 @@ public:
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
-                vec_result[i] += value;
+                vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
             }
