@@ -40,12 +40,13 @@ public:
         return std::make_shared<FunctionGetHttpHeader>(context_);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
 
     size_t getNumberOfArguments() const override
@@ -64,22 +65,31 @@ public:
     {
         const auto & client_info = getContext()->getClientInfo();
         const auto & method = client_info.http_method;
-
-        const auto & headers = DB::CurrentThread::getQueryContext()->getClientInfo().headers;
-
+        const auto & headers = client_info.headers;
         const IColumn * arg_column = arguments[0].column.get();
-        const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
+        const ColumnString * arg_string = checkAndGetColumn<ColumnString>(arg_column);
 
         if (!arg_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant String", getName());
 
         if (method != ClientInfo::HTTPMethod::GET && method != ClientInfo::HTTPMethod::POST)
-            return result_type->createColumnConst(input_rows_count, "");
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        if (!headers.has(arg_string->getDataAt(0).toString()))
-            return result_type->createColumnConst(input_rows_count, "");
+        auto result_column = ColumnString::create();
 
-        return result_type->createColumnConst(input_rows_count, headers[arg_string->getDataAt(0).toString()]);
+        const String default_value;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            auto header_name = arg_string->getDataAt(row).toString();
+
+            if (!headers.has(header_name))
+                result_column->insertData(default_value.data(), default_value.size());
+
+            const String & value = headers[header_name];
+            result_column->insertData(value.data(), value.size());
+        }
+
+        return result_column;
     }
 };
 
