@@ -27,7 +27,7 @@ class Macros
 public:
     Macros() = default;
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key, Poco::Logger * log = nullptr);
-    Macros(const String & key, const String & value);
+    explicit Macros(std::map<const String, const String> map);
 
     struct MacroExpansionInfo
     {
