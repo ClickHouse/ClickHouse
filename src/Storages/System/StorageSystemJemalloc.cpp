@@ -25,6 +25,15 @@ UInt64 getJeMallocValue(const char * name)
     UInt64 value{};
     size_t size = sizeof(value);
     mallctl(name, &value, &size, nullptr, 0);
+    /// mallctl() fills the value with 32 bit integer for some queries("arenas.nbins" for example).
+    /// In this case variable 'size' will be changed from 8 to 4 and the 64 bit variable 'value' will hold the 32 bit actual value times 2^32 on big-endian machines.
+    /// We should right shift the value by 32 on big-endian machines(which is unnecessary on little-endian machines).
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (size == 4)
+    {
+        value >>= 32;
+    }
+#endif
     return value;
 }
 

@@ -7,6 +7,7 @@ import json
 import subprocess
 import traceback
 import re
+from pathlib import Path
 from typing import Dict
 
 from github import Github
@@ -19,7 +20,7 @@ from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
-from clickhouse_helper import get_instance_type
+from clickhouse_helper import get_instance_type, get_instance_id
 from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/performance-comparison"
@@ -37,11 +38,13 @@ def get_run_command(
     image,
 ):
     instance_type = get_instance_type()
+    instance_id = get_instance_id()
 
     envs = [
         f"-e CHECK_START_TIME='{check_start_time}'",
         f"-e CHECK_NAME='{check_name}'",
         f"-e INSTANCE_TYPE='{instance_type}'",
+        f"-e INSTANCE_ID='{instance_id}'",
         f"-e PR_TO_TEST={pr_to_test}",
         f"-e SHA_TO_TEST={sha_to_test}",
     ]
@@ -218,15 +221,17 @@ if __name__ == "__main__":
     uploaded = {}  # type: Dict[str, str]
     for name, path in paths.items():
         try:
-            uploaded[name] = s3_helper.upload_test_report_to_s3(path, s3_prefix + name)
+            uploaded[name] = s3_helper.upload_test_report_to_s3(
+                Path(path), s3_prefix + name
+            )
         except Exception:
             uploaded[name] = ""
             traceback.print_exc()
 
     # Upload all images and flamegraphs to S3
     try:
-        s3_helper.upload_test_folder_to_s3(
-            os.path.join(result_path, "images"), s3_prefix + "images"
+        s3_helper.upload_test_directory_to_s3(
+            Path(result_path) / "images", s3_prefix + "images"
         )
     except Exception:
         traceback.print_exc()

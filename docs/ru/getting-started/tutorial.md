@@ -585,8 +585,9 @@ Let’s run [INSERT SELECT](../sql-reference/statements/insert-into.md) into the
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-:::danger "Notice"
-    This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utilities/clickhouse-copier.md) that can re-shard arbitrary large tables.
+:::danger Notice
+This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utilities/clickhouse-copier.md) that can re-shard arbitrary large tables.
+:::
 
 As you could expect, computationally heavy queries run N times faster if they utilize 3 servers instead of one.
 
@@ -620,9 +621,10 @@ Example config for a cluster of one shard containing three replicas:
 
 To enable native replication [ZooKeeper](http://zookeeper.apache.org/) is required. ClickHouse takes care of data consistency on all replicas and runs restore procedure after failure automatically. It’s recommended to deploy the ZooKeeper cluster on separate servers (where no other processes including ClickHouse are running).
 
-    :::note "Note"
-    ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to guarantee data consistency on all replicas. Thus it becomes the responsibility of your application.
-    :::
+:::note Note
+ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to guarantee data consistency on all replicas. Thus it becomes the responsibility of your application.
+:::
+
 ZooKeeper locations are specified in the configuration file:
 
 ``` xml

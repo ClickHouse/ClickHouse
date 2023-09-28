@@ -3,6 +3,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Priority.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <IO/ResourceRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -10,7 +12,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <chrono>
 #include <deque>
+#include <queue>
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -68,6 +73,13 @@ struct SchedulerNodeInfo
     {
         priority.value = value;
     }
+
+    // To check if configuration update required
+    bool equals(const SchedulerNodeInfo & o) const
+    {
+        // `parent` data is not compared intentionally (it is not part of configuration settings)
+        return weight == o.weight && priority == o.priority;
+    }
 };
 
 /*
@@ -78,8 +90,65 @@ class EventQueue
 {
 public:
     using Event = std::function<void()>;
+    using TimePoint = std::chrono::system_clock::time_point;
+    using Duration = std::chrono::system_clock::duration;
+    static constexpr UInt64 not_postponed = 0;
 
-    void enqueue(Event&& event)
+    struct Postponed
+    {
+        TimePoint key;
+        UInt64 id; // for canceling
+        std::unique_ptr<Event> event;
+
+        Postponed(TimePoint key_, UInt64 id_, Event && event_)
+            : key(key_)
+            , id(id_)
+            , event(std::make_unique<Event>(std::move(event_)))
+        {}
+
+        bool operator<(const Postponed & rhs) const
+        {
+            return std::tie(key, id) > std::tie(rhs.key, rhs.id); // reversed for min-heap
+        }
+    };
+
+    /// Add an `event` to be processed after `until` time point.
+    /// Returns a unique id for canceling.
+    [[nodiscard]] UInt64 postpone(TimePoint until, Event && event)
+    {
+        std::unique_lock lock{mutex};
+        if (postponed.empty() || until < postponed.front().key)
+            pending.notify_one();
+        auto id = ++last_id;
+        postponed.emplace_back(until, id, std::move(event));
+        std::push_heap(postponed.begin(), postponed.end());
+        return id;
+    }
+
+    /// Cancel a postponed event using its unique id.
+    /// NOTE: Only postponed events can be canceled.
+    /// NOTE: If you need to cancel enqueued event, consider doing your actions inside another enqueued
+    /// NOTE: event instead. This ensures that all previous events are processed.
+    bool cancelPostponed(UInt64 postponed_id)
+    {
+        if (postponed_id == not_postponed)
+            return false;
+        std::unique_lock lock{mutex};
+        for (auto i = postponed.begin(), e = postponed.end(); i != e; ++i)
+        {
+            if (i->id == postponed_id)
+            {
+                postponed.erase(i);
+                // It is O(n), but we do not expect either big heaps or frequent cancels. So it is fine.
+                std::make_heap(postponed.begin(), postponed.end());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Add an `event` for immediate processing
+    void enqueue(Event && event)
     {
         std::unique_lock lock{mutex};
         bool was_empty = queue.empty();
@@ -89,34 +158,128 @@ public:
     }
 
     /// Process single event if it exists
+    /// Note that postponing constraint are ignored, use it to empty the queue including postponed events on shutdown
+    /// Returns `true` iff event has been processed
+    bool forceProcess()
+    {
+        std::unique_lock lock{mutex};
+        if (!queue.empty())
+        {
+            processQueue(std::move(lock));
+            return true;
+        }
+        if (!postponed.empty())
+        {
+            processPostponed(std::move(lock));
+            return true;
+        }
+        return false;
+    }
+
+    /// Process single event if it exists and meets postponing constraint
     /// Returns `true` iff event has been processed
     bool tryProcess()
     {
         std::unique_lock lock{mutex};
-        if (queue.empty())
+        if (!queue.empty())
+        {
+            processQueue(std::move(lock));
+            return true;
+        }
+        if (postponed.empty())
             return false;
-        Event event = std::move(queue.front());
-        queue.pop_front();
-        lock.unlock(); // do not hold queue mutext while processing events
-        event();
-        return true;
+        else
+        {
+            if (postponed.front().key <= now())
+            {
+                processPostponed(std::move(lock));
+                return true;
+            }
+            return false;
+        }
     }
 
     /// Wait for single event (if not available) and process it
     void process()
     {
         std::unique_lock lock{mutex};
-        pending.wait(lock, [&] { return !queue.empty(); });
-        Event event = std::move(queue.front());
-        queue.pop_front();
-        lock.unlock(); // do not hold queue mutext while processing events
-        event();
+        while (true)
+        {
+            if (!queue.empty())
+                return processQueue(std::move(lock));
+            if (postponed.empty())
+                wait(lock);
+            else
+            {
+                if (postponed.front().key <= now())
+                    return processPostponed(std::move(lock));
+                waitUntil(lock, postponed.front().key);
+            }
+        }
+    }
+
+    TimePoint now()
+    {
+        if (auto result = manual_time.load(); likely(result == TimePoint()))
+            return std::chrono::system_clock::now();
+        else
+            return result;
+    }
+
+    /// For testing only
+    void setManualTime(TimePoint value)
+    {
+        std::unique_lock lock{mutex};
+        manual_time.store(value);
+        pending.notify_one();
+    }
+
+    /// For testing only
+    void advanceManualTime(Duration elapsed)
+    {
+        std::unique_lock lock{mutex};
+        manual_time.store(manual_time.load() + elapsed);
+        pending.notify_one();
     }
 
 private:
+    void wait(std::unique_lock<std::mutex> & lock)
+    {
+        pending.wait(lock);
+    }
+
+    void waitUntil(std::unique_lock<std::mutex> & lock, TimePoint t)
+    {
+        if (likely(manual_time.load() == TimePoint()))
+            pending.wait_until(lock, t);
+        else
+            pending.wait(lock);
+    }
+
+    void processQueue(std::unique_lock<std::mutex> && lock)
+    {
+        Event event = std::move(queue.front());
+        queue.pop_front();
+        lock.unlock(); // do not hold queue mutex while processing events
+        event();
+    }
+
+    void processPostponed(std::unique_lock<std::mutex> && lock)
+    {
+        Event event = std::move(*postponed.front().event);
+        std::pop_heap(postponed.begin(), postponed.end());
+        postponed.pop_back();
+        lock.unlock(); // do not hold queue mutex while processing events
+        event();
+    }
+
     std::mutex mutex;
     std::condition_variable pending;
     std::deque<Event> queue;
+    std::vector<Postponed> postponed;
+    UInt64 last_id = 0;
+
+    std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
 };
 
 /*
@@ -150,15 +313,18 @@ private:
 class ISchedulerNode : private boost::noncopyable
 {
 public:
-    ISchedulerNode(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    explicit ISchedulerNode(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : event_queue(event_queue_)
         , info(config, config_prefix)
     {}
 
-    virtual ~ISchedulerNode() {}
+    virtual ~ISchedulerNode() = default;
 
-    // Checks if two nodes configuration is equal
-    virtual bool equals(ISchedulerNode * other) = 0;
+    /// Checks if two nodes configuration is equal
+    virtual bool equals(ISchedulerNode * other)
+    {
+        return info.equals(other->info);
+    }
 
     /// Attach new child
     virtual void attachChild(const std::shared_ptr<ISchedulerNode> & child) = 0;
@@ -176,7 +342,10 @@ public:
     /// Returns true iff node is active
     virtual bool isActive() = 0;
 
-    /// Returns the first request to be executed as the first component of resuting pair.
+    /// Returns number of active children
+    virtual size_t activeChildren() = 0;
+
+    /// Returns the first request to be executed as the first component of resulting pair.
     /// The second pair component is `true` iff node is still active after dequeueing.
     virtual std::pair<ResourceRequest *, bool> dequeueRequest() = 0;
 
@@ -215,6 +384,11 @@ public:
     String basename;
     SchedulerNodeInfo info;
     ISchedulerNode * parent = nullptr;
+
+    /// Introspection
+    std::atomic<UInt64> dequeued_requests{0};
+    std::atomic<ResourceCost> dequeued_cost{0};
+    std::atomic<UInt64> busy_periods{0};
 };
 
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;

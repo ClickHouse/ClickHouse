@@ -886,6 +886,10 @@ public:
                 if (!ParserKeyword("FROM").ignore(test_pos, test_expected))
                     return true;
 
+                // If there is a comma after 'from' then the first one was a name of a column
+                if (test_pos->type == TokenType::Comma)
+                    return true;
+
                 /// If we parse a second FROM then the first one was a name of a column
                 if (ParserKeyword("FROM").ignore(test_pos, test_expected))
                     return true;
@@ -2405,12 +2409,14 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {":",             Operator("if",              3,  3, OperatorType::FinishIf)},
     {"OR",            Operator("or",              3,  2, OperatorType::Mergeable)},
     {"AND",           Operator("and",             4,  2, OperatorType::Mergeable)},
+    {"IS NOT DISTINCT FROM", Operator("isNotDistinctFrom", 6, 2)},
     {"IS NULL",       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {"IS NOT NULL",   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {"BETWEEN",       Operator("",                7,  0, OperatorType::StartBetween)},
     {"NOT BETWEEN",   Operator("",                7,  0, OperatorType::StartNotBetween)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
+    {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
     {"<>",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=",            Operator("lessOrEquals",    9,  2, OperatorType::Comparison)},
     {">=",            Operator("greaterOrEquals", 9,  2, OperatorType::Comparison)},

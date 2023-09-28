@@ -1,7 +1,6 @@
 #include "StorageSystemFilesystemCache.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -68,17 +67,13 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[i++]->insert(file_segment->getDownloadedSize());
             res_columns[i++]->insert(toString(file_segment->getKind()));
             res_columns[i++]->insert(file_segment->isUnbound());
-            try
-            {
-                if (fs::exists(path))
-                    res_columns[i++]->insert(fs::file_size(path));
-                else
-                    res_columns[i++]->insertDefault();
-            }
-            catch (...)
-            {
+
+            std::error_code ec;
+            auto size = fs::file_size(path, ec);
+            if (!ec)
+                res_columns[i++]->insert(size);
+            else
                 res_columns[i++]->insertDefault();
-            }
         }
     }
 }
