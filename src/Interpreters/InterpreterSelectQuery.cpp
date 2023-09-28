@@ -1726,7 +1726,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         const auto & join_clause = table_join.getOnlyClause();
 
                         auto join_kind = table_join.kind();
-                        bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
+                        auto join_strictness = table_join.strictness();
+
+                        bool join_type_allows_filtering = (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
+                                                       && (isInner(join_kind) || isLeft(join_kind) || isRight(join_kind));
 
                         auto has_non_const = [](const Block & block, const auto & keys)
                         {
@@ -1745,7 +1748,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
                             && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
 
-                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
+                        if (settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
                         {
                             auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
                             auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
