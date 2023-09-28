@@ -1,6 +1,6 @@
 const arguments byteHammingDistance
 0
-const arguments byteEditDistance
+const arguments editDistance
 6
 byteHammingDistance
 1
@@ -30,12 +30,12 @@ mismatches(alias)
 6
 3
 10
-byteEditDistance
+editDistance
 1
 1
 7
 6
-byteLevenshteinDistance
+levenshteinDistance
 1
 1
 7
