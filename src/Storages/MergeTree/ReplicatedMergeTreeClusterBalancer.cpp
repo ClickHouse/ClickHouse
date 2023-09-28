@@ -430,6 +430,7 @@ std::list<LogEntryPtr> ReplicatedMergeTreeClusterBalancer::clonePartition(const 
 
             /// Do not process unrelated partitions
             bool entry_contains_partition = false;
+            if (!parsed_entry->new_part_name.empty())
             {
                 auto part_info = MergeTreePartInfo::fromPartName(parsed_entry->new_part_name, format_version);
                 if (part_info.partition_id == partition)
