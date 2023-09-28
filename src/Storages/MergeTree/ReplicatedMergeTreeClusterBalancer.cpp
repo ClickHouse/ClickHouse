@@ -284,6 +284,9 @@ void ReplicatedMergeTreeClusterBalancer::migrateOrClonePartitionWithClone(const 
     /// and those entires need to be loaded to the in memory queue to wait them
     /// below
     storage.queue.load(zookeeper);
+    /// Only pullLogsToQueue() triggers background operations, so we need to do
+    /// this manually to process entries ASAP.
+    storage.background_operations_assignee.trigger();
 
     Stopwatch watch;
 
