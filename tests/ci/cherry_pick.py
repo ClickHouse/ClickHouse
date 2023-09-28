@@ -28,6 +28,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from subprocess import CalledProcessError
 from typing import List, Optional
 
@@ -554,8 +555,8 @@ def stash():
 
 
 def main():
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     args = parse_args()
     if args.debug_helpers:
@@ -566,7 +567,7 @@ def main():
     gh = GitHub(token, create_cache_dir=False)
     bp = Backport(gh, args.repo, args.dry_run)
     # https://github.com/python/mypy/issues/3004
-    bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
+    bp.gh.cache_path = temp_path / "gh_cache"
     bp.receive_release_prs()
     bp.update_local_release_branches()
     bp.receive_prs_for_backport()
