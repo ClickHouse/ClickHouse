@@ -2,6 +2,7 @@
 
 #include <base/UUID.h>
 #include <atomic>
+#include <span>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
@@ -374,6 +375,15 @@ public:
     /// download unique parts from our replica
     using ShutdownDeadline = std::chrono::time_point<std::chrono::system_clock>;
     void waitForUniquePartsToBeFetchedByOtherReplicas(ShutdownDeadline shutdown_deadline);
+
+    struct GetReplicasResult
+    {
+        Strings all_replicas;
+        std::span<String> replicas_same_region;
+        std::span<String> replicas_not_same_region;
+    };
+
+    GetReplicasResult getAllReplicasInPath(const String & zk_path);
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -764,8 +774,8 @@ private:
 
     /** Returns an empty string if no one has a part.
       */
-    String findReplicaHavingPart(LogEntry & entry, bool active = true, bool within_region = false);
-    String findReplicaHavingPart(const String & part_name, bool active = true, bool within_region = false);
+    String findReplicaHavingPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
+    String findReplicaHavingPart(const String & part_name, bool active = true);
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkIfDetachedPartExists(const String & part_name);
     bool checkIfDetachedPartitionExists(const String & partition_name);
@@ -775,8 +785,8 @@ private:
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(LogEntry & entry, bool active = true, bool within_region = false);
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, bool within_region, String & found_part_name);
+    String findReplicaHavingCoveringPart(const std::span<String> & replicas, LogEntry & entry, bool active = true);
+    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
@@ -969,12 +979,6 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper, const String & zookeeper_node, Coordination::Requests & requests,
         int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
         const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
-
-    static Strings getAllReplicasPossiblyWithRegionAwareness(
-        const ReplicatedMergeTreeGeoReplicationController & geo_replication_controller,
-        zkutil::ZooKeeperPtr zookeeper,
-        const String & zookeeper_path,
-        bool strictly_within_region);
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name) override;
 
