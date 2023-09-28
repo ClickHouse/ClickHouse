@@ -65,6 +65,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -1590,6 +1591,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
+                    auto add_shuffle = [&] (QueryPlan & plan)
+                    {
+                        plan.addStep(std::make_unique<ShuffleStep>(plan.getCurrentDataStream(), settings.shuffle_join_optimization_buckets, settings.shuffle_join_optimization_max_key));
+                    };
+
                     auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         SortDescription order_descr;
@@ -1656,7 +1662,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             if (isInnerOrRight(join_kind))
                                 left_set->setFiltering(right_set->getSet());
                         }
-
+                        if (settings.shuffle_join_optimization_buckets > 1)
+                        {
+                            add_shuffle(query_plan);
+                            add_shuffle(*joined_plan);
+                        }
                         add_sorting(query_plan, join_clause.key_names_left, JoinTableSide::Left);
                         add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
                     }
@@ -1667,7 +1677,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         expressions.join,
                         settings.max_block_size,
                         max_streams,
-                        analysis_result.optimize_read_in_order);
+                        analysis_result.optimize_read_in_order,
+                        settings.shuffle_join_optimization_buckets,
+                        settings.shuffle_join_optimization_max_key);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
                     std::vector<QueryPlanPtr> plans;

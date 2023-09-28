@@ -33,6 +33,7 @@ SortingStep::Settings::Settings(const Context & context)
     max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
+    shuffle_join_optimization_enabled = settings.shuffle_join_optimization_buckets > 1;
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -168,6 +169,13 @@ void SortingStep::finishSorting(
 
 void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
+    // Shuffle optimization does not require MergingSortedTransform.
+    if (sort_settings.shuffle_join_optimization_enabled)
+    {
+        mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
+        return;
+    }
+
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
@@ -261,6 +269,12 @@ void SortingStep::fullSort(
     QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
 {
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
+
+    // Shuffle optimization does not require MergingSortedTransform.
+    if (sort_settings.shuffle_join_optimization_enabled)
+    {
+        return;
+    }
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)

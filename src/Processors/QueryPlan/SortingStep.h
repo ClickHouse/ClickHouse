@@ -29,6 +29,7 @@ public:
         size_t min_free_disk_space = 0;
         UInt64 partial_result_limit = 0;
         UInt64 partial_result_duration_ms = 0;
+        bool shuffle_join_optimization_enabled = false;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);

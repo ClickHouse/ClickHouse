@@ -806,6 +806,8 @@ class IColumn;
     M(Timezone, session_timezone, "", "This setting can be removed in the future due to potential caveats. It is experimental and is not suitable for production usage. The default timezone for current session or query. The server default timezone if empty.", 0) \
     M(Bool, allow_create_index_without_type, false, "Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.", 0) \
     M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0) \
+    M(UInt64, shuffle_join_optimization_buckets, 0, "基于shuffle的join运算优化所规定的分桶数，如果是0或者1则代表不启用shuffle优化。", 0 ) \
+    M(UInt64, shuffle_join_optimization_max_key, 100000000, "基于shuffle的join运算优化所规定的连接关键字最大值，用于均分分桶范围。", 0 ) \
 
 // End of COMMON_SETTINGS
     // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
