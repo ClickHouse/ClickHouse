@@ -73,7 +73,6 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SYNTAX_ERROR;
     extern const int ACCESS_DENIED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
@@ -1283,12 +1282,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             {
                 if (!join_clause.hasASOF())
                     throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                        "JOIN {} no inequality in ASOF JOIN ON section.",
-                        join_node.formatASTForErrorMessage());
-
-                if (table_join_clause.key_names_left.size() <= 1)
-                    throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "JOIN {} ASOF join needs at least one equi-join column",
+                        "JOIN {} no inequality in ASOF JOIN ON section",
                         join_node.formatASTForErrorMessage());
             }
 

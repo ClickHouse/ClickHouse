@@ -167,7 +167,7 @@ public:
     void set(const FullMergeJoinCursor & rcursor, size_t rpos);
     void reset();
 
-    bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality)
+    bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
     {
         if (value.empty())
             return false;

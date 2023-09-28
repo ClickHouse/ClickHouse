@@ -3,6 +3,8 @@
 #include <pcg_random.hpp>
 #include <random>
 #include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
+#include <Poco/AutoPtr.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/getRandomASCIIString.h>
@@ -29,31 +31,6 @@ using namespace DB;
 
 namespace
 {
-
-[[ maybe_unused ]]
-String dumpBlockSource(std::shared_ptr<ISource> source, bool mono_block = false)
-{
-    WriteBufferFromOwnString buf;
-    {
-        Block header = source->getPort().getHeader();
-        QueryPipeline pipeline(source);
-        auto format = std::make_shared<PrettyCompactBlockOutputFormat>(buf, header, FormatSettings{}, mono_block);
-        pipeline.complete(std::move(format));
-
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
-    }
-    return buf.str();
-}
-
-[[ maybe_unused ]]
-String dumpBlock(const Block & block)
-{
-    Block header = block.cloneEmpty();
-    Chunk data(block.getColumns(), block.rows());
-    auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(data));
-    return dumpBlockSource(std::move(source));
-}
 
 QueryPipeline buildJoinPipeline(
     std::shared_ptr<ISource> left_source,
