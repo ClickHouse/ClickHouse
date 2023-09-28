@@ -30,10 +30,9 @@ NamesAndTypesList S3QueueLogElement::getNamesAndTypes()
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"exception", std::make_shared<DataTypeString>()},
     };
 }
-
-/// TODO add last_exception column
 
 void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
 {
@@ -55,6 +54,8 @@ void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
 
     ProfileEvents::dumpToMapColumn(counters_snapshot, columns[i++].get(), true);
+
+    columns[i++]->insert(exception);
 }
 
 }
