@@ -3,8 +3,8 @@
 <!-- Using named collections 22.4+ -->
 <clickhouse>
     <url_scheme_mappers>
-        <nc_s3>
-            <domain>http://minio1:9001/root</domain>
-        </nc_s3>
+        <minio>
+            <to>http://minio1:9001/root/{bucket}</to>
+        </minio>
     </url_scheme_mappers>
 </clickhouse>
