@@ -7,6 +7,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Exception.h>
 
 #include <boost/multi_index/member.hpp>
@@ -82,7 +83,7 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;
-    std::pair<size_t, size_t> compress_block_sizes;
+    SettingsChanges settings;
     ASTPtr ttl;
 
     ColumnDescription() = default;

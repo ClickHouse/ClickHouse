@@ -10,6 +10,8 @@
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -436,12 +438,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (column.compress_block_sizes.first || column.compress_block_sizes.second)
+        if (!column.settings.empty())
         {
-            Tuple value;
-            value.push_back(column.compress_block_sizes.first);
-            value.push_back(column.compress_block_sizes.second);
-            column_declaration->compress_block_sizes = std::make_shared<ASTLiteral>(Field(value));
+            auto per_column_settings = std::make_shared<ASTSetQuery>();
+            per_column_settings->is_standalone = false;
+            per_column_settings->changes = column.settings;
+            column_declaration->per_column_settings = std::move(per_column_settings);
         }
 
         if (column.ttl)
@@ -646,19 +648,16 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
         }
 
-        if (col_decl.compress_block_sizes)
-        {
-            auto sizes = col_decl.compress_block_sizes->as<ASTLiteral &>().value.safeGet<Tuple>();
-            if (sizes.size() != 2 || sizes[0].getType() != Field::Types::UInt64 || sizes[0].getType() != Field::Types::UInt64)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Column {}: COMPRESSION BLOCK must be tuple of two unsigned integer", column.name);
-            column.compress_block_sizes.first = sizes[0].safeGet<UInt64>();
-            column.compress_block_sizes.second = sizes[1].safeGet<UInt64>();
-            if (column.compress_block_sizes.first > column.compress_block_sizes.second)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Column {}: min compress block size must smaller than max compress block size", column.name);
-        }
-
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
+
+        if (col_decl.per_column_settings)
+        {
+            column.settings = col_decl.per_column_settings->as<ASTSetQuery &>().changes;
+            /// Sanity check here, assume mergetree
+            MergeTreeSettings dummy;
+            dummy.applyChanges(column.settings);
+        }
 
         res.add(std::move(column));
     }

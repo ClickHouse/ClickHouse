@@ -145,7 +145,10 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
 
-        auto max_compress_block_size = column_desc ? column_desc->compress_block_sizes.second : 0;
+        UInt64 max_compress_block_size = 0;
+        if (column_desc)
+            if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
+                max_compress_block_size = value->safeGet<UInt64>();
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
 
@@ -329,7 +332,10 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
 {
     StreamsWithMarks result;
     const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-    auto min_compress_block_size = column_desc ? column_desc->compress_block_sizes.first : 0;
+    UInt64 min_compress_block_size = 0;
+    if (column_desc)
+        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+            min_compress_block_size = value->safeGet<UInt64>();
     if (!min_compress_block_size)
         min_compress_block_size = settings.min_compress_block_size;
     data_part->getSerialization(column.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)

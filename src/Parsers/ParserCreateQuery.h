@@ -10,6 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/ParserDataType.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -136,14 +137,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
     ParserKeyword s_primary_key{"PRIMARY KEY"};
-    ParserKeyword s_compress_block{"COMPRESS BLOCK"};
+    ParserKeyword s_settings("SETTINGS");
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
-    ParserTupleOfLiterals compress_block_parser;
     ParserCollation collation_parser;
     ParserExpression expression_parser;
+    ParserSetQuery settings_parser(true);
 
     /// mandatory column name
     ASTPtr name;
@@ -178,7 +179,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
-    ASTPtr compress_block_sizes;
+    ASTPtr per_column_settings;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     bool primary_key_specifier = false;
@@ -304,12 +305,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    if (s_compress_block.ignore(pos, expected))
-    {
-        if (!compress_block_parser.parse(pos, compress_block_sizes, expected))
-            return false;
-    }
-
     if (s_ttl.ignore(pos, expected))
     {
         if (!expression_parser.parse(pos, ttl_expression, expected))
@@ -319,6 +314,26 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (s_primary_key.ignore(pos, expected))
     {
         primary_key_specifier = true;
+    }
+
+    auto old_pos = pos;
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+        if (parser_opening_bracket.ignore(pos, expected))
+        {
+            if (!settings_parser.parse(pos, per_column_settings, expected))
+                return false;
+            ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+            if (!parser_closing_bracket.ignore(pos, expected))
+                return false;
+        }
+        else
+        {
+            /// This could be settings in alter query
+            /// E.g: ALTER TABLE alter_enum_array MODIFY COLUMN x String SETTINGS mutations_sync=2;
+            pos = old_pos;
+        }
     }
 
     node = column_declaration;
@@ -351,10 +366,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(codec_expression));
     }
 
-    if (compress_block_sizes)
+    if (per_column_settings)
     {
-        column_declaration->compress_block_sizes = compress_block_sizes;
-        column_declaration->children.push_back(std::move(compress_block_sizes));
+        column_declaration->per_column_settings = per_column_settings;
+        column_declaration->children.push_back(std::move(per_column_settings));
     }
 
     if (ttl_expression)

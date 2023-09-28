@@ -20,8 +20,8 @@ public:
     ASTPtr comment;
     ASTPtr codec;
     ASTPtr ttl;
-    ASTPtr compress_block_sizes;
     ASTPtr collation;
+    ASTPtr per_column_settings;
     bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }

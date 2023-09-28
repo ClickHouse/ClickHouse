@@ -24,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/ASTSetQuery.h"
 #include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -62,7 +63,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && default_desc == other.default_desc
         && comment == other.comment
         && ast_to_str(codec) == ast_to_str(other.codec)
-        && compress_block_sizes == other.compress_block_sizes
+        && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
@@ -95,14 +96,15 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         writeEscapedString(queryToString(codec), buf);
     }
 
-    if (compress_block_sizes.first || compress_block_sizes.second)
+    if (!settings.empty())
     {
         writeChar('\t', buf);
-        DB::writeText("COMPRESSION BLOCK ", buf);
-        Tuple value;
-        value.push_back(compress_block_sizes.first);
-        value.push_back(compress_block_sizes.second);
-        writeEscapedString(queryToString(ASTLiteral(Field(value))), buf);
+        DB::writeText("SETTINGS ", buf);
+        DB::writeText("(", buf);
+        ASTSetQuery ast;
+        ast.changes = settings;
+        writeEscapedString(queryToString(ast), buf);
+        DB::writeText(")", buf);
     }
 
     if (ttl)
@@ -149,12 +151,9 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
-            if (col_ast->compress_block_sizes)
-            {
-                auto sizes = col_ast->compress_block_sizes->as<ASTLiteral &>().value.safeGet<Tuple>();
-                compress_block_sizes.first = sizes[0].safeGet<UInt64>();
-                compress_block_sizes.second = sizes[1].safeGet<UInt64>();
-            }
+
+            if (col_ast->per_column_settings)
+                settings = col_ast->per_column_settings->as<ASTSetQuery &>().changes;
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
