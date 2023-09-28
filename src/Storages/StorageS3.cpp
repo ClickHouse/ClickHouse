@@ -570,7 +570,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     do
     {
         key_with_info = (*file_iterator)();
-        if (!key_with_info)
+        if (!key_with_info || key_with_info->key.empty())
             return {};
 
         if (!key_with_info->info)
@@ -1494,7 +1494,7 @@ namespace
             {
                 current_key_with_info = (*file_iterator)();
 
-                if (!current_key_with_info)
+                if (!current_key_with_info || current_key_with_info->key.empty())
                 {
                     if (first)
                         throw Exception(
@@ -1505,8 +1505,6 @@ namespace
 
                     return nullptr;
                 }
-
-                chassert(!current_key_with_info->key.empty());
 
                 /// S3 file iterator could get new keys after new iteration, check them in schema cache.
                 if (getContext()->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
