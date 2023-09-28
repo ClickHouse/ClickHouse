@@ -3918,7 +3918,11 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(
-        self, stop_start_wait_sec=300, callback_onstop=None, signal=15, clear_data_dir=False
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
     ):
         begin_time = time.time()
         if not self.stay_alive:
