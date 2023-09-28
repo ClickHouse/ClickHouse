@@ -1,9 +1,9 @@
 select 'const arguments byteHammingDistance';
 select byteHammingDistance('abcd', 'abcd');
-select 'const arguments byteEditDistance';
-select byteEditDistance('clickhouse', 'mouse');
-select 'const arguments byteJaccardIndex';
-select byteJaccardIndex('clickhouse', 'mouse');
+select 'const arguments editDistance';
+select editDistance('clickhouse', 'mouse');
+/*select 'const arguments jaccardIndex';
+select jaccardIndex('clickhouse', 'mouse');*/
 
 drop table if exists t;
 create table t
@@ -25,13 +25,13 @@ select mismatches(s1, s2) from t;
 select mismatches('abc', s2) from t;
 select mismatches(s2, 'def') from t;
 
-select 'byteJaccardIndex';
-select byteJaccardIndex(s1, s2) from t;
-select 'byteEditDistance';
-select byteEditDistance(s1, s2) from t;
-select 'byteLevenshteinDistance';
-select byteLevenshteinDistance(s1, s2) from t;
+/*select 'byteJaccardIndex';
+select byteJaccardIndex(s1, s2) from t;*/
+select 'editDistance';
+select editDistance(s1, s2) from t;
+select 'levenshteinDistance';
+select levenshteinDistance(s1, s2) from t;
 
-SELECT byteEditDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
+SELECT editDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
 drop table t;
