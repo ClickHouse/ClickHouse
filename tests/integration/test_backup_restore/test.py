@@ -171,39 +171,3 @@ def test_replace_partition(started_cluster):
     assert TSV(res) == expected
 
     instance.query("DROP TABLE IF EXISTS test.tbl3")
-
-
-def test_freeze_in_memory(started_cluster):
-    instance.query(
-        "CREATE TABLE test.t_in_memory(a UInt32, s String) ENGINE = MergeTree ORDER BY a SETTINGS min_rows_for_compact_part = 1000"
-    )
-    instance.query("INSERT INTO test.t_in_memory VALUES (1, 'a')")
-    instance.query("ALTER TABLE test.t_in_memory FREEZE")
-
-    fp_backup = get_last_backup_path(
-        started_cluster.instances["node"], "test", "t_in_memory"
-    )
-    part_path = fp_backup + "/all_1_1_0/"
-
-    assert TSV(
-        instance.query(
-            "SELECT part_type, is_frozen FROM system.parts WHERE database = 'test' AND table = 't_in_memory'"
-        )
-    ) == TSV("InMemory\t1\n")
-    instance.exec_in_container(["test", "-f", part_path + "/data.bin"])
-    assert instance.exec_in_container(["cat", part_path + "/count.txt"]).strip() == "1"
-
-    instance.query(
-        "CREATE TABLE test.t_in_memory_2(a UInt32, s String) ENGINE = MergeTree ORDER BY a"
-    )
-    copy_backup_to_detached(
-        started_cluster.instances["node"], "test", "t_in_memory", "t_in_memory_2"
-    )
-
-    instance.query("ALTER TABLE test.t_in_memory_2 ATTACH PARTITION ID 'all'")
-    assert TSV(
-        instance.query(
-            "SELECT part_type FROM system.parts WHERE database = 'test' AND table = 't_in_memory_2'"
-        )
-    ) == TSV("Compact\n")
-    assert TSV(instance.query("SELECT a, s FROM test.t_in_memory_2")) == TSV("1\ta\n")

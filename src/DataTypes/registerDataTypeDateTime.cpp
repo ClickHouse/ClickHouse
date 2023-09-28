@@ -22,11 +22,11 @@ enum class ArgumentKind
     Mandatory
 };
 
-String getExceptionMessage(
+PreformattedMessage getExceptionMessage(
     const String & message, size_t argument_index, const char * argument_name,
     const std::string & context_data_type_name, Field::Types::Which field_type)
 {
-    return fmt::format("Parameter #{} '{}' for {}{}, expected {} literal",
+    return PreformattedMessage::create("Parameter #{} '{}' for {}{}, expected {} literal",
         argument_index, argument_name, context_data_type_name, message, field_type);
 }
 
@@ -47,10 +47,10 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
         else
         {
             if (argument && argument->value.getType() != field_type)
-                throw Exception::createDeprecated(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
+                throw Exception(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
                     argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
-                throw Exception::createDeprecated(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
+                throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
     }
@@ -67,7 +67,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, scale ? 1 : 0, "timezone", "DateTime");
 
     if (!scale && !timezone)
-        throw Exception::createDeprecated(getExceptionMessage(" has wrong type: ", 0, "scale", "DateTime", Field::Types::Which::UInt64),
+        throw Exception(getExceptionMessage(" has wrong type: ", 0, "scale", "DateTime", Field::Types::Which::UInt64),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     /// If scale is defined, the data type is DateTime when scale = 0 otherwise the data type is DateTime64

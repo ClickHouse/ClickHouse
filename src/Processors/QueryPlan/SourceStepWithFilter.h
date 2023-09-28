@@ -37,6 +37,9 @@ public:
         filter_dags.push_back(std::move(filter_dag));
     }
 
+    /// Apply filters that can optimize reading from storage.
+    virtual void applyFilters() {}
+
 protected:
     std::vector<ActionsDAGPtr> filter_dags;
     ActionDAGNodes filter_nodes;

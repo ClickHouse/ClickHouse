@@ -4,7 +4,8 @@
 #if USE_CAPNP
 
 #include <Core/Block.h>
-#include <Formats/CapnProtoUtils.h>
+#include <Formats/CapnProtoSchema.h>
+#include <Formats/CapnProtoSerializer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 
@@ -23,20 +24,23 @@ class ReadBuffer;
 class CapnProtoRowInputFormat final : public IRowInputFormat
 {
 public:
-    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const CapnProtoSchemaInfo & info, const FormatSettings & format_settings);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
+
+    std::pair<kj::Array<capnp::word>, size_t> readMessagePrefix();
     kj::Array<capnp::word> readMessage();
+    void skipMessage();
 
     std::shared_ptr<CapnProtoSchemaParser> parser;
-    capnp::StructSchema root;
-    const FormatSettings format_settings;
-    DataTypes column_types;
-    Names column_names;
+    capnp::StructSchema schema;
+    std::unique_ptr<CapnProtoSerializer> serializer;
 };
 
 class CapnProtoSchemaReader : public IExternalSchemaReader

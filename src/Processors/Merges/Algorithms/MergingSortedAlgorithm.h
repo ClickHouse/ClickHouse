@@ -17,7 +17,8 @@ public:
         Block header_,
         size_t num_inputs,
         const SortDescription & description_,
-        size_t max_block_size,
+        size_t max_block_size_,
+        size_t max_block_size_bytes_,
         SortingQueueStrategy sorting_queue_strategy_,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
@@ -25,6 +26,7 @@ public:
 
     void addInput();
 
+    const char * getName() const override { return "MergingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;

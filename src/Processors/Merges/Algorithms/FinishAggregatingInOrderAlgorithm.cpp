@@ -30,9 +30,9 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
     const SortDescription & description_,
-    size_t max_block_size_,
-    size_t max_block_bytes_)
-    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size(max_block_size_), max_block_bytes(max_block_bytes_)
+    size_t max_block_size_rows_,
+    size_t max_block_size_bytes_)
+    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size_rows(max_block_size_rows_), max_block_size_bytes(max_block_size_bytes_)
 {
     for (const auto & column_description : description_)
         description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
@@ -118,7 +118,7 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
     inputs_to_update.pop_back();
 
     /// Do not merge blocks, if there are too few rows or bytes.
-    if (accumulated_rows >= max_block_size || accumulated_bytes >= max_block_bytes)
+    if (accumulated_rows >= max_block_size_rows || accumulated_bytes >= max_block_size_bytes)
         status.chunk = prepareToMerge();
 
     return status;
@@ -167,7 +167,6 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         /// We assume that sizes in bytes of rows are almost the same.
         accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
         accumulated_rows += current_rows;
-
 
         if (!states[i].isValid())
             inputs_to_update.push_back(i);

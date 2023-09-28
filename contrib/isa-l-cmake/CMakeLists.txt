@@ -1,3 +1,15 @@
+option(ENABLE_ISAL_LIBRARY "Enable ISA-L library" ${ENABLE_LIBRARIES})
+
+# ISA-L is only available for x86-64, so it shall be disabled for other platforms
+if (NOT ARCH_AMD64)
+    set (ENABLE_ISAL_LIBRARY OFF)
+endif ()
+
+if (NOT ENABLE_ISAL_LIBRARY)
+    message(STATUS "Not using isa-l")
+    return()
+endif()
+
 set(ISAL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/isa-l")
 
 # The YASM and NASM assembers are somewhat mutually compatible. ISAL specifically needs NASM. If only YASM is installed, then check_language(ASM_NASM)

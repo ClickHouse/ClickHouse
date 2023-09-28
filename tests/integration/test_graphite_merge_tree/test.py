@@ -509,6 +509,6 @@ CREATE TABLE test.graphite_not_created
         )
 
     # The order of retentions is not guaranteed
-    assert "age and precision should only grow up: " in str(exc.value)
+    assert "Age and precision should only grow up: " in str(exc.value)
     assert "36000:600" in str(exc.value)
     assert "72000:300" in str(exc.value)

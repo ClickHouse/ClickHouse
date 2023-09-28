@@ -7,7 +7,9 @@ CREATE TEMPORARY TABLE table_merge_tree_02525
 ENGINE = MergeTree
 ORDER BY id
 PRIMARY KEY id;
-INSERT INTO table_merge_tree_02525 VALUES (1, 'a'), (2, 'b'), (3, 'c');
+INSERT INTO table_merge_tree_02525 VALUES (1, 'a'), (2, 'b');
+INSERT INTO table_merge_tree_02525 VALUES (3, 'c');
+OPTIMIZE TABLE table_merge_tree_02525 FINAL;
 SELECT * FROM table_merge_tree_02525;
 -- Check that temporary table with MergeTree is not sent to remote servers
 -- The query with remote() should not fail

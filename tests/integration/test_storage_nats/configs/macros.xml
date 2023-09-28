@@ -1,7 +1,0 @@
-<clickhouse>
-  <macros>
-    <nats_url>nats1:4444</nats_url>
-    <nats_subjects>macro</nats_subjects>
-    <nats_format>JSONEachRow</nats_format>
-  </macros>
-</clickhouse>

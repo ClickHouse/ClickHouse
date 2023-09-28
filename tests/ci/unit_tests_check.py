@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import atexit
+from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
@@ -12,16 +13,19 @@ from github import Github
 from build_download_helper import download_unit_tests
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import post_commit_status, update_mergeable_check
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -40,8 +44,8 @@ def get_test_name(line):
 
 
 def process_results(
-    result_folder: str,
-) -> Tuple[str, str, TestResults, List[str]]:
+    result_folder: Path,
+) -> Tuple[str, str, TestResults, List[Path]]:
     OK_SIGN = "OK ]"
     FAILED_SIGN = "FAILED  ]"
     SEGFAULT = "Segmentation fault"
@@ -51,8 +55,8 @@ def process_results(
     test_results = []  # type: TestResults
     total_counter = 0
     failed_counter = 0
-    result_log_path = f"{result_folder}/test_result.txt"
-    if not os.path.exists(result_log_path):
+    result_log_path = result_folder / "test_result.txt"
+    if not result_log_path.exists():
         logging.info("No output log on path %s", result_log_path)
         return "error", "No output log", test_results, []
 
@@ -110,16 +114,17 @@ def main():
 
     check_name = sys.argv[1]
 
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
 
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -128,16 +133,18 @@ def main():
 
     download_unit_tests(check_name, REPORTS_PATH, TEMP_PATH)
 
-    tests_binary_path = os.path.join(TEMP_PATH, "unit_tests_dbms")
-    os.chmod(tests_binary_path, 0o777)
+    tests_binary = temp_path / "unit_tests_dbms"
+    os.chmod(tests_binary, 0o777)
 
-    test_output = os.path.join(TEMP_PATH, "test_output")
-    if not os.path.exists(test_output):
-        os.makedirs(test_output)
+    test_output = temp_path / "test_output"
+    test_output.mkdir(parents=True, exist_ok=True)
 
-    run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
+    run_command = (
+        f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
+        f"--volume={test_output}:/test_output {docker_image}"
+    )
 
-    run_log_path = os.path.join(test_output, "run.log")
+    run_log_path = test_output / "run.log"
 
     logging.info("Going to run func tests: %s", run_command)
 
@@ -154,7 +161,6 @@ def main():
     state, description, test_results, additional_logs = process_results(test_output)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
@@ -165,7 +171,7 @@ def main():
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

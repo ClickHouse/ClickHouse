@@ -98,7 +98,7 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<1, ColumnsDescription>
+class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
@@ -132,7 +132,6 @@ public:
     NamesAndTypesList getInsertable() const; /// ordinary + ephemeral
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getEphemeral() const;
-    NamesAndTypesList getWithDefaultExpression() const; // columns with default expression, for example set by `CREATE TABLE` statement
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
     /// Returns .size0/.null/...
@@ -161,9 +160,8 @@ public:
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
         {
-            String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
-            appendHintsMessage(exception_message, column_name);
-            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
+                            column_name, getHintsMessage(column_name));
         }
 
         removeSubcolumns(it->name);
@@ -177,8 +175,11 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
+    bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
+
+    bool hasOnlyOrdinary() const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;

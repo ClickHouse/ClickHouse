@@ -10,6 +10,7 @@
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -51,14 +52,11 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
         structure = checkAndGetLiteralArgument<String>(args[1], "structure");
 }
 
-ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            return std::make_unique<ReadBufferFromString>(data);
-        };
+        SingleReadBufferIterator read_buffer_iterator(std::make_unique<ReadBufferFromString>(data));
         return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
     }
     return parseColumnsListFromString(structure, context);
@@ -72,7 +70,17 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
 
     auto read_buf = std::make_unique<ReadBufferFromString>(data);
     auto input_format = context->getInputFormat(format, *read_buf, block, context->getSettingsRef().max_block_size);
-    auto pipeline = std::make_unique<QueryPipeline>(input_format);
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(input_format));
+    if (columns.hasDefaults())
+    {
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AddingDefaultsTransform>(header, columns, *input_format, context);
+        });
+    }
+
+    auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     std::vector<Block> blocks;
@@ -87,18 +95,18 @@ Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr cont
     return concatenateBlocks(blocks);
 }
 
-StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionFormat::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
     Block res_block = parseData(columns, context);
     auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }
 
-static const Documentation format_table_function_documentation =
+static const FunctionDocumentation format_table_function_documentation =
 {
-    R"(
+    .description=R"(
 Extracts table structure from data and parses it according to specified input format.
 Syntax: `format(format_name, data)`.
 Parameters:
@@ -106,7 +114,7 @@ Parameters:
     - `data ` - String literal or constant expression that returns a string containing data in specified format.
 Returned value: A table with data parsed from `data` argument according specified format and extracted schema.
 )",
-    Documentation::Examples
+    .examples
     {
         {
             "First example",
@@ -131,7 +139,7 @@ Result:
 │ 124 │ World │
 └─────┴───────┘
 ```
-)"
+)", ""
         },
         {
             "Second example",
@@ -154,10 +162,10 @@ Result:
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-)"
+)", ""
         },
     },
-    Documentation::Categories{"format", "table-functions"}
+    .categories{"format", "table-functions"}
 };
 
 void registerTableFunctionFormat(TableFunctionFactory & factory)

@@ -48,7 +48,7 @@ Setting `readonly = 1` prohibits the user from changing settings. There is a way
 :::
 
 
-## allow_ddl {#settings_allow_ddl}
+## allow_ddl {#allow_ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 

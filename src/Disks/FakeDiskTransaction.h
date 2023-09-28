@@ -54,9 +54,9 @@ public:
         disk.replaceFile(from_path, to_path);
     }
 
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings) override
     {
-        disk.copyFile(from_file_path, disk, to_file_path);
+        disk.copyFile(from_file_path, disk, to_file_path, read_settings, write_settings);
     }
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -69,13 +69,9 @@ public:
         return disk.writeFile(path, buf_size, mode, settings);
     }
 
-    void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function) override
+    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
-        disk.writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
+        disk.writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
     }
 
     void removeFile(const std::string & path) override

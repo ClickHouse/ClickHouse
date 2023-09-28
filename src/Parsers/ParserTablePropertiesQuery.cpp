@@ -14,8 +14,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 {
     ParserKeyword s_exists("EXISTS");
     ParserKeyword s_temporary("TEMPORARY");
-    ParserKeyword s_describe("DESCRIBE");
-    ParserKeyword s_desc("DESC");
     ParserKeyword s_show("SHOW");
     ParserKeyword s_create("CREATE");
     ParserKeyword s_database("DATABASE");

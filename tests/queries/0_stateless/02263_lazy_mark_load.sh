@@ -24,7 +24,7 @@ CREATE TABLE lazy_mark_test
   n9 UInt64
 )
 ENGINE = MergeTree
-ORDER BY n0 SETTINGS min_bytes_for_wide_part = 0;
+ORDER BY n0 SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
 EOF
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES lazy_mark_test"

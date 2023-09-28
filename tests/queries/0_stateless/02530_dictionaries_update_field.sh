@@ -5,7 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+# NOTE: dictionaries will be updated according to server TZ, not session, so prohibit it's randomization
+$CLICKHOUSE_CLIENT --session_timezone '' -q "
     CREATE TABLE table_for_update_field_dictionary
     (
         key UInt64,
@@ -53,13 +54,13 @@ for layout in "${layouts[@]}"; do
             SELECT key, value FROM $dictionary_name ORDER BY key ASC;
 
             INSERT INTO table_for_update_field_dictionary VALUES (2, 'Second', now());
-            SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+            SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 
             SELECT key, value FROM $dictionary_name ORDER BY key ASC;
 
             INSERT INTO table_for_update_field_dictionary VALUES (2, 'SecondUpdated', now());
             INSERT INTO table_for_update_field_dictionary VALUES (3, 'Third', now());
-            SELECT sleepEachRow(1) FROM numbers(10) FORMAT Null;
+            SELECT sleepEachRow(1) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 10000000 FORMAT Null;
 
             SELECT key, value FROM $dictionary_name ORDER BY key ASC;
             -- { echoOff }

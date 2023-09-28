@@ -83,8 +83,8 @@ CREATE TEMPORARY TABLE tmp (n int);
 SHOW CREATE TEMPORARY TABLE tmp;
 CREATE TEMPORARY TABLE tmp1 (n int) ENGINE=Memory;
 CREATE TEMPORARY TABLE tmp2 (n int) ENGINE=Log;
-CREATE TEMPORARY TABLE tmp2 (n int) ORDER BY n; -- {serverError 80}
-CREATE TEMPORARY TABLE tmp2 (n int, PRIMARY KEY (n)); -- {serverError 80}
+CREATE TEMPORARY TABLE tmp2 (n int) ORDER BY n; -- {serverError 36}
+CREATE TEMPORARY TABLE tmp2 (n int, PRIMARY KEY (n)); -- {serverError 36}
 
 CREATE TABLE log (n int);
 SHOW CREATE log;
@@ -128,3 +128,7 @@ SHOW CREATE TABLE kek;
 SHOW CREATE TABLE lol;
 DROP TABLE kek;
 DROP TABLE lol;
+
+SET default_temporary_table_engine = 'Log';
+CREATE TEMPORARY TABLE tmp_log (n int);
+SHOW CREATE TEMPORARY TABLE tmp_log;

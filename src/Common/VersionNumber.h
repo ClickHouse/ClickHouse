@@ -2,8 +2,8 @@
 
 #include <string>
 #include <vector>
-#include <iostream>
 #include <base/types.h>
+
 
 namespace DB
 {
@@ -26,11 +26,6 @@ struct VersionNumber
     auto operator<=>(const VersionNumber & rhs) const { return compare(rhs); }
 
     std::string toString() const;
-
-    friend std::ostream & operator<<(std::ostream & os, const VersionNumber & v)
-    {
-        return os << v.toString();
-    }
 
 private:
     using Components = std::vector<Int64>;

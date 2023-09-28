@@ -21,6 +21,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -121,6 +122,7 @@ public:
         String compression_method_,
         Block sample_block_,
         ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         const StorageHive & storage_,
         const Names & text_input_field_names_ = {})
@@ -137,6 +139,7 @@ public:
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
         , read_settings(getContext()->getReadSettings())
+        , query_info(query_info_)
     {
         to_read_block = sample_block;
 
@@ -232,7 +235,7 @@ public:
                         if (thread_pool_read)
                         {
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
-                                IObjectStorage::getThreadPoolReader(), read_settings, std::move(buf));
+                                getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
                         }
                         else
                         {
@@ -277,6 +280,7 @@ public:
 
                 auto input_format = FormatFactory::instance().getInput(
                     format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
+                input_format->setQueryInfo(query_info, getContext());
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -391,6 +395,7 @@ private:
     const Names & text_input_field_names;
     FormatSettings format_settings;
     ReadSettings read_settings;
+    SelectQueryInfo query_info;
 
     HiveFilePtr current_file;
     String current_path;
@@ -830,6 +835,7 @@ Pipe StorageHive::read(
             compression_method,
             sample_block,
             context_,
+            query_info,
             max_block_size,
             *this,
             text_input_field_names));
@@ -904,7 +910,7 @@ HiveFiles StorageHive::collectHiveFiles(
     return hive_files;
 }
 
-SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/)
+SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
 }

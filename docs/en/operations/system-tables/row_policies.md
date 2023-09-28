@@ -12,7 +12,7 @@ Columns:
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 
-- `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `table` ([String](../../sql-reference/data-types/string.md)) — Table name. Empty if policy for database.
 
 - `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Row policy ID.
 

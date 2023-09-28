@@ -550,8 +550,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
             interpreter.buildQueryPlan(plan);
             context = interpreter.getContext();
-            // collect the selected marks, rows, parts during build query pipeline.
-            plan.buildQueryPipeline(
+            // Collect the selected marks, rows, parts during build query pipeline.
+            // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
+            // it (through QueryPlanResourceHolder).
+            auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
                 BuildQueryPipelineSettings::fromContext(context));
 
@@ -562,6 +564,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 plan.optimize(query_plan_optimization_settings);
             }
+
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;

@@ -390,6 +390,8 @@ ANY LEFT JOIN
 ) USING (id)
 WHERE id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+------- allow_experimental_analyzer=1 -------
+1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT
     id,
     date,
@@ -452,6 +454,8 @@ FROM
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
+------- allow_experimental_analyzer=1 -------
+1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT
     date,
     id,
@@ -480,6 +484,8 @@ ANY LEFT JOIN
 ) AS b USING (id)
 WHERE b.id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+------- allow_experimental_analyzer=1 -------
+1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT
     id,
     date,
@@ -504,6 +510,8 @@ ANY LEFT JOIN
 ) AS b USING (date, id)
 WHERE b.date = toDate(\'2000-01-01\')
 1	2000-01-01	test string 1	1
+------- allow_experimental_analyzer=1 -------
+2000-01-01	1	test string 1	1
 SELECT
     date,
     id,
@@ -585,6 +593,8 @@ SEMI LEFT JOIN
 ) AS r USING (id)
 WHERE r.id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+------- allow_experimental_analyzer=1 -------
+1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
 SELECT value + t1.value AS expr
 FROM
 (

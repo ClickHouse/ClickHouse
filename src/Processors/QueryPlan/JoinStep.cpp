@@ -2,6 +2,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -21,11 +24,7 @@ JoinStep::JoinStep(
     bool keep_left_read_in_order_)
     : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
-    input_streams = {left_stream_, right_stream_};
-    output_stream = DataStream
-    {
-        .header = JoiningTransform::transformHeader(left_stream_.header, join),
-    };
+    updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -54,7 +53,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
 bool JoinStep::allowPushDownToRight() const
 {
-    return join->pipelineType() == JoinPipelineType::YShaped;
+    return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -62,20 +61,42 @@ void JoinStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t idx)
+void JoinStep::describeActions(FormatSettings & settings) const
 {
-    if (idx == 0)
+    String prefix(settings.offset, ' ');
+
+    const auto & table_join = join->getTableJoin();
+    settings.out << prefix << "Type: " << toString(table_join.kind()) << '\n';
+    settings.out << prefix << "Strictness: " << toString(table_join.strictness()) << '\n';
+    settings.out << prefix << "Algorithm: " << join->getName() << '\n';
+
+    if (table_join.strictness() == JoinStrictness::Asof)
+        settings.out << prefix << "ASOF inequality: " << toString(table_join.getAsofInequality()) << '\n';
+
+    if (!table_join.getClauses().empty())
+        settings.out << prefix << "Clauses: " << table_join.formatClauses(table_join.getClauses(), true /*short_format*/) << '\n';
+}
+
+void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    const auto & table_join = join->getTableJoin();
+    map.add("Type", toString(table_join.kind()));
+    map.add("Strictness", toString(table_join.strictness()));
+    map.add("Algorithm", join->getName());
+
+    if (table_join.strictness() == JoinStrictness::Asof)
+        map.add("ASOF inequality", toString(table_join.getAsofInequality()));
+
+    if (!table_join.getClauses().empty())
+        map.add("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
+}
+
+void JoinStep::updateOutputStream()
+{
+    output_stream = DataStream
     {
-        input_streams = {new_input_stream_, input_streams.at(1)};
-        output_stream = DataStream
-        {
-            .header = JoiningTransform::transformHeader(new_input_stream_.header, join),
-        };
-    }
-    else
-    {
-        input_streams = {input_streams.at(0), new_input_stream_};
-    }
+        .header = JoiningTransform::transformHeader(input_streams[0].header, join),
+    };
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()

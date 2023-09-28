@@ -16,6 +16,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Common/FileChecker.h>
@@ -23,7 +24,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
@@ -141,10 +143,11 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
         metadata_snapshot->getColumns(),
         [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
 }
 
-Pipe StorageMemory::read(
+void StorageMemory::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
@@ -153,33 +156,11 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    return ReadFromMemoryStorageStep::makePipe(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-}
-
-void StorageMemory::read(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    // @TODO it looks like IStorage::readFromPipe. different only step's type.
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    if (pipe.empty())
-    {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
-        return;
-    }
-    auto read_step = std::make_unique<ReadFromMemoryStorageStep>(std::move(pipe));
-    query_plan.addStep(std::move(read_step));
+    query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(column_names, shared_from_this(), storage_snapshot, num_streams, delay_read_for_global_subqueries));
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
@@ -220,7 +201,8 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);
     new_context->setSetting("max_threads", 1);
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
+    MutationsInterpreter::Settings settings(true);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
@@ -295,11 +277,13 @@ namespace
             const std::shared_ptr<const Blocks> blocks_,
             const String & data_path_in_backup,
             const DiskPtr & temp_disk_,
+            const ReadSettings & read_settings_,
             UInt64 max_compress_block_size_)
             : context(context_)
             , metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
             , temp_disk(temp_disk_)
+            , read_settings(read_settings_)
             , max_compress_block_size(max_compress_block_size_)
         {
             fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -328,13 +312,11 @@ namespace
 
         BackupEntries generate() override
         {
-            ReadSettings read_settings = context->getBackupReadSettings();
-
             BackupEntries backup_entries;
             backup_entries.resize(file_paths.size());
 
             temp_dir_owner.emplace(temp_disk);
-            fs::path temp_dir = temp_dir_owner->getPath();
+            fs::path temp_dir = temp_dir_owner->getRelativePath();
             temp_disk->createDirectories(temp_dir);
 
             /// Writing data.bin
@@ -342,20 +324,28 @@ namespace
             {
                 auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
                 auto data_out_compressed = temp_disk->writeFile(data_file_path);
-                CompressedWriteBuffer data_out{*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size};
-                NativeWriter block_out{data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
+                auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
-                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path, read_settings)};
+                data_out->finalize();
+                data_out.reset();
+                data_out_compressed->finalize();
+                data_out_compressed.reset();
+                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, data_file_path)};
             }
 
             /// Writing index.mrk
             {
                 auto index_mrk_path = temp_dir / fs::path{file_paths[index_mrk_pos]}.filename();
                 auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
-                CompressedWriteBuffer index_mrk_out{*index_mrk_out_compressed};
-                index.write(index_mrk_out);
-                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path, read_settings)};
+                auto index_mrk_out = std::make_unique<CompressedWriteBuffer>(*index_mrk_out_compressed);
+                index.write(*index_mrk_out);
+                index_mrk_out->finalize();
+                index_mrk_out.reset();
+                index_mrk_out_compressed->finalize();
+                index_mrk_out_compressed.reset();
+                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, index_mrk_path)};
             }
 
             /// Writing columns.txt
@@ -383,7 +373,7 @@ namespace
                     file_checker.update(temp_dir / fs::path{file_paths[i]}.filename());
                 }
                 file_checker.save();
-                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path)};
+                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path, read_settings)};
             }
 
             /// We don't need to keep `blocks` any longer.
@@ -398,6 +388,7 @@ namespace
         std::shared_ptr<const Blocks> blocks;
         DiskPtr temp_disk;
         std::optional<TemporaryFileOnDisk> temp_dir_owner;
+        ReadSettings read_settings;
         UInt64 max_compress_block_size;
         Strings file_paths;
         size_t data_bin_pos, index_mrk_pos, columns_txt_pos, count_txt_pos, sizes_json_pos;
@@ -407,13 +398,16 @@ namespace
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+    const auto & read_settings = backup_entries_collector.getReadSettings();
     auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef().max_compress_block_size;
+
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
         getInMemoryMetadataPtr(),
         data.get(),
         data_path_in_backup,
         temp_disk,
+        read_settings,
         max_compress_block_size)->getBackupEntries());
 }
 
@@ -465,10 +459,10 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
         {
             temp_data_file.emplace(temporary_disk);
-            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getPath());
+            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
             out.reset();
-            in = createReadBufferFromFileBase(temp_data_file->getPath(), {});
+            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};

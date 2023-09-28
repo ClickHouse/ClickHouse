@@ -10,7 +10,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS parallel_ddl"
 
 function query()
 {
-    for _ in {1..100}; do
+    for _ in {1..50}; do
         ${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS parallel_ddl(a Int) ENGINE = Memory"
         ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS parallel_ddl"
     done

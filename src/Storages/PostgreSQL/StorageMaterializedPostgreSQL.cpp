@@ -143,7 +143,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     if (tmp_storage)
     {
         LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLStorage"), "Temporary table {} already exists, dropping", tmp_table_id.getNameForLogs());
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* no delay */true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* sync */true);
     }
 
     auto new_context = Context::createCopy(context);
