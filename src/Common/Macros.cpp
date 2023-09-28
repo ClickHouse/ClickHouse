@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_map>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Macros.h>
@@ -37,16 +38,9 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
-Macros::Macros(std::map<const String, const String> map) 
+Macros::Macros(std::map<String, String> map) 
 {
-    for (const auto& pair : map) {
-        const String& key = pair.first;
-        const String& value = pair.second;
-        macros[key] = value;
-
-        if (key == "database" || key == "table" || key == "uuid")
-            enable_special_macros = false;
-    }
+    macros = std::move(map);
 }
 
 String Macros::expand(const String & s,
