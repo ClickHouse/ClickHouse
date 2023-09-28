@@ -17,14 +17,17 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [after_processing = 'keep',]
     [keeper_path = '',]
     [s3queue_loading_retries = 0,]
+    [s3queue_processing_threads_num = 1,]
+    [s3queue_enable_logging_to_s3queue_log = 0,]
     [s3queue_polling_min_timeout_ms = 1000,]
     [s3queue_polling_max_timeout_ms = 10000,]
     [s3queue_polling_backoff_ms = 0,]
-    [s3queue_tracked_files_limit = 1000,]
     [s3queue_tracked_file_ttl_sec = 0,]
-    [s3queue_polling_size = 50,]
+    [s3queue_tracked_files_limit = 1000,]
+    [s3queue_cleanup_interval_min_ms = 10000,]
+    [s3queue_cleanup_interval_max_ms = 30000,]
 ```
-
+  * [ ]
 **Engine parameters**
 
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
@@ -39,7 +42,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
 CREATE TABLE s3queue_engine_table (name String, value UInt32)
 ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
 SETTINGS
-    mode = 'ordered';
+    mode = 'unordered';
 ```
 
 Using named collections:
@@ -102,6 +105,18 @@ Possible values:
 
 Default value: `0`.
 
+### s3queue_processing_threads_num {#processing_threads_num}
+
+Number of threads to perform processing. Applies only for `Unordered` mode.
+
+Default value: `1`.
+
+### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
+
+Enable logging to `system.s3queue_log`.
+
+Default value: `0`.
+
 ### s3queue_polling_min_timeout_ms {#polling_min_timeout_ms}
 
 Minimal timeout before next polling (in milliseconds).
@@ -154,18 +169,17 @@ Possible values:
 
 Default value: `0`.
 
-### s3queue_polling_size {#polling_size}
+### s3queue_cleanup_interval_min_ms {#cleanup_interval_min_ms}
 
-Maximum files to fetch from S3 with SELECT or in background task.
-Engine takes files for processing from S3 in batches.
-We limit the batch size to increase concurrency if multiple table engines with the same `keeper_path` consume files from the same path.
+For 'Ordered' mode. Defines a minimum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
-Possible values:
+Default value: `10000`.
 
-- Positive integer.
+### s3queue_cleanup_interval_max_ms {#cleanup_interval_max_ms}
 
-Default value: `50`.
+For 'Ordered' mode. Defines a maximum boundary for reschedule interval for a background task, which is responsible for maintaining tracked file TTL and maximum tracked files set.
 
+Default value: `30000`.
 
 ## S3-related Settings {#s3-settings}
 
