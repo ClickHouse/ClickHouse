@@ -99,7 +99,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 
 ### EXPLAIN SYNTAX
 
-Returns query after syntax optimizations.
+Returns query after syntax optimizations. The number of passes to run can be specified.
 
 Example:
 
@@ -132,6 +132,7 @@ Settings:
 - `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
 
 Example:
+
 ```sql
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
@@ -160,6 +161,8 @@ Settings:
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
+- `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+- `optimize` — When enabled, query plan level optimisations are applied. Enabled by default. Affected by `passes`.
 
 Example:
 
@@ -177,7 +180,7 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
+:::note
 Step and query cost estimation is not supported.
 :::
 
@@ -417,9 +420,10 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersMt × 2 0 → 1
 ```
+
 ### EXPLAIN ESTIMATE
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family.
 
 **Example**
 
@@ -474,6 +478,6 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::
