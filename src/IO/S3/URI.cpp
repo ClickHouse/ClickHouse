@@ -73,6 +73,12 @@ URI::URI(const std::string & uri_)
             for (const std::string & config_key : config_keys)
                 mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".domain");
         }
+        else
+        {
+            mapper["s3"] = ".s3.amazonaws.com";
+            mapper["gs"] = ".storage.googleapis.com";
+            mapper["oss"] = ".oss.aliyuncs.com";
+        }
 
         if (!mapper.empty())
             URIConverter::modifyURI(uri, mapper);
