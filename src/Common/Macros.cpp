@@ -36,6 +36,13 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
+Macros::Macros(const String & key, const String & value)
+{
+    macros[key] = value;
+    if (key == "database" || key == "table" || key == "uuid")
+        enable_special_macros = false;
+}
+
 String Macros::expand(const String & s,
                       MacroExpansionInfo & info) const
 {

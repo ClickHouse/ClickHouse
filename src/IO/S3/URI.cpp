@@ -1,5 +1,7 @@
 #include <IO/S3/URI.h>
 #include <Poco/URI.h>
+#include "Common/Macros.h"
+#include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #if USE_AWS_S3
 #include <Common/Exception.h>
@@ -23,13 +25,8 @@ struct URIConverter
 {
     static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
-        if (uri.getScheme() == "s3" || uri.getScheme() == "oss" || uri.getScheme() == "gs")
-        {
-            uri.setHost(uri.getHost() + mapper[uri.getScheme()]);
-            uri.setScheme("https");
-        }
-        else if (!mapper["nc_s3"].empty()) /// Case for tests
-            uri = Poco::URI(mapper["nc_s3"] + "/" + uri.getHost() + uri.getPath());
+        Macros macros("bucket", uri.getHost());
+        uri = Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
     }
 };
 
@@ -71,13 +68,13 @@ URI::URI(const std::string & uri_)
             std::vector<String> config_keys;
             config->keys("url_scheme_mappers", config_keys);
             for (const std::string & config_key : config_keys)
-                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".domain");
+                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
         }
         else
         {
-            mapper["s3"] = ".s3.amazonaws.com";
-            mapper["gs"] = ".storage.googleapis.com";
-            mapper["oss"] = ".oss.aliyuncs.com";
+            mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
+            mapper["gs"] = "https://{bucket}.storage.googleapis.com";
+            mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 
         if (!mapper.empty())
