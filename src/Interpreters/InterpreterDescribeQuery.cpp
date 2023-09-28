@@ -124,10 +124,16 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         res_columns[0]->insert(column.name);
 
+        DataTypePtr type;
         if (extend_object_types)
-            res_columns[1]->insert(storage_snapshot->getConcreteType(column.name)->getName());
+            type = storage_snapshot->getConcreteType(column.name);
         else
-            res_columns[1]->insert(column.type->getName());
+            type = column.type;
+
+        if (getContext()->getSettingsRef().print_pretty_type_names)
+            res_columns[1]->insert(type->getPrettyName());
+        else
+            res_columns[1]->insert(type->getName());
 
         if (column.default_desc.expression)
         {
