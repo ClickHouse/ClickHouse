@@ -497,7 +497,7 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 
 Enabling this setting allows inferring numbers from string values.
 
-This setting is enabled by default.
+This setting is disabled by default.
 
 **Example:**
 
