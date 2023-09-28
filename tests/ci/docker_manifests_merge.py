@@ -274,10 +274,9 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
-    enriched_images = changed_images.copy()
     try:
         # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-        enrich_images(enriched_images)
+        enrich_images(changed_images)
     except CHException as ex:
         logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 

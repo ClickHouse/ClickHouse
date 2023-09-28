@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
+#include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -110,15 +111,12 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
     format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
     format_settings.json.read_objects_as_strings = settings.input_format_json_read_objects_as_strings;
-    format_settings.json.read_arrays_as_strings = settings.input_format_json_read_arrays_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
-    format_settings.json.infer_incomplete_types_as_strings = settings.input_format_json_infer_incomplete_types_as_strings;
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
-    format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
@@ -215,7 +213,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.try_infer_integers = settings.input_format_try_infer_integers;
     format_settings.try_infer_dates = settings.input_format_try_infer_dates;
     format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
-    format_settings.markdown.escape_special_characters = settings.output_format_markdown_escape_special_characters;
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.max_binary_string_size = settings.format_binary_max_string_size;
@@ -230,12 +227,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
         const Poco::URI & avro_schema_registry_url = settings.format_avro_schema_registry_url;
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
-    }
-
-    if (context->getClientInfo().interface == ClientInfo::Interface::HTTP && context->getSettingsRef().http_write_exception_in_output_format.value)
-    {
-        format_settings.json.valid_output_on_exception = true;
-        format_settings.xml.valid_output_on_exception = true;
     }
 
     return format_settings;

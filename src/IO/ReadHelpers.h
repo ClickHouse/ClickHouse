@@ -638,9 +638,6 @@ template <typename Vector, typename ReturnType = void>
 ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-void readJSONArrayInto(Vector & s, ReadBuffer & buf);
-
-template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>

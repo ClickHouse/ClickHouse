@@ -45,7 +45,8 @@ class ResourceRequest
 {
 public:
     /// Cost of request execution; should be filled before request enqueueing.
-    /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
+    /// NOTE: If cost is not known in advance, credit model can be used:
+    /// NOTE: for the first request use 1 and
     ResourceCost cost;
 
     /// Request outcome

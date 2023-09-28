@@ -7,7 +7,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -66,9 +65,7 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
-    , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
-    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
@@ -180,8 +177,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
     const String & to_file_path,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
+    const WriteSettings & settings)
 {
     if (this == &to_disk)
     {
@@ -193,7 +189,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, settings);
     }
 }
 
@@ -484,32 +480,6 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         config_prefix);
 }
 
-template <class Settings>
-static inline Settings updateResourceLink(const Settings & settings, const String & resource_name)
-{
-    if (resource_name.empty())
-        return settings;
-    if (auto query_context = CurrentThread::getQueryContext())
-    {
-        Settings result(settings);
-        result.resource_link = query_context->getWorkloadClassifier()->get(resource_name);
-        return result;
-    }
-    return settings;
-}
-
-String DiskObjectStorage::getReadResourceName() const
-{
-    std::unique_lock lock(resource_mutex);
-    return read_resource_name;
-}
-
-String DiskObjectStorage::getWriteResourceName() const
-{
-    std::unique_lock lock(resource_mutex);
-    return write_resource_name;
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
@@ -525,7 +495,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     return object_storage->readObjects(
         storage_objects,
-        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
+        object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
         read_hint,
         file_size);
 }
@@ -539,11 +509,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     LOG_TEST(log, "Write file: {}", path);
 
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(
+    auto result = transaction->writeFile(
         path,
         buf_size,
         mode,
-        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getWriteResourceName()), path));
+        object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
+
+    return result;
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
@@ -573,15 +545,6 @@ void DiskObjectStorage::applyNewSettings(
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
     const auto config_prefix = "storage_configuration.disks." + name;
     object_storage->applyNewSettings(config, config_prefix, context_);
-
-    {
-        std::unique_lock lock(resource_mutex);
-        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name)
-            read_resource_name = new_read_resource_name;
-        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
-            write_resource_name = new_write_resource_name;
-    }
-
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
 

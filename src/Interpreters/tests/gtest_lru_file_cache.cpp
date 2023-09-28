@@ -721,10 +721,8 @@ TEST_F(FileCacheTest, writeBuffer)
             auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
             file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
 
-            std::cerr << "\nFile segments: " << holder2->toString() << "\n";
-
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
-            ASSERT_EQ(holder2->front().range(), FileSegment::Range(0, 15));
+            ASSERT_TRUE(holder2->front().range() == FileSegment::Range(0, 15));
             ASSERT_EQ(cache.getUsedCacheSize(), 22);
         }
         ASSERT_FALSE(fs::exists(file_segment_paths.back()));

@@ -102,6 +102,7 @@ def create_tables(cluster, table_name):
 @pytest.mark.parametrize(
     "cluster,max_parallel_replicas,prefer_localhost_replica",
     [
+        # prefer_localhost_replica=0
         pytest.param("test_single_shard_multiple_replicas", 2, 0),
         pytest.param("test_single_shard_multiple_replicas", 3, 0),
         pytest.param("test_single_shard_multiple_replicas", 4, 0),

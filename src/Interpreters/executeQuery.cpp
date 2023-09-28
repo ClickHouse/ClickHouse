@@ -94,12 +94,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -174,7 +173,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         elem.stack_trace = getExceptionStackTraceString(e);
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
+    catch (...) {}
 }
 
 
@@ -242,7 +241,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
-    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
@@ -992,7 +990,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
+            /// If it is a non-internal SELECT, and passive/read use of the query cache is enabled, and the cache knows the query, then set
             /// a pipeline with a source populated by the query cache.
             auto get_result_from_query_cache = [&]()
             {
@@ -1075,7 +1073,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// Save insertion table (not table function). TODO: support remote() table function.
                     auto table_id = insert_interpreter->getDatabaseTable();
                     if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+                        context->setInsertionTable(std::move(table_id));
 
                     if (insert_data_buffer_holder)
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
@@ -1092,14 +1090,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
+                    /// If it is a non-internal SELECT query, and active/write use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings.enable_writes_to_query_cache)
+                    if (can_use_query_cache && settings.enable_writes_to_query_cache
+                        && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
                     {
-                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
-                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting query_cache_store_results_of_queries_with_nondeterministic_functions = 1 to store the query result regardless.");
-
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
                             context->getUserName(), settings.query_cache_share_between_users,
@@ -1266,8 +1261,7 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
-    const std::optional<FormatSettings> & output_format_settings,
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
+    const std::optional<FormatSettings> & output_format_settings)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1325,7 +1319,6 @@ void executeQuery(
 
     ASTPtr ast;
     BlockIO streams;
-    OutputFormatPtr output_format;
 
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
@@ -1368,30 +1361,30 @@ void executeQuery(
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
-            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+            auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
                 compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
 
-            output_format->setAutoFlush();
+            out->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
 
             /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([output_format, previous_progress_callback] (const Progress & progress)
+            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
             {
                 if (previous_progress_callback)
                     previous_progress_callback(progress);
-                output_format->onProgress(progress);
+                out->onProgress(progress);
             });
 
-            result_details.content_type = output_format->getContentType();
+            result_details.content_type = out->getContentType();
             result_details.format = format_name;
 
-            pipeline.complete(output_format);
+            pipeline.complete(std::move(out));
         }
         else
         {
@@ -1421,8 +1414,6 @@ void executeQuery(
     }
     catch (...)
     {
-        if (handle_exception_in_output_format && output_format)
-            handle_exception_in_output_format(*output_format);
         streams.onException();
         throw;
     }
