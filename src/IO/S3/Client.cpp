@@ -70,7 +70,6 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             return false;
-    }
 
     return error.ShouldRetry();
 }
