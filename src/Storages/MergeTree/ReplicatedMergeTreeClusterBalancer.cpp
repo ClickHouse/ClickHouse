@@ -28,8 +28,9 @@ ReplicatedMergeTreeClusterBalancerStep getBalancerStep(const ReplicatedMergeTree
         case MIGRATING: return BALANCER_MIGRATE_PARTITION;
         case CLONING: return BALANCER_CLONE_PARTITION;
         case DROPPING: return BALANCER_DROP_PARTITION;
-        case UP_TO_DATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state for restoring, partition {}", partition.toStringForLog());
+        /// This means that ReplicatedMergeTreeClusterPartition::revert() had
+        /// been called already, so we need to commit information to ZooKeeper.
+        case UP_TO_DATE: return BALANCER_REVERT;
     }
 }
 
@@ -203,6 +204,7 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
                 if (e.code() == ErrorCodes::LOGICAL_ERROR)
                     throw;
 
+                state.target->revert();
                 state.step = BALANCER_REVERT;
                 tryLogCurrentException(log, fmt::format("Cannot process partition {}, will revert", state.target->toStringForLog()));
             }
@@ -688,8 +690,7 @@ void ReplicatedMergeTreeClusterBalancer::revert(const ReplicatedMergeTreeCluster
 {
     auto zookeeper = cluster.getZooKeeper();
 
-    auto new_partition = target;
-    new_partition.revert();
+    const auto & new_partition = target;
     String partition_path = cluster.zookeeper_path / "block_numbers" / new_partition.getPartitionId();
 
     Coordination::Requests ops;

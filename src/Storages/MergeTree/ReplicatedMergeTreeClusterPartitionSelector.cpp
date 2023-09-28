@@ -161,8 +161,9 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
 {
     for (const auto & lost_replica : removing_replicas)
     {
-        const auto & lost_replica_partitions = replicas_partitions[lost_replica];
+        LOG_INFO(log, "Searching partitions for removed replica {}", lost_replica);
 
+        const auto & lost_replica_partitions = replicas_partitions[lost_replica];
         for (const auto & partition_id : lost_replica_partitions)
         {
             const auto & partition_it = partitions_map.find(partition_id);
@@ -173,17 +174,25 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
             }
             const auto & partition = partition_it->second;
 
+            auto new_partition = partition;
+            if (new_partition.isUnderReSharding())
+            {
+                new_partition.revert();
+                LOG_INFO(log, "Revert partition {} from lost replica ({} source parts, {} local parts)",
+                    new_partition.toStringForLog(),
+                    replicas_partitions[new_partition.getSourceReplica()].size(),
+                    replicas_partitions[replica_name].size());
+                return new_partition;
+            }
+
             if (partition.hasReplica(replica_name))
                 continue;
 
-            auto new_partition = partition;
             new_partition.replaceReplica(lost_replica, replica_name);
-
             LOG_INFO(log, "Migrating partition {} from lost replica ({} source parts, {} local parts)",
                 new_partition.toStringForLog(),
                 replicas_partitions[new_partition.getSourceReplica()].size(),
                 replicas_partitions[replica_name].size());
-
             return new_partition;
         }
     }
