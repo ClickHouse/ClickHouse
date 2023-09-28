@@ -476,7 +476,7 @@ private:
         if (num_units <= 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());
 
-        switch (interval_type->getKind())
+        switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
             case IntervalKind::Nanosecond:
                 return execute<FromDataType, DataTypeDateTime64, IntervalKind::Nanosecond>(from, time_column, num_units, result_type, time_zone, scale);

@@ -108,6 +108,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event ContextLockWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -704,7 +705,10 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
     ProfileEvents::increment(ProfileEvents::ContextLock);
     CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    return std::unique_lock(shared->mutex);
+    Stopwatch watch;
+    auto lock = std::unique_lock(shared->mutex);
+    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
+    return lock;
 }
 
 ProcessList & Context::getProcessList() { return shared->process_list; }
@@ -1587,11 +1591,12 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions = getSettingsRef().use_structure_from_insertion_table_in_table_functions;
         if (use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & insert_structure = DatabaseCatalog::instance()
-                                                .getTable(getInsertionTable(), shared_from_this())
-                                                ->getInMemoryMetadataPtr()
-                                                ->getColumns()
-                                                .getInsertable();
+            const auto & insert_columns = DatabaseCatalog::instance()
+                                              .getTable(getInsertionTable(), shared_from_this())
+                                              ->getInMemoryMetadataPtr()
+                                              ->getColumns();
+
+            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -1599,8 +1604,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
-            auto insert_column = insert_structure.begin();
-            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
+            auto insert_column_name_it = insert_column_names.begin();
+            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
@@ -1608,7 +1613,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
+            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
             {
                 if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
@@ -1623,15 +1628,19 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             break;
                         }
 
-                        structure_hint.add({ identifier->name(), insert_column->type });
+                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                        column.name = identifier->name();
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
+                        structure_hint.add(std::move(column));
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
                 else if ((*expression)->as<ASTAsterisk>())
                 {
@@ -1665,18 +1674,18 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
                 else
                 {
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
             }
 
@@ -1696,8 +1705,14 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                     /// Append tail of insert structure to the hint
                     if (asterisk)
                     {
-                        for (; insert_column != insert_structure_end; ++insert_column)
-                            structure_hint.add({ insert_column->name, insert_column->type });
+                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
+                        {
+                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                            /// Change ephemeral columns to default columns.
+                            column.default_desc.kind = ColumnDefaultKind::Default;
+
+                            structure_hint.add(std::move(column));
+                        }
                     }
 
                     if (!structure_hint.empty())
@@ -1951,6 +1966,21 @@ void Context::killCurrentQuery() const
     if (auto elem = getProcessListElement())
         elem->cancelQuery(true);
 }
+
+bool Context::isCurrentQueryKilled() const
+{
+    /// Here getProcessListElementSafe is used, not getProcessListElement call
+    /// getProcessListElement requires that process list exists
+    /// In the most cases it is true, because process list exists during the query execution time.
+    /// That is valid for all operations with parts, like read and write operations.
+    /// However that Context::isCurrentQueryKilled call could be used on the edges
+    /// when query is starting or finishing, in such edges context still exist but process list already expired
+    if (auto elem = getProcessListElementSafe())
+        return elem->isKilled();
+
+    return false;
+}
+
 
 String Context::getDefaultFormat() const
 {
@@ -2221,7 +2251,7 @@ BackupsWorker & Context::getBackupsWorker() const
     UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -2255,6 +2285,14 @@ QueryStatusPtr Context::getProcessListElement() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
 }
 
+QueryStatusPtr Context::getProcessListElementSafe() const
+{
+    if (!has_process_list_elem)
+        return {};
+    if (auto res = process_list_elem.lock())
+        return res;
+    return {};
+}
 
 void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
@@ -4626,18 +4664,20 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     return SAMPLE_KEY;
 }
 
-bool Context::canUseParallelReplicasOnInitiator() const
+bool Context::canUseParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
-        && !getClientInfo().collaborate_with_initiator;
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+}
+
+bool Context::canUseParallelReplicasOnInitiator() const
+{
+    return canUseParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
-        && getClientInfo().collaborate_with_initiator;
+    return canUseParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

@@ -26,9 +26,6 @@ fi
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
-# Read cmake arguments into array (possibly empty)
-read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
-env
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
@@ -55,11 +52,34 @@ ccache_status
 # clear cache stats
 ccache --zero-stats ||:
 
+function check_prebuild_exists() {
+  local path="$1"
+  [ -d "$path" ] && [ "$(ls -A "$path")" ]
+}
+
+# Check whether the directory with pre-build scripts exists and not empty.
+if check_prebuild_exists /build/packages/pre-build
+then
+  # Execute all commands
+  for file in /build/packages/pre-build/*.sh ;
+  do
+    bash "$file"
+  done
+else
+  echo "There are no subcommands to execute :)"
+fi
+
+# Read cmake arguments into array (possibly empty)
+# The name of local variable has to be different from the name of environment variable
+# not to override it. And make it usable for other processes.
+read -ra CMAKE_FLAGS_ARRAY <<< "${CMAKE_FLAGS:-}"
+env
+
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
     # and without rust bindings
-    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS_ARRAY[@]}" ..
     # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS clickhouse-keeper
 
@@ -73,12 +93,12 @@ then
     fi
     rm -f CMakeCache.txt
 
-    # Build the rest of binaries
-    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-else
-    # Build everything
-    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    # Modify CMake flags, so we won't overwrite standalone keeper with symlinks
+    CMAKE_FLAGS_ARRAY+=(-DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0)
 fi
+
+# Build everything
+cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS_ARRAY[@]}" ..
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
@@ -97,11 +117,10 @@ if [ -n "$MAKE_DEB" ]; then
   bash -x /build/packages/build
 fi
 
-if [ "$BUILD_TARGET" != "fuzzers" ]; then
-  mv ./programs/clickhouse* /output
-  [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
-  mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
-fi
+mv ./programs/clickhouse* /output || mv ./programs/*_fuzzer /output
+[ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
+mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
+mv ./programs/*.dict ./programs/*.options ./programs/*_seed_corpus.zip /output ||: # libFuzzer oss-fuzz compatible infrastructure
 
 prepare_combined_output () {
     local OUTPUT

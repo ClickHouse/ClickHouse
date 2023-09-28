@@ -848,6 +848,7 @@ public:
         const MergeTreePartInfo & dst_part_info,
         const StorageMetadataPtr & metadata_snapshot,
         const IDataPartStorage::ClonePartParams & params,
+        const ReadSettings & read_settings,
         const WriteSettings & write_settings);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
@@ -1246,9 +1247,19 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void checkProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach, bool allow_empty_sorting_key, ContextPtr local_context) const;
+    void checkProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        bool attach,
+        bool allow_empty_sorting_key,
+        bool allow_nullable_key_,
+        ContextPtr local_context) const;
 
-    void setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach = false, ContextPtr local_context = nullptr);
+    void setProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        bool attach = false,
+        ContextPtr local_context = nullptr);
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
@@ -1340,7 +1351,7 @@ protected:
     /// MergeTree because they store mutations in different way.
     virtual std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
-    MovePartsOutcome movePartsToSpace(const DataPartsVector & parts, SpacePtr space, const WriteSettings & write_settings);
+    MovePartsOutcome movePartsToSpace(const DataPartsVector & parts, SpacePtr space, const ReadSettings & read_settings, const WriteSettings & write_settings);
 
     struct PartBackupEntries
     {
@@ -1494,7 +1505,7 @@ private:
     using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
 
     /// Move selected parts to corresponding disks
-    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy);
+    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTaggerPtr selectPartsForMove();
@@ -1574,6 +1585,9 @@ private:
         ContextPtr query_context,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const;
+
+    void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
+    void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

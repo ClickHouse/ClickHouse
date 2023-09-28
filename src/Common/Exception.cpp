@@ -234,7 +234,7 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
         LOG_ERROR(logger, message);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 }
@@ -410,7 +410,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
     }
     catch (const std::exception & e)
     {
@@ -427,7 +427,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
 
 #ifdef ABORT_ON_LOGICAL_ERROR
         try
@@ -441,7 +441,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 
             abortOnFailedAssertion(stream.str());
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
 #endif
     }
     catch (...)
@@ -456,7 +456,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 
             stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
     }
 
     return PreformattedMessage{stream.str(), message_format_string};
@@ -571,7 +571,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
-    catch (...) {}
+    catch (...) {} // NOLINT(bugprone-empty-catch)
 
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
@@ -657,7 +657,7 @@ std::string ParsingException::displayText() const
         if (need_newline)
             formatted_message += "\n";
     }
-    catch (...) {}
+    catch (...) {} // NOLINT(bugprone-empty-catch)
 
     if (!formatted_message.empty())
     {

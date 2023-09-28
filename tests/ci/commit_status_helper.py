@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import csv
-import os
-import time
-from typing import Dict, List, Optional, Union
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+import csv
 import logging
+import time
 
 from github import Github
 from github.GithubObject import _NotSetType, NotSet as NotSet
@@ -141,16 +141,6 @@ STATUS_ICON_MAP = defaultdict(
 )
 
 
-def update_pr_status_label(pr: PullRequest, status: str) -> None:
-    new_label = "pr-status-" + STATUS_ICON_MAP[status]
-    for label in pr.get_labels():
-        if label.name == new_label:
-            return
-        if label.name.startswith("pr-status-"):
-            pr.remove_from_labels(label.name)
-    pr.add_to_labels(new_label)
-
-
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
@@ -189,8 +179,6 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
         if ic.body.startswith(comment_service_header):
             comment = ic
             break
-
-    update_pr_status_label(pr, get_worst_state(statuses))
 
     if comment is None:
         pr.create_issue_comment(comment_body)
@@ -304,9 +292,9 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
 
 def post_commit_status_to_file(
-    file_path: str, description: str, state: str, report_url: str
+    file_path: Path, description: str, state: str, report_url: str
 ) -> None:
-    if os.path.exists(file_path):
+    if file_path.exists():
         raise Exception(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")

@@ -137,6 +137,54 @@ Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-referen
 makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
 ```
 
+## timestamp
+
+Converts the first argument 'expr' to type [DateTime64(6)](../../sql-reference/data-types/datetime64.md).
+If a second argument 'expr_time' is provided, it adds the specified time to the converted value.
+
+**Syntax**
+
+``` sql
+timestamp(expr[, expr_time])
+```
+
+Alias: `TIMESTAMP`
+
+**Arguments**
+
+- `expr` - Date or date with time. Type: [String](../../sql-reference/data-types/string.md).
+- `expr_time` - Optional parameter. Time to add. [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+``` sql
+SELECT timestamp('2023-12-31') as ts;
+```
+
+Result:
+
+``` text
+┌─────────────────────────ts─┐
+│ 2023-12-31 00:00:00.000000 │
+└────────────────────────────┘
+```
+
+``` sql
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') as ts;
+```
+
+Result:
+
+``` text
+┌─────────────────────────ts─┐
+│ 2024-01-01 00:00:00.110000 │
+└────────────────────────────┘
+```
+
+**Returned value**
+
+- [DateTime64](../../sql-reference/data-types/datetime64.md)(6)
+
 ## timeZone
 
 Returns the timezone of the current session, i.e. the value of setting [session_timezone](../../operations/settings/settings.md#session_timezone).
@@ -239,7 +287,7 @@ int32samoa: 1546300800
 
 **See Also**
 
-- [formatDateTime](#date_time_functions-formatDateTime) - supports non-constant timezone.
+- [formatDateTime](#formatDateTime) - supports non-constant timezone.
 - [toString](type-conversion-functions.md#tostring) - supports non-constant timezone.
 
 ## timeZoneOf
@@ -732,14 +780,15 @@ Returns for a given date, the number of days passed since [1 January 0000](https
 **Syntax**
 
 ``` sql
-toDaysSinceYearZero(date)
+toDaysSinceYearZero(date[, time_zone])
 ```
 
 Aliases: `TO_DAYS`
 
-**Arguments**
 
-- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md).
+**Arguments**
+- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
@@ -1274,7 +1323,7 @@ Alias: `SUBDATE`
 **See Also**
 - [date_sub](#date_sub)
 
-## now
+## now {#now}
 
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
@@ -1361,7 +1410,7 @@ Result:
 └─────────────────────────┴───────────────────────────────┘
 ```
 
-## nowInBlock
+## nowInBlock {#nowInBlock}
 
 Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
@@ -1405,14 +1454,14 @@ Result:
 └─────────────────────┴─────────────────────┴──────────┘
 ```
 
-## today
+## today {#today}
 
 Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
 
 Aliases: `curdate`, `current_date`.
 
-## yesterday
+## yesterday {#yesterday}
 
 Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
 The same as ‘today() - 1’.
@@ -1628,7 +1677,7 @@ SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## formatDateTime {#date_time_functions-formatDateTime}
+## formatDateTime {#formatDateTime}
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
 
@@ -1753,7 +1802,7 @@ LIMIT 10
 - [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
 
 
-## formatDateTimeInJodaSyntax {#date_time_functions-formatDateTimeInJodaSyntax}
+## formatDateTimeInJodaSyntax {#formatDateTimeInJodaSyntax}
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
