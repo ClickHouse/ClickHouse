@@ -24,6 +24,7 @@ struct S3QueueLogElement
     ProfileEvents::Counters::Snapshot counters_snapshot;
     time_t processing_start_time;
     time_t processing_end_time;
+    std::string exception;
 
     static std::string name() { return "S3QueueLog"; }
 

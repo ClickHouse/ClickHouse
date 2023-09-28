@@ -128,6 +128,8 @@ Chunk StorageS3QueueSource::generate()
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
 
+        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueuePullMicroseconds);
@@ -148,14 +150,12 @@ Chunk StorageS3QueueSource::generate()
         {
             LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
 
-            const StorageS3QueueSource::S3QueueKeyWithInfo * key_with_info = assert_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
             files_metadata->setFileFailed(key_with_info->processing_holder, e.message());
 
             appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
             throw;
         }
 
-        const StorageS3QueueSource::S3QueueKeyWithInfo * key_with_info = assert_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
         files_metadata->setFileProcessed(key_with_info->processing_holder);
         applyActionAfterProcessing(reader.getFile());
 
@@ -215,6 +215,7 @@ void StorageS3QueueSource::appendLogElement(const std::string & filename, const 
         .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
         .processing_start_time = file_status_.processing_start_time,
         .processing_end_time = file_status_.processing_end_time,
+        .exception = file_status_.last_exception,
     };
     s3_queue_log->add(std::move(elem));
 }

@@ -43,8 +43,11 @@ public:
     struct KeyWithInfo
     {
         KeyWithInfo() = default;
+
         explicit KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_ = std::nullopt)
             : key(std::move(key_)), info(std::move(info_)) {}
+
+        virtual ~KeyWithInfo() = default;
 
         String key;
         std::optional<S3::ObjectInfo> info;

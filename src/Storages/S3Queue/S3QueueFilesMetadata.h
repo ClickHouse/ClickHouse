@@ -63,6 +63,7 @@ public:
         time_t processing_start_time = 0;
         time_t processing_end_time = 0;
         size_t retries = 0;
+        std::string last_exception;
         ProfileEvents::Counters profile_counters;
 
         std::mutex processing_lock;
