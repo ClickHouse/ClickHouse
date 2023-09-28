@@ -48,6 +48,7 @@ public:
     void initialize();
     void startDistributor();
 
+    void shutdown();
     void sync();
     void loadFromCoordinator(const zkutil::ZooKeeperPtr & zookeeper);
     /// TODO: get rid of version without zookeeper client

@@ -5212,6 +5212,9 @@ void StorageReplicatedMergeTree::flushAndPrepareForShutdown()
     if (shutdown_prepared_called.exchange(true))
         return;
 
+    if (cluster)
+        cluster->shutdown();
+
     try
     {
         auto settings_ptr = getSettings();

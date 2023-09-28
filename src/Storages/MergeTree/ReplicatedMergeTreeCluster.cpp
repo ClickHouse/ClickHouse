@@ -257,6 +257,11 @@ void ReplicatedMergeTreeCluster::cloneReplicaWithResharding(const zkutil::ZooKee
     /// conflicts)
 }
 
+void ReplicatedMergeTreeCluster::shutdown()
+{
+    balancer.shutdown();
+}
+
 void ReplicatedMergeTreeCluster::sync()
 {
     /// FIXME(cluster): this is a hack to sync cluster partitions map, we need to get rid of it
