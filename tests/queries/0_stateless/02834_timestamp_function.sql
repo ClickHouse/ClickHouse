@@ -1,3 +1,5 @@
+SET session_timezone = 'UTC';
+
 SELECT timestamp('2013-12-31');
 SELECT timestamp('2013-12-31 12:00:00');
 SELECT timestamp('2013-12-31 12:00:00.111111');
