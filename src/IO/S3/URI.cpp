@@ -25,8 +25,10 @@ struct URIConverter
 {
     static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
-        Macros macros("bucket", uri.getHost());
-        uri = Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
+        std::map<const String, const String> macros_map;
+        macros_map.try_emplace("bucket", uri.getHost());
+        Macros macros(macros_map);
+        uri = macros.expand(mapper[uri.getScheme()]).empty()? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
     }
 };
 
