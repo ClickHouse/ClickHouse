@@ -199,7 +199,8 @@ inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::
 {
     /// a and b may come from different aggregate variants during the merging phase, in this case
     /// we cannot compare the value_ids.
-    if (a.state_ref && a.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && b.state_ref && a.state_ref->state == b.state_ref->state)
+    if (a.state_ref && a.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && b.state_ref
+        && a.state_ref->state == b.state_ref->state)
     {
         return a.state_ref->value_id == b.state_ref->value_id;
     }
@@ -217,7 +218,7 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::AdaptiveKeysHolder &)
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::AdaptiveKeysHolder & holder)
 {
-    if (holder.state_ref && holder.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID)
+    if (holder.state_ref)
     {
         return;
     }
