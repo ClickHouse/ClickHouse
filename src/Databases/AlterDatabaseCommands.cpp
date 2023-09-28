@@ -71,7 +71,7 @@ AlterDatabaseTableOverrideCommand::AlterDatabaseTableOverrideCommand(ASTAlterCom
 namespace
 {
     template <typename T>
-    std::vector<const T *> to_const_elements(std::vector<T *> input)
+    std::vector<const T *> toConstElements(std::vector<T *> input)
     {
         std::vector<const T *> output(input.begin(), input.end());
         return output;
@@ -79,9 +79,10 @@ namespace
 
     ASTTableOverride * tryGetExistingOverride(const ASTCreateQuery * create, const String & override_name)
     {
-        const ASTTableOverrideList * existing_table_overrides = create ? create->table_overrides : nullptr;
-        if (auto tmp = existing_table_overrides ? existing_table_overrides->tryGetTableOverride(override_name) : nullptr)
-            return tmp->as<ASTTableOverride>();
+        if (!create || !create->table_overrides)
+            return nullptr;
+        if (auto table_override = create->table_overrides->tryGetTableOverride(override_name))
+            return table_override->as<ASTTableOverride>();
         return nullptr;
     }
 
@@ -89,7 +90,6 @@ namespace
     {
         ContextMutablePtr internal_context = Context::createCopy(context);
         internal_context->setInternalQuery(true);
-        internal_context->setSetting("mutations_sync", 1);
         return internal_context;
     }
 
@@ -104,7 +104,7 @@ namespace
             case ASTAlterCommand::DROP_TABLE_OVERRIDE:
                 return "DROP";
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid ASTAlterCommand::Type {} - this is a bug!", ASTAlterCommand::typeToString(type));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid ASTAlterCommand::Type {} - this is a bug!", magic_enum::enum_name(type));
         }
     }
 }
@@ -178,6 +178,7 @@ void AlterDatabaseTableOverrideCommand::apply(DatabasePtr &, ContextPtr, AlterDa
     {
         if (!create->table_overrides)
         {
+            chassert(type == ASTAlterCommand::ADD_TABLE_OVERRIDE);
             create->set(create->table_overrides, std::make_shared<ASTTableOverrideList>());
         }
         create->table_overrides->setTableOverride(table_override->table_name, table_override->clone());
@@ -293,12 +294,12 @@ ASTPtr AlterDatabaseTableOverrideCommand::tryGetAlterTableQuery(const DatabasePt
 
 std::vector<const AlterDatabaseSettingCommand *> AlterDatabaseCommands::getSettingCommands() const
 {
-    return to_const_elements(setting_commands);
+    return toConstElements(setting_commands);
 }
 
 std::vector<const AlterDatabaseTableOverrideCommand *> AlterDatabaseCommands::getTableOverrideCommands() const
 {
-    return to_const_elements(table_override_commands);
+    return toConstElements(table_override_commands);
 }
 
 void AlterDatabaseCommands::applyAll(DatabasePtr & database, ContextPtr context)
@@ -377,7 +378,7 @@ void AlterDatabaseCommands::addCommand(const ASTAlterCommand & command_ast)
             return;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unrecognized ALTER DATABASE command: {}", ASTAlterCommand::typeToString(command_ast.type));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unrecognized ALTER DATABASE command: {}", magic_enum::enum_name(command_ast.type));
 }
 
 void AlterDatabaseCommands::prepareAll(const DatabasePtr & database, ContextPtr context)
