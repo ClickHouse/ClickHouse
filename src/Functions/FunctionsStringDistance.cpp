@@ -171,8 +171,6 @@ struct NameByteEditDistance
 
 using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
 
-using FunctionByteJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl>, NameByteJaccardIndex>;
-
 using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameByteEditDistance>;
 
 REGISTER_FUNCTION(StringDistance)
