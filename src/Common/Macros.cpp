@@ -38,7 +38,7 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
-Macros::Macros(std::map<String, String> map) 
+Macros::Macros(std::map<String, String> map)
 {
     macros = std::move(map);
 }
