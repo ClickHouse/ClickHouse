@@ -17,6 +17,11 @@ async_insert_options="--async_insert 1 --wait_for_async_insert 0 --async_insert_
 echo '{"id": 1, "s": "aaa"} {"id": 2, "s": "bbb"}' | $CLICKHOUSE_CLIENT $async_insert_options -q 'INSERT INTO t_async_insert_native_1 FORMAT JSONEachRow'
 $CLICKHOUSE_CLIENT $async_insert_options  -q 'INSERT INTO t_async_insert_native_1 FORMAT JSONEachRow {"id": 3, "s": "ccc"}'
 
+# Mixed inlined and external data is not supported.
+echo '{"id": 1, "s": "aaa"}' \
+    | $CLICKHOUSE_CLIENT $async_insert_options -q 'INSERT INTO t_async_insert_native_1 FORMAT JSONEachRow {"id": 2, "s": "bbb"}' 2>&1 \
+    | grep -o "NOT_IMPLEMENTED"
+
 $CLICKHOUSE_CLIENT -n -q "
     SELECT sum(length(entries.bytes)) FROM system.asynchronous_inserts
     WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_1';

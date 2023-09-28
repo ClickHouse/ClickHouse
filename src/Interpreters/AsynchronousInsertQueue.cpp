@@ -651,6 +651,8 @@ try
     else
         chunk = processPreprocessedEntries(key, data->entries, header, insert_context, add_entry_to_log);
 
+    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
+
     if (chunk.getNumRows() == 0)
     {
         finish_entries();
@@ -773,7 +775,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     }
 
     format->addBuffer(std::move(last_buffer));
-    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     Chunk chunk(executor.getResultColumns(), total_rows);
     chunk.setChunkInfo(std::move(chunk_info));
@@ -824,8 +825,6 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         const auto & query_for_logging = get_query_by_format(entry->format);
         add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes());
     }
-
-    ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     Chunk chunk(std::move(result_columns), total_rows);
     chunk.setChunkInfo(std::move(chunk_info));
