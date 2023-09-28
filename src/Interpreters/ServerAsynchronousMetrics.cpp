@@ -81,8 +81,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
     if (auto page_cache = getContext()->getPageCache())
     {
-        new_values["PageCacheBytes"] = { page_cache->getResidentSetSize(), "Userspace page cache memory usage in bytes" };
+        auto rss = page_cache->getResidentSetSize();
+        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
         new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
+
+        if (rss.unreclaimable_rss.has_value())
+            new_values["UnreclaimableRss"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())

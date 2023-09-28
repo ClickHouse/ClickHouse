@@ -48,7 +48,7 @@ TEST(PageCache, Stress)
     size_t ram_size = estimateRAMSize();
     PageCache cache(2 << 20, 1 << 30, ram_size + ram_size / 10, /* use_madv_free */ true, /* use_huge_pages */ true);
 
-    CHECK(cache.getResidentSetSize() == 0);
+    CHECK(cache.getResidentSetSize().page_cache_rss);
 
     const size_t num_keys = static_cast<size_t>(cache.maxChunks() * 1.5);
     const size_t pages_per_chunk = cache.chunkSize() / cache.pageSize();
@@ -185,7 +185,7 @@ TEST(PageCache, Stress)
     CHECK(total_racing_writes > 0);
     CHECK(cache.getPinnedSize() == 0);
 
-    size_t rss = cache.getResidentSetSize();
+    size_t rss = cache.getResidentSetSize().page_cache_rss;
     std::cout << "RSS: " << rss * 1. / (1ul << 30) << " GiB" << std::endl;
     /// This can be flaky if the system has < 10% free memory. If this turns out to be a problem, feel free to remove or reduce.
     CHECK(rss > ram_size / 10);
@@ -195,7 +195,7 @@ TEST(PageCache, Stress)
 #ifdef OS_LINUX
     /// MADV_DONTNEED is not synchronous, and we're freeing lots of pages. Let's give Linux a lot of time.
     std::this_thread::sleep_for(std::chrono::seconds(10));
-    size_t new_rss = cache.getResidentSetSize();
+    size_t new_rss = cache.getResidentSetSize().page_cache_rss;
     std::cout << "RSS after dropping cache: " << new_rss * 1. / (1ul << 30) << " GiB" << std::endl;
     CHECK(new_rss < rss / 2);
 #endif

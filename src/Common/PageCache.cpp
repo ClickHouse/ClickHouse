@@ -191,11 +191,12 @@ size_t PageCache::maxChunks() const { return chunks_per_mmap_target * max_mmaps;
 size_t PageCache::getPinnedSize() const
 {
     std::unique_lock lock(global_mutex);
-    return (mmaps.size() * total_chunks - lru.size()) * bytes_per_page * pages_per_chunk;
+    return (total_chunks - lru.size()) * bytes_per_page * pages_per_chunk;
 }
 
-size_t PageCache::getResidentSetSize() const
+PageCache::MemoryStats PageCache::getResidentSetSize() const
 {
+    MemoryStats stats;
 #ifdef OS_LINUX
     if (use_madv_free)
     {
@@ -205,16 +206,15 @@ size_t PageCache::getResidentSetSize() const
 
         ReadBufferFromFile in("/proc/self/smaps");
 
-        /// Example:
+        /// Parse the smaps contents, which is text consisting of entries like this:
         ///
-        /// 7f22af800000-7f42af800000 rw-p 00000000 00:00 0
-        /// Size:           134217728 kB
+        /// 117ba4a00000-117be4a00000 rw-p 00000000 00:00 0
+        /// Size:            1048576 kB
         /// KernelPageSize:        4 kB
         /// MMUPageSize:           4 kB
-        /// Rss:            54286104 kB
-        /// Pss:            54286104 kB
-        ///
-        /// (Btw, there's also field "LazyFree:" for pages in the MADV_FREE state.)
+        /// Rss:              539516 kB
+        /// Pss:              539516 kB
+        /// ...
 
         auto read_token = [&]
         {
@@ -241,8 +241,9 @@ size_t PageCache::getResidentSetSize() const
             }
         };
 
-        size_t total_rss = 0;
         bool current_range_is_cache = false;
+        size_t total_rss = 0;
+        size_t total_lazy_free = 0;
         while (!in.eof())
         {
             String s = read_token();
@@ -253,25 +254,36 @@ size_t PageCache::getResidentSetSize() const
                 UInt64 addr = unhexUInt<UInt64>(s.c_str());
                 current_range_is_cache = cache_mmap_addrs.contains(addr);
             }
-            else if (s == "Rss:" && current_range_is_cache)
+            else if (s == "Rss:" || s == "LazyFree")
             {
                 skip_whitespace();
-                size_t rss;
-                readIntText(rss, in);
+                size_t val;
+                readIntText(val, in);
                 skip_whitespace();
                 String unit = read_token();
                 if (unit != "kB")
                     throw Exception(ErrorCodes::SYSTEM_ERROR, "Unexpected units in /proc/self/smaps: {}", unit);
-                total_rss += rss * 1024;
+                size_t bytes = val * 1024;
+
+                if (s == "Rss:")
+                {
+                    total_rss += bytes;
+                    if (current_range_is_cache)
+                        stats.page_cache_rss += bytes;
+                }
+                else
+                    total_lazy_free += bytes;
             }
             skipToNextLineOrEOF(in);
         }
+        stats.unreclaimable_rss = total_rss - std::min(total_lazy_free, total_rss);
 
-        return total_rss;
+        return stats;
     }
 #endif
 
-    return bytes_per_page * pages_per_chunk * total_chunks;
+    stats.page_cache_rss = bytes_per_page * pages_per_chunk * total_chunks;
+    return stats;
 }
 
 PinnedPageChunk PageCache::getOrSet(PageCacheKey key, bool detached_if_missing, bool inject_eviction)
@@ -317,7 +329,7 @@ PinnedPageChunk PageCache::getOrSet(PageCacheKey key, bool detached_if_missing, 
                     ///  And we want to do the check+detach before unlocking global_mutex, because
                     ///  otherwise we may detach a chunk pinned by someone else, which may be unexpected
                     ///  for that someone else. Or maybe the latter is fine, dropCache() already does it.)
-                    if (chunk->pages_populated.get(0) && chunk->data[0] == 0)
+                    if (chunk->pages_populated.get(0) && reinterpret_cast<volatile std::atomic<char>*>(chunk->data)->load(std::memory_order_relaxed) == 0)
                         evictChunk(chunk, lock);
                 }
 
@@ -419,9 +431,9 @@ void PageCache::sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex>
             big_page_populated = true;
             populated_pages += 1;
 
-            char & byte = chunk->data[idx * bytes_per_page];
-            chunk->first_bit_of_each_page.set(idx, (byte & 1) != 0);
-            byte |= 1;
+            auto & byte = reinterpret_cast<volatile std::atomic<char> &>(chunk->data[idx * bytes_per_page]);
+            chunk->first_bit_of_each_page.set(idx, (byte.load(std::memory_order_relaxed) & 1) != 0);
+            byte.fetch_or(1, std::memory_order_relaxed);
         }
         if (big_page_populated)
             populated_big_pages += 1;
@@ -436,7 +448,9 @@ void PageCache::sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex>
 
 std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) noexcept
 {
-    auto * data = const_cast<volatile char *>(chunk->data); // make sure our strategic memory reads/writes are not reordered or optimized out
+    static_assert(sizeof(std::atomic<char>) == 1, "char is not atomic?");
+    // Make sure our strategic memory reads/writes are not reordered or optimized out.
+    auto * data = reinterpret_cast<volatile std::atomic<char> *>(chunk->data);
     size_t pages_restored = 0;
     size_t pages_evicted = 0;
     for (size_t idx = 0; idx < chunk->size / bytes_per_page; ++idx)
@@ -462,14 +476,14 @@ std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, st
         ///    3b. If it's nonzero, the page is intact.
         ///        Restore the lowest bit of the first byte to the saved original value from the bitset.
 
-        char second_byte = data[idx * bytes_per_page + 1];
-        data[idx * bytes_per_page + 1] = second_byte;
+        char second_byte = data[idx * bytes_per_page + 1].load(std::memory_order_relaxed);
+        data[idx * bytes_per_page + 1].store(second_byte, std::memory_order_relaxed);
 
-        char first_byte = data[idx * bytes_per_page];
+        char first_byte = data[idx * bytes_per_page].load(std::memory_order_relaxed);
         if (first_byte == 0)
         {
             pages_evicted += 1;
-            data[idx * bytes_per_page + 1] = 0;
+            data[idx * bytes_per_page + 1].store(0, std::memory_order_relaxed);
             chunk->pages_populated.unset(idx);
         }
         else
@@ -477,7 +491,7 @@ std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, st
             pages_restored += 1;
             chassert(first_byte & 1);
             if (!chunk->first_bit_of_each_page.get(idx))
-                data[idx * bytes_per_page] &= ~1;
+                data[idx * bytes_per_page].fetch_and(~1, std::memory_order_relaxed);
         }
     }
     return {pages_restored, pages_evicted};
@@ -617,6 +631,8 @@ PageCache::Mmap::Mmap(size_t bytes_per_page_, size_t pages_per_chunk_, size_t pa
             LOG_WARNING(&Poco::Logger::get("PageCache"),
                 "madvise(MADV_HUGEPAGE) failed: {}. Userspace page cache will be relatively slow.", errnoToString());
     }
+#else
+    (void)use_huge_pages_;
 #endif
 
     chunks = std::move(temp_chunks);

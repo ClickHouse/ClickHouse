@@ -7,7 +7,7 @@ set page_cache_inject_eviction = 0;
 set enable_filesystem_cache = 0;
 set use_uncompressed_cache = 0;
 
-create temporary table e as select * from system.events;
+create table events_snapshot engine Memory as select * from system.events;
 create view events_diff as
     -- round all stats to 70 MiB to leave a lot of leeway for overhead
     with if(event like '%Bytes%', 70*1024*1024, 35) as granularity,
@@ -19,7 +19,7 @@ create view events_diff as
             'PageCacheChunkDataHits'), 1, 1000) as clamp
     select event, min2(intDiv(new.value - old.value, granularity), clamp) as diff
     from system.events new
-    left outer join e old
+    left outer join events_snapshot old
     on old.event = new.event
     where diff != 0 and
           event in (
@@ -36,29 +36,29 @@ system stop merges;
 insert into page_cache_03055 select * from numbers(10485760) settings max_block_size=100000000, preferred_block_size_bytes=1000000000;
 
 select * from events_diff;
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 system start merges;
 optimize table page_cache_03055 final;
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 -- Cold read, should miss cache. (Populating cache on write is not implemented yet.)
 
 select sum(k) from page_cache_03055;
 
 select * from events_diff where event not in ('PageCacheChunkDataHits');
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 -- Repeat read, should hit cache.
 
 select sum(k) from page_cache_03055;
 
 select * from events_diff;
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 -- Drop cache and read again, should miss. Also don't write to cache.
 
@@ -68,25 +68,38 @@ select sum(k) from page_cache_03055 settings read_from_page_cache_if_exists_othe
 
 -- Data could be read multiple times because we're not writing to cache.
 select event, if(event in ('PageCacheChunkMisses', 'ReadBufferFromS3Bytes'), diff >= 1, diff) from events_diff where event not in ('PageCacheChunkDataHits');
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 -- Repeat read, should still miss, but populate cache.
 
 select sum(k) from page_cache_03055;
 
 select * from events_diff;
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 -- Read again, hit the cache.
 
 select sum(k) from page_cache_03055 settings read_from_page_cache_if_exists_otherwise_bypass_cache = 1;
 
 select * from events_diff;
-truncate table e;
-insert into e select * from system.events;
+truncate table events_snapshot;
+insert into events_snapshot select * from system.events;
 
 
+-- Known limitation: cache is not invalidated if a table is dropped and created again at the same path.
+-- set allow_deprecated_database_ordinary=1;
+-- create database test_03055 engine = Ordinary;
+-- create table test_03055.t (k Int64) engine MergeTree order by k settings storage_policy = 's3_cache';
+-- insert into test_03055.t values (1);
+-- select * from test_03055.t;
+-- drop table test_03055.t;
+-- create table test_03055.t (k Int64) engine MergeTree order by k settings storage_policy = 's3_cache';
+-- insert into test_03055.t values (2);
+-- select * from test_03055.t;
+
+
+drop table events_snapshot;
 drop table page_cache_03055;
 drop view events_diff;

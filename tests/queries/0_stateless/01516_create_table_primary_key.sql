@@ -1,5 +1,9 @@
 -- Tags: no-parallel
 
+-- Userspace page cache is not invalidated correctly when a table is dropped and created again at the
+-- same path.
+set force_enable_page_cache=0;
+
 DROP DATABASE IF EXISTS test_01516;
 set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test_01516 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic

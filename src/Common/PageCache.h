@@ -66,6 +66,15 @@ namespace DB
 /// Hash of FileChunkAddress.
 using PageCacheKey = UInt128;
 
+/// Identifies a chunk of a file.
+///
+/// Currently we assume that file contents never change, so no cache invalidation is required.
+/// This is normally the case because merge tree file paths contain the table UUID and the part name,
+/// and part data is immutable.
+/// But there's at least one case where this assumption doesn't hold: DatabaseOrdinary doesn't put
+/// UUID into the file path, so dropping and re-creating a table will cause filename collisions.
+/// We currently don't do anything about this - table reads may just return garbage in this case.
+/// This seems ok because DatabaseOrdinary is deprecated.
 struct FileChunkAddress
 {
     std::string disk_name;
@@ -218,9 +227,19 @@ public:
     size_t chunkSize() const;
     size_t maxChunks() const;
 
-    /// How many bytes of actual RAM are used for the cache pages. Doesn't include metadata and overhead (e.g. PageChunk structs).
+    struct MemoryStats
+    {
+        /// How many bytes of actual RAM are used for the cache pages. Doesn't include metadata
+        /// and overhead (e.g. PageChunk structs).
+        size_t page_cache_rss = 0;
+        /// Resident set size for the whole process, excluding any MADV_FREE pages (PageCache's or not).
+        /// This can be used as a more useful memory usage number for clickhouse server, instead of RSS.
+        /// Populated only if MADV_FREE is used, otherwise zero.
+        std::optional<size_t> unreclaimable_rss;
+    };
+
     /// Reads /proc/self/smaps, so not very fast.
-    size_t getResidentSetSize() const;
+    MemoryStats getResidentSetSize() const;
 
     /// Total length of memory ranges currently pinned by PinnedPageChunk-s, including unpopulated pages.
     size_t getPinnedSize() const;
@@ -242,7 +261,7 @@ private:
         size_t num_chunks = 0; // might be smaller than chunks_per_mmap_target because of alignment
 
         Mmap(Mmap &&) noexcept;
-        Mmap(size_t bytes_per_page, size_t pages_per_chunk, size_t pages_per_big_page, size_t num_chunks, void * address_hint, bool use_huge_pages);
+        Mmap(size_t bytes_per_page, size_t pages_per_chunk, size_t pages_per_big_page, size_t num_chunks, void * address_hint, bool use_huge_pages_);
         ~Mmap() noexcept;
     };
 

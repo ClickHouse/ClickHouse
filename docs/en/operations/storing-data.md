@@ -275,6 +275,33 @@ Cache profile events:
 
 - `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`
 
+## Using in-memory cache (userspace page cache) {#userspace-page-cache}
+
+The File Cache described above stores cached data in local files. Alternatively, S3 and HDFS disks can be configured to use "Userspace Page Cache", which is RAM-only. Userspace page cache is recommended only if file cache can't be used for some reason, e.g. if the machine doesn't have a local disk at all. Note that file cache effectively uses RAM for caching too, since the OS caches contents of local files.
+
+To enable userspace page cache for a disk, use `enable_page_cache` property in the disk configuration:
+``` xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                ... s3 configuration ...
+                <enable_page_cache>1</enable_page_cache>
+            </s3>
+        </disks>
+    </storage_configuration>
+```
+
+There's also a setting `force_enable_page_cache` that enables userspace page cache regardless of the disk config. It can be used e.g. to try the cache on a single query before enabling it for the whole disk.
+
+By default, on Linux, the userspace page cache will use all available memory, similar to the OS page cache. In tools like `top` and `ps`, the clickhouse server process will typically show resident set size near 100% of the machine's RAM - this is normal, and most of this memory is actually reclaimable by the OS on memory pressure (`MADV_FREE`). This behavior can be disabled with server setting `page_cache_use_madv_free = 0`, making the userspace page cache just use a fixed amount of memory `page_cache_size` with no special interaction with the OS. On Mac OS, `page_cache_use_madv_free` is always disabled as it doesn't have lazy `MADV_FREE`.
+
+Unfortunately, `page_cache_use_madv_free` makes it difficult to tell if the server is close to running out of memory, since the RSS metric becomes useless. Async metric `UnreclaimableRss` shows the amount of physical memory used by the server, excluding the memory reclaimable by the OS: `select value from system.asynchronous_metrics where metric = 'UnreclaimableRss'`. Use it for monitoring instead of RSS. This metric is only available if `page_cache_use_madv_free` is enabled.
+
+**Warning**
+Userspace page cache is not compatible with database engine `Ordinary` (which is deprecated and not allowed by default). Inside such databases, if a table is dropped and created again with the same name, userspace page cache is not invalidated, and the new table may see cached data from the old table.
+
 ## Storing Data on Web Server {#storing-data-on-webserver}
 
 There is a tool `clickhouse-static-files-uploader`, which prepares a data directory for a given table (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`). For each table you need, you get a directory of files. These files can be uploaded to, for example, a web server with static files. After this preparation, you can load this table into any ClickHouse server via `DiskWeb`.
