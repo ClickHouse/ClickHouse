@@ -1969,6 +1969,12 @@ void Context::killCurrentQuery() const
 
 bool Context::isCurrentQueryKilled() const
 {
+    /// Here getProcessListElementSafe is used, not getProcessListElement call
+    /// getProcessListElement requires that process list exists
+    /// In the most cases it is true, because process list exists during the query execution time.
+    /// That is valid for all operations with parts, like read and write operations.
+    /// However that Context::isCurrentQueryKilled call could be used on the edges
+    /// when query is starting or finishing, in such edges context still exist but process list already expired
     if (auto elem = getProcessListElementSafe())
         return elem->isKilled();
 
