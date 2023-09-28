@@ -456,8 +456,6 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         size_t left_idx = input_headers[0].getPositionByName(left_key);
         size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
-        if (strictness == JoinStrictness::Asof)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ASOF joins USING");
     }
 
     const auto *smjPtr = typeid_cast<const FullSortingMergeJoin *>(table_join.get());
