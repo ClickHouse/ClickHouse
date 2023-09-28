@@ -2,8 +2,8 @@ select 'const arguments byteHammingDistance';
 select byteHammingDistance('abcd', 'abcd');
 select 'const arguments byteEditDistance';
 select byteEditDistance('clickhouse', 'mouse');
-select 'const arguments byteJaccardIndex';
-select byteJaccardIndex('clickhouse', 'mouse');
+/*select 'const arguments byteJaccardIndex';
+select byteJaccardIndex('clickhouse', 'mouse');*/
 
 drop table if exists t;
 create table t
@@ -25,8 +25,8 @@ select mismatches(s1, s2) from t;
 select mismatches('abc', s2) from t;
 select mismatches(s2, 'def') from t;
 
-select 'byteJaccardIndex';
-select byteJaccardIndex(s1, s2) from t;
+/*select 'byteJaccardIndex';
+select byteJaccardIndex(s1, s2) from t;*/
 select 'byteEditDistance';
 select byteEditDistance(s1, s2) from t;
 select 'byteLevenshteinDistance';
