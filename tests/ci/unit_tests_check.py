@@ -101,7 +101,7 @@ def process_results(
     report_path = result_directory / "test_result.json"
     if not report_path.exists():
         logging.info("No output log on path %s", report_path)
-        return "error", "No output log", test_results
+        return ERROR, "No output log", test_results
 
     with open(report_path, "r", encoding="utf-8") as j:
         report = json.load(j)
@@ -109,11 +109,6 @@ def process_results(
     total_counter = report["tests"]
     failed_counter = report["failures"]
     error_counter = report["errors"]
-    status = SUCCESS
-    if failed_counter:
-        status = FAILURE
-    if error_counter:
-        status = ERROR
 
     description = ""
     SEGFAULT = "Segmentation fault. "
@@ -154,13 +149,24 @@ def process_results(
                 )
             )
 
+    check_status = SUCCESS
+    tests_status = OK
+    tests_time = float(report["time"][:-1])
+    if failed_counter:
+        check_status = FAILURE
+        test_status = FAIL
+    if error_counter:
+        check_status = ERROR
+        test_status = ERROR
+    test_results.append(TestResult(report["name"], tests_status, tests_time))
+
     if not description:
         description += (
             f"fail: {failed_counter + error_counter}, "
             f"passed: {total_counter - failed_counter - error_counter}"
         )
 
-    return status, description, test_results
+    return check_status, description, test_results
 
 
 def main():
