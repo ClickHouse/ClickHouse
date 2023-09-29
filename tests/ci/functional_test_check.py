@@ -28,7 +28,7 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import get_image_with_version, DockerImage
 from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token

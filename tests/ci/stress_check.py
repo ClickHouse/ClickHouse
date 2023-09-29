@@ -16,7 +16,7 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo

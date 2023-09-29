@@ -5,9 +5,7 @@ import os
 import shutil
 from pathlib import Path
 
-import requests  # type: ignore
-
-from build_download_helper import download_build_with_progress, DownloadException
+from build_download_helper import download_build_with_progress
 from compress_files import decompress_fast, compress_fast
 from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
 from s3_helper import S3Helper

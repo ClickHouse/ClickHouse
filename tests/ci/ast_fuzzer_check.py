@@ -15,9 +15,8 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
 )
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import (
-    GITHUB_RUN_URL,
     REPORTS_PATH,
     TEMP_PATH,
 )
@@ -26,6 +25,8 @@ from pr_info import PRInfo
 from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
@@ -115,7 +116,6 @@ def main():
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
     check_name_lower = (
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
