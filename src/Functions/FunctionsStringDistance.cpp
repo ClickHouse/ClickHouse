@@ -59,8 +59,8 @@ struct FunctionStringDistanceImpl
         size_t size = res.size();
         for (size_t i = 0; i < size; ++i)
         {
-            res[i]
-                = Op::process(haystack_data, haystack_size, needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1] - 1);
+            res[i] = Op::process(haystack_data, haystack_size,
+                needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1] - 1);
         }
     }
 
@@ -105,6 +105,39 @@ struct ByteHammingDistanceImpl
 
         res = res + (haystack_end - haystack) + (needle_end - needle);
         return res;
+    }
+};
+
+struct ByteJaccardIndexImpl
+{
+    using ResultType = Float64;
+    static ResultType inline process(
+        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        if (haystack_size == 0 || needle_size == 0)
+            return 0;
+
+        constexpr size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
+        std::array<UInt8, max_size> haystack_set;
+        std::array<UInt8, max_size> needle_set;
+
+        haystack_set.fill(0);
+        needle_set.fill(0);
+
+        for (size_t i = 0; i < haystack_size; ++i)
+            haystack_set[static_cast<unsigned char>(haystack[i])] = 1;
+        for (size_t i = 0; i < needle_size; ++i)
+            needle_set[static_cast<unsigned char>(needle[i])] = 1;
+
+        UInt8 intersection = 0;
+        UInt8 union_size = 0;
+        for (size_t i = 0; i < max_size; ++i)
+        {
+            intersection += haystack_set[i] & needle_set[i];
+            union_size += haystack_set[i] | needle_set[i];
+        }
+
+        return static_cast<ResultType>(intersection) / static_cast<ResultType>(union_size);
     }
 };
 
@@ -173,6 +206,9 @@ using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDist
 
 using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
 
+struct NameJaccardIndex { static constexpr auto name = "jaccardIndex"; };
+using FunctionByteJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl>, NameJaccardIndex>;
+
 REGISTER_FUNCTION(StringDistance)
 {
     factory.registerFunction<FunctionByteHammingDistance>(
@@ -181,7 +217,9 @@ REGISTER_FUNCTION(StringDistance)
 
     factory.registerFunction<FunctionByteEditDistance>(
         FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
-
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
+
+    factory.registerFunction<FunctionByteJaccardIndex>(
+        FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.)"});
 }
 }
