@@ -1,0 +1,18 @@
+-- { echoOn }
+
+-- tuple() loses the column names (would be good to fix, see #36773)
+select untuple(tuple(1 as a, 2 as b)) format TSVWithNames;
+tupleElement((1, 2), 1)	tupleElement((1, 2), 2)
+1	2
+-- explicitly specified tuple element names are used as column names
+select untuple(tuple(1, 2)::Tuple(a Int, b Int)) format TSVWithNames;
+a	b
+1	2
+-- indexes are used when untuple() has an alias (backward compatibility)
+select untuple(tuple(1, 2)::Tuple(a Int, b Int)) u format TSVWithNames;
+u.1	u.2
+1	2
+-- default names are used when there are no tuple element names and no untuple alias
+select untuple(tuple(1, 2)::Tuple(Int, Int)) format TSVWithNames;
+tupleElement(CAST((1, 2), \'Tuple(Int, Int)\'), 1)	tupleElement(CAST((1, 2), \'Tuple(Int, Int)\'), 2)
+1	2
