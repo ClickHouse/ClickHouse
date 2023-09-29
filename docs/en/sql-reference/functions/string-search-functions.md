@@ -708,7 +708,7 @@ Result:
 
 - Alias: mismatches
 
-## byteJaccardIndex
+## jaccardIndex
 
 Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
 
@@ -721,40 +721,39 @@ byteJaccardIndex(string1, string2)
 **Examples**
 
 ``` sql
-SELECT byteJaccardIndex('clickhouse', 'mouse');
+SELECT jaccardIndex('clickhouse', 'mouse');
 ```
 
 Result:
 
 ``` text
-┌─byteJaccardIndex('clickhouse', 'mouse')─┐
+┌─jaccardIndex('clickhouse', 'mouse')─┐
 │                                     0.4 │
 └─────────────────────────────────────────┘
 ```
 
-## byteEditDistance
+## editDistance
 
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteEditDistance(string1, string2)
+editDistance(string1, string2)
 ```
 
 **Examples**
 
 ``` sql
-SELECT byteEditDistance('clickhouse', 'mouse');
+SELECT editDistance('clickhouse', 'mouse');
 ```
 
 Result:
 
 ``` text
-┌─byteEditDistance('clickhouse', 'mouse')─┐
+┌─editDistance('clickhouse', 'mouse')─┐
 │                                       6 │
 └─────────────────────────────────────────┘
 ```
 
-- Alias: byteLevenshteinDistance
-
+- Alias: levenshteinDistance
