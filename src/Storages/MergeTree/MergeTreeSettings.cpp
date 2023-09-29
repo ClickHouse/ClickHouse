@@ -212,4 +212,20 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             merge_selecting_sleep_slowdown_factor);
     }
 }
+
+void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
+{
+    static MergeTreeSettings merge_tree_settings;
+    static std::set<String> allowed_column_level_settings = {"min_compress_block_size", "max_compress_block_size"};
+    for (const auto & change : changes)
+    {
+        if (!allowed_column_level_settings.contains(change.name))
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING,
+                "Setting {} is unknown or not supported at column level, supported settings: {}",
+                change.name,
+                fmt::join(allowed_column_level_settings, ", "));
+        merge_tree_settings.checkCanSet(change.name, change.value);
+    }
+}
 }

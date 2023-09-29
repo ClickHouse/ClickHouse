@@ -61,7 +61,8 @@ struct AlterCommand
         /// Other properties
         COMMENT,
         CODEC,
-        TTL
+        TTL,
+        SETTINGS
     };
 
     Type type = UNKNOWN;
@@ -130,7 +131,7 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
 
-    /// For MODIFY SETTING
+    /// For MODIFY SETTING or MODIFY COLUMN SETTINGS
     SettingsChanges settings_changes;
 
     /// For RESET SETTING

@@ -245,6 +245,12 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     void sanityCheck(size_t background_pool_tasks) const;
 };
 
+
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
+
+namespace MergeTreeColumnSettings
+{
+    void validate(const SettingsChanges & changes);
+}
 
 }

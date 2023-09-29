@@ -654,9 +654,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (col_decl.per_column_settings)
         {
             column.settings = col_decl.per_column_settings->as<ASTSetQuery &>().changes;
-            /// Sanity check here, assume mergetree
-            MergeTreeSettings dummy;
-            dummy.applyChanges(column.settings);
+            MergeTreeColumnSettings::validate(column.settings);
         }
 
         res.add(std::move(column));

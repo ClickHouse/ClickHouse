@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -65,6 +66,8 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::CODEC;
     else if (property == "TTL")
         return AlterCommand::RemoveProperty::TTL;
+    else if (property == "COLUMN SETTINGS")
+        return AlterCommand::RemoveProperty::SETTINGS;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
@@ -163,6 +166,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.codec)
             command.codec = ast_col_decl.codec;
+
+        if (ast_col_decl.per_column_settings)
+            command.settings_changes = ast_col_decl.per_column_settings->as<ASTSetQuery &>().changes;
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -428,6 +434,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 column.ttl.reset();
             }
+            else if (to_remove == RemoveProperty::SETTINGS)
+            {
+                column.settings.clear();
+            }
             else
             {
                 if (codec)
@@ -441,6 +451,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
                 if (data_type)
                     column.type = data_type;
+
+                if (!settings_changes.empty())
+                {
+                    MergeTreeColumnSettings::validate(settings_changes);
+                    column.settings = settings_changes;
+                }
 
                 /// User specified default expression or changed
                 /// datatype. We have to replace default.
@@ -1189,7 +1205,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have COMMENT, cannot remove it",
                         backQuote(column_name));
-
+                if (command.to_remove == AlterCommand::RemoveProperty::SETTINGS && column_from_table.settings.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} doesn't have SETTINGS, cannot remove it",
+                        backQuote(column_name));
             }
 
             modified_columns.emplace(column_name);
