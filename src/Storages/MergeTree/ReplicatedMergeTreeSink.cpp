@@ -321,11 +321,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if constexpr (async_insert)
         {
-            block_id = AsyncInsertBlockInfo::getHashesForBlocks(unmerged_block ? *unmerged_block : current_block, temp_part.part->info.partition_id);
-            if (unmerged_block)
-                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(unmerged_block->offsets), unmerged_block->offsets.size());
-            else
-                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets), current_block.offsets.size());
+            auto get_block_id = [&](BlockWithPartition & block_)
+            {
+                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part.part->info.partition_id);
+                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
+            };
+            get_block_id(unmerged_block ? *unmerged_block : current_block);
         }
         else
         {
