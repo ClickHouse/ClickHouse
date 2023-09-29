@@ -35,6 +35,12 @@ def start_cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def cleanup():
+    yield
+    node1.restart_with_original_version(clear_data_dir=True)
+
+
 # We will test that serialization of internal state of "avg" function is compatible between different versions.
 # TODO Implement versioning of serialization format for aggregate function states.
 # NOTE This test is too ad-hoc.
