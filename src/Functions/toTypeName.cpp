@@ -16,7 +16,7 @@ namespace
 class FunctionToTypeName : public IFunction
 {
 public:
-    FunctionToTypeName(bool print_pretty_type_names_) : print_pretty_type_names(print_pretty_type_names_)
+    explicit FunctionToTypeName(bool print_pretty_type_names_) : print_pretty_type_names(print_pretty_type_names_)
     {
     }
 
