@@ -753,7 +753,7 @@ Possible values:
 - Float between 0 and 1 to enable sparse serialization
 - 1.0 (or greater) if you do not want to use sparse serialization
 
-Default value: `0.9375` (sparse serialization is disabled)
+Default value: `0.9375`
 
 **Example**
 
