@@ -1,5 +1,5 @@
 -- enforce some defaults to be sure that the env settings will not affect the test
-SET max_threads=5, async_socket_for_remote=1, async_socket_for_remote=1, optimize_read_in_order=1;
+SET max_threads=5, async_socket_for_remote=1, optimize_read_in_order=1, load_marks_asynchronously=0, local_filesystem_read_method='pread';
 
 
 -- we use query_thread_log to check peak thread usage
@@ -154,13 +154,6 @@ select count() from system.parts where table = 'test_lot_of_parts' and active an
 
 SELECT 'prefer_localhost_replica=1, remote query with read in order' AS testname;
 
---- it seem like the number of threads here reported here is still higher than expected
---- max_threads=1 => peak_threads=7
---- max_threads=2 => peak_threads=14
---- max_threads=5 => peak_threads=25
---- may be it's a matter of the way how we count threads in thread_log, or there is another problem here
---- anyway it still much better than before (see the next test in that file - it uses 500 threads).
-
 -- query which uses optimize_read_in_order=1
 SELECT DISTINCT
     'val' AS fieldType,
@@ -179,8 +172,7 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    -- it should be max_threads+2 not max_threads*8
-    if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) * 8, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
+    if(peak_threads BETWEEN 1 AND toUInt64(getSetting('max_threads')) + 2, 'ok', 'too many threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
     event_time > now() - 60
