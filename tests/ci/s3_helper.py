@@ -301,9 +301,7 @@ class S3Helper:
 
     @staticmethod
     def copy_file_to_local(bucket_name: str, file_path: Path, s3_path: str) -> str:
-        local_path = (
-            Path(RUNNER_TEMP) / "s3" / os.path.join(bucket_name, s3_path)
-        ).absolute()
+        local_path = (Path(RUNNER_TEMP) / "s3" / bucket_name / s3_path).absolute()
         local_dir = local_path.parent
         local_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(file_path, local_path)
