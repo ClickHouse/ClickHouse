@@ -51,7 +51,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
 
 def get_packager_cmd(
     build_config: BuildConfig,
-    packager_path: str,
+    packager_path: Path,
     output_path: Path,
     build_version: str,
     image_version: str,
@@ -100,12 +100,12 @@ def build_clickhouse(
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
         if build_output_path.exists():
-            build_results = os.listdir(build_output_path)
+            results_exists = any(build_output_path.iterdir())
         else:
-            build_results = []
+            results_exists = False
 
         if retcode == 0:
-            if len(build_results) > 0:
+            if results_exists:
                 success = True
                 logging.info("Built successfully")
             else:
@@ -125,7 +125,7 @@ def check_for_success_run(
 ) -> None:
     # TODO: Remove after S3 artifacts
     # the final empty argument is necessary for distinguish build and build_suffix
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
+    logged_prefix = "/".join((S3_BUILDS_BUCKET, s3_prefix, ""))
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
         # Performance artifacts are now part of regular build, so we're safe
@@ -218,11 +218,12 @@ def main():
     build_config = CI_CONFIG.build_config[build_name]
 
     temp_path = Path(TEMP_PATH)
-    os.makedirs(temp_path, exist_ok=True)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo()
 
-    logging.info("Repo copy path %s", REPO_COPY)
+    logging.info("Repo copy path %s", repo_path)
 
     s3_helper = S3Helper()
 
@@ -258,11 +259,11 @@ def main():
     logging.info("Build short name %s", build_name)
 
     build_output_path = temp_path / build_name
-    os.makedirs(build_output_path, exist_ok=True)
+    build_output_path.mkdir(parents=True, exist_ok=True)
 
     packager_cmd = get_packager_cmd(
         build_config,
-        os.path.join(REPO_COPY, "docker/packager"),
+        repo_path / "docker" / "packager",
         build_output_path,
         version.string,
         image_version,
@@ -272,7 +273,7 @@ def main():
     logging.info("Going to run packager with %s", packager_cmd)
 
     logs_path = temp_path / "build_log"
-    os.makedirs(logs_path, exist_ok=True)
+    logs_path.mkdir(parents=True, exist_ok=True)
 
     start = time.time()
     log_path, build_status = build_clickhouse(
@@ -305,7 +306,7 @@ def main():
             "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
             performance_urls[0],
         )
-        os.remove(performance_path)
+        performance_path.unlink()
 
     build_urls = (
         s3_helper.upload_build_directory_to_s3(
@@ -400,7 +401,7 @@ FORMAT JSONCompactEachRow"""
         }
         url = f"https://{clickhouse_ci_logs_host}/"
         profiles_dir = temp_path / "profiles_source"
-        os.makedirs(profiles_dir, exist_ok=True)
+        profiles_dir.mkdir(parents=True, exist_ok=True)
         logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
         git_runner(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
@@ -408,7 +409,7 @@ FORMAT JSONCompactEachRow"""
         )
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
-            for profile_sourse in os.listdir(profiles_dir):
+            for profile_sourse in profiles_dir.iterdir():
                 with open(profiles_dir / profile_sourse, "rb") as ps_fd:
                     profile_fd.write(ps_fd.read())
 
