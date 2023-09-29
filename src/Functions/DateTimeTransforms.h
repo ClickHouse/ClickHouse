@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/DateLUT.h>
+#include <Common/IntervalKind.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVector.h>
@@ -301,6 +302,301 @@ struct ToStartOfYearImpl
     }
 
     using FactorTransform = ZeroTransform;
+};
+
+
+template <IntervalKind::Kind unit>
+struct ToStartOfInterval;
+
+static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
+
+template <>
+struct ToStartOfInterval<IntervalKind::Nanosecond>
+{
+    static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(UInt32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static Int64 execute(Int64 t, UInt64 nanoseconds, const DateLUTImpl &, Int64 scale_multiplier)
+    {
+        if (scale_multiplier < 1000000000)
+        {
+            Int64 t_nanoseconds = 0;
+            if (common::mulOverflow(t, (static_cast<Int64>(1000000000) / scale_multiplier), t_nanoseconds))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            if (t >= 0) [[likely]]
+                return t_nanoseconds / nanoseconds * nanoseconds;
+            else
+                return ((t_nanoseconds + 1) / nanoseconds - 1) * nanoseconds;
+        }
+        else
+            if (t >= 0) [[likely]]
+                return t / nanoseconds * nanoseconds;
+            else
+                return ((t + 1) / nanoseconds - 1) * nanoseconds;
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Microsecond>
+{
+    static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(UInt32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static Int64 execute(Int64 t, UInt64 microseconds, const DateLUTImpl &, Int64 scale_multiplier)
+    {
+        if (scale_multiplier < 1000000)
+        {
+            Int64 t_microseconds = 0;
+            if (common::mulOverflow(t, static_cast<Int64>(1000000) / scale_multiplier, t_microseconds))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            if (t >= 0) [[likely]]
+                return t_microseconds / microseconds * microseconds;
+            else
+                return ((t_microseconds + 1) / microseconds - 1) * microseconds;
+        }
+        else if (scale_multiplier > 1000000)
+        {
+            Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
+            if (t >= 0) [[likely]]
+                return t / microseconds / scale_diff * microseconds;
+            else
+                return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
+        }
+        else
+            if (t >= 0) [[likely]]
+                return t / microseconds * microseconds;
+            else
+                return ((t + 1) / microseconds - 1) * microseconds;
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Millisecond>
+{
+    static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(UInt32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateTimeIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static Int64 execute(Int64 t, UInt64 milliseconds, const DateLUTImpl &, Int64 scale_multiplier)
+    {
+        if (scale_multiplier < 1000)
+        {
+            Int64 t_milliseconds = 0;
+            if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
+                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            if (t >= 0) [[likely]]
+                return t_milliseconds / milliseconds * milliseconds;
+            else
+                return ((t_milliseconds + 1) / milliseconds - 1) * milliseconds;
+        }
+        else if (scale_multiplier > 1000)
+        {
+            Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
+            if (t >= 0) [[likely]]
+                return t / milliseconds / scale_diff * milliseconds;
+            else
+                return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
+        }
+        else
+            if (t >= 0) [[likely]]
+                return t / milliseconds * milliseconds;
+            else
+                return ((t + 1) / milliseconds - 1) * milliseconds;
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Second>
+{
+    static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(UInt32 t, UInt64 seconds, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfSecondInterval(t, seconds);
+    }
+    static Int64 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Minute>
+{
+    static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfMinuteInterval(t, minutes);
+    }
+    static Int64 execute(Int64 t, UInt64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Hour>
+{
+    static UInt32 execute(UInt16, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(Int32, UInt64, const DateLUTImpl &, Int64)
+    {
+        throwDateIsNotSupported(TO_START_OF_INTERVAL_NAME);
+    }
+    static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfHourInterval(t, hours);
+    }
+    static Int64 execute(Int64 t, UInt64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Day>
+{
+    static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone, Int64)
+    {
+        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+    }
+    static UInt32 execute(Int32 d, UInt64 days, const DateLUTImpl & time_zone, Int64)
+    {
+        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+    }
+    static UInt32 execute(UInt32 t, UInt64 days, const DateLUTImpl & time_zone, Int64)
+    {
+        return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
+    }
+    static Int64 execute(Int64 t, UInt64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Week>
+{
+    static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
+    }
+    static UInt16 execute(Int32 d, UInt64 weeks, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
+    }
+    static UInt16 execute(UInt32 t, UInt64 weeks, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
+    }
+    static UInt16 execute(Int64 t, UInt64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Month>
+{
+    static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfMonthInterval(DayNum(d), months);
+    }
+    static UInt16 execute(Int32 d, UInt64 months, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
+    }
+    static UInt16 execute(UInt32 t, UInt64 months, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
+    }
+    static UInt16 execute(Int64 t, UInt64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t / scale_multiplier), months);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Quarter>
+{
+    static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
+    }
+    static UInt16 execute(Int32 d, UInt64 quarters, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
+    }
+    static UInt16 execute(UInt32 t, UInt64 quarters, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
+    }
+    static UInt16 execute(Int64 t, UInt64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
+    }
+};
+
+template <>
+struct ToStartOfInterval<IntervalKind::Year>
+{
+    static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfYearInterval(DayNum(d), years);
+    }
+    static UInt16 execute(Int32 d, UInt64 years, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
+    }
+    static UInt16 execute(UInt32 t, UInt64 years, const DateLUTImpl & time_zone, Int64)
+    {
+        return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
+    }
+    static UInt16 execute(Int64 t, UInt64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    {
+        return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
+    }
 };
 
 
