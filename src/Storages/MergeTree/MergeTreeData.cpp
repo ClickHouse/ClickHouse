@@ -8285,9 +8285,11 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
     if (left->getProjectionParts().size() != right->getProjectionParts().size())
     {
         out_reason = fmt::format(
-            "Parts have different number of projections: {} in one part and {} in another",
+            "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
             left->getProjectionParts().size(),
-            right->getProjectionParts().size()
+            left->name,
+            right->getProjectionParts().size(),
+            right->name
         );
         return false;
     }
@@ -8297,8 +8299,8 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
         if (!right->hasProjection(name))
         {
             out_reason = fmt::format(
-                "Some part doesn't have projection '{}' while another does", name
-            )
+                "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
+            );
             return false;
         }
     }
