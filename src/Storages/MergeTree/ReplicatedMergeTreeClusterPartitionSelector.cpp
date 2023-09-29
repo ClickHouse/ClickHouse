@@ -121,11 +121,6 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
     {
         if (partition.isUnderReSharding())
         {
-            if (partition.getNewReplica() == replica_name)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Partition ({}) should be migrated to this replica. This is a bug, no partition selection should take place.",
-                    partition.toStringForLog());
-
             LOG_TEST(log, "{} partition is already under re-sharding, skipping", partition.getPartitionId());
             return true;
         }
