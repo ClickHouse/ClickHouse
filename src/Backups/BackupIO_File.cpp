@@ -16,8 +16,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-BackupReaderFile::BackupReaderFile(const String & root_path_, const ContextPtr & context_)
-    : BackupReaderDefault(&Poco::Logger::get("BackupReaderFile"), context_)
+BackupReaderFile::BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+    : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {
@@ -74,8 +74,8 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 }
 
 
-BackupWriterFile::BackupWriterFile(const String & root_path_, const ContextPtr & context_)
-    : BackupWriterDefault(&Poco::Logger::get("BackupWriterFile"), context_)
+BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+    : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
 {

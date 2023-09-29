@@ -13,10 +13,10 @@ Both functions can be used in `SELECT` and `INSERT` queries.
 ## Syntax
 
 ``` sql
-remote('addresses_expr', db, table[, 'user'[, 'password'], sharding_key])
-remote('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
-remoteSecure('addresses_expr', db, table[, 'user'[, 'password'], sharding_key])
-remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
+remote('addresses_expr', [db, table, 'user'[, 'password'], sharding_key])
+remote('addresses_expr', [db.table, 'user'[, 'password'], sharding_key])
+remoteSecure('addresses_expr', [db, table, 'user'[, 'password'], sharding_key])
+remoteSecure('addresses_expr', [db.table, 'user'[, 'password'], sharding_key])
 ```
 
 ## Parameters
@@ -28,6 +28,8 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
     The port is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) from the server’s config file in `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) in `remoteSecure` (by default, 9440).
 
     The port is required for an IPv6 address.
+
+    If only specify this parameter, `db` and `table` will use `system.one` by default.
 
     Type: [String](../../sql-reference/data-types/string.md).
 

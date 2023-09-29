@@ -55,7 +55,7 @@ void download(const std::string & cache_base_path, DB::FileSegment & file_segmen
         fs::create_directories(subdir);
 
     std::string data(size, '0');
-    file_segment.write(data.data(), size, file_segment.getCurrentWriteOffset(false));
+    file_segment.write(data.data(), size, file_segment.getCurrentWriteOffset());
 }
 
 using Range = FileSegment::Range;
@@ -69,13 +69,16 @@ fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 
 
-void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::const_iterator segments_end, size_t segments_size, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    std::cerr << "Holder: " << holder->toString() << "\n";
-    ASSERT_EQ(holder->size(), expected_ranges.size());
+    std::cerr << "File segments: ";
+    for (auto it = segments_begin; it != segments_end; ++it)
+        std::cerr << (*it)->range().toString() << ", ";
+
+    ASSERT_EQ(segments_size, expected_ranges.size());
 
     if (!expected_states.empty())
-        ASSERT_EQ(holder->size(), expected_states.size());
+        ASSERT_EQ(segments_size, expected_states.size());
 
     auto get_expected_state = [&](size_t i)
     {
@@ -86,12 +89,23 @@ void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const
     };
 
     size_t i = 0;
-    for (const auto & file_segment : *holder)
+    for (auto it = segments_begin; it != segments_end; ++it)
     {
+        const auto & file_segment = *it;
         ASSERT_EQ(file_segment->range(), expected_ranges[i]);
         ASSERT_EQ(file_segment->state(), get_expected_state(i));
         ++i;
     }
+}
+
+void assertEqual(const FileSegments & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    assertEqual(file_segments.begin(), file_segments.end(), file_segments.size(), expected_ranges, expected_states);
+}
+
+void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    assertEqual(file_segments->begin(), file_segments->end(), file_segments->size(), expected_ranges, expected_states);
 }
 
 FileSegment & get(const HolderPtr & holder, int i)
@@ -108,7 +122,7 @@ void download(FileSegment & file_segment)
 
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
-    ASSERT_EQ(file_segment.getDownloadedSize(false), 0);
+    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
     ASSERT_TRUE(file_segment.reserve(file_segment.range().size()));
     download(cache_base_path, file_segment);
@@ -121,7 +135,7 @@ void download(FileSegment & file_segment)
 void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
-    ASSERT_EQ(file_segment.getDownloadedSize(false), 0);
+    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
     ASSERT_FALSE(file_segment.reserve(file_segment.range().size()));
     file_segment.complete();
 }
@@ -209,7 +223,7 @@ TEST_F(FileCacheTest, get)
 
     {
         std::cerr << "Step 1\n";
-        auto cache = DB::FileCache(settings);
+        auto cache = DB::FileCache("1", settings);
         cache.initialize();
         auto key = cache.createKeyForPath("key1");
 
@@ -470,6 +484,7 @@ TEST_F(FileCacheTest, get)
 
                 auto & file_segment2 = get(holder2, 2);
                 ASSERT_TRUE(file_segment2.getOrSetDownloader() != FileSegment::getCallerId());
+                ASSERT_EQ(file_segment2.state(), State::DOWNLOADING);
 
                 {
                     std::lock_guard lock(mutex);
@@ -478,8 +493,7 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().right);
-                file_segment2.complete();
-                ASSERT_TRUE(file_segment2.state() == State::DOWNLOADED);
+                ASSERT_EQ(file_segment2.getDownloadedSize(), file_segment2.range().size());
             });
 
             {
@@ -488,7 +502,7 @@ TEST_F(FileCacheTest, get)
             }
 
             download(file_segment);
-            ASSERT_TRUE(file_segment.state() == State::DOWNLOADED);
+            ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 
             other_1.join();
 
@@ -568,7 +582,7 @@ TEST_F(FileCacheTest, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::FileCache(settings);
+        auto cache2 = DB::FileCache("2", settings);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
@@ -587,7 +601,7 @@ TEST_F(FileCacheTest, get)
         settings2.max_file_segment_size = 10;
         settings2.base_path = caches_dir / "cache2";
         fs::create_directories(settings2.base_path);
-        auto cache2 = DB::FileCache(settings2);
+        auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
         auto key = cache2.createKeyForPath("key1");
 
@@ -600,11 +614,10 @@ TEST_F(FileCacheTest, get)
 
     std::cerr << "Step 13\n";
     {
-        /// Test delated cleanup
+        /// Test delayed cleanup
 
-        auto cache = FileCache(settings);
+        auto cache = FileCache("4", settings);
         cache.initialize();
-        cache.cleanup();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
 
@@ -619,21 +632,15 @@ TEST_F(FileCacheTest, get)
 
         cache.removeAllReleasable();
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
-        ASSERT_TRUE(fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
-
-        cache.cleanup();
         ASSERT_TRUE(!fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
+        ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
     }
 
     std::cerr << "Step 14\n";
     {
         /// Test background thread delated cleanup
 
-        auto settings2{settings};
-        settings2.delayed_cleanup_interval_ms = 0;
-        auto cache = DB::FileCache(settings2);
+        auto cache = DB::FileCache("5", settings);
         cache.initialize();
         const auto key = cache.createKeyForPath("key10");
         const auto key_path = cache.getPathInLocalCache(key);
@@ -662,7 +669,7 @@ TEST_F(FileCacheTest, writeBuffer)
     settings.max_file_segment_size = 5;
     settings.base_path = cache_base_path;
 
-    FileCache cache(settings);
+    FileCache cache("6", settings);
     cache.initialize();
 
     auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
@@ -714,8 +721,10 @@ TEST_F(FileCacheTest, writeBuffer)
             auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
             file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
 
+            std::cerr << "\nFile segments: " << holder2->toString() << "\n";
+
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
-            ASSERT_TRUE(holder2->front().range() == FileSegment::Range(0, 15));
+            ASSERT_EQ(holder2->front().range(), FileSegment::Range(0, 15));
             ASSERT_EQ(cache.getUsedCacheSize(), 22);
         }
         ASSERT_FALSE(fs::exists(file_segment_paths.back()));
@@ -767,7 +776,7 @@ TEST_F(FileCacheTest, temporaryData)
     settings.max_file_segment_size = 1_KiB;
     settings.base_path = cache_base_path;
 
-    DB::FileCache file_cache(settings);
+    DB::FileCache file_cache("7", settings);
     file_cache.initialize();
 
     auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, 0);
@@ -908,7 +917,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     wb->next();
     wb->finalize();
 
-    auto cache = std::make_shared<DB::FileCache>(settings);
+    auto cache = std::make_shared<DB::FileCache>("8", settings);
     cache->initialize();
     auto key = cache->createKeyForPath(file_path);
 

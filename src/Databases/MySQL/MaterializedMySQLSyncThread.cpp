@@ -1,9 +1,12 @@
+#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
+#include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
+#include <Databases/MySQL/tryConvertStringLiterals.h>
 #include <cstdlib>
 #include <random>
 #include <string_view>
@@ -139,7 +142,6 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     {
         bool first = true;
         WriteBufferFromOwnString error_message;
-        error_message << "Illegal MySQL variables, the MaterializedMySQL engine requires ";
         for (const auto & [variable_name, variable_error_val] : variables_error_message)
         {
             error_message << (first ? "" : ", ") << variable_name << "='" << variable_error_val << "'";
@@ -148,7 +150,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 first = false;
         }
 
-        throw Exception::createDeprecated(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
+        throw Exception(ErrorCodes::ILLEGAL_MYSQL_VARIABLE, "Illegal MySQL variables, the MaterializedMySQL engine requires {}",
+                        error_message.str());
     }
 }
 
@@ -342,9 +345,8 @@ static inline String rewriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, 
                     { std::make_shared<DataTypeString>(),   "column_type" }
             };
 
-    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
-                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
-                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
+    String query = "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                   " WHERE TABLE_SCHEMA = '" + database_name + "' AND TABLE_NAME = '" + table_name + "' ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(global_settings, false, true);
     auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
@@ -390,7 +392,9 @@ static inline void dumpDataForTables(
             CurrentThread::QueryScope query_scope(query_context);
 
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
-            tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
+            String create_query = iterator->second;
+            tryConvertStringLiterals(create_query);
+            tryToExecuteQuery(query_prefix + " " + create_query, query_context, database_name, comment); /// create table.
 
             auto pipeline = getTableOutput(database_name, table_name, query_context);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
@@ -499,7 +503,10 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             {
                 throw;
             }
-            catch (const mysqlxx::ConnectionFailed &) {}
+            catch (const mysqlxx::ConnectionFailed & ex)
+            {
+                LOG_TRACE(log, "Connection to MySQL failed {}", ex.displayText());
+            }
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query
@@ -812,6 +819,8 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
         CurrentThread::QueryScope query_scope(query_context);
 
         String query = query_event.query;
+        tryQuoteUnrecognizedTokens(query);
+        tryConvertStringLiterals(query);
         if (!materialized_tables_list.empty())
         {
             auto table_id = tryParseTableIDFromDDL(query, query_event.schema);

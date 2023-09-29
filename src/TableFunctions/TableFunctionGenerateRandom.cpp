@@ -97,7 +97,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     }
 }
 
-ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
@@ -113,9 +113,9 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextP
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    ColumnsDescription columns = getActualTableStructure(context);
+    ColumnsDescription columns = getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageGenerateRandom>(
         StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();

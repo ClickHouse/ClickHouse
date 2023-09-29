@@ -21,7 +21,7 @@ public:
         using Callback = std::function<Words(const String & prefix, size_t prefix_length)>;
 
         /// Get vector for the matched range of words if any.
-        replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length);
+        replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters);
         void addWords(Words && new_words);
 
         void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }
@@ -65,7 +65,6 @@ protected:
     };
 
     const String history_file_path;
-    static constexpr char word_break_characters[] = " \t\v\f\a\b\r\n`~!@#$%^&*()-=+[{]}\\|;:'\",<.>/?";
 
     String input;
 

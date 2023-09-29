@@ -324,7 +324,7 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
 }
 
 
-void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     /// Check if we can copy the file without deciphering.
     if (isSameDiskType(*this, *to_disk))
@@ -340,14 +340,14 @@ void DiskEncrypted::copyDirectoryContent(const String & from_dir, const std::sha
                 auto wrapped_from_path = wrappedPath(from_dir);
                 auto to_delegate = to_disk_enc->delegate;
                 auto wrapped_to_path = to_disk_enc->wrappedPath(to_dir);
-                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path);
+                delegate->copyDirectoryContent(wrapped_from_path, to_delegate, wrapped_to_path, read_settings, write_settings);
                 return;
             }
         }
     }
 
     /// Copy the file through buffers with deciphering.
-    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir);
+    IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
@@ -433,10 +433,10 @@ void DiskEncrypted::applyNewSettings(
 {
     auto new_settings = parseDiskEncryptedSettings(name, config, config_prefix, disk_map);
     if (new_settings->wrapped_disk != delegate)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Сhanging wrapped disk on the fly is not supported. Disk {}", name);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing wrapped disk on the fly is not supported. Disk {}", name);
 
     if (new_settings->disk_path != disk_path)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Сhanging disk path on the fly is not supported. Disk {}", name);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing disk path on the fly is not supported. Disk {}", name);
 
     current_settings.set(std::move(new_settings));
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);

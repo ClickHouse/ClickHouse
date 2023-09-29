@@ -2,7 +2,14 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -18,6 +25,9 @@ void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
 
     for (const auto & entry : entries)
     {
+        if (entry.name.contains('\n') || entry.value.contains('\n'))
+           throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
+
         if (forbidden_headers.contains(entry.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);
@@ -33,6 +43,9 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
 {
     std::lock_guard guard(mutex);
 
+    forbidden_headers.clear();
+    forbidden_headers_regexp.clear();
+
     if (config.has("http_forbid_headers"))
     {
         std::vector<std::string> keys;
@@ -45,11 +58,6 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
             else if (startsWith(key, "header"))
                 forbidden_headers.insert(config.getString("http_forbid_headers." + key));
         }
-    }
-    else
-    {
-        forbidden_headers.clear();
-        forbidden_headers_regexp.clear();
     }
 }
 

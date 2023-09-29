@@ -269,9 +269,9 @@ select sipHash64Keyed(toUInt64(0), '1'); -- { serverError NOT_IMPLEMENTED }
 select sipHash128Keyed(toUInt64(0), '1'); -- { serverError NOT_IMPLEMENTED }
 
 select hex(sipHash64());
-SELECT hex(sipHash128()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128()) = '1CE422FEE7BD8DE20000000000000000';
+SELECT hex(sipHash128());
 select hex(sipHash64Keyed());
-SELECT hex(sipHash128Keyed()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128Keyed()) = '1CE422FEE7BD8DE20000000000000000';
+SELECT hex(sipHash128Keyed());
 
 SELECT 'Check bug with hashing of const integer values';
 DROP TABLE IF EXISTS tab;
@@ -334,3 +334,7 @@ DROP TABLE sipHashKeyed_keys;
 
 SELECT 'Check asan bug';
 SELECT sipHash128((toUInt64(9223372036854775806), 1)) = sipHash128(1) GROUP BY sipHash128(1::UInt8), toUInt64(9223372036854775806);
+
+SELECT 'Check bug found fuzzing';
+SELECT [(255, 1048575)], sipHash128ReferenceKeyed((toUInt64(2147483646), toUInt64(9223372036854775807)), ([(NULL, 100), (NULL, NULL), (1024, 10)], toUInt64(2), toUInt64(1024)), ''), hex(sipHash128ReferenceKeyed((-9223372036854775807, 1.), '-1', NULL)), ('', toUInt64(65535), [(9223372036854775807, 9223372036854775806)], toUInt64(65536)), arrayJoin((NULL, 65537, 255), [(NULL, NULL)]) GROUP BY tupleElement((NULL, NULL, NULL, -1), toUInt64(2), 2) = NULL;  -- { serverError NOT_IMPLEMENTED }
+SELECT hex(sipHash128ReferenceKeyed((0::UInt64, 0::UInt64), ([1, 1])));

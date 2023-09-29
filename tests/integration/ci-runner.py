@@ -9,6 +9,7 @@ import os
 import random
 import re
 import shutil
+import string
 import subprocess
 import time
 import shlex
@@ -190,7 +191,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
+            "timeout --signal=KILL 10m docker ps --quiet | xargs --no-run-if-empty docker kill",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -199,7 +200,7 @@ def clear_ip_tables_and_restart_daemons():
     try:
         logging.info("Removing all docker containers")
         subprocess.check_output(
-            "timeout -s 9 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
+            "timeout --signal=KILL 10m docker ps --all --quiet | xargs --no-run-if-empty docker rm --force",
             shell=True,
         )
     except subprocess.CalledProcessError as err:
@@ -313,6 +314,7 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/mysql-java-client",
             "clickhouse/mysql-js-client",
             "clickhouse/mysql-php-client",
+            "clickhouse/nginx-dav",
             "clickhouse/postgresql-java-client",
         ]
 
@@ -321,7 +323,7 @@ class ClickhouseIntegrationTestsRunner:
 
         cmd = (
             "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
+            "timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
                 repo_path=repo_path,
                 runner_opts=self._get_runner_opts(),
                 image_cmd=image_cmd,
@@ -429,19 +431,12 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
-        out_file = "all_tests.txt"
+        runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
-            "cd {repo_path}/tests/integration && "
-            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
-            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' "
-            "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
-                repo_path=repo_path,
-                runner_opts=self._get_runner_opts(),
-                image_cmd=image_cmd,
-                out_file=out_file,
-                out_file_full=out_file_full,
-            )
+            f"cd {repo_path}/tests/integration && "
+            f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
+            f"| tee '{out_file_full}'"
         )
 
         logging.info("Getting all tests with cmd '%s'", cmd)
@@ -449,34 +444,19 @@ class ClickhouseIntegrationTestsRunner:
             cmd, shell=True
         )
 
-        all_tests_file_path = "{repo_path}/tests/integration/{out_file}".format(
-            repo_path=repo_path, out_file=out_file
-        )
-        if (
-            not os.path.isfile(all_tests_file_path)
-            or os.path.getsize(all_tests_file_path) == 0
-        ):
-            if os.path.isfile(out_file_full):
-                # log runner output
-                logging.info("runner output:")
-                with open(out_file_full, "r") as all_tests_full_file:
-                    for line in all_tests_full_file:
-                        line = line.rstrip()
-                        if line:
-                            logging.info("runner output: %s", line)
-            else:
-                logging.info("runner output '%s' is empty", out_file_full)
+        all_tests = set()
+        with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
+            for line in all_tests_fd:
+                if (
+                    line[0] in string.whitespace  # test names at the start of lines
+                    or "::test" not in line  # test names contain '::test'
+                    or "SKIPPED" in line  # pytest.mark.skip/-if
+                ):
+                    continue
+                all_tests.add(line.strip())
 
-            raise Exception(
-                "There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(
-                    all_tests_file_path
-                )
-            )
+        assert all_tests
 
-        all_tests = []
-        with open(all_tests_file_path, "r") as all_tests_file:
-            for line in all_tests_file:
-                all_tests.append(line.strip())
         return list(sorted(all_tests))
 
     def _get_parallel_tests_skip_list(self, repo_path):
@@ -677,7 +657,7 @@ class ClickhouseIntegrationTestsRunner:
             # -E -- (E)rror
             # -p -- (p)assed
             # -s -- (s)kipped
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
+            cmd = "cd {}/tests/integration && timeout --signal=KILL 1h ./runner {} {} -t {} {} -- -rfEps --run-id={} --color=no --durations=0 {} | tee {}".format(
                 repo_path,
                 self._get_runner_opts(),
                 image_cmd,

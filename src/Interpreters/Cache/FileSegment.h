@@ -26,6 +26,7 @@ namespace DB
 {
 
 class ReadBufferFromFileBase;
+struct FileCacheReserveStat;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -177,11 +178,9 @@ public:
 
     size_t getRefCount() const { return ref_count; }
 
-    size_t getCurrentWriteOffset(bool sync) const;
+    size_t getCurrentWriteOffset() const;
 
-    size_t getFirstNonDownloadedOffset(bool sync) const;
-
-    size_t getDownloadedSize(bool sync) const;
+    size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
 
@@ -243,12 +242,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve);
-
-    /// Try to reserve at max `size_to_reserve` bytes.
-    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
-    /// In strict mode throws an error on attempt to reserve space too much space.
-    size_t tryReserve(size_t size_to_reserve, bool strict = false);
+    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -306,7 +300,6 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;

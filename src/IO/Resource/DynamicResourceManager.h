@@ -19,7 +19,7 @@ namespace DB
  * `ClassifierPtr` is acquired and held.
  *
  * Manager can update configuration after initialization. During update, new version of resources are also
- * attached to scheduler, so multiple version can coexist for a short perid. This will violate constraints
+ * attached to scheduler, so multiple version can coexist for a short period. This will violate constraints
  * (e.g. in-fly-limit), because different version have independent nodes to impose constraints, the same
  * violation will apply to fairness. Old version exists as long as there is at least one classifier
  * instance referencing it. Classifiers are typically attached to queries and will be destructed with them.
@@ -30,6 +30,7 @@ public:
     DynamicResourceManager();
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     ClassifierPtr acquire(const String & classifier_name) override;
+    void forEachNode(VisitorFunc visitor) override;
 
 private:
     /// Holds everything required to work with one specific configuration

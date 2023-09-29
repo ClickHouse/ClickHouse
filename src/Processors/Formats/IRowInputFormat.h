@@ -52,6 +52,13 @@ protected:
       */
     virtual bool readRow(MutableColumns & columns, RowReadExtension & extra) = 0;
 
+    /// Count some rows. Called in a loop until it returns 0, and the return values are added up.
+    /// `max_block_size` is the recommended number of rows after which to stop, if the implementation
+    /// involves scanning the data. If the implementation just takes the count from metadata,
+    /// `max_block_size` can be ignored.
+    virtual size_t countRows(size_t max_block_size);
+    virtual bool supportsCountRows() const { return false; }
+
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
 
@@ -85,7 +92,7 @@ private:
     size_t num_errors = 0;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 }

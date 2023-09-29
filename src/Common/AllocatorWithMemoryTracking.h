@@ -30,21 +30,24 @@ struct AllocatorWithMemoryTracking
             throw std::bad_alloc();
 
         size_t bytes = n * sizeof(T);
-        CurrentMemoryTracker::alloc(bytes);
+        auto trace = CurrentMemoryTracker::alloc(bytes);
 
         T * p = static_cast<T *>(malloc(bytes));
         if (!p)
             throw std::bad_alloc();
+
+        trace.onAlloc(p, bytes);
 
         return p;
     }
 
     void deallocate(T * p, size_t n) noexcept
     {
-        free(p);
-
         size_t bytes = n * sizeof(T);
-        CurrentMemoryTracker::free(bytes);
+
+        free(p);
+        auto trace = CurrentMemoryTracker::free(bytes);
+        trace.onFree(p, bytes);
     }
 };
 

@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
 
     try
     {
-        UncompressedCache cache(1024);
+        UncompressedCache cache("SLRU", 1024, 0.5);
         std::string path = argv[1];
 
         std::cerr << std::fixed << std::setprecision(3);

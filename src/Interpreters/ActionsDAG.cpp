@@ -2191,8 +2191,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             /// Replace predicate result to constant 1.
             Node node;
             node.type = ActionType::COLUMN;
-            node.result_name = std::move(predicate->result_name);
-            node.result_type = std::move(predicate->result_type);
+            node.result_name = predicate->result_name;
+            node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
 
             if (predicate->type != ActionType::INPUT)
@@ -2506,6 +2506,96 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     return result_dag;
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
+{
+    NodeRawConstPtrs atoms;
+
+    std::stack<const ActionsDAG::Node *> stack;
+    stack.push(predicate);
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "and")
+            {
+                for (const auto * arg : node->children)
+                    stack.push(arg);
+
+                continue;
+            }
+        }
+
+        atoms.push_back(node);
+    }
+
+    return atoms;
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
+    NodeRawConstPtrs nodes,
+    const std::unordered_set<const Node *> & allowed_inputs)
+{
+    size_t result_size = 0;
+
+    std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child_to_visit = 0;
+        bool can_compute_all_childern = true;
+    };
+
+    std::stack<Frame> stack;
+
+    for (const auto * node : nodes)
+    {
+        if (!can_compute.contains(node))
+            stack.push({node});
+
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            bool need_visit_child = false;
+            while (frame.next_child_to_visit < frame.node->children.size())
+            {
+                auto it = can_compute.find(frame.node->children[frame.next_child_to_visit]);
+                if (it == can_compute.end())
+                {
+                    stack.push({frame.node->children[frame.next_child_to_visit]});
+                    need_visit_child = true;
+                    break;
+                }
+
+                frame.can_compute_all_childern &= it->second;
+                ++frame.next_child_to_visit;
+            }
+
+            if (need_visit_child)
+                continue;
+
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+                can_compute[frame.node] = allowed_inputs.contains(frame.node);
+            else
+                can_compute[frame.node] = frame.can_compute_all_childern;
+
+            stack.pop();
+        }
+
+        if (can_compute.at(node))
+        {
+            nodes[result_size] = node;
+            ++result_size;
+        }
+    }
+
+    nodes.resize(result_size);
+    return nodes;
+}
+
 FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
     :actions(actions_)
 {
@@ -2515,11 +2605,21 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr
         /// find input node which refers to the output node
         /// consider only aliases on the path
         const auto * node = output_node;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        while (node)
         {
-            /// alias has only one child
-            chassert(node->children.size() == 1);
-            node = node->children.front();
+            if (node->type == ActionsDAG::ActionType::ALIAS)
+            {
+                node = node->children.front();
+            }
+            /// materiailze() function can occur when dealing with views
+            /// TODO: not sure if it should be done here, looks too generic place
+            else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize")
+            {
+                chassert(node->children.size() == 1);
+                node = node->children.front();
+            }
+            else
+                break;
         }
         if (node && node->type == ActionsDAG::ActionType::INPUT)
             index.emplace(output_node->result_name, node);

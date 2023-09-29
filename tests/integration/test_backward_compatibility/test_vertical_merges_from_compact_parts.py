@@ -15,7 +15,10 @@ node_old = cluster.add_instance(
 )
 node_new = cluster.add_instance(
     "node2",
-    main_configs=["configs/no_compress_marks.xml"],
+    main_configs=[
+        "configs/no_compress_marks.xml",
+        "configs/no_allow_vertical_merges_from_compact_to_wide_parts.xml",
+    ],
     with_zookeeper=True,
     stay_alive=True,
     allow_analyzer=False,
