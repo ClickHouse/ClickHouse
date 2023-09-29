@@ -246,7 +246,7 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
             (status.target_url for status in gs if status.target_url), None
         )
         if target_url:
-            state_text = f"[{state_text}]({target_url})"
+            state_text = f'<a href="{target_url}">{state_text}</a>'
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
             f"<td>{state_text}</td></tr>\n"
