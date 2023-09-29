@@ -3936,6 +3936,16 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     if (!all_in_zk)
         return CreateMergeEntryResult::MissingPart;
 
+    String partition_id = MergeTreePartInfo::fromPartName(merged_name, format_version).partition_id;
+    Strings partition_replicas;
+    int partition_version = -1;
+    if (cluster.has_value())
+    {
+        const auto & partition = cluster->getClusterPartition(partition_id);
+        partition_replicas = partition.getActiveReplicas();
+        partition_version = partition.getVersion();
+    }
+
     ReplicatedMergeTreeLogEntryData entry;
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
@@ -3951,7 +3961,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
         entry.source_parts.push_back(part->name);
 
     if (cluster.has_value())
-        entry.replicas = cluster->getClusterPartition(MergeTreePartInfo::fromPartName(merged_name, format_version).partition_id).getAllReplicas();
+        entry.replicas = partition_replicas;
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -3962,6 +3972,12 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 
     ops.emplace_back(zkutil::makeSetRequest(
         fs::path(zookeeper_path) / "log", "", log_version)); /// Check and update version.
+
+    if (cluster.has_value())
+    {
+        ops.emplace_back(zkutil::makeCheckRequest(
+            fs::path(zookeeper_path) / "block_numbers" / partition_id, partition_version));
+    }
 
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
@@ -3976,7 +3992,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     else if (code == Coordination::Error::ZBADVERSION)
     {
         ProfileEvents::increment(ProfileEvents::NotCreatedLogEntryForMerge);
-        LOG_TRACE(log, "Log entry is not created for merge {} because log was updated", merged_name);
+        LOG_TRACE(log, "Log entry is not created for merge {} because log/partition was updated", merged_name);
         return CreateMergeEntryResult::LogUpdated;
     }
     else
@@ -3996,14 +4012,17 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
 {
     auto zookeeper = getZooKeeper();
 
-    Strings part_replicas;
+    Strings partition_replicas;
+    int partition_version = -1;
     if (cluster.has_value())
     {
-        part_replicas = cluster->getClusterPartition(part.info.partition_id).getAllReplicas();
-        if (std::find(part_replicas.begin(), part_replicas.end(), replica_name) == part_replicas.end())
+        const auto & partition = cluster->getClusterPartition(part.info.partition_id);
+        partition_replicas = partition.getActiveReplicas();
+        partition_version = partition.getVersion();
+        if (std::find(partition_replicas.begin(), partition_replicas.end(), replica_name) == partition_replicas.end())
         {
             LOG_DEBUG(log, "This replica is not responsible for {} (only on replicas: {})",
-                part.info.getPartNameForLogs(), fmt::join(part_replicas, ", "));
+                part.info.getPartNameForLogs(), fmt::join(partition_replicas, ", "));
             /// Fallback for the caller
             return CreateMergeEntryResult::Other;
         }
@@ -4038,7 +4057,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.alter_version = alter_version;
 
     if (cluster.has_value())
-        entry.replicas = part_replicas;
+        entry.replicas = partition_replicas;
 
     Coordination::Requests ops;
     Coordination::Responses responses;
@@ -4050,12 +4069,18 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     ops.emplace_back(zkutil::makeSetRequest(
         fs::path(zookeeper_path) / "log", "", log_version)); /// Check and update version.
 
+    if (cluster.has_value())
+    {
+        ops.emplace_back(zkutil::makeCheckRequest(
+            fs::path(zookeeper_path) / "block_numbers" / part.info.partition_id, partition_version));
+    }
+
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
     if (code == Coordination::Error::ZBADVERSION)
     {
         ProfileEvents::increment(ProfileEvents::NotCreatedLogEntryForMutation);
-        LOG_TRACE(log, "Log entry is not created for mutation {} because log was updated", new_part_name);
+        LOG_TRACE(log, "Log entry is not created for mutation {} because log/partition was updated", new_part_name);
         return CreateMergeEntryResult::LogUpdated;
     }
 
