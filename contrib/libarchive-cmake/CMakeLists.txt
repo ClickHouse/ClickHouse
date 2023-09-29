@@ -147,13 +147,23 @@ target_compile_definitions(_libarchive PUBLIC
 target_compile_options(_libarchive PRIVATE "-Wno-reserved-macro-identifier")
 
 if (TARGET ch_contrib::xz)
-    target_compile_definitions(_libarchive PUBLIC HAVE_LZMA_H=1)
+    target_compile_definitions(_libarchive PUBLIC HAVE_LZMA_H=1 HAVE_LIBLZMA=1)
     target_link_libraries(_libarchive PRIVATE ch_contrib::xz)
 endif()
 
 if (TARGET ch_contrib::zlib)
     target_compile_definitions(_libarchive PUBLIC HAVE_ZLIB_H=1)
     target_link_libraries(_libarchive PRIVATE ch_contrib::zlib)
+endif()
+
+if (TARGET ch_contrib::zstd)
+    target_compile_definitions(_libarchive PUBLIC HAVE_ZSTD_H=1 HAVE_LIBZSTD=1)
+    target_link_libraries(_libarchive PRIVATE ch_contrib::zstd)
+endif()
+
+if (TARGET ch_contrib::bzip2)
+    target_compile_definitions(_libarchive PUBLIC HAVE_BZLIB_H=1)
+    target_link_libraries(_libarchive PRIVATE ch_contrib::bzip2)
 endif()
 
 if (OS_LINUX)

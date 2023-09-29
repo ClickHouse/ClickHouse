@@ -9,7 +9,7 @@ TEST(SLRUCache, set)
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(2, std::make_shared<int>(3));
 
-    auto w = slru_cache.weight();
+    auto w = slru_cache.sizeInBytes();
     auto n = slru_cache.count();
     ASSERT_EQ(w, 2);
     ASSERT_EQ(n, 2);
@@ -92,7 +92,7 @@ TEST(SLRUCache, removeFromProtected)
     ASSERT_TRUE(value == nullptr);
 }
 
-TEST(SLRUCache, reset)
+TEST(SLRUCache, clear)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
     auto slru_cache = SimpleCacheBase("SLRU", /*max_size_in_bytes=*/10, /*max_count=*/0, /*size_ratio*/0.5);
@@ -101,7 +101,7 @@ TEST(SLRUCache, reset)
 
     slru_cache.set(2, std::make_shared<int>(4)); /// add to protected_queue
 
-    slru_cache.reset();
+    slru_cache.clear();
 
     auto value = slru_cache.get(1);
     ASSERT_TRUE(value == nullptr);
@@ -125,7 +125,7 @@ TEST(SLRUCache, evictOnElements)
     auto n = slru_cache.count();
     ASSERT_EQ(n, 1);
 
-    auto w = slru_cache.weight();
+    auto w = slru_cache.sizeInBytes();
     ASSERT_EQ(w, 3);
 
     auto value = slru_cache.get(1);
@@ -148,7 +148,7 @@ TEST(SLRUCache, evictOnWeight)
     auto n = slru_cache.count();
     ASSERT_EQ(n, 2);
 
-    auto w = slru_cache.weight();
+    auto w = slru_cache.sizeInBytes();
     ASSERT_EQ(w, 9);
 
     auto value = slru_cache.get(1);

@@ -1,0 +1,124 @@
+-- { echoOn }
+SET optimize_move_functions_out_of_any = 1;
+EXPLAIN QUERY TREE SELECT any(number + number * 2) FROM numbers(1, 2);
+QUERY id: 0
+  PROJECTION COLUMNS
+    any(plus(number, multiply(number, 2))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: any, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  FUNCTION id: 10, function_name: any, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 1
+                        COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 2
+          CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 15, constant_value: UInt64_2, constant_value_type: UInt8
+SELECT any(number + number * 2) FROM numbers(1, 2);
+3
+EXPLAIN QUERY TREE SELECT anyLast(number + number * 2) FROM numbers(1, 2);
+QUERY id: 0
+  PROJECTION COLUMNS
+    anyLast(plus(number, multiply(number, 2))) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: anyLast, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  FUNCTION id: 10, function_name: anyLast, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 1
+                        COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 2
+          CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 15, constant_value: UInt64_2, constant_value_type: UInt8
+SELECT anyLast(number + number * 2) FROM numbers(1, 2);
+6
+EXPLAIN QUERY TREE WITH any(number * 3) AS x SELECT x FROM numbers(1, 2);
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: any, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            CONSTANT id: 8, constant_value: UInt64_3, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 9, nodes: 2
+          CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
+WITH any(number * 3) AS x SELECT x FROM numbers(1, 2);
+3
+EXPLAIN QUERY TREE SELECT anyLast(number * 3) AS x, x FROM numbers(1, 2);
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+    x UInt64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: anyLast, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            CONSTANT id: 8, constant_value: UInt64_3, constant_value_type: UInt8
+      FUNCTION id: 2, function_name: multiply, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: anyLast, function_type: aggregate, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+            CONSTANT id: 8, constant_value: UInt64_3, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 9, nodes: 2
+          CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
+          CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
+SELECT anyLast(number * 3) AS x, x FROM numbers(1, 2);
+6	6
+SELECT any(anyLast(number)) FROM numbers(1); -- { serverError 184 }
+SET optimize_move_functions_out_of_any = 0;
+SELECT any(number + number * 2) FROM numbers(1, 2);
+3
+SELECT anyLast(number + number * 2) FROM numbers(1, 2);
+6
+WITH any(number * 3) AS x SELECT x FROM numbers(1, 2);
+3
+SELECT anyLast(number * 3) AS x, x FROM numbers(1, 2);
+6	6
+SELECT any(anyLast(number)) FROM numbers(1); -- { serverError 184 }

@@ -55,7 +55,7 @@ void download(const std::string & cache_base_path, DB::FileSegment & file_segmen
         fs::create_directories(subdir);
 
     std::string data(size, '0');
-    file_segment.write(data.data(), size, file_segment.getCurrentWriteOffset(false));
+    file_segment.write(data.data(), size, file_segment.getCurrentWriteOffset());
 }
 
 using Range = FileSegment::Range;
@@ -69,13 +69,16 @@ fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
 
 
-void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(FileSegments::const_iterator segments_begin, FileSegments::const_iterator segments_end, size_t segments_size, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    std::cerr << "Holder: " << holder->toString() << "\n";
-    ASSERT_EQ(holder->size(), expected_ranges.size());
+    std::cerr << "File segments: ";
+    for (auto it = segments_begin; it != segments_end; ++it)
+        std::cerr << (*it)->range().toString() << ", ";
+
+    ASSERT_EQ(segments_size, expected_ranges.size());
 
     if (!expected_states.empty())
-        ASSERT_EQ(holder->size(), expected_states.size());
+        ASSERT_EQ(segments_size, expected_states.size());
 
     auto get_expected_state = [&](size_t i)
     {
@@ -86,12 +89,23 @@ void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const
     };
 
     size_t i = 0;
-    for (const auto & file_segment : *holder)
+    for (auto it = segments_begin; it != segments_end; ++it)
     {
+        const auto & file_segment = *it;
         ASSERT_EQ(file_segment->range(), expected_ranges[i]);
         ASSERT_EQ(file_segment->state(), get_expected_state(i));
         ++i;
     }
+}
+
+void assertEqual(const FileSegments & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    assertEqual(file_segments.begin(), file_segments.end(), file_segments.size(), expected_ranges, expected_states);
+}
+
+void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+{
+    assertEqual(file_segments->begin(), file_segments->end(), file_segments->size(), expected_ranges, expected_states);
 }
 
 FileSegment & get(const HolderPtr & holder, int i)
@@ -108,7 +122,7 @@ void download(FileSegment & file_segment)
 
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
-    ASSERT_EQ(file_segment.getDownloadedSize(false), 0);
+    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
     ASSERT_TRUE(file_segment.reserve(file_segment.range().size()));
     download(cache_base_path, file_segment);
@@ -121,7 +135,7 @@ void download(FileSegment & file_segment)
 void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
-    ASSERT_EQ(file_segment.getDownloadedSize(false), 0);
+    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
     ASSERT_FALSE(file_segment.reserve(file_segment.range().size()));
     file_segment.complete();
 }
@@ -479,7 +493,7 @@ TEST_F(FileCacheTest, get)
                 cv.notify_one();
 
                 file_segment2.wait(file_segment2.range().right);
-                ASSERT_EQ(file_segment2.getDownloadedSize(false), file_segment2.range().size());
+                ASSERT_EQ(file_segment2.getDownloadedSize(), file_segment2.range().size());
             });
 
             {
@@ -707,8 +721,10 @@ TEST_F(FileCacheTest, writeBuffer)
             auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
             file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
 
+            std::cerr << "\nFile segments: " << holder2->toString() << "\n";
+
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
-            ASSERT_TRUE(holder2->front().range() == FileSegment::Range(0, 15));
+            ASSERT_EQ(holder2->front().range(), FileSegment::Range(0, 15));
             ASSERT_EQ(cache.getUsedCacheSize(), 22);
         }
         ASSERT_FALSE(fs::exists(file_segment_paths.back()));
