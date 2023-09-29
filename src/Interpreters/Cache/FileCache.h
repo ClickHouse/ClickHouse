@@ -212,6 +212,7 @@ private:
     std::condition_variable cache_evicting_cv;
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
+    const size_t keep_up_free_space_remove_batch;
 
     void assertInitialized() const;
 
@@ -247,7 +248,7 @@ private:
 
     bool isFreeSpaceRatioSatisfied(const CacheGuard::Lock &) const;
 
-    void keepUpFreeSpaceRatio(const CacheGuard::Lock &);
+    void keepUpFreeSpaceRatio(const CacheGuard::Lock &, size_t iterations_limit);
 
     void freeSpaceRatioKeepingThreadFunc();
 };

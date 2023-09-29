@@ -63,6 +63,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings.base_path)
     , keep_current_size_to_max_ratio(1 - settings.filecache_keep_free_space_size_ratio)
     , keep_current_elements_to_max_ratio(1 - settings.filecache_keep_free_space_elements_ratio)
+    , keep_up_free_space_remove_batch(settings.filecache_keep_free_space_remove_batch)
 {
     main_priority = std::make_unique<LRUFileCachePriority>(settings.max_size, settings.max_elements);
 
@@ -141,7 +142,14 @@ void FileCache::initialize()
          download_threads.emplace_back([this] { metadata.downloadThreadFunc(); });
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ metadata.cleanupThreadFunc(); }});
-    cache_evicting_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ freeSpaceRatioKeepingThreadFunc(); }});
+
+    if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
+    {
+        LOG_INFO(log, "Keep free space ration is enabled: {} size ratio, {} elements ratio",
+                 1 - keep_up_free_space_remove_batch, 1 - keep_current_elements_to_max_ratio);
+
+        cache_evicting_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ freeSpaceRatioKeepingThreadFunc(); }});
+    }
 }
 
 CacheGuard::Lock FileCache::lockCache() const
@@ -808,7 +816,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
                     return;
             }
 
-            keepUpFreeSpaceRatio(lock);
+            keepUpFreeSpaceRatio(lock, keep_up_free_space_remove_batch);
         }
         catch (...)
         {
@@ -817,10 +825,14 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     }
 }
 
-void FileCache::keepUpFreeSpaceRatio(const CacheGuard::Lock & lock)
+void FileCache::keepUpFreeSpaceRatio(const CacheGuard::Lock & lock, size_t iterations_limit)
 {
+    size_t iterations = 0;
     auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
+        if (++iterations > iterations_limit)
+            return PriorityIterationResult::BREAK;
+
         chassert(segment_metadata->file_segment->assertCorrectness());
 
         if (segment_metadata->releasable())
@@ -829,7 +841,7 @@ void FileCache::keepUpFreeSpaceRatio(const CacheGuard::Lock & lock)
             locked_key.removeFileSegment(segment->offset(), segment->lock());
 
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize(false));
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize());
 
             return PriorityIterationResult::REMOVE_AND_CONTINUE;
         }

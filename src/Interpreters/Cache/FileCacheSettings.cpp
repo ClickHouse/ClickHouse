@@ -56,6 +56,9 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     if (config.has(config_prefix + ".keep_free_space_elements_ratio"))
         filecache_keep_free_space_elements_ratio = config.getDouble(config_prefix + ".keep_free_space_elements_ratio");
 
+    if (config.has(config_prefix + ".keep_free_space_remove_batch"))
+        filecache_keep_free_space_elements_ratio = config.getUInt(config_prefix + ".keep_free_space_remove_batch");
+
     if (config.has(config_prefix + ".load_metadata_threads"))
         load_metadata_threads = config.getUInt(config_prefix + ".load_metadata_threads");
 }
