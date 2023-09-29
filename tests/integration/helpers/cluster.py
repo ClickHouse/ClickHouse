@@ -3918,7 +3918,11 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(
-        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3946,6 +3950,17 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+
+        if clear_data_dir:
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "rm -rf /var/lib/clickhouse/metadata && rm -rf /var/lib/clickhouse/data",
+                ],
+                user="root",
+            )
+
         self.exec_in_container(
             [
                 "bash",
