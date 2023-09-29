@@ -1690,9 +1690,15 @@ struct ConvertImplGenericFromString
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && typeid_cast<ColumnNullable *>(&column_to))
+                    auto * nullable_column = typeid_cast<ColumnNullable *>(&column_to);
+                    if (e.code() == ErrorCodes::CANNOT_PARSE_BOOL && nullable_column)
                     {
-                        column_to.insertDefault();
+                        auto & col_nullmap = nullable_column->getNullMapData();
+                        if (col_nullmap.size() != nullable_column->size())
+                            col_nullmap.push_back(0);
+                        if (nullable_column->size() == column_from.size())
+                            nullable_column->popBack(1);
+                        nullable_column->insertDefault();
                         continue;
                     }
                     throw;
