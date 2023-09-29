@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
-#include <Interpreters/Context.h>
 #include <utility>
 
 

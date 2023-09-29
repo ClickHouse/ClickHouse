@@ -15,6 +15,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool.h>
+#include <Common/CacheBase.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
@@ -968,22 +969,36 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
     auto leftMutationVersion = getCurrentMutationVersion(left, lock);
     auto rightMutationVersion = getCurrentMutationVersion(right, lock);
 
+    bool is_equivalent = true;
+
     if (leftMutationVersion != rightMutationVersion)
     {
-        const auto & follower_part = leftMutationVersion < rightMutationVersion ? left : right;
-        auto mutations_it = current_mutations_by_version.upper_bound(std::min(leftMutationVersion, rightMutationVersion));
-        auto mutations_end_it = current_mutations_by_version.upper_bound(std::max(leftMutationVersion, rightMutationVersion));
+        auto [follower_id, from, to] = leftMutationVersion < rightMutationVersion
+            ? std::make_tuple(left->info.partition_id, leftMutationVersion, rightMutationVersion)
+            : std::make_tuple(right->info.partition_id, rightMutationVersion, leftMutationVersion);
 
-        for (; mutations_it != mutations_end_it; ++mutations_it)
+        if (auto cached_is_equivalent = mutation_equivalent_cache.get({follower_id, to}); cached_is_equivalent)
         {
-            if (mutations_it->second.affectsPartition(follower_part->info.partition_id))
+            is_equivalent = *cached_is_equivalent;
+        }
+        else
+        {
+            auto mutations_it = current_mutations_by_version.upper_bound(from);
+            auto mutations_end_it = current_mutations_by_version.upper_bound(to);
+
+            for (; mutations_it != mutations_end_it; ++mutations_it)
             {
-                return false;
+                if (mutations_it->second.affectsPartition(follower_id))
+                {
+                    is_equivalent = false;
+                    break;
+                }
             }
+            mutation_equivalent_cache.set({follower_id, to}, std::make_shared<bool>(is_equivalent));
         }
     }
 
-    return true;
+    return is_equivalent;
 }
 
 
