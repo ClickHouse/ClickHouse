@@ -151,7 +151,7 @@ public:
         }
         else if (BitmapKind::Bitmap == kind)
         {
-            std::shared_ptr<RoaringBitmap> bitmap = std::make_shared<RoaringBitmap>(*roaring_bitmap);
+            std::unique_ptr<RoaringBitmap> bitmap = std::make_unique<RoaringBitmap>(*roaring_bitmap);
             bitmap->runOptimize();
             auto size = bitmap->getSizeInBytes();
             writeVarUInt(size, out);
