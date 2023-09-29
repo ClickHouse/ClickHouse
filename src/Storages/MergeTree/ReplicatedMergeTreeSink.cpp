@@ -317,8 +317,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if constexpr (async_insert)
         {
-            block_id = AsyncInsertBlockInfo::getHashesForBlocks(unmerged_block.has_value() ? *unmerged_block : current_block, temp_part.part->info.partition_id);
-            LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets), current_block.offsets.size());
+            auto get_block_id = [&](BlockWithPartition & block_)
+            {
+                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part.part->info.partition_id);
+                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
+            };
+            get_block_id(unmerged_block ? *unmerged_block : current_block);
         }
         else
         {
@@ -464,7 +468,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
             partition.filterBlockDuplicate(conflict_block_ids, false);
-            if (partition.block_id.empty())
+            if (partition.block_with_partition.block.rows() == 0)
                 break;
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
             /// partition.temp_part is already finalized, no need to call cancel
