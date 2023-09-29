@@ -8280,14 +8280,27 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
     return result;
 }
 
-bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right)
+bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
     if (left->getProjectionParts().size() != right->getProjectionParts().size())
+    {
+        out_reason = fmt::format(
+            "Parts have different number of projections: {} in one part and {} in another",
+            left->getProjectionParts().size(),
+            right->getProjectionParts().size()
+        );
         return false;
+    }
+
     for (const auto & [name, _] : left->getProjectionParts())
     {
         if (!right->hasProjection(name))
+        {
+            out_reason = fmt::format(
+                "Some part doesn't have projection '{}' while another does", name
+            )
             return false;
+        }
     }
     return true;
 }
