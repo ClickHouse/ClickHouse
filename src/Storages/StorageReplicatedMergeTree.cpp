@@ -5033,6 +5033,7 @@ void StorageReplicatedMergeTree::partialShutdown()
     cleanup_thread.stop();
     async_block_ids_cache.stop();
     part_check_thread.stop();
+    geo_replication_controller.stop();
 
     /// Stop queue processing
     {

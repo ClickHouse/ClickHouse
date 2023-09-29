@@ -1,7 +1,7 @@
 #include "ReplicatedMergeTreeGeoReplicationController.h"
 #include <optional>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include "Common/ZooKeeper/ZooKeeper.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
@@ -15,6 +15,12 @@ ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationCo
     : storage(storage_)
 {
     region = storage.getSettings()->geo_replication_control_region;
+    if (!region.empty())
+    {
+        log_name = storage.getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::GeoReplicationController)";
+        task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ threadFunction(); });
+        task->deactivate();
+    }
 }
 
 void ReplicatedMergeTreeGeoReplicationController::onLeader()
@@ -29,7 +35,6 @@ void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
     region_holder.reset();
     leader_lease_holder.reset();
     leader_election.reset();
-    current_zookeeper.reset();
 }
 
 void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
@@ -42,26 +47,61 @@ void ReplicatedMergeTreeGeoReplicationController::enterLeaderElection()
         storage.getContext()->getSchedulePool(),
         election_path,
         *current_zookeeper,
-        [this]() { leader_lease_holder.reset(); },
-        [this]() { return onLeader(); },
+        [this]()
+        {
+            if (shutdown)
+                return;
+            leader_lease_holder.reset();
+            initialized = true;
+        },
+        [this]()
+        {
+            if (shutdown)
+                return;
+            onLeader();
+            initialized = true;
+        },
         "",
         storage.getSettings()->geo_replication_control_leader_election_period_ms);
 }
 
+void ReplicatedMergeTreeGeoReplicationController::stop()
+{
+    shutdown = true;
+    if (task)
+        task->deactivate();
+    initialized = false;
+}
+
 void ReplicatedMergeTreeGeoReplicationController::start()
 {
-    resetPreviousTerm();
+    if (task)
+        task->activateAndSchedule();
+    shutdown = false;
+}
 
-    current_zookeeper = storage.getZooKeeper();
-    if (!current_zookeeper)
-        throw Exception(
-            ErrorCodes::NO_ZOOKEEPER,
-            "Zookeeper is not initialized, replica {} in region {} hasn't started leader election yet",
-            storage.getReplicaName(),
-            region);
+void ReplicatedMergeTreeGeoReplicationController::threadFunction()
+{
+    try
+    {
+        resetPreviousTerm();
+        current_zookeeper = storage.getZooKeeper();
 
-    createEphemeralRegionNode();
-    enterLeaderElection();
+        if (!current_zookeeper)
+            throw Exception(
+                ErrorCodes::NO_ZOOKEEPER,
+                "Zookeeper is not initialized, replica {} in region {} hasn't started leader election yet",
+                storage.getReplicaName(),
+                region);
+
+        createEphemeralRegionNode();
+        enterLeaderElection();
+    }
+    catch(...)
+    {
+        tryLogCurrentException(log_name.c_str());
+        task->scheduleAfter(DBMS_GEO_REPLICATION_CONTROL_INIT_PERIOD_MS);
+    }
 }
 
 bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
@@ -74,6 +114,8 @@ bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
 void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
 {
     auto region_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region";
+    if (current_zookeeper->exists(region_path)) /// Old zookeeper is expired and new zookeeper has some delay removing the ephemeral node
+        current_zookeeper->remove(region_path);
     region_holder = zkutil::EphemeralNodeHolder::create(region_path, *current_zookeeper, region);
 }
 

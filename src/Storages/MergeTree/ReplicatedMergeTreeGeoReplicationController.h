@@ -3,6 +3,7 @@
 #include <optional>
 #include <Interpreters/Context_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace zkutil
 {
@@ -50,21 +51,30 @@ public:
     ~ReplicatedMergeTreeGeoReplicationController() { resetPreviousTerm(); }
 
 
-    bool isValid() const { return !region.empty(); }
+    bool isValid() const { return !region.empty() && initialized; }
 
     const String & getRegion() const { return region; }
 
     void start();
 
+    void stop();
+
     bool isLeader() const;
 
 private:
+    static const int DBMS_GEO_REPLICATION_CONTROL_INIT_PERIOD_MS = 300;
     StorageReplicatedMergeTree & storage;
+    String log_name;
+    BackgroundSchedulePool::TaskHolder task;
     String region;
     zkutil::ZooKeeperPtr current_zookeeper;
     zkutil::LeaderElectionPtr leader_election;
     zkutil::EphemeralNodeHolderPtr leader_lease_holder;
     zkutil::EphemeralNodeHolderPtr region_holder;
+    std::atomic_bool shutdown = false;
+    std::atomic_bool initialized = false;
+
+    void threadFunction();
 
     void resetPreviousTerm();
     void createEphemeralRegionNode();
