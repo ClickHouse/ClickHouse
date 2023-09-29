@@ -1237,6 +1237,12 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
             covered_entries_to_wait->push_back(future_part_elem.second);
             continue;
         }
+        else if (shouldRespectEntryOrder(entry) && !future_part.isFakeDropRangePart() && future_part.contains(result_part))
+        {
+            /// Because we don't allow fast-forward, `future_part` entries will fail because it depends on `result_part` entry
+            /// So we can let the entry run
+            continue;
+        }
 
         constexpr auto fmt_string = "Not executing log entry {} for part {} "
                                     "because it is not disjoint with part {} that is currently executing.";
@@ -2679,10 +2685,13 @@ void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
 
 bool ReplicatedMergeTreeQueue::shouldRespectEntryOrder(const LogEntry & entry) const
 {
-    /// If the geo replication is enabled and we're not allowed to fetch merged parts or covered parts, we should respect
-    /// the relative order of GET_PART and ATTACH_PART to MERGE_PART
-    return (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART) && storage.geo_replication_controller.isValid()
-        && (storage.getSettings()->fetch_covered_part_within_region_only || storage.getSettings()->fetch_covered_part_within_region_only);
+    /// If the geo replication is enabled and we're not allowed to fetch merged parts and covered parts, we should respect
+    /// the relative order of data manipulation entries
+    return (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART || entry.type == LogEntry::MERGE_PARTS
+            || entry.type == LogEntry::MUTATE_PART)
+        && storage.geo_replication_controller.isValid()
+        && storage.getSettings()->fetch_covered_part_within_region_only
+        && storage.getSettings()->fetch_merged_part_within_region_only;
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
