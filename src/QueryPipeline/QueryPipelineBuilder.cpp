@@ -116,8 +116,7 @@ void QueryPipelineBuilder::init(QueryPipeline & pipeline)
         pipe.activatePartialResult(pipeline.partial_result_limit, pipeline.partial_result_duration_ms);
         pipe.partial_result_ports = {pipeline.partial_result};
     }
-
-    if (!pipeline.partial_result)
+    else
         pipe.dropPartialResult();
 
     pipe.totals_port = pipeline.totals;
