@@ -1,6 +1,12 @@
 #include <iomanip>
 #include <iostream>
 #include <gtest/gtest.h>
+
+#include <algorithm>
+#include <numeric>
+#include <random>
+
+#include <Common/randomSeed.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Common/CurrentThread.h>
@@ -180,6 +186,12 @@ public:
         else
             setupLogs(TEST_LOG_LEVEL);
 
+        UInt64 seed = randomSeed();
+        if (const char * random_seed = std::getenv("TEST_RANDOM_SEED")) // NOLINT(concurrency-mt-unsafe)
+            seed = std::stoull(random_seed);
+        std::cout << "TEST_RANDOM_SEED=" << seed << std::endl;
+        rng = pcg64(seed);
+
         if (fs::exists(cache_base_path))
             fs::remove_all(cache_base_path);
         fs::create_directories(cache_base_path);
@@ -191,6 +203,7 @@ public:
             fs::remove_all(cache_base_path);
     }
 
+    pcg64 rng;
 };
 
 TEST_F(FileCacheTest, get)
@@ -672,7 +685,7 @@ TEST_F(FileCacheTest, writeBuffer)
     FileCache cache("6", settings);
     cache.initialize();
 
-    auto write_to_cache = [&cache](const String & key, const Strings & data, bool flush)
+    auto write_to_cache = [&cache, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
         CreateFileSegmentSettings segment_settings;
         segment_settings.kind = FileSegmentKind::Temporary;
@@ -687,24 +700,32 @@ TEST_F(FileCacheTest, writeBuffer)
         WriteBufferToFileSegment out(&segment);
         std::list<std::thread> threads;
         std::mutex mu;
-        for (const auto & s : data)
+
+        /// get random permutation of indexes
+        std::vector<size_t> indexes(data.size());
+        std::iota(indexes.begin(), indexes.end(), 0);
+        std::shuffle(indexes.begin(), indexes.end(), rng);
+
+        for (auto i : indexes)
         {
             /// Write from diffetent threads to check
             /// that no assertions inside cache related to downloaderId are triggered
+            const auto & s = data[i];
             threads.emplace_back([&]
             {
                 std::unique_lock lock(mu);
                 out.write(s.data(), s.size());
                 /// test different buffering scenarios
                 if (flush)
-                {
                     out.next();
-                }
             });
         }
         for (auto & t : threads)
             t.join();
+
         out.finalize();
+        if (out_read_buffer)
+            *out_read_buffer = out.tryGetReadBuffer();
         return holder;
     };
 
@@ -714,17 +735,31 @@ TEST_F(FileCacheTest, writeBuffer)
         file_segment_paths.emplace_back(holder->front().getPathInLocalCache());
 
         ASSERT_EQ(fs::file_size(file_segment_paths.back()), 7);
-        ASSERT_TRUE(holder->front().range() == FileSegment::Range(0, 7));
+        EXPECT_EQ(holder->front().range().size(), 7);
+        EXPECT_EQ(holder->front().range().left, 0);
         ASSERT_EQ(cache.getUsedCacheSize(), 7);
 
         {
-            auto holder2 = write_to_cache("key2", {"1", "22", "333", "4444", "55555"}, true);
+            ReadBufferPtr reader = nullptr;
+
+            auto holder2 = write_to_cache("key2", {"22", "333", "4444", "55555", "1"}, true, &reader);
             file_segment_paths.emplace_back(holder2->front().getPathInLocalCache());
 
             std::cerr << "\nFile segments: " << holder2->toString() << "\n";
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
-            ASSERT_EQ(holder2->front().range(), FileSegment::Range(0, 15));
+            EXPECT_TRUE(reader);
+            if (reader)
+            {
+                String result;
+                readStringUntilEOF(result, *reader);
+                /// sort result to make it independent of the order of writes
+                std::sort(result.begin(), result.end());
+                EXPECT_EQ(result, "122333444455555");
+            }
+
+            EXPECT_EQ(holder2->front().range().size(), 15);
+            EXPECT_EQ(holder2->front().range().left, 0);
             ASSERT_EQ(cache.getUsedCacheSize(), 22);
         }
         ASSERT_FALSE(fs::exists(file_segment_paths.back()));
