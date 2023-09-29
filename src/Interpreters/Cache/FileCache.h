@@ -13,6 +13,7 @@
 #include <IO/ReadSettings.h>
 
 #include <Common/ThreadPool.h>
+#include <Common/StatusFile.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -166,6 +167,7 @@ private:
     std::exception_ptr init_exception;
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
+    std::unique_ptr<StatusFile> status_file;
 
     CacheMetadata metadata;
 

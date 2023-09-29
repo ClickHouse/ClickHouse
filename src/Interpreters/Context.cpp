@@ -1967,6 +1967,21 @@ void Context::killCurrentQuery() const
         elem->cancelQuery(true);
 }
 
+bool Context::isCurrentQueryKilled() const
+{
+    /// Here getProcessListElementSafe is used, not getProcessListElement call
+    /// getProcessListElement requires that process list exists
+    /// In the most cases it is true, because process list exists during the query execution time.
+    /// That is valid for all operations with parts, like read and write operations.
+    /// However that Context::isCurrentQueryKilled call could be used on the edges
+    /// when query is starting or finishing, in such edges context still exist but process list already expired
+    if (auto elem = getProcessListElementSafe())
+        return elem->isKilled();
+
+    return false;
+}
+
+
 String Context::getDefaultFormat() const
 {
     return default_format.empty() ? "TabSeparated" : default_format;
@@ -2270,6 +2285,14 @@ QueryStatusPtr Context::getProcessListElement() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
 }
 
+QueryStatusPtr Context::getProcessListElementSafe() const
+{
+    if (!has_process_list_elem)
+        return {};
+    if (auto res = process_list_elem.lock())
+        return res;
+    return {};
+}
 
 void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
