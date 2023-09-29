@@ -190,6 +190,15 @@ void ThreadStatus::flushUntrackedMemory()
     untracked_memory = 0;
 }
 
+bool ThreadStatus::isQueryCanceled() const
+{
+    if (!thread_group)
+        return false;
+
+    chassert(local_data.query_is_canceled_predicate);
+    return local_data.query_is_canceled_predicate();
+}
+
 ThreadStatus::~ThreadStatus()
 {
     flushUntrackedMemory();

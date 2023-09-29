@@ -42,7 +42,7 @@ def run_query_without_errors(
         invariants = {}
 
     with TCPClient() as client:
-        client.sendQuery(query)
+        client.sendQuery(query, settings={"allow_experimental_partial_result": True})
 
         # external tables
         client.sendEmptyBlock()
