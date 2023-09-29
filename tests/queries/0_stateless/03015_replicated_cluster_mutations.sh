@@ -77,7 +77,7 @@ while :; do
 done
 
 for table in data_r1 data_r2 data_r3 data_r4; do
-    wait_for_all_mutations data_$table
+    wait_for_all_mutations $table
 done
 
 # after previous we may have newly added entries to process (i.e. mutations),
