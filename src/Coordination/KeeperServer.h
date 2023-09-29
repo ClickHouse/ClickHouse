@@ -42,7 +42,9 @@ private:
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
-    std::atomic<bool> initial_batch_committed = false;
+
+    uint64_t last_log_idx_on_disk = 0;
+    bool on_disk_logs_preprocessed = false;
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 
@@ -64,7 +66,7 @@ private:
 
     std::atomic_bool is_recovering = false;
 
-    std::shared_ptr<KeeperContext> keeper_context;
+    KeeperContextPtr keeper_context;
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;
