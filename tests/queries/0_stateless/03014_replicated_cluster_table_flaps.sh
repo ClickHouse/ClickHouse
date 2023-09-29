@@ -8,8 +8,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function sync_cluster()
 {
     local table
-    # errors are fatal
-    for table in data_r1 data_r2 data_r3 data_r4; do
+    # Note, we need to sync data_r1 at the end since we are using this table
+    # for query to cluster_partitions and we need to sync the cluster
+    # partitions map after all other replicas had been synced. But, to simplify
+    # things, it will simply synced one more time at the end.
+    for table in data_r1 data_r2 data_r3 data_r4 data_r1; do
         $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" -d "SYSTEM SYNC REPLICA $table CLUSTER"
     done
 }
