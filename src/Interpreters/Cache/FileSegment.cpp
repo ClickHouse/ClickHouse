@@ -23,6 +23,7 @@ namespace ProfileEvents
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
+    extern const Event FilesystemCacheUnusedHoldFileSegments;
 }
 
 namespace DB
@@ -916,10 +917,8 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 
 FileSegmentsHolder::~FileSegmentsHolder()
 {
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
-
-    if (!complete_on_dtor)
-        return;
 
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();

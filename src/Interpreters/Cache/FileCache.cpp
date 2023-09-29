@@ -400,6 +400,7 @@ FileCache::getOrSet(
     size_t offset,
     size_t size,
     size_t file_size,
+    size_t file_segments_limit,
     const CreateFileSegmentSettings & settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
@@ -432,11 +433,17 @@ FileCache::getOrSet(
     while (!file_segments.empty() && file_segments.back()->range().left >= offset + size)
         file_segments.pop_back();
 
+    if (file_segments_limit)
+    {
+        while (file_segments.size() > file_segments_limit)
+            file_segments.pop_back();
+    }
+
     chassert(!file_segments.empty());
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
-FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size)
+FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size, size_t file_segments_limit)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetMicroseconds);
 
@@ -454,6 +461,11 @@ FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size
             fillHolesWithEmptyFileSegments(
                 *locked_key, file_segments, range, /* fill_with_detached */true, CreateFileSegmentSettings{});
 
+            if (file_segments_limit)
+            {
+                while (file_segments.size() > file_segments_limit)
+                    file_segments.pop_back();
+            }
             return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
         }
     }

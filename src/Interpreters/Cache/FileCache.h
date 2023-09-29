@@ -85,7 +85,7 @@ public:
      * it is guaranteed that these file segments are not removed from cache.
      */
     FileSegmentsHolderPtr
-    getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, const CreateFileSegmentSettings & settings);
+    getOrSet(const Key & key, size_t offset, size_t size, size_t file_size, size_t file_segments_limit, const CreateFileSegmentSettings & settings);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -96,7 +96,7 @@ public:
      * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
      * it's state (and become DOWNLOADED).
      */
-    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size);
+    FileSegmentsHolderPtr get(const Key & key, size_t offset, size_t size, size_t file_segments_limit);
 
     FileSegmentsHolderPtr set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
 
