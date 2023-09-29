@@ -47,7 +47,10 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
             size_t i = 0;
             res_columns[i++]->insert(zookeeper_path);
             res_columns[i++]->insert(file_name);
-            res_columns[i++]->insert(file_status->processed_rows);
+
+            std::lock_guard lock(file_status->metadata_lock);
+
+            res_columns[i++]->insert(file_status->processed_rows.load());
             res_columns[i++]->insert(magic_enum::enum_name(file_status->state));
 
             if (file_status->processing_start_time)

@@ -59,7 +59,7 @@ public:
         };
         State state = State::None;
 
-        size_t processed_rows = 0;
+        std::atomic<size_t> processed_rows = 0;
         time_t processing_start_time = 0;
         time_t processing_end_time = 0;
         size_t retries = 0;
@@ -67,6 +67,7 @@ public:
         ProfileEvents::Counters profile_counters;
 
         std::mutex processing_lock;
+        std::mutex metadata_lock;
     };
     using FileStatuses = std::unordered_map<std::string, std::shared_ptr<FileStatus>>;
 

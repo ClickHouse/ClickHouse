@@ -201,22 +201,26 @@ void StorageS3QueueSource::applyActionAfterProcessing(const String & path)
     }
 }
 
-void StorageS3QueueSource::appendLogElement(const std::string & filename, const S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed)
+void StorageS3QueueSource::appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed)
 {
     if (!s3_queue_log)
         return;
 
-    S3QueueLogElement elem
+    S3QueueLogElement elem{};
     {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .file_name = filename,
-        .rows_processed = processed_rows,
-        .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,
-        .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
-        .processing_start_time = file_status_.processing_start_time,
-        .processing_end_time = file_status_.processing_end_time,
-        .exception = file_status_.last_exception,
-    };
+        std::lock_guard lock(file_status_.metadata_lock);
+        elem = S3QueueLogElement
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .file_name = filename,
+            .rows_processed = processed_rows,
+            .status = processed ? S3QueueLogElement::S3QueueStatus::Processed : S3QueueLogElement::S3QueueStatus::Failed,
+            .counters_snapshot = file_status_.profile_counters.getPartiallyAtomicSnapshot(),
+            .processing_start_time = file_status_.processing_start_time,
+            .processing_end_time = file_status_.processing_end_time,
+            .exception = file_status_.last_exception,
+        };
+    }
     s3_queue_log->add(std::move(elem));
 }
 

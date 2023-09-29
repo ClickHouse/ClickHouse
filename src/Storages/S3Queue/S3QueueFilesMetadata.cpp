@@ -208,42 +208,46 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
     ///     Processing state is cached only if processing is being done by current clickhouse server
     ///     (because If another server is doing the processing,
     ///     we cannot know if state changes without checking with zookeeper so there is no point in cache here).
-    switch (file_status->state)
+
     {
-        case FileStatus::State::Processing: [[fallthrough]];
-        case FileStatus::State::Processed:
+        std::lock_guard lock(file_status->metadata_lock);
+        switch (file_status->state)
         {
-            return nullptr;
-        }
-        case FileStatus::State::Failed:
-        {
-            /// If max_loading_retries == 0, file is not retriable.
-            if (max_loading_retries == 0)
+            case FileStatus::State::Processing: [[fallthrough]];
+            case FileStatus::State::Processed:
+            {
                 return nullptr;
+            }
+            case FileStatus::State::Failed:
+            {
+                /// If max_loading_retries == 0, file is not retriable.
+                if (max_loading_retries == 0)
+                    return nullptr;
 
-            /// Otherwise file_status->retries is also cached.
-            /// In case file_status->retries >= max_loading_retries we can fully rely that it is true
-            /// and will not attempt processing it.
-            /// But in case file_status->retries < max_loading_retries we cannot be sure
-            /// (another server could have done a try after we cached retries value),
-            /// so check with zookeeper here.
-            if (file_status->retries >= max_loading_retries)
-                return nullptr;
+                /// Otherwise file_status->retries is also cached.
+                /// In case file_status->retries >= max_loading_retries we can fully rely that it is true
+                /// and will not attempt processing it.
+                /// But in case file_status->retries < max_loading_retries we cannot be sure
+                /// (another server could have done a try after we cached retries value),
+                /// so check with zookeeper here.
+                if (file_status->retries >= max_loading_retries)
+                    return nullptr;
 
-            break;
-        }
-        case FileStatus::State::None:
-        {
-            /// The file was not processed by current server and file status was not cached,
-            /// check metadata in zookeeper.
-            break;
+                break;
+            }
+            case FileStatus::State::None:
+            {
+                /// The file was not processed by current server and file status was not cached,
+                /// check metadata in zookeeper.
+                break;
+            }
         }
     }
 
     /// Another thread could already be trying to set file as processing.
     /// So there is no need to attempt the same, better to continue with the next file.
-    std::unique_lock lock(file_status->processing_lock, std::defer_lock);
-    if (!lock.try_lock())
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
     {
         return nullptr;
     }
@@ -272,6 +276,7 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
     {
         case SetFileProcessingResult::Success:
         {
+            std::lock_guard lock(file_status->metadata_lock);
             file_status->state = FileStatus::State::Processing;
 
             file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessingMicroseconds, timer.get());
@@ -284,11 +289,13 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
         }
         case SetFileProcessingResult::AlreadyProcessed:
         {
+            std::lock_guard lock(file_status->metadata_lock);
             file_status->state = FileStatus::State::Processed;
             break;
         }
         case SetFileProcessingResult::AlreadyFailed:
         {
+            std::lock_guard lock(file_status->metadata_lock);
             file_status->state = FileStatus::State::Failed;
             break;
         }
@@ -408,12 +415,16 @@ void S3QueueFilesMetadata::setFileProcessed(ProcessingNodeHolderPtr holder)
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessedMicroseconds);
     const auto & path = holder->path;
 
-    SCOPE_EXIT({
-        auto file_status = local_file_statuses.get(path, /* create */false);
+    auto file_status = local_file_statuses.get(path, /* create */false);
+    {
+        std::lock_guard lock(file_status->metadata_lock);
         file_status->state = FileStatus::State::Processed;
+        file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    }
+
+    SCOPE_EXIT({
         file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessedMicroseconds, timer.get());
         timer.cancel();
-        file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     });
 
     switch (mode)
@@ -524,9 +535,12 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
     const auto & path = holder->path;
 
     auto file_status = local_file_statuses.get(path, /* create */false);
-    file_status->state = FileStatus::State::Failed;
-    file_status->last_exception = exception_message;
-    file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    {
+        std::lock_guard lock(file_status->metadata_lock);
+        file_status->state = FileStatus::State::Failed;
+        file_status->last_exception = exception_message;
+        file_status->processing_end_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    }
 
     SCOPE_EXIT({
         file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileFailedMicroseconds, timer.get());
@@ -583,6 +597,8 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
     if (zk_client->tryGet(zookeeper_failed_path / node_name_with_retriable_suffix, res, &stat))
     {
         node_metadata.retries = failed_node_metadata.retries + 1;
+
+        std::lock_guard lock(file_status->metadata_lock);
         file_status->retries = node_metadata.retries;
     }
 
@@ -771,6 +787,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
         LOG_TEST(log, "Cleanup is already being executed by another node");
         return;
     }
+    /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
 
     struct Node
     {
