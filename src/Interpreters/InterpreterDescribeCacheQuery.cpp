@@ -27,6 +27,9 @@ static Block getSampleBlock()
         ColumnWithTypeAndName{std::make_shared<DataTypeString>(), "path"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "background_download_threads"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "enable_bypass_cache_with_threshold"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeFloat64>(), "keep_free_space_size_ratio"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeFloat64>(), "keep_free_space_elements_ratio"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "keep_free_space_remove_batch"}
     };
     return Block(columns);
 }
@@ -55,6 +58,9 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[i++]->insert(cache->getBasePath());
     res_columns[i++]->insert(settings.background_download_threads);
     res_columns[i++]->insert(settings.enable_bypass_cache_with_threshold);
+    res_columns[i++]->insert(settings.filecache_keep_free_space_size_ratio);
+    res_columns[i++]->insert(settings.filecache_keep_free_space_elements_ratio);
+    res_columns[i++]->insert(settings.filecache_keep_free_space_remove_batch);
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();
