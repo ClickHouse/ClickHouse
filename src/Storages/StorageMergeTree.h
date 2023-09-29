@@ -160,6 +160,15 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
 
+    struct pair_hash {
+        size_t operator() (const std::pair<std::string, UInt64> & p) const {
+            return (std::hash<std::string>()(p.first) ^ std::hash<UInt64>()(p.second));
+        }
+    };
+
+    CacheBase<std::pair<std::string, UInt64>, bool, pair_hash> mutation_equivalent_cache{10000};
+
+
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
