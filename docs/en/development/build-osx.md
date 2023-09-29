@@ -57,7 +57,7 @@ mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
 export CC=$(brew --prefix llvm)/bin/clang
 export CXX=$(brew --prefix llvm)/bin/clang++
-cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLINKER_NAME=/usr/bin/ld -S . -B build
 cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
