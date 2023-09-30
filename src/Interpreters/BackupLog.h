@@ -1,18 +1,17 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
-#include <Backups/BackupOperationInfo.h>
+#include <Interpreters/BackupInfoElement.h>
 
 namespace DB
 {
 
 /** A struct which will be inserted as row into backup_log table.
-  * Contains a record about backup or restore operation.
+  * Contains a record about backup or restore operation along with current date and time.
   */
-struct BackupLogElement
+struct BackupLogElement : public BackupInfoElement
 {
+    using Base = BackupInfoElement;
     BackupLogElement() = default;
     BackupLogElement(BackupOperationInfo info_);
     BackupLogElement(const BackupLogElement &) = default;
@@ -22,13 +21,11 @@ struct BackupLogElement
 
     std::chrono::system_clock::time_point event_time{};
     Decimal64 event_time_usec{};
-    BackupOperationInfo info{};
 
     static std::string name() { return "BackupLog"; }
     static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class BackupLog : public SystemLog<BackupLogElement>

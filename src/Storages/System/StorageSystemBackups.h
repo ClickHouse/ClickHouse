@@ -6,11 +6,12 @@
 namespace DB
 {
 
-/// Implements `grants` system table, which allows you to get information about grants.
+/// Implements `backups` system table, which allows you to get information about backup and restore operations.
 class StorageSystemBackups final : public IStorageSystemOneBlock<StorageSystemBackups>
 {
 public:
-    std::string getName() const override { return "SystemBackups"; }
+    static constexpr const char* ENGINE_NAME = "SystemBackups";
+    std::string getName() const override { return ENGINE_NAME; }
     static NamesAndTypesList getNamesAndTypes();
 
 protected:

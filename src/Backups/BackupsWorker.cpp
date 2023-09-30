@@ -15,6 +15,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
+#include <Interpreters/BackupsStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -218,16 +219,19 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+BackupsWorker::BackupsWorker(ContextPtr global_context, std::unique_ptr<BackupsStorage> storage_, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
+    , storage(std::move(storage_)), backup_log(global_context->getBackupLog())
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
 {
-    backup_log = global_context->getBackupLog();
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
+
+
+BackupsWorker::~BackupsWorker() = default;
 
 
 OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
@@ -901,6 +905,8 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, bool in
 
     if (backup_log)
         backup_log->add(BackupLogElement{info});
+    if (storage)
+        storage->add(BackupInfoElement{info});
 
     infos[id] = std::move(info);
 
@@ -937,6 +943,8 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 
     if (backup_log)
         backup_log->add(BackupLogElement{info});
+    if (storage)
+        storage->update(info);
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);

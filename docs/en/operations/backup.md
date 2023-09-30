@@ -181,32 +181,7 @@ BACKUP TABLE helloworld.my_first_table TO Disk('backups', '1.zip') ASYNC
 1 row in set. Elapsed: 0.001 sec.
 ```
 
-```
-SELECT
-    *
-FROM system.backups
-where id='7678b0b3-f519-4e6e-811f-5a0781a4eb52'
-FORMAT Vertical
-```
-```response
-Row 1:
-──────
-id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
-name:              Disk('backups', '1.zip')
-#highlight-next-line
-status:            BACKUP_FAILED
-num_files:         0
-uncompressed_size: 0
-compressed_size:   0
-#highlight-next-line
-error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
-start_time:        2022-08-30 09:21:46
-end_time:          2022-08-30 09:21:46
-
-1 row in set. Elapsed: 0.002 sec.
-```
-
-Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md): 
+All backup and restore operations are tracked in the [backup_log](../operations/system-tables/backup_log.md) system log table: 
 ```
 SELECT *
 FROM system.backup_log
@@ -254,6 +229,96 @@ bytes_read:              0
 
 2 rows in set. Elapsed: 0.075 sec. 
 ```
+
+Along with [backup_log](../operations/system-tables/backup_log.md) system log table, all backup and restore operations are also recorded to the `system.backups` table:
+```
+SELECT *
+FROM system.backups
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+FORMAT Vertical
+```
+```response
+Row 1:
+──────
+id:                7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:              Disk('backups', '1.zip')
+#highlight-next-line
+status:            BACKUP_FAILED
+num_files:         0
+uncompressed_size: 0
+compressed_size:   0
+#highlight-next-line
+error:             Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 22.8.2.11 (official build))
+start_time:        2022-08-30 09:21:46
+end_time:          2022-08-30 09:21:46
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+`system.backups` table has the same columns as its counterpart, [backup_log](../operations/system-tables/backup_log.md), except `event_date` and `event_time_microseconds` and is by default a transient system table which uses a special engine named `SystemBackups`:
+```
+SELECT
+    database,
+    name,
+    engine,
+    engine_full
+FROM system.tables
+WHERE (database = 'system') AND (name = 'backups')
+```
+```response
+┌─database─┬─name────┬─engine────────┬─engine_full───┐
+│ system   │ backups │ SystemBackups │ SystemBackups │
+└──────────┴─────────┴───────────────┴───────────────┘
+
+1 row in set. Elapsed: 0.024 sec.
+```
+
+That is, upon each server's start, it doesn't contain any records regardless of any `BACKUP`/`RESTORE` queries run during previous sessions. However, you can specify the engine and its parameters in the settings file, under the `backups.system_table` section. There are several possible options:
+- `Memory` engine is explicitly specified:
+```xml
+<clickhouse>
+    <backups>
+        <system_table>
+            <engine>ENGINE = Memory</engine>
+        </system_table>
+    </backups>
+</clickhouse>
+```
+The behaviour is essentially the same as default, except that the engine is `Memory` rather than `SystemBackups`.
+
+- [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine is explicitly specified along with its parameters:
+```xml
+<clickhouse>
+    <backups>
+        <system_table>
+            <engine>ENGINE = MergeTree ORDER BY start_time SETTINGS index_granularity = 1024</engine>
+        </system_table>
+    </backups>
+</clickhouse>
+```
+
+- [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine’s parameters are specified, which is common for [system log tables](../operations/system-tables/index.md) configuration:
+```xml
+<clickhouse>
+    <backups>
+        <system_table>
+            <partition_by>toYYYYMM(start_time)</partition_by>
+        </system_table>
+    </backups>
+</clickhouse>
+```
+
+- Neither engine nor [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine’s parameters are specified:
+```xml
+<clickhouse>
+    <backups>
+        <system_table/>
+    </backups>
+</clickhouse>
+```
+In this case, [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree) engine with default parameters applies: `ENGINE = MergeTree PARTITION BY toYYYYMM(start_time) ORDER BY start_time SETTINGS index_granularity = 8192`. 
+
+Currently, only three engines — [MergeTree](../engines/table-engines/mergetree-family/mergetree.md#mergetree), `Memory`, and `SystemBackups` — can be explicitly specified for the `system.backups` table.
 
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
