@@ -774,12 +774,10 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
 		if (!untuple_alias.empty())
-		{
-			func->setAlias(untuple_alias + "." + toString(tid));
-		} else if (tuple_type->haveExplicitNames())
-		{
-			func->setAlias(element_name);
-		}
+        {
+            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
+            func->setAlias(untuple_alias + "." + element_alias);
+        }
 
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
