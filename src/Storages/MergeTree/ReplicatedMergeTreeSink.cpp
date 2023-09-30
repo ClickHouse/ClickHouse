@@ -27,6 +27,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char replicated_merge_tree_commit_zk_fail_after_op[];
+    extern const char replicated_merge_tree_insert_quorum_fail_0[];
 }
 
 namespace ErrorCodes
@@ -765,13 +766,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     else
                         quorum_path = storage.zookeeper_path + "/quorum/status";
 
-                    if (!retries_ctl.callAndCatchAll(
-                            [&]()
-                            {
-                                waitForQuorum(
-                                    zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
-                            }))
-                        return;
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_version, replicas_num);
                 }
                 else
                 {
@@ -1007,38 +1002,19 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     if (isQuorumEnabled())
     {
-        ZooKeeperRetriesControl quorum_retries_ctl("waitForQuorum", zookeeper_retries_info, context->getProcessListElement());
-        quorum_retries_ctl.retryLoop([&]()
+        if (is_already_existing_part)
         {
-            if (storage.is_readonly)
-            {
-                /// stop retries if in shutdown
-                if (storage.shutdown_called)
-                    throw Exception(
-                        ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+            /// We get duplicate part without fetch
+            /// Check if this quorum insert is parallel or not
+            if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
+                storage.updateQuorum(part->name, true);
+            else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
+                storage.updateQuorum(part->name, false);
+        }
 
-                quorum_retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
-                return;
-            }
-
-            zookeeper->setKeeper(storage.getZooKeeper());
-
-            if (is_already_existing_part)
-            {
-                /// We get duplicate part without fetch
-                /// Check if this quorum insert is parallel or not
-                if (zookeeper->exists(storage.zookeeper_path + "/quorum/parallel/" + part->name))
-                    storage.updateQuorum(part->name, true);
-                else if (zookeeper->exists(storage.zookeeper_path + "/quorum/status"))
-                    storage.updateQuorum(part->name, false);
-            }
-
-            if (!quorum_retries_ctl.callAndCatchAll(
-                    [&]()
-                    { waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num); }))
-                return;
-        });
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num);
     }
+
     return {conflict_block_ids, part_was_deduplicated};
 }
 
@@ -1070,6 +1046,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     try
     {
+        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0,
+        {
+            if (!zookeeper->fault_policy)
+            {
+                zookeeper->logger = log;
+                zookeeper->fault_policy = std::make_unique<RandomFaultInjection>(0, 0);
+            }
+            zookeeper->fault_policy->must_fail_before_op = true;
+        });
+
         while (true)
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
