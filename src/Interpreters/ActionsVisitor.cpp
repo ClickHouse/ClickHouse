@@ -758,8 +758,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-	auto untuple_alias = function->tryGetAlias();
-	for (const auto & element_name [[maybe_unused]] : tuple_type->getElementNames())
+    auto untuple_alias = function->tryGetAlias();
+    for (const auto & element_name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
 
