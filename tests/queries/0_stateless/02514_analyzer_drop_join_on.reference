@@ -107,7 +107,7 @@ Header: bx String
               bx_0 String
               c2_5 String
               c1_3 UInt64
-        Filter (( + (JOIN actions + DROP unused columns after JOIN)))
+        Expression
         Header: a2_6 String
                 bx_0 String
                 c2_5 String
@@ -139,7 +139,7 @@ Header: bx String
                   ReadFromMemoryStorage
                   Header: b1 UInt64
                           b2 String
-            Expression ((JOIN actions + Change column names to column identifiers))
+            Filter (( + (JOIN actions + Change column names to column identifiers)))
             Header: c1_3 UInt64
                     c2_5 String
               ReadFromMemoryStorage

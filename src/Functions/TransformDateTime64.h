@@ -5,7 +5,7 @@
 
 namespace DB
 {
-/** Tansform-type wrapper for DateTime64, simplifies DateTime64 support for given Transform.
+/** Transform-type wrapper for DateTime64, simplifies DateTime64 support for given Transform.
  *
  * Depending on what overloads of Transform::execute() are available, when called with DateTime64 value,
  * invokes Transform::execute() with either:
@@ -80,13 +80,17 @@ public:
         }
         else
         {
-            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            if (t.value < 0 && components.fractional)
+                --components.whole;
+
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }
 
-    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
-    inline auto execute(const T & t, Args && ... args) const
+    template <typename T, typename... Args>
+    requires(!std::same_as<T, DateTime64>)
+    inline auto execute(const T & t, Args &&... args) const
     {
         return wrapped_transform.execute(t, std::forward<Args>(args)...);
     }
@@ -125,7 +129,8 @@ public:
         }
     }
 
-    template <typename T, typename ... Args, typename = std::enable_if_t<!std::is_same_v<T, DateTime64>>>
+    template <typename T, typename ... Args>
+    requires (!std::same_as<T, DateTime64>)
     inline auto executeExtendedResult(const T & t, Args && ... args) const
     {
         return wrapped_transform.executeExtendedResult(t, std::forward<Args>(args)...);

@@ -48,17 +48,18 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
-INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2);
-```
+-- Parse DateTime
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
 
-``` sql
 SELECT * FROM dt;
 ```
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
 │ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 03:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -73,7 +74,7 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istan
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -85,7 +86,7 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
+│ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -140,8 +141,9 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 - [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
-- [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
-- [The `date_time_output_format` setting](../../operations/settings/settings.md#settings-date_time_output_format)
+- [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#settings-date_time_input_format)
+- [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#settings-date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [The `Date` data type](../../sql-reference/data-types/date.md)

@@ -56,6 +56,8 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
+    String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
+
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
 private:

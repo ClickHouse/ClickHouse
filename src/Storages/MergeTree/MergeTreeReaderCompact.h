@@ -21,7 +21,7 @@ public:
     MergeTreeReaderCompact(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         NamesAndTypesList columns_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         MarkRanges mark_ranges_,
@@ -52,12 +52,19 @@ private:
 
     MergeTreeMarksLoader marks_loader;
 
+    /// Storage columns with collected separate arrays of Nested to columns of Nested type.
+    /// They maybe be needed for finding offsets of missed Nested columns in parts.
+    /// They are rarely used and are heavy to initialized, so we create them
+    /// only on demand and cache in this field.
+    std::optional<ColumnsDescription> storage_columns_with_collected_nested;
+
     /// Positions of columns in part structure.
     using ColumnPositions = std::vector<std::optional<size_t>>;
     ColumnPositions column_positions;
+
     /// Should we read full column or only it's offsets.
     /// Element of the vector is the level of the alternative stream.
-    std::vector<std::optional<size_t>> read_only_offsets;
+    std::vector<ColumnNameLevel> columns_for_offsets;
 
     /// For asynchronous reading from remote fs. Same meaning as in MergeTreeReaderStream.
     std::optional<size_t> last_right_offset;
@@ -68,8 +75,8 @@ private:
     void seekToMark(size_t row_index, size_t column_index);
 
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t from_mark,
-        size_t current_task_last_mark, size_t column_position, size_t rows_to_read,
-        std::optional<size_t> only_offsets_level);
+        size_t current_task_last_mark, size_t column_position,
+        size_t rows_to_read, ColumnNameLevel name_level_for_offsets);
 
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.
@@ -84,7 +91,6 @@ private:
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
-
     bool initialized = false;
 };
 

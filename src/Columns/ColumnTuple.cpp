@@ -171,7 +171,7 @@ void ColumnTuple::popBack(size_t n)
         column->popBack(n);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     StringRef res(begin, 0);
     for (const auto & column : columns)
@@ -495,15 +495,15 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+void ColumnTuple::forEachSubcolumn(MutableColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnTuple::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
         callback(*column);
         column->forEachSubcolumnRecursively(callback);

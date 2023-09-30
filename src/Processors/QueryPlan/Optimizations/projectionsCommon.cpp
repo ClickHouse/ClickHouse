@@ -38,6 +38,9 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->isParallelReadingEnabled())
         return false;
 
+    if (reading->readsInOrder())
+        return false;
+
     // Currently projection don't support deduplication when moving parts between shards.
     if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
         return false;
@@ -128,7 +131,8 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             if (prewhere_info->prewhere_actions)
             {
                 appendExpression(prewhere_info->prewhere_actions);
-                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                if (const auto * filter_expression
+                    = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
                     filter_nodes.push_back(filter_expression);
                 else
                     return false;

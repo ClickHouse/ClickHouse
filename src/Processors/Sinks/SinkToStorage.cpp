@@ -4,7 +4,12 @@
 namespace DB
 {
 
-SinkToStorage::SinkToStorage(const Block & header) : ExceptionKeepingTransform(header, header, false) {}
+SinkToStorage::SinkToStorage(const Block & header) : SinkToStorage(header, IOutputChunkGenerator::createDefault()) {}
+
+SinkToStorage::SinkToStorage(const Block & header, std::unique_ptr<IOutputChunkGenerator> output_generator_)
+    : ExceptionKeepingTransform(header, header, false),
+    output_generator(std::move(output_generator_))
+{ }
 
 void SinkToStorage::onConsume(Chunk chunk)
 {
@@ -15,15 +20,15 @@ void SinkToStorage::onConsume(Chunk chunk)
       */
     Nested::validateArraySizes(getHeader().cloneWithColumns(chunk.getColumns()));
 
+    output_generator->onNewChunkArrived(chunk.clone());
     consume(chunk.clone());
-    if (!lastBlockIsDuplicate())
-        cur_chunk = std::move(chunk);
 }
 
 SinkToStorage::GenerateResult SinkToStorage::onGenerate()
 {
     GenerateResult res;
-    res.chunk = std::move(cur_chunk);
+
+    res.chunk = output_generator->generateChunk();
     res.is_done = true;
     return res;
 }

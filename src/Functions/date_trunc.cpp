@@ -107,7 +107,7 @@ public:
         if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
         else
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1));
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

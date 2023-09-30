@@ -77,12 +77,14 @@ namespace
 
 
 BackupImpl::BackupImpl(
-    const String & backup_name_for_logging_,
+    const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
-    const ContextPtr & context_)
-    : backup_name_for_logging(backup_name_for_logging_)
+    const ContextPtr & context_,
+    bool use_same_s3_credentials_for_base_backup_)
+    : backup_info(backup_info_)
+    , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
@@ -90,13 +92,14 @@ BackupImpl::BackupImpl(
     , is_internal_backup(false)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
+    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
 {
     open(context_);
 }
 
 
 BackupImpl::BackupImpl(
-    const String & backup_name_for_logging_,
+    const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupWriter> writer_,
@@ -104,8 +107,10 @@ BackupImpl::BackupImpl(
     bool is_internal_backup_,
     const std::shared_ptr<IBackupCoordination> & coordination_,
     const std::optional<UUID> & backup_uuid_,
-    bool deduplicate_files_)
-    : backup_name_for_logging(backup_name_for_logging_)
+    bool deduplicate_files_,
+    bool use_same_s3_credentials_for_base_backup_)
+    : backup_info(backup_info_)
+    , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
@@ -116,6 +121,7 @@ BackupImpl::BackupImpl(
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , deduplicate_files(deduplicate_files_)
+    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
     , log(&Poco::Logger::get("BackupImpl"))
 {
     open(context_);
@@ -144,6 +150,7 @@ void BackupImpl::open(const ContextPtr & context)
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
         lock_file_name = use_archive ? (archive_params.archive_name + ".lock") : ".lock";
+        lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
         /// Check that we can write a backup there and create the lock file to own this destination.
@@ -161,10 +168,16 @@ void BackupImpl::open(const ContextPtr & context)
 
     if (base_backup_info)
     {
+        if (use_same_s3_credentials_for_base_backup)
+            backup_info.copyS3CredentialsTo(*base_backup_info);
+
         BackupFactory::CreateParams params;
         params.backup_info = *base_backup_info;
         params.open_mode = OpenMode::READ;
         params.context = context;
+        /// use_same_s3_credentials_for_base_backup should be inherited for base backups
+        params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
+
         base_backup = BackupFactory::instance().createBackup(params);
 
         if (open_mode == OpenMode::WRITE)
@@ -374,7 +387,7 @@ void BackupImpl::readBackupMetadata()
         if (!archive_reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
         setCompressedSize();
-        in = archive_reader->readFile(".backup");
+        in = archive_reader->readFile(".backup", /*throw_on_not_found=*/true);
     }
     else
     {
@@ -684,7 +697,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
     {
         /// Make `read_buffer` if there is data for this backup entry in this backup.
         if (use_archive)
-            read_buffer = archive_reader->readFile(info.data_file_name);
+            read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else
             read_buffer = reader->readFile(info.data_file_name);
     }
@@ -833,13 +846,10 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
-    bool should_check_lock_file = false;
     {
         std::lock_guard lock{mutex};
         ++num_files;
         total_size += info.size;
-        if (!num_entries)
-            should_check_lock_file = true;
     }
 
     auto src_disk = entry->getDisk();
@@ -859,7 +869,7 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         return;
     }
 
-    if (!should_check_lock_file)
+    if (!lock_file_before_first_file_checked.exchange(true))
         checkLockFile(true);
 
     /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.

@@ -111,6 +111,8 @@ namespace detail
         ReadSettings settings;
         Poco::Logger * log;
 
+        Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+
         bool withPartialContent(const HTTPRange & range) const;
 
         size_t getOffset() const;
@@ -161,7 +163,8 @@ namespace detail
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
             bool http_skip_not_found_url_ = false,
-            std::optional<HTTPFileInfo> file_info_ = std::nullopt);
+            std::optional<HTTPFileInfo> file_info_ = std::nullopt,
+            Poco::Net::HTTPClientSession::ProxyConfig proxy_config_ = {});
 
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false, bool for_object_info = false);
 
@@ -201,7 +204,7 @@ namespace detail
 
         const std::string & getCompressionMethod() const;
 
-        std::optional<time_t> getLastModificationTime();
+        std::optional<time_t> tryGetLastModificationTime();
 
         HTTPFileInfo getFileInfo();
 
@@ -212,13 +215,14 @@ namespace detail
 class SessionFactory
 {
 public:
-    explicit SessionFactory(const ConnectionTimeouts & timeouts_);
+    explicit SessionFactory(const ConnectionTimeouts & timeouts_, Poco::Net::HTTPClientSession::ProxyConfig proxy_config_ = {});
 
     using SessionType = HTTPSessionPtr;
 
     SessionType buildNewSession(const Poco::URI & uri);
 private:
     ConnectionTimeouts timeouts;
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
 };
 
 class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<SessionFactory>>>
@@ -241,7 +245,8 @@ public:
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false,
-        std::optional<HTTPFileInfo> file_info_ = std::nullopt);
+        std::optional<HTTPFileInfo> file_info_ = std::nullopt,
+        Poco::Net::HTTPClientSession::ProxyConfig proxy_config_ = {});
 };
 
 class PooledSessionFactory

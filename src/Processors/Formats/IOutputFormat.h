@@ -23,9 +23,9 @@ class WriteBuffer;
 class IOutputFormat : public IProcessor
 {
 public:
-    enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
+    enum PortKind { Main = 0, Totals = 1, Extremes = 2, PartialResult = 3 };
 
-    IOutputFormat(const Block & header_, WriteBuffer & out_);
+    IOutputFormat(const Block & header_, WriteBuffer & out_, bool is_partial_result_protocol_active_ = false);
 
     Status prepare() override;
     void work() override;
@@ -54,6 +54,7 @@ public:
     /// TODO: separate formats and processors.
 
     void write(const Block & block);
+    void writePartialResult(const Block & block);
 
     void finalize();
 
@@ -70,6 +71,9 @@ public:
         writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
+
+    virtual bool supportsWritingException() const { return false; }
+    virtual void setException(const String & /*exception_message*/) {}
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
@@ -118,6 +122,7 @@ protected:
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
+    virtual void consumePartialResult(Chunk) {}
     virtual void finalizeImpl() {}
     virtual void finalizeBuffers() {}
     virtual void writePrefix() {}
@@ -162,10 +167,16 @@ protected:
     /// outputs them in finalize() method.
     virtual bool areTotalsAndExtremesUsedInFinalize() const { return false; }
 
+    /// Derived classes can use some wrappers around out WriteBuffer
+    /// and can override this method to return wrapper
+    /// that should be used in its derived classes.
+    virtual WriteBuffer * getWriteBufferPtr() { return &out; }
+
     WriteBuffer & out;
 
     Chunk current_chunk;
     PortKind current_block_kind = PortKind::Main;
+    bool main_input_activated = false;
     bool has_input = false;
     bool finished = false;
     bool finalized = false;
@@ -180,8 +191,14 @@ protected:
     Statistics statistics;
 
 private:
+    void setCurrentChunk(InputPort & input, PortKind kind);
+    IOutputFormat::Status prepareMainAndPartialResult();
+    IOutputFormat::Status prepareTotalsAndExtremes();
+
     size_t rows_read_before = 0;
     bool are_totals_written = false;
+
+    bool is_partial_result_protocol_active = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;

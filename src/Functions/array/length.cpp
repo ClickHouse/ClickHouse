@@ -101,6 +101,7 @@ It is ok to have ASCII NUL bytes in strings, and they will be counted as well.
             .categories{"String", "Array"}
         },
         FunctionFactory::CaseInsensitive);
+    factory.registerAlias("OCTET_LENGTH", "length", FunctionFactory::CaseInsensitive);
 }
 
 }

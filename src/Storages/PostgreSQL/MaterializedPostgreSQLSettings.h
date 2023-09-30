@@ -21,6 +21,9 @@ namespace DB
     M(Bool, materialized_postgresql_tables_list_with_schema, false, \
         "Consider by default that if there is a dot in tables list 'name.name', " \
         "then the first name is postgres schema and second is postgres table. This setting is needed to allow table names with dots", 0) \
+    M(UInt64, materialized_postgresql_backoff_min_ms, 200, "Poll backoff start point", 0) \
+    M(UInt64, materialized_postgresql_backoff_max_ms, 10000, "Poll backoff max point", 0) \
+    M(UInt64, materialized_postgresql_backoff_factor, 2, "Poll backoff factor", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS)
 

@@ -83,8 +83,6 @@ struct QueryState
         NOT_CANCELLED
     };
 
-    static std::string cancellationStatusToName(CancellationStatus status);
-
     /// Is request cancelled
     CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
     bool is_connection_closed = false;
@@ -196,6 +194,7 @@ private:
 
     String default_database;
 
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
@@ -225,6 +224,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
@@ -266,7 +266,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
@@ -274,6 +274,7 @@ private:
     void sendProfileEvents();
     void sendSelectProfileEvents();
     void sendInsertProfileEvents();
+    void sendTimezone();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

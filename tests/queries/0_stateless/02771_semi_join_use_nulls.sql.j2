@@ -44,6 +44,12 @@ SELECT id > 1, d.idd FROM (SELECT {{ maybe_materialize }}(toLowCardinality(0)) A
 ON a.id = d.idd
 ;
 
+SELECT *
+FROM (SELECT {{ maybe_materialize }}(NULL :: Nullable(UInt64)) AS id) AS a
+{{ strictness }} {{ kind }} JOIN (SELECT {{ maybe_materialize }}(1 :: UInt32) AS id) AS d
+ON a.id = d.id
+;
+
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}

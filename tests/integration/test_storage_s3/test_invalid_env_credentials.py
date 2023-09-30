@@ -92,6 +92,7 @@ def started_cluster():
                 "configs/use_environment_credentials.xml",
                 "configs/named_collections.xml",
             ],
+            user_configs=["configs/users.xml"],
         )
 
         logging.info("Starting cluster...")

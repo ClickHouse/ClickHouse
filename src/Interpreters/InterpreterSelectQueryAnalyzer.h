@@ -69,6 +69,8 @@ public:
     const Planner & getPlanner() const { return planner; }
     Planner & getPlanner() { return planner; }
 
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
+
 private:
     ASTPtr query;
     ContextMutablePtr context;

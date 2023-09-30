@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -38,7 +39,7 @@
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -54,6 +55,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int THERE_IS_NO_COLUMN;
 }
+
 
 namespace
 {
@@ -109,13 +111,17 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
-ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
+ColumnDependencies getAllColumnDependencies(
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & updated_columns,
+    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency)
 {
     NameSet new_updated_columns = updated_columns;
     ColumnDependencies dependencies;
+
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_dependency);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -288,6 +294,16 @@ bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
     return data && data->getSettings()->materialize_ttl_recalculate_only;
 }
 
+bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
+{
+    return part && part->hasSecondaryIndex(name);
+}
+
+bool MutationsInterpreter::Source::hasProjection(const String & name) const
+{
+    return part && part->hasProjection(name);
+}
+
 static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
 {
     auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
@@ -401,6 +417,12 @@ static void validateUpdateColumns(
             found = true;
         }
 
+        /// Dont allow to override value of block number virtual column
+        if (!found && column_name == BlockNumberColumn::name)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
+        }
+
         if (!found)
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
@@ -496,7 +518,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
-            if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name)
+            if (!available_columns_set.contains(name) && name != LightweightDeleteDescription::FILTER_COLUMN.name
+                && name != BlockNumberColumn::name)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                     "Column {} is updated but not requested to read", name);
 
@@ -524,10 +547,24 @@ void MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    if (settings.recalculate_dependencies_of_updated_columns)
-        dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+    StorageInMemoryMetadata::HasDependencyCallback has_dependency =
+        [&](const String & name, ColumnDependency::Kind kind)
+    {
+        if (kind == ColumnDependency::PROJECTION)
+            return source.hasProjection(name);
 
+        if (kind == ColumnDependency::SKIP_INDEX)
+            return source.hasSecondaryIndex(name);
+
+        return true;
+    };
+
+    if (settings.recalculate_dependencies_of_updated_columns)
+        dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
+
+    bool has_alter_delete = false;
     std::vector<String> read_columns;
+
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
     {
@@ -546,6 +583,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
+            has_alter_delete = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -583,6 +621,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type = physical_column->type;
                 else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
                     type = LightweightDeleteDescription::FILTER_COLUMN.type;
+                else if (column == BlockNumberColumn::name)
+                    type = BlockNumberColumn::type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -680,20 +720,26 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (it == std::cend(indices_desc))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
 
-            auto query = (*it).expression_list_ast->clone();
-            auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-            const auto required_columns = syntax_result->requiredSourceColumns();
-            for (const auto & column : required_columns)
-                dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
-            materialized_indices.emplace(command.index_name);
+            if (!source.hasSecondaryIndex(it->name))
+            {
+                auto query = (*it).expression_list_ast->clone();
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                const auto required_columns = syntax_result->requiredSourceColumns();
+                for (const auto & column : required_columns)
+                    dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
+                materialized_indices.emplace(command.index_name);
+            }
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
-            for (const auto & column : projection.required_columns)
-                dependencies.emplace(column, ColumnDependency::PROJECTION);
-            materialized_projections.emplace(command.projection_name);
+            if (!source.hasProjection(projection.name))
+            {
+                for (const auto & column : projection.required_columns)
+                    dependencies.emplace(column, ColumnDependency::PROJECTION);
+                materialized_projections.emplace(command.projection_name);
+            }
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
@@ -712,7 +758,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(NameSet(all_columns_vec.begin(), all_columns_vec.end()), false);
+                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(all_columns_set, false, has_dependency);
+
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
@@ -737,7 +785,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto all_columns_vec = all_columns.getNames();
-                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
+                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
+                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, all_columns_set, has_dependency);
 
                 for (const auto & dependency : all_dependencies)
                 {
@@ -746,7 +795,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_dependency);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
@@ -784,10 +833,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
+    NameSet changed_columns;
+    NameSet unchanged_columns;
     if (!dependencies.empty())
     {
-        NameSet changed_columns;
-        NameSet unchanged_columns;
         for (const auto & dependency : dependencies)
         {
             if (dependency.isReadOnly())
@@ -837,6 +886,53 @@ void MutationsInterpreter::prepare(bool dry_run)
                     column, std::make_shared<ASTIdentifier>(column));
         }
     }
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (!source.hasSecondaryIndex(index.name))
+            continue;
+
+        if (has_alter_delete)
+        {
+            materialized_indices.insert(index.name);
+            continue;
+        }
+
+        const auto & index_cols = index.expression->getRequiredColumns();
+        bool changed = std::any_of(
+            index_cols.begin(),
+            index_cols.end(),
+            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+
+        if (changed)
+            materialized_indices.insert(index.name);
+    }
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (!source.hasProjection(projection.name))
+            continue;
+
+        if (has_alter_delete)
+        {
+            materialized_projections.insert(projection.name);
+            continue;
+        }
+
+        const auto & projection_cols = projection.required_columns;
+        bool changed = std::any_of(
+            projection_cols.begin(),
+            projection_cols.end(),
+            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+
+        if (changed)
+            materialized_projections.insert(projection.name);
+    }
+
+    /// Stages might be empty when we materialize skip indices or projections which don't add any
+    /// column dependencies.
+    if (stages.empty())
+        stages.emplace_back(context);
 
     is_prepared = true;
     prepareMutationStages(stages, dry_run);
@@ -1000,6 +1096,18 @@ struct VirtualColumns
                 column.name = std::move(columns_to_read[i]);
 
                 virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
+            }
+            else if (columns_to_read[i] == BlockNumberColumn::name)
+            {
+                if (!part->getColumns().contains(BlockNumberColumn::name))
+                {
+                    ColumnWithTypeAndName block_number_column;
+                    block_number_column.type = BlockNumberColumn::type;
+                    block_number_column.column = block_number_column.type->createColumnConst(0, part->info.min_block);
+                    block_number_column.name = std::move(columns_to_read[i]);
+
+                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(block_number_column), .position = i});
+                }
             }
         }
 

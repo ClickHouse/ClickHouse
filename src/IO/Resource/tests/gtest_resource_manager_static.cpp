@@ -24,10 +24,10 @@ TEST(IOResourceStaticResourceManager, Smoke)
                     <node path="/prio/B"><priority>1</priority></node>
                 </res1>
             </resources>
-            <classifiers>
+            <workload_classifiers>
                 <A><res1>/prio/A</res1></A>
                 <B><res1>/prio/B</res1></B>
-            </classifiers>
+            </workload_classifiers>
         </clickhouse>
     )CONFIG");
 
@@ -44,8 +44,8 @@ TEST(IOResourceStaticResourceManager, Smoke)
 
 TEST(IOResourceStaticResourceManager, Prioritization)
 {
-    std::optional<Int64> last_priority;
-    auto check = [&] (Int64 priority)
+    std::optional<Priority> last_priority;
+    auto check = [&] (Priority priority)
     {
         // Lock is not required here because this is called during request execution and we have max_requests = 1
         if (last_priority)
@@ -70,13 +70,13 @@ TEST(IOResourceStaticResourceManager, Prioritization)
                     <node path="/prio/leader"></node>
                 </res1>
             </resources>
-            <classifiers>
+            <workload_classifiers>
                 <A><res1>/prio/A</res1></A>
                 <B><res1>/prio/B</res1></B>
                 <C><res1>/prio/C</res1></C>
                 <D><res1>/prio/D</res1></D>
                 <leader><res1>/prio/leader</res1></leader>
-            </classifiers>
+            </workload_classifiers>
         </clickhouse>
     )CONFIG");
 

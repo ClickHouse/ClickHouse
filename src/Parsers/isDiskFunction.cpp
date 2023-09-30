@@ -10,7 +10,7 @@ bool isDiskFunction(ASTPtr ast)
         return false;
 
     const auto * function = ast->as<ASTFunction>();
-    return function && function->name == "disk" && function->arguments->as<ASTExpressionList>();
+    return function && function->name.starts_with("disk") && function->arguments->as<ASTExpressionList>();
 }
 
 }

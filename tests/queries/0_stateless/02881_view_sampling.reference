@@ -1,0 +1,7 @@
+-- { echo }
+select * from data_mt sample 0.1 order by key;
+9
+select * from view_mt sample 0.1 order by key;
+9
+select * from data_mem sample 0.1 order by key; -- { serverError SAMPLING_NOT_SUPPORTED }
+select * from view_mem sample 0.1 order by key; -- { serverError SAMPLING_NOT_SUPPORTED }
