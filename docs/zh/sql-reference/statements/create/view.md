@@ -61,9 +61,9 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 请注意，物化视图受[optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert)设置的影响。 在插入视图之前合并数据。
 
-视图看起来与普通表相同。 例如，它们列在1SHOW TABLES1查询的结果中。
+视图看起来与普通表相同。 例如，它们列在`SHOW TABLES`查询的结果中。
 
-删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop#drop-view). `DROP TABLE`也适用于视图。
+删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). `DROP TABLE`也适用于视图。
 
 ## Live View (实验性) {#live-view}
 
@@ -72,7 +72,7 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 使用[allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view)设置启用实时视图和`WATCH`查询的使用。 输入命令`set allow_experimental_live_view = 1`。
 
 ```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
+CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH REFRESH [value_in_sec]] AS SELECT ...
 ```
 
 实时视图存储相应[SELECT](../../../sql-reference/statements/select/index.md)查询的结果，并在查询结果更改时随时更新。 查询结果以及与新数据结合所需的部分结果存储在内存中，为重复查询提供更高的性能。当使用[WATCH](../../../sql-reference/statements/watch.md)查询更改查询结果时，实时视图可以提供推送通知。
@@ -210,7 +210,7 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - 监视表更改并触发后续选择查询。
 - 使用定期刷新从系统表中查看指标。
 
-[原始文章](https://clickhouse.com/docs/en/sql-reference/statements/create/view/) <!--hide-->
+
 
 ## Window View [Experimental] {#window-view}
 

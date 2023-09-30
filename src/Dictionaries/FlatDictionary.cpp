@@ -357,7 +357,7 @@ void FlatDictionary::blockToAttributes(const Block & block)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "{}: identifier should be less than {}",
                     getFullName(),
-                    toString(configuration.max_array_size));
+                    configuration.max_array_size);
 
             if (key >= loaded_keys.size())
             {
@@ -395,11 +395,15 @@ void FlatDictionary::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-
         PullingPipelineExecutor executor(pipeline);
+        update_field_loaded_block.reset();
         Block block;
+
         while (executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
             convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
@@ -505,7 +509,7 @@ void FlatDictionary::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.size();
+    bytes_allocated += string_arena.allocatedBytes();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
@@ -572,7 +576,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "{}: identifier should be less than {}",
             getFullName(),
-            toString(configuration.max_array_size));
+            configuration.max_array_size);
 
     auto & container = std::get<ContainerType<T>>(attribute.container);
 
@@ -683,7 +687,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
         return std::make_unique<FlatDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
-    factory.registerLayout("flat", create_layout, false);
+    factory.registerLayout("flat", create_layout, false, false);
 }
 
 

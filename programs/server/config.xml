@@ -91,6 +91,18 @@
         </formatting> -->
     </logger>
 
+    <url_scheme_mappers>
+        <s3>
+            <to>https://{bucket}.s3.amazonaws.com</to>
+        </s3>
+        <gs>
+            <to>https://{bucket}.storage.googleapis.com</to>
+        </gs>
+        <oss>
+            <to>https://{bucket}.oss.aliyuncs.com</to>
+        </oss>
+    </url_scheme_mappers>
+
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
     <!-- It is off by default. Next headers are obligate for CORS.-->
     <!-- http_options_response>
@@ -282,6 +294,13 @@
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
+
+            <invalidCertificateHandler>
+                <!-- The server, in contrast to the client, cannot ask about the certificate interactively.
+                     The only reasonable option is to reject.
+                -->
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
         </server>
 
         <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
@@ -310,7 +329,7 @@
     <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
-    <max_concurrent_queries>100</max_concurrent_queries>
+    <max_concurrent_queries>1000</max_concurrent_queries>
 
     <!-- Maximum memory usage (resident set size) for server process.
          Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
@@ -334,9 +353,19 @@
 
     <max_thread_pool_size>10000</max_thread_pool_size>
 
-    <!-- Number of workers to recycle connections in background (see also drain_timeout).
-         If the pool is full, connection will be drained synchronously. -->
-    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
+    <!-- Configure other thread pools: -->
+    <!--
+    <background_buffer_flush_schedule_pool_size>16</background_buffer_flush_schedule_pool_size>
+    <background_pool_size>16</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <background_merges_mutations_scheduling_policy>round_robin</background_merges_mutations_scheduling_policy>
+    <background_move_pool_size>8</background_move_pool_size>
+    <background_fetches_pool_size>8</background_fetches_pool_size>
+    <background_common_pool_size>8</background_common_pool_size>
+    <background_schedule_pool_size>128</background_schedule_pool_size>
+    <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
+    <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -402,6 +431,8 @@
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
+    <validate_tcp_client_information>false</validate_tcp_client_information>
+
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
@@ -429,8 +460,6 @@
                 <account_name>account</account_name>
                 <account_key>pass123</account_key>
                 <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </blob_storage_disk>
         </disks>
@@ -465,6 +494,38 @@
     <allow_plaintext_password>1</allow_plaintext_password>
     <allow_no_password>1</allow_no_password>
     <allow_implicit_no_password>1</allow_implicit_no_password>
+
+    <!-- When a user does not specify a password type in the CREATE USER query, the default password type is used.
+         Accepted values are: 'plaintext_password', 'sha256_password', 'double_sha1_password', 'bcrypt_password'.
+      -->
+    <default_password_type>sha256_password</default_password_type>
+
+    <!-- Work factor for bcrypt_password authentication type-->
+    <bcrypt_workfactor>12</bcrypt_workfactor>
+
+    <!-- Complexity requirements for user passwords. -->
+    <!-- <password_complexity>
+        <rule>
+            <pattern>.{12}</pattern>
+            <message>be at least 12 characters long</message>
+        </rule>
+        <rule>
+            <pattern>\p{N}</pattern>
+            <message>contain at least 1 numeric character</message>
+        </rule>
+        <rule>
+            <pattern>\p{Ll}</pattern>
+            <message>contain at least 1 lowercase character</message>
+        </rule>
+        <rule>
+            <pattern>\p{Lu}</pattern>
+            <message>contain at least 1 uppercase character</message>
+        </rule>
+        <rule>
+            <pattern>[^\p{L}\p{N}]</pattern>
+            <message>contain at least 1 special character</message>
+        </rule>
+    </password_complexity> -->
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -669,13 +730,20 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+
+        <!-- Number of seconds since last access a role is stored in the Role Cache -->
+        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
-    <!-- Comma-separated list of prefixes for user-defined settings. -->
-    <custom_settings_prefixes></custom_settings_prefixes>
+    <!-- Comma-separated list of prefixes for user-defined settings.
+         The server will allow to set these settings, and retrieve them with the getSetting function.
+         They are also logged in the query_log, similarly to other settings, but have no special effect.
+         The "SQL_" prefix is introduced for compatibility with MySQL - these settings are being set be Tableau.
+    -->
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
 
     <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
@@ -749,7 +817,7 @@
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
-        <test_shard_localhost>
+        <default>
             <!-- Inter-server per-cluster secret for Distributed queries
                  default: no secret (no authentication will be performed)
 
@@ -782,108 +850,11 @@
                     <port>9000</port>
                     <!-- Optional. Priority of the replica for load_balancing. Default: 1 (less value has more priority). -->
                     <!-- <priority>1</priority> -->
+                    <!-- Use SSL? Default: no -->
+                    <!-- <secure>0</secure> -->
                 </replica>
             </shard>
-        </test_shard_localhost>
-        <test_cluster_one_shard_three_replicas_localhost>
-            <shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <!--shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard-->
-        </test_cluster_one_shard_three_replicas_localhost>
-        <test_cluster_two_shards_localhost>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-             <shard>
-                 <replica>
-                     <host>localhost</host>
-                     <port>9000</port>
-                 </replica>
-             </shard>
-        </test_cluster_two_shards_localhost>
-        <test_cluster_two_shards>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards>
-        <test_cluster_two_shards_internal_replication>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_internal_replication>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
+        </default>
     </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
@@ -906,6 +877,14 @@
             (forgetting to do so is a common source of error).
         -->
     <!--</remote_url_allow_hosts>-->
+
+    <!-- The list of HTTP headers forbidden to use in HTTP-related storage engines and table functions.
+        If this section is not present in configuration, all headers are allowed.
+    -->
+    <!-- <http_forbid_headers>
+        <header>exact_header</header>
+        <header_regexp>(?i)(case_insensitive_header)</header_regexp>
+    </http_forbid_headers> -->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
@@ -1002,7 +981,6 @@
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
-        status_info - send data from different component from CH, ex: Dictionaries status
     -->
     <!--
     <prometheus>
@@ -1012,7 +990,6 @@
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
     </prometheus>
     -->
 
@@ -1043,12 +1020,33 @@
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
         -->
 
+        <!--
+            ORDER BY expr: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#order_by
+            Example:
+                event_date, event_time
+                event_date, type, query_id
+                event_date, event_time, initial_query_id
+
+        <order_by>event_date, event_time, initial_query_id</order_by>
+        -->
+
         <!-- Instead of partition_by, you can provide full engine expression (starting with ENGINE = ) with parameters,
              Example: <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
           -->
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk. -->
+        <max_size_rows>1048576</max_size_rows>
+        <!-- Pre-allocated size in lines for the logs. -->
+        <reserved_size_rows>8192</reserved_size_rows>
+        <!-- Lines amount threshold, reaching it launches flushing logs to the disk in background. -->
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
+
+        <!-- example of using a different storage policy for a system table -->
+        <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>
 
     <!-- Trace log. Stores stack traces collected by query profilers.
@@ -1059,6 +1057,11 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
@@ -1068,6 +1071,10 @@
         <table>query_thread_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </query_thread_log>
 
     <!-- Query views log. Has information about all dependent views associated with a query.
@@ -1086,6 +1093,10 @@
         <table>part_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </part_log>
 
     <!-- Uncomment to write text log into table.
@@ -1095,6 +1106,10 @@
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <level></level>
     </text_log>
     -->
@@ -1104,7 +1119,11 @@
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
     <!--
@@ -1115,6 +1134,10 @@
         <database>system</database>
         <table>asynchronous_metric_log</table>
         <flush_interval_milliseconds>7000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </asynchronous_metric_log>
 
     <!--
@@ -1139,6 +1162,10 @@
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </opentelemetry_span_log>
 
 
@@ -1150,6 +1177,10 @@
 
         <partition_by />
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <max_size_rows>1024</max_size_rows>
+        <reserved_size_rows>1024</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+        <flush_on_crash>true</flush_on_crash>
     </crash_log>
 
     <!-- Session log. Stores user log in (successful or not) and log out events.
@@ -1162,6 +1193,10 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </session_log> -->
 
     <!-- Profiling on Processors level. -->
@@ -1171,6 +1206,10 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1181,9 +1220,22 @@
         <table>asynchronous_insert_log</table>
 
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <partition_by>event_date</partition_by>
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
+
+    <!-- Backup/restore log.
+    -->
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </backup_log>
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
@@ -1201,10 +1253,14 @@
     <!-- Configuration of external dictionaries. See:
          https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
-    <dictionaries_config>*_dictionary.xml</dictionaries_config>
+    <dictionaries_config>*_dictionary.*ml</dictionaries_config>
 
     <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+    <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
+
+    <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
+     If not specified they will be stored locally. -->
+    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1336,17 +1392,13 @@
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
         replace - substitution string for sensitive data (optional, by default - six asterisks)
-    -->
     <query_masking_rules>
         <rule>
             <name>hide encrypt/decrypt arguments</name>
             <regexp>((?:aes_)?(?:encrypt|decrypt)(?:_mysql)?)\s*\(\s*(?:'(?:\\'|.)+'|.*?)\s*\)</regexp>
-            <!-- or more secure, but also more invasive:
-                (aes_\w+)\s*\(.*\)
-            -->
             <replace>\1(???)</replace>
         </rule>
-    </query_masking_rules>
+    </query_masking_rules> -->
 
     <!-- Uncomment to use custom http handlers.
         rules are checked from top to bottom, first match runs the handler
@@ -1430,11 +1482,13 @@
     </rocksdb>
     -->
 
-    <!-- Uncomment if enable merge tree metadata cache -->
-    <!--merge_tree_metadata_cache>
-        <lru_cache_size>268435456</lru_cache_size>
-        <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache-->
+    <!-- Configuration for the query cache -->
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+    </query_cache>
 
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.
@@ -1444,4 +1498,14 @@
          I don't recommend to change this setting.
     <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
     -->
+
+    <!-- On Linux systems this can control the behavior of OOM killer.
+    <oom_score>-1000</oom_score>
+    -->
+
+    <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
+    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
+
+    <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
+    <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
 </clickhouse>

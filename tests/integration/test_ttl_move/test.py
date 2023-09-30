@@ -151,7 +151,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
                 get_command("TTL d1 TO DISK 'unknown'", "small_jbod_with_external")
             )
 
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
         if alter:
             node1.query(get_command(None, "small_jbod_with_external"))
@@ -161,7 +161,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
                 get_command("TTL d1 TO VOLUME 'unknown'", "small_jbod_with_external")
             )
 
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
         if alter:
             node1.query(get_command(None, "only_jbod2"))
@@ -169,7 +169,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
         with pytest.raises(QueryRuntimeException):
             node1.query(get_command("TTL d1 TO DISK 'jbod1'", "only_jbod2"))
 
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
         if alter:
             node1.query(get_command(None, "only_jbod2"))
@@ -178,7 +178,7 @@ def test_rule_with_invalid_destination(started_cluster, name, engine, alter):
             node1.query(get_command("TTL d1 TO VOLUME 'external'", "only_jbod2"))
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -253,7 +253,7 @@ def test_inserts_to_disk_work(started_cluster, name, engine, positive):
 
     finally:
         try:
-            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+            node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
         except:
             pass
 
@@ -330,7 +330,7 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -418,7 +418,7 @@ def test_moves_to_disk_work(started_cluster, name, engine, positive):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -489,7 +489,7 @@ def test_moves_to_volume_work(started_cluster, name, engine):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -570,7 +570,7 @@ def test_inserts_to_volume_work(started_cluster, name, engine, positive):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -649,7 +649,7 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         used_disks = get_used_disks_for_table(node1, name)
         assert set(used_disks) == {"jbod1"}
 
-        node1.query("DROP TABLE {} NO DELAY".format(name_temp))
+        node1.query("DROP TABLE {} SYNC".format(name_temp))
 
         wait_parts_mover(node1, name)
 
@@ -661,8 +661,8 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name_temp))
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name_temp))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 def test_replicated_download_ttl_info(started_cluster):
@@ -702,7 +702,7 @@ def test_replicated_download_ttl_info(started_cluster):
     finally:
         for node in (node1, node2):
             try:
-                node.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+                node.query("DROP TABLE IF EXISTS {} SYNC".format(name))
             except:
                 continue
 
@@ -818,7 +818,7 @@ def test_merges_to_disk_work(started_cluster, name, engine, positive):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -932,8 +932,8 @@ def test_merges_with_full_disk_work(started_cluster, name, engine):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name_temp))
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name_temp))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -1035,7 +1035,7 @@ def test_moves_after_merges_work(started_cluster, name, engine, positive):
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -1150,7 +1150,7 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
         )
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -1255,7 +1255,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         ).strip() == str(len(data))
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+        node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
 
 
 @pytest.mark.parametrize(
@@ -1378,7 +1378,7 @@ def test_alter_multiple_ttls(started_cluster, name, engine, positive):
             assert rows_count == 3
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} SYNC".format(name=name))
 
 
 @pytest.mark.parametrize(
@@ -1526,107 +1526,7 @@ def test_concurrent_alter_with_ttl_move(started_cluster, name, engine):
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "150\n"
     finally:
-        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
-
-
-@pytest.mark.skip(reason="Flacky test")
-@pytest.mark.parametrize(
-    "name,positive",
-    [
-        pytest.param("test_double_move_while_select_negative", 0, id="negative"),
-        pytest.param("test_double_move_while_select_positive", 1, id="positive"),
-    ],
-)
-def test_double_move_while_select(started_cluster, name, positive):
-    name = unique_table_name(name)
-
-    try:
-        node1.query(
-            """
-            CREATE TABLE {name} (
-                n Int64,
-                s String
-            ) ENGINE = MergeTree
-            ORDER BY tuple()
-            PARTITION BY n
-            SETTINGS storage_policy='small_jbod_with_external'
-        """.format(
-                name=name
-            )
-        )
-
-        node1.query(
-            "INSERT INTO {name} VALUES (1, randomPrintableASCII(10*1024*1024))".format(
-                name=name
-            )
-        )
-
-        parts = node1.query(
-            "SELECT name FROM system.parts WHERE table = '{name}' AND active = 1".format(
-                name=name
-            )
-        ).splitlines()
-        assert len(parts) == 1
-
-        node1.query(
-            "ALTER TABLE {name} MOVE PART '{part}' TO DISK 'external'".format(
-                name=name, part=parts[0]
-            )
-        )
-
-        def long_select():
-            if positive:
-                node1.query(
-                    "SELECT sleep(3), sleep(2), sleep(1), n FROM {name}".format(
-                        name=name
-                    )
-                )
-
-        thread = threading.Thread(target=long_select)
-        thread.start()
-
-        time.sleep(1)
-
-        node1.query(
-            "ALTER TABLE {name} MOVE PART '{part}' TO DISK 'jbod1'".format(
-                name=name, part=parts[0]
-            )
-        )
-
-        # Fill jbod1 to force ClickHouse to make move of partition 1 to external.
-        node1.query(
-            "INSERT INTO {name} VALUES (2, randomPrintableASCII(9*1024*1024))".format(
-                name=name
-            )
-        )
-        node1.query(
-            "INSERT INTO {name} VALUES (3, randomPrintableASCII(9*1024*1024))".format(
-                name=name
-            )
-        )
-        node1.query(
-            "INSERT INTO {name} VALUES (4, randomPrintableASCII(9*1024*1024))".format(
-                name=name
-            )
-        )
-
-        wait_parts_mover(node1, name, retry_count=40)
-
-        # If SELECT locked old part on external, move shall fail.
-        assert node1.query(
-            "SELECT disk_name FROM system.parts WHERE table = '{name}' AND active = 1 AND name = '{part}'".format(
-                name=name, part=parts[0]
-            )
-        ).splitlines() == ["jbod1" if positive else "external"]
-
-        thread.join()
-
-        assert node1.query(
-            "SELECT n FROM {name} ORDER BY n".format(name=name)
-        ).splitlines() == ["1", "2", "3", "4"]
-
-    finally:
-        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} SYNC".format(name=name))
 
 
 @pytest.mark.parametrize(
@@ -1745,7 +1645,7 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
             assert node1.query("SELECT count() FROM {name}".format(name=name)) == "6\n"
 
     finally:
-        node1.query("DROP TABLE IF EXISTS {name} NO DELAY".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name} SYNC".format(name=name))
 
 
 @pytest.mark.parametrize(
@@ -1826,7 +1726,7 @@ def test_disabled_ttl_move_on_insert(started_cluster, name, dest_type, engine):
 
     finally:
         try:
-            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+            node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
         except:
             pass
 
@@ -1863,7 +1763,7 @@ def test_ttl_move_if_exists(started_cluster, name, dest_type):
                 )
             )
 
-        for (node, policy) in zip(
+        for node, policy in zip(
             [node1, node2], ["only_jbod_1", "small_jbod_with_external"]
         ):
             node.query(
@@ -1909,7 +1809,7 @@ def test_ttl_move_if_exists(started_cluster, name, dest_type):
 
     finally:
         try:
-            node1.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
-            node2.query("DROP TABLE IF EXISTS {} NO DELAY".format(name))
+            node1.query("DROP TABLE IF EXISTS {} SYNC".format(name))
+            node2.query("DROP TABLE IF EXISTS {} SYNC".format(name))
         except:
             pass

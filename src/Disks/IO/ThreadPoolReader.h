@@ -1,12 +1,17 @@
 #pragma once
 
+#include <memory>
 #include <IO/AsynchronousReader.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** Perform reads from separate thread pool of specified size.
   *
@@ -28,14 +33,16 @@ namespace DB
 class ThreadPoolReader final : public IAsynchronousReader
 {
 private:
-    ThreadPool pool;
+    std::unique_ptr<ThreadPool> pool;
 
 public:
     ThreadPoolReader(size_t pool_size, size_t queue_size_);
 
     std::future<Result> submit(Request request) override;
 
-    void wait() override { pool.wait(); }
+    Result execute(Request /* request */) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader"); }
+
+    void wait() override;
 
     /// pool automatically waits for all tasks in destructor.
 };

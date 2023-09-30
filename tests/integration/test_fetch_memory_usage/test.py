@@ -18,7 +18,6 @@ def started_cluster():
 
 
 def test_huge_column(started_cluster):
-
     if (
         node.is_built_with_thread_sanitizer()
         or node.is_built_with_memory_sanitizer()

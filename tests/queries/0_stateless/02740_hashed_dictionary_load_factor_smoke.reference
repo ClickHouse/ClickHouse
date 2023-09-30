@@ -1,0 +1,12 @@
+CREATE DICTIONARY default.test_sparse_dictionary_load_factor\n(\n    `key` UInt64,\n    `value` UInt16\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE test_table))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(SPARSE_HASHED(MAX_LOAD_FACTOR 0.9))
+100000
+0
+CREATE DICTIONARY default.test_dictionary_load_factor\n(\n    `key` UInt64,\n    `value` UInt16\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE test_table))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(HASHED(MAX_LOAD_FACTOR 0.9))
+100000
+0
+CREATE DICTIONARY default.test_dictionary_load_factor_nullable\n(\n    `key` UInt64,\n    `value` Nullable(UInt16)\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE test_table_nullable))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(HASHED(MAX_LOAD_FACTOR 0.9))
+100000
+0
+CREATE DICTIONARY default.test_complex_dictionary_load_factor\n(\n    `key_1` UInt64,\n    `key_2` UInt64,\n    `value` UInt16\n)\nPRIMARY KEY key_1, key_2\nSOURCE(CLICKHOUSE(TABLE test_table_complex))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(COMPLEX_KEY_HASHED(MAX_LOAD_FACTOR 0.9))
+100000
+0

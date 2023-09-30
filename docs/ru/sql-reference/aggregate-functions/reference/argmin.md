@@ -49,4 +49,3 @@ SELECT argMin(user, salary) FROM salary;
 │ worker               │
 └──────────────────────┘
 ```
-

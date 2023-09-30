@@ -26,12 +26,46 @@ public:
 
     void visit(T & ast)
     {
+        if (ostr)
+            visitImpl</* with_dump= */ true>(ast);
+        else
+            visitImpl</* with_dump= */ false>(ast);
+    }
+
+private:
+    Data & data;
+    size_t visit_depth;
+    WriteBuffer * ostr;
+
+    template <bool with_dump>
+    void visitImpl(T & ast)
+    {
         checkStackSize();
-        DumpASTNode dump(*ast, ostr, visit_depth, typeid(Matcher).name());
+        if constexpr (with_dump)
+        {
+            DumpASTNode dump(*ast, ostr, visit_depth, typeid(Matcher).name());
+            visitImplMain</* with_dump= */ true>(ast);
+        }
+        else
+        {
+            visitImplMain</* with_dump= */ false>(ast);
+        }
+    }
 
+    template <bool with_dump>
+    void visitImplMain(T & ast)
+    {
         if constexpr (!_top_to_bottom)
-            visitChildren(ast);
+            visitChildren<with_dump>(ast);
 
+        doVisit(ast);
+
+        if constexpr (_top_to_bottom)
+            visitChildren<with_dump>(ast);
+    }
+
+    void doVisit(T & ast)
+    {
         try
         {
             Matcher::visit(ast, data);
@@ -41,16 +75,9 @@ public:
             e.addMessage("While processing {}", ast->formatForErrorMessage());
             throw;
         }
-
-        if constexpr (_top_to_bottom)
-            visitChildren(ast);
     }
 
-private:
-    Data & data;
-    size_t visit_depth;
-    WriteBuffer * ostr;
-
+    template <bool with_dump>
     void visitChildren(T & ast)
     {
         for (auto & child : ast->children)
@@ -62,7 +89,7 @@ private:
                 need_visit_child = Matcher::needChildVisit(ast, child);
 
             if (need_visit_child)
-                visit(child);
+                visitImpl<with_dump>(child);
         }
     }
 };

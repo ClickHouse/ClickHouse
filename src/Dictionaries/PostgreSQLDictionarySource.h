@@ -8,7 +8,6 @@
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
 #include <Common/LocalDateTime.h>
-#include <Common/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 

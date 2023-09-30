@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 
 
 namespace DB
@@ -13,10 +14,10 @@ namespace DB
 
 /** A stream for outputting data in XML format.
   */
-class XMLRowOutputFormat final : public RowOutputFormatWithUTF8ValidationAdaptor
+class XMLRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
-    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
+    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "XMLRowOutputFormat"; }
 
@@ -27,6 +28,7 @@ private:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void writeMinExtreme(const Columns & columns, size_t row_num) override;
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
@@ -55,14 +57,15 @@ private:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();
     void writeStatistics();
+    void writeException();
 
     size_t field_number = 0;
     size_t row_count = 0;
     NamesAndTypes fields;
     Names field_tag_names;
 
-    Statistics statistics;
     const FormatSettings format_settings;
+    WriteBuffer * ostr;
 };
 
 }

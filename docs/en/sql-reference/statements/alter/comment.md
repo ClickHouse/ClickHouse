@@ -16,7 +16,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 **Examples**
 
-Creating a table with comment (for more information, see the [COMMENT] clause(../../../sql-reference/statements/create/table.md#comment-table)):
+Creating a table with comment (for more information, see the [COMMENT](../../../sql-reference/statements/create/table.md#comment-table) clause):
 
 ``` sql
 CREATE TABLE table_with_comment
@@ -57,3 +57,9 @@ Output of a removed comment:
 │         │
 └─────────┘
 ```
+
+**Caveats**
+
+For Replicated tables, the comment can be different on different replicas. Modifying the comment applies to a single replica.
+
+The feature is available since version 23.9. It does not work in previous ClickHouse versions.

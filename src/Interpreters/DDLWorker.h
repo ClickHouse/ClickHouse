@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Common/CurrentThread.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -101,12 +102,11 @@ protected:
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
         StoragePtr storage,
-        const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
@@ -145,8 +145,8 @@ protected:
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = true;
 
-    ThreadFromGlobalPool main_thread;
-    ThreadFromGlobalPool cleanup_thread;
+    std::unique_ptr<ThreadFromGlobalPool> main_thread;
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     /// Size of the pool for query execution.
     size_t pool_size = 1;
@@ -159,7 +159,7 @@ protected:
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
-    std::atomic<UInt64> max_id = 0;
+    std::atomic<UInt32> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

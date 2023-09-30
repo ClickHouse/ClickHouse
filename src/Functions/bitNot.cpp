@@ -17,10 +17,9 @@ template <typename A>
 struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
-    static const constexpr bool allow_fixed_string = true;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_string_or_fixed_string = true;
 
-    static inline ResultType apply(A a)
+    static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {
         return ~static_cast<ResultType>(a);
     }
@@ -31,7 +30,7 @@ struct BitNotImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         if (!arg->getType()->isIntegerTy())
-            throw Exception("BitNotImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitNotImpl expected an integral type");
         return b.CreateNot(arg);
     }
 #endif

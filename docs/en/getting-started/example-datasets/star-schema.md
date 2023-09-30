@@ -18,7 +18,7 @@ $ make
 
 Generating data:
 
-:::warning    
+:::note    
 With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
 :::
 
@@ -365,5 +365,3 @@ ORDER BY
     S_CITY ASC,
     P_BRAND ASC;
 ```
-
-[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

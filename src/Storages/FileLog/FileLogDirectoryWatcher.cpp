@@ -1,4 +1,5 @@
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -12,7 +13,7 @@ FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, Stor
 
 FileLogDirectoryWatcher::Events FileLogDirectoryWatcher::getEventsAndReset()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     Events res;
     res.swap(events);
     return res;
@@ -20,7 +21,7 @@ FileLogDirectoryWatcher::Events FileLogDirectoryWatcher::getEventsAndReset()
 
 FileLogDirectoryWatcher::Error FileLogDirectoryWatcher::getErrorAndReset()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     Error old_error = error;
     error = {};
     return old_error;
@@ -33,7 +34,7 @@ const std::string & FileLogDirectoryWatcher::getPath() const
 
 void FileLogDirectoryWatcher::onItemAdded(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     EventInfo info{ev.event, "onItemAdded"};
     std::string event_path = ev.path;
@@ -51,7 +52,7 @@ void FileLogDirectoryWatcher::onItemAdded(DirectoryWatcherBase::DirectoryEvent e
 
 void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     EventInfo info{ev.event, "onItemRemoved"};
     std::string event_path = ev.path;
@@ -74,7 +75,7 @@ void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent
 /// because it is equal to just record and handle one MODIY event
 void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     auto event_path = ev.path;
     EventInfo info{ev.event, "onItemModified"};
@@ -97,7 +98,7 @@ void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEven
 
 void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     EventInfo info{ev.event, "onItemMovedFrom"};
     std::string event_path = ev.path;
@@ -114,7 +115,7 @@ void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEve
 
 void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     EventInfo info{ev.event, "onItemMovedTo"};
     std::string event_path = ev.path;
@@ -131,7 +132,7 @@ void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent
 
 void FileLogDirectoryWatcher::onError(Exception e)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     LOG_ERROR(log, "Error happened during watching directory: {}", error.error_msg);
     error.has_error = true;
     error.error_msg = e.message();

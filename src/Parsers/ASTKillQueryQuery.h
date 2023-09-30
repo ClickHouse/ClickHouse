@@ -42,6 +42,8 @@ public:
     {
         return removeOnCluster<ASTKillQueryQuery>(clone());
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::KillQuery; }
 };
 
 }

@@ -1,3 +1,6 @@
+# See linux/toolchain-x86_64.cmake for details about multiple load of toolchain file.
+include_guard(GLOBAL)
+
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set (CMAKE_SYSTEM_NAME "Linux")
@@ -18,8 +21,7 @@ set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} --gcc-toolchain=${TOOLCHAIN_PATH}")
 
-set (CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=bfd")
-set (CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=bfd")
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=bfd")
 
 # Currently, lld does not work with the error:
 # ld.lld: error: section size decrease is too large

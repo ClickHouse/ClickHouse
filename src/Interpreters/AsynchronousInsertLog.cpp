@@ -36,6 +36,7 @@ NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
         {"format", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"query_id", std::make_shared<DataTypeString>()},
         {"bytes", std::make_shared<DataTypeUInt64>()},
+        {"rows", std::make_shared<DataTypeUInt64>()},
         {"exception", std::make_shared<DataTypeString>()},
         {"status", type_status},
 
@@ -54,23 +55,13 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*query);
-    columns[i++]->insert(queryToString(insert_query));
-
-    if (insert_query.table_id)
-    {
-        columns[i++]->insert(insert_query.table_id.getDatabaseName());
-        columns[i++]->insert(insert_query.table_id.getTableName());
-    }
-    else
-    {
-        columns[i++]->insertDefault();
-        columns[i++]->insertDefault();
-    }
-
-    columns[i++]->insert(insert_query.format);
+    columns[i++]->insert(query_for_logging);
+    columns[i++]->insert(database);
+    columns[i++]->insert(table);
+    columns[i++]->insert(format);
     columns[i++]->insert(query_id);
     columns[i++]->insert(bytes);
+    columns[i++]->insert(rows);
     columns[i++]->insert(exception);
     columns[i++]->insert(status);
 

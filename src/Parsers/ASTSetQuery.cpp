@@ -34,7 +34,11 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
             first = false;
 
         formatSettingName(change.name, format.ostr);
-        format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+        CustomType custom;
+        if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
+            format.ostr << " = " << custom.toString(false);
+        else
+            format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
     }
 
     for (const auto & setting_name : default_settings)
@@ -58,6 +62,16 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
         formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
         format.ostr << " = " << value;
     }
+}
+
+void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
+{
+    Hash hash = getTreeHash();
+
+    writeCString("__settings_", ostr);
+    writeText(hash.low64, ostr);
+    ostr.write('_');
+    writeText(hash.high64, ostr);
 }
 
 }

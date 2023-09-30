@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-parallel
+# Tags: zookeeper, no-replicated-database
 # Tag no-replicated-database: Old syntax is not allowed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

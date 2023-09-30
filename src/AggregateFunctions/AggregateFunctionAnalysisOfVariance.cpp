@@ -18,8 +18,10 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
     assertNoParameters(name, parameters);
     assertBinary(name, arguments);
 
-    if (!isNumber(arguments[0]) || !isNumber(arguments[1]))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
+    if (!isNumber(arguments[0]))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical argument types", name);
+    if (!WhichDataType(arguments[1]).isNativeUInt())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of aggregate function {} should be a native unsigned integer", name);
 
     return std::make_shared<AggregateFunctionAnalysisOfVariance>(arguments, parameters);
 }

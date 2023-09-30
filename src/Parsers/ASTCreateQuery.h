@@ -25,12 +25,24 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
-
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    bool isExtendedStorageDefinition() const;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&engine));
+        f(reinterpret_cast<void **>(&partition_by));
+        f(reinterpret_cast<void **>(&primary_key));
+        f(reinterpret_cast<void **>(&order_by));
+        f(reinterpret_cast<void **>(&sample_by));
+        f(reinterpret_cast<void **>(&ttl_table));
+        f(reinterpret_cast<void **>(&settings));
+    }
 };
 
 
@@ -44,6 +56,7 @@ public:
     ASTExpressionList * constraints = nullptr;
     ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
+    IAST              * primary_key_from_columns = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 
@@ -55,6 +68,16 @@ public:
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
+    }
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&columns));
+        f(reinterpret_cast<void **>(&indices));
+        f(reinterpret_cast<void **>(&primary_key));
+        f(reinterpret_cast<void **>(&constraints));
+        f(reinterpret_cast<void **>(&projections));
+        f(reinterpret_cast<void **>(&primary_key_from_columns));
     }
 };
 
@@ -83,7 +106,7 @@ public:
     ASTPtr lateness_function;
     String as_database;
     String as_table;
-    ASTPtr as_table_function;
+    IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
 
@@ -119,10 +142,37 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
+    bool isParameterizedView() const;
+
     QueryKind getQueryKind() const override { return QueryKind::Create; }
+
+    struct UUIDs
+    {
+        UUID uuid = UUIDHelpers::Nil;
+        UUID to_inner_uuid = UUIDHelpers::Nil;
+        UUIDs() = default;
+        explicit UUIDs(const ASTCreateQuery & query);
+        String toString() const;
+        static UUIDs fromString(const String & str);
+    };
+    UUIDs generateRandomUUID(bool always_generate_new_uuid = false);
+    void setUUID(const UUIDs & uuids);
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&columns_list));
+        f(reinterpret_cast<void **>(&inner_storage));
+        f(reinterpret_cast<void **>(&storage));
+        f(reinterpret_cast<void **>(&as_table_function));
+        f(reinterpret_cast<void **>(&select));
+        f(reinterpret_cast<void **>(&comment));
+        f(reinterpret_cast<void **>(&table_overrides));
+        f(reinterpret_cast<void **>(&dictionary_attributes_list));
+        f(reinterpret_cast<void **>(&dictionary));
+    }
 };
 
 }

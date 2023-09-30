@@ -12,9 +12,9 @@ Aggregate functions can have an implementation-defined intermediate state that c
 
 **Parameters**
 
--   Name of the aggregate function. If the function is parametric, specify its parameters too.
+- Name of the aggregate function. If the function is parametric, specify its parameters too.
 
--   Types of the aggregate function arguments.
+- Types of the aggregate function arguments.
 
 **Example**
 
@@ -64,4 +64,7 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine description.
 
-[Original article](https://clickhouse.com/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->
+
+## Related Content
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

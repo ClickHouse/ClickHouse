@@ -61,6 +61,11 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    void setDontNeedDDLGuard()
+    {
+        need_ddl_guard = false;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
@@ -85,8 +90,6 @@ private:
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
-    static String getTableEngineName(DefaultTableEngine default_table_engine);
-    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -112,6 +115,7 @@ private:
     bool internal = false;
     bool force_attach = false;
     bool load_database_without_tables = false;
+    bool need_ddl_guard = true;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

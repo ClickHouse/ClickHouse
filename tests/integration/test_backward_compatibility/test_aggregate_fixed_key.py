@@ -9,9 +9,10 @@ node1 = cluster.add_instance(
     image="yandex/clickhouse-server",
     tag="21.3",
     with_installed_binary=True,
+    allow_analyzer=False,
 )
-node2 = cluster.add_instance("node2", with_zookeeper=True)
-node3 = cluster.add_instance("node3", with_zookeeper=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True, allow_analyzer=False)
+node3 = cluster.add_instance("node3", with_zookeeper=True, allow_analyzer=False)
 
 
 @pytest.fixture(scope="module")

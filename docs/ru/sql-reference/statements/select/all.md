@@ -19,4 +19,3 @@ SELECT sum(ALL number) FROM numbers(10);
 ```sql
 SELECT sum(number) FROM numbers(10);
 ```
-

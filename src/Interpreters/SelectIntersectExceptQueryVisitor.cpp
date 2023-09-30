@@ -59,9 +59,8 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
             else if (data.except_default_mode == SetOperationMode::DISTINCT)
                 mode = SelectUnionMode::EXCEPT_DISTINCT;
             else
-                throw Exception(
-                    "Expected ALL or DISTINCT in EXCEPT query, because setting (except_default_mode) is empty",
-                    DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                    "Expected ALL or DISTINCT in EXCEPT query, because setting (except_default_mode) is empty");
         }
         else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
         {
@@ -70,9 +69,8 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
             else if (data.intersect_default_mode == SetOperationMode::DISTINCT)
                 mode = SelectUnionMode::INTERSECT_DISTINCT;
             else
-                throw Exception(
-                    "Expected ALL or DISTINCT in INTERSECT query, because setting (intersect_default_mode) is empty",
-                    DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                    "Expected ALL or DISTINCT in INTERSECT query, because setting (intersect_default_mode) is empty");
         }
 
         switch (mode)

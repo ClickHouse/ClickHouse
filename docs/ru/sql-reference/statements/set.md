@@ -19,4 +19,3 @@ SET profile = 'profile-name-from-the-settings-file'
 ```
 
 Подробности смотрите в разделе [Настройки](../../operations/settings/settings.md).
-

@@ -132,7 +132,9 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     static constexpr auto config_key = "enable_system_unfreeze";
     if (!config.getBool(config_key, false))
     {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting",
+                        config_key);
     }
 
     auto disks_map = local_context->getDisksMap();
@@ -194,7 +196,7 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
         if (meta.load(disk, path))
         {
             FreezeMetaData::clean(disk, path);
-            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", local_context, zookeeper);
+            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.replica_name, "", local_context, zookeeper);
         }
     }
 
@@ -230,6 +232,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
             bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{
+                .command_type = "UNFREEZE PART",
                 .partition_id = partition_id,
                 .part_name = partition_directory,
                 .backup_path = disk->getPath() + table_directory.generic_string(),
@@ -237,11 +240,11 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
                 .backup_name = backup_name,
             });
 
-            LOG_DEBUG(log, "Unfreezed part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
+            LOG_DEBUG(log, "Unfrozen part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
         }
     }
 
-    LOG_DEBUG(log, "Unfreezed {} parts", result.size());
+    LOG_DEBUG(log, "Unfrozen {} parts", result.size());
 
     return result;
 }

@@ -1,7 +1,6 @@
 -- Tags: distributed
 
 SET send_logs_level = 'fatal';
-
 DROP TABLE IF EXISTS test_local_1;
 DROP TABLE IF EXISTS test_local_2;
 DROP TABLE IF EXISTS test_distributed_1;
@@ -21,45 +20,45 @@ SELECT * FROM merge(currentDatabase(), 'test_local_1');
 SELECT *, _table FROM merge(currentDatabase(), 'test_local_1') ORDER BY _table;
 SELECT sum(value), _table FROM merge(currentDatabase(), 'test_local_1') GROUP BY _table ORDER BY _table;
 SELECT * FROM merge(currentDatabase(), 'test_local_1') WHERE _table = 'test_local_1';
-SELECT * FROM merge(currentDatabase(), 'test_local_1') PREWHERE _table = 'test_local_1'; -- { serverError 10 }
+SELECT * FROM merge(currentDatabase(), 'test_local_1') PREWHERE _table = 'test_local_1'; -- { serverError ILLEGAL_PREWHERE }
 SELECT * FROM merge(currentDatabase(), 'test_local_1') WHERE _table in ('test_local_1', 'test_local_2');
-SELECT * FROM merge(currentDatabase(), 'test_local_1') PREWHERE _table in ('test_local_1', 'test_local_2'); -- { serverError 10 }
+SELECT * FROM merge(currentDatabase(), 'test_local_1') PREWHERE _table in ('test_local_1', 'test_local_2'); -- { serverError ILLEGAL_PREWHERE }
 
 SELECT '--------------Single Distributed------------';
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1');
 SELECT *, _table FROM merge(currentDatabase(), 'test_distributed_1') ORDER BY _table;
 SELECT sum(value), _table FROM merge(currentDatabase(), 'test_distributed_1') GROUP BY _table ORDER BY _table;
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1') WHERE _table = 'test_distributed_1';
-SELECT * FROM merge(currentDatabase(), 'test_distributed_1') PREWHERE _table = 'test_distributed_1';
+SELECT * FROM merge(currentDatabase(), 'test_distributed_1') PREWHERE _table = 'test_distributed_1'; -- { serverError ILLEGAL_PREWHERE }
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1') WHERE _table in ('test_distributed_1', 'test_distributed_2');
-SELECT * FROM merge(currentDatabase(), 'test_distributed_1') PREWHERE _table in ('test_distributed_1', 'test_distributed_2');
+SELECT * FROM merge(currentDatabase(), 'test_distributed_1') PREWHERE _table in ('test_distributed_1', 'test_distributed_2'); -- { serverError ILLEGAL_PREWHERE }
 
 SELECT '--------------Local Merge Local------------';
 SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') ORDER BY _table;
 SELECT *, _table FROM merge(currentDatabase(), 'test_local_1|test_local_2') ORDER BY _table;
 SELECT sum(value), _table FROM merge(currentDatabase(), 'test_local_1|test_local_2') GROUP BY _table ORDER BY _table;
 SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') WHERE _table = 'test_local_1';
-SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') PREWHERE _table = 'test_local_1'; -- { serverError 10 }
+SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') PREWHERE _table = 'test_local_1'; -- { serverError ILLEGAL_PREWHERE }
 SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') WHERE _table in ('test_local_1', 'test_local_2') ORDER BY value;
-SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') PREWHERE _table in ('test_local_1', 'test_local_2') ORDER BY value; -- { serverError 10 }
+SELECT * FROM merge(currentDatabase(), 'test_local_1|test_local_2') PREWHERE _table in ('test_local_1', 'test_local_2') ORDER BY value; -- { serverError ILLEGAL_PREWHERE }
 
 SELECT '--------------Local Merge Distributed------------';
 SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') ORDER BY _table;
 SELECT *, _table FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') ORDER BY _table;
 SELECT sum(value), _table FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') GROUP BY _table ORDER BY _table;
 SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') WHERE _table = 'test_local_1';
-SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') PREWHERE _table = 'test_local_1';
+SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') PREWHERE _table = 'test_local_1'; -- { serverError ILLEGAL_PREWHERE }
 SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') WHERE _table in ('test_local_1', 'test_distributed_2') ORDER BY value;
-SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') PREWHERE _table in ('test_local_1', 'test_distributed_2') ORDER BY value;
+SELECT * FROM merge(currentDatabase(), 'test_local_1|test_distributed_2') PREWHERE _table in ('test_local_1', 'test_distributed_2') ORDER BY value; -- { serverError ILLEGAL_PREWHERE }
 
 SELECT '--------------Distributed Merge Distributed------------';
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') ORDER BY _table;
 SELECT *, _table FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') ORDER BY _table;
 SELECT sum(value), _table FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') GROUP BY _table ORDER BY _table;
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') WHERE _table = 'test_distributed_1';
-SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') PREWHERE _table = 'test_distributed_1';
+SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') PREWHERE _table = 'test_distributed_1'; -- { serverError ILLEGAL_PREWHERE }
 SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') WHERE _table in ('test_distributed_1', 'test_distributed_2') ORDER BY value;
-SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') PREWHERE _table in ('test_distributed_1', 'test_distributed_2') ORDER BY value;
+SELECT * FROM merge(currentDatabase(), 'test_distributed_1|test_distributed_2') PREWHERE _table in ('test_distributed_1', 'test_distributed_2') ORDER BY value; -- { serverError ILLEGAL_PREWHERE }
 
 DROP TABLE IF EXISTS test_local_1;
 DROP TABLE IF EXISTS test_local_2;

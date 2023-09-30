@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 SET join_algorithm = 'hash';
 
 EXPLAIN actions=0, description=0, header=1

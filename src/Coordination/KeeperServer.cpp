@@ -21,10 +21,13 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Disks/DiskLocal.h>
+#include <fmt/chrono.h>
 
 namespace DB
 {
@@ -38,6 +41,8 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
+using namespace std::chrono_literals;
+
 namespace
 {
 
@@ -50,10 +55,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
 
     if (!config.has(private_key_file_property))
-        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
@@ -107,36 +112,36 @@ KeeperServer::KeeperServer(
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    KeeperSnapshotManagerS3 & snapshot_manager_s3)
+    KeeperContextPtr keeper_context_,
+    KeeperSnapshotManagerS3 & snapshot_manager_s3,
+    KeeperStateMachine::CommitCallback commit_callback)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
-    , keeper_context{std::make_shared<KeeperContext>()}
+    , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
+    , enable_reconfiguration(config.getBool("keeper_server.enable_reconfiguration", false))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-    keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
-    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
-
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
         snapshots_queue_,
-        configuration_and_settings_->snapshot_storage_path,
         coordination_settings,
         keeper_context,
         config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+        commit_callback,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
         "keeper_server",
-        configuration_and_settings_->log_storage_path,
-        configuration_and_settings_->state_file_path,
+        "state",
         config,
-        coordination_settings);
+        coordination_settings,
+        keeper_context);
 }
 
 /**
@@ -203,28 +208,33 @@ void KeeperServer::loadLatestConfig()
 {
     auto latest_snapshot_config = state_machine->getClusterConfig();
     auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
+    auto async_replication = coordination_settings->async_replication;
 
     if (latest_snapshot_config && latest_log_store_config)
     {
         if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
         {
             LOG_INFO(log, "Will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
+            latest_snapshot_config->set_async_replication(async_replication);
             state_manager->save_config(*latest_snapshot_config);
         }
         else
         {
-            LOG_INFO(log, "Will use config from log store with log index {}", latest_snapshot_config->get_log_idx());
+            LOG_INFO(log, "Will use config from log store with log index {}", latest_log_store_config->get_log_idx());
+            latest_log_store_config->set_async_replication(async_replication);
             state_manager->save_config(*latest_log_store_config);
         }
     }
     else if (latest_snapshot_config)
     {
         LOG_INFO(log, "No config in log store, will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
+        latest_snapshot_config->set_async_replication(async_replication);
         state_manager->save_config(*latest_snapshot_config);
     }
     else if (latest_log_store_config)
     {
         LOG_INFO(log, "No config in snapshot, will use config from log store with log index {}", latest_log_store_config->get_log_idx());
+        latest_log_store_config->set_async_replication(async_replication);
         state_manager->save_config(*latest_log_store_config);
     }
     else
@@ -266,12 +276,26 @@ void KeeperServer::forceRecovery()
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
+    params.parallel_log_appending_ = true;
     params.heart_beat_interval_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
+
+    if (params.election_timeout_lower_bound_ || params.election_timeout_upper_bound_)
+    {
+        if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
+        {
+            LOG_FATAL(
+                log,
+                "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
+                "completely.");
+            std::terminate();
+        }
+    }
+
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
@@ -284,8 +308,9 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.client_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds(), "operation_timeout_ms", log);
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
-    params.auto_forwarding_req_timeout_
-        = std::max<uint64_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, std::numeric_limits<int32_t>::max());
+    params.auto_forwarding_req_timeout_ = std::max<int32_t>(
+        static_cast<int32_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2),
+        std::numeric_limits<int32_t>::max());
     params.auto_forwarding_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
@@ -299,8 +324,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception(
-            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
     }
 
@@ -323,7 +347,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-            return;
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
@@ -350,6 +374,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+
+    state_manager->getLogStore()->setRaftServer(raft_instance);
+
+    nuraft::raft_server::limits raft_limits;
+    raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings->raft_limits_reconnect_limit, "raft_limits_reconnect_limit", log);
+    raft_instance->set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
@@ -392,11 +422,11 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     loadLatestConfig();
 
-    last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
+    last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings->async_replication).cluster_config;
 
     launchRaftServer(config, enable_ipv6);
 
-    keeper_context->server_state = KeeperContext::Phase::RUNNING;
+    keeper_context->setServerState(KeeperContext::Phase::RUNNING);
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -411,7 +441,7 @@ void KeeperServer::shutdownRaftServer()
 
     raft_instance->shutdown();
 
-    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+    keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
         raft_instance->create_snapshot();
@@ -433,7 +463,7 @@ void KeeperServer::shutdownRaftServer()
         size_t count = 0;
         while (asio_service->get_active_workers() != 0 && count < timeout * 100)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(10ms);
             count++;
         }
     }
@@ -445,24 +475,13 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_manager->flushAndShutDownLogStore();
     state_machine->shutdownStorage();
 }
 
 namespace
 {
-
-// Serialize the request with all the necessary information for the leader
-// we don't know ZXID and digest yet so we don't serialize it
-nuraft::ptr<nuraft::buffer> getZooKeeperRequestMessage(const KeeperStorage::RequestForSession & request_for_session)
-{
-    DB::WriteBufferFromNuraftBuffer write_buf;
-    DB::writeIntBinary(request_for_session.session_id, write_buf);
-    request_for_session.request->write(write_buf);
-    DB::writeIntBinary(request_for_session.time, write_buf);
-    return write_buf.getBuffer();
-}
 
 // Serialize the request for the log entry
 nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestForSession & request_for_session)
@@ -471,12 +490,11 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(const KeeperStorage::RequestFor
     DB::writeIntBinary(request_for_session.session_id, write_buf);
     request_for_session.request->write(write_buf);
     DB::writeIntBinary(request_for_session.time, write_buf);
-    DB::writeIntBinary(request_for_session.zxid, write_buf);
-    assert(request_for_session.digest);
-    DB::writeIntBinary(request_for_session.digest->version, write_buf);
-    if (request_for_session.digest->version != KeeperStorage::DigestVersion::NO_DIGEST)
-        DB::writeIntBinary(request_for_session.digest->value, write_buf);
-
+    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
+    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
+    DB::writeIntBinary(KeeperStorage::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
+    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
+    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
 }
 
@@ -494,9 +512,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorage::RequestsForS
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     for (const auto & request_for_session : requests_for_sessions)
-    {
-        entries.push_back(getZooKeeperRequestMessage(request_for_session));
-    }
+        entries.push_back(getZooKeeperLogEntry(request_for_session));
 
     std::lock_guard lock{server_write_mutex};
     if (is_recovering)
@@ -603,12 +619,30 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
+    const auto follower_preappend = [&](const auto & entry)
+    {
+        if (entry->get_val_type() != nuraft::app_log)
+            return nuraft::cb_func::ReturnCode::Ok;
+
+        try
+        {
+            state_machine->parseRequest(entry->get_buf(), /*final=*/false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to parse request from log entry");
+            throw;
+        }
+        return nuraft::cb_func::ReturnCode::Ok;
+
+    };
+
     if (initialized_flag)
     {
         switch (type)
         {
             // This event is called before a single log is appended to the entry on the leader node
-            case nuraft::cb_func::PreAppendLog:
+            case nuraft::cb_func::PreAppendLogLeader:
             {
                 // we are relying on the fact that request are being processed under a mutex
                 // and not a RW lock
@@ -617,15 +651,58 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 assert(entry->get_val_type() == nuraft::app_log);
                 auto next_zxid = state_machine->getNextZxid();
 
-                auto & entry_buf = entry->get_buf();
-                auto request_for_session = state_machine->parseRequest(entry_buf);
-                request_for_session.zxid = next_zxid;
-                if (!state_machine->preprocess(request_for_session))
+                auto entry_buf = entry->get_buf_ptr();
+
+                KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
+                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version);
+                request_for_session->zxid = next_zxid;
+                if (!state_machine->preprocess(*request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
-                request_for_session.digest = state_machine->getNodesDigest();
-                entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
-                break;
+                request_for_session->digest = state_machine->getNodesDigest();
+
+                /// older versions of Keeper can send logs that are missing some fields
+                size_t bytes_missing = 0;
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                    bytes_missing += sizeof(request_for_session->time);
+
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
+                    bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+
+                if (bytes_missing != 0)
+                {
+                    auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
+                    memcpy(new_buffer->data_begin(), entry_buf->data_begin(), entry_buf->size());
+                    entry_buf = std::move(new_buffer);
+                    entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), entry_buf, entry->get_val_type());
+                }
+
+                size_t write_buffer_header_size
+                    = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                    write_buffer_header_size += sizeof(request_for_session->time);
+
+                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
+
+                WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
+
+                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
+                    writeIntBinary(request_for_session->time, write_buf);
+
+                writeIntBinary(request_for_session->zxid, write_buf);
+                writeIntBinary(request_for_session->digest->version, write_buf);
+                if (request_for_session->digest->version != KeeperStorage::NO_DIGEST)
+                    writeIntBinary(request_for_session->digest->value, write_buf);
+
+                write_buf.finalize();
+
+                return nuraft::cb_func::ReturnCode::Ok;
+            }
+            case nuraft::cb_func::PreAppendLogFollower:
+            {
+                const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+                return follower_preappend(entry);
             }
             case nuraft::cb_func::AppendLogFailed:
             {
@@ -636,15 +713,13 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 assert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
-                auto request_for_session = state_machine->parseRequest(entry_buf);
-                state_machine->rollbackRequest(request_for_session, true);
-                break;
+                auto request_for_session = state_machine->parseRequest(entry_buf, true);
+                state_machine->rollbackRequest(*request_for_session, true);
+                return nuraft::cb_func::ReturnCode::Ok;
             }
             default:
-                break;
+                return nuraft::cb_func::ReturnCode::Ok;
         }
-
-        return nuraft::cb_func::ReturnCode::Ok;
     }
 
     size_t last_commited = state_machine->last_commit_index();
@@ -653,10 +728,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     if (next_index < last_commited || next_index - last_commited <= 1)
         commited_store = true;
 
-    auto set_initialized = [this]()
+    auto set_initialized = [this]
     {
-        std::lock_guard lock(initialized_mutex);
-        initialized_flag = true;
+        {
+            std::lock_guard lock(initialized_mutex);
+            initialized_flag = true;
+        }
         initialized_cv.notify_all();
     };
 
@@ -697,6 +774,11 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
+        case nuraft::cb_func::PreAppendLogFollower:
+        {
+            const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+            return follower_preappend(entry);
+        }
         default: /// ignore other events
             return nuraft::cb_func::ReturnCode::Ok;
     }
@@ -716,173 +798,162 @@ std::vector<int64_t> KeeperServer::getDeadSessions()
     return state_machine->getDeadSessions();
 }
 
-ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
+bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
 {
-    auto diff = state_manager->getConfigurationDiff(config);
+    std::lock_guard _{server_write_mutex};
+
+    if (const auto * add = std::get_if<AddRaftServer>(&action))
+    {
+        if (raft_instance->get_srv_config(add->id) != nullptr)
+            return true;
+
+        auto resp = raft_instance->add_srv(static_cast<nuraft::srv_config>(*add));
+        resp->get();
+        return resp->get_accepted();
+    }
+    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
+    {
+        if (remove->id == raft_instance->get_leader())
+        {
+            if (isLeader())
+                raft_instance->yield_leadership();
+            else
+                raft_instance->request_leadership();
+            return false;
+        }
+
+        if (raft_instance->get_srv_config(remove->id) == nullptr)
+            return true;
+
+        auto resp = raft_instance->remove_srv(remove->id);
+        resp->get();
+        return resp->get_accepted();
+    }
+    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
+    {
+        if (auto ptr = raft_instance->get_srv_config(update->id); ptr == nullptr)
+            throw Exception(ErrorCodes::RAFT_ERROR,
+                "Attempt to apply {} but server is not present in Raft",
+                action);
+        else if (ptr->get_priority() == update->priority)
+            return true;
+
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
+        return true;
+    }
+    UNREACHABLE();
+}
+
+ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
+{
+    auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
 
     if (!diff.empty())
     {
         std::lock_guard lock{server_write_mutex};
-        last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
+        last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings->async_replication).cluster_config;
     }
 
     return diff;
 }
 
-void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
+void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    std::lock_guard lock{server_write_mutex};
-    if (is_recovering)
-        return;
+    std::lock_guard _{server_write_mutex};
+    if (is_recovering) return;
+    constexpr auto sleep_time = 500ms;
 
-    size_t sleep_ms = 500;
-    if (task.action_type == ConfigUpdateActionType::AddServer)
+    LOG_INFO(log, "Will try to apply {}", action);
+
+    auto applied = [&] { LOG_INFO(log, "Applied {}", action); };
+    auto not_leader = [&] { LOG_INFO(log, "Not leader anymore, aborting"); };
+    auto backoff_on_refusal = [&](size_t i)
     {
-        LOG_INFO(log, "Will try to add server with id {}", task.server->get_id());
-        bool added = false;
+        LOG_INFO(log, "Update was not accepted (try {}), backing off for {}", i + 1, sleep_time * (i + 1));
+        std::this_thread::sleep_for(sleep_time * (i + 1));
+    };
+
+    if (const auto * add = std::get_if<AddRaftServer>(&action))
+    {
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
-            if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
-            {
-                LOG_INFO(log, "Server with id {} was successfully added", task.server->get_id());
-                added = true;
-                break;
-            }
-
+            if (raft_instance->get_srv_config(add->id) != nullptr)
+                return applied();
             if (!isLeader())
-            {
-                LOG_INFO(log, "We are not leader anymore, will not try to add server {}", task.server->get_id());
-                break;
-            }
-
-            auto result = raft_instance->add_srv(*task.server);
-            if (!result->get_accepted())
-                LOG_INFO(
-                    log,
-                    "Command to add server {} was not accepted for the {} time, will sleep for {} ms and retry",
-                    task.server->get_id(),
-                    i + 1,
-                    sleep_ms * (i + 1));
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+                return not_leader();
+            if (!raft_instance->add_srv(static_cast<nuraft::srv_config>(*add))->get_accepted())
+                backoff_on_refusal(i);
         }
-        if (!added)
-            throw Exception(
-                ErrorCodes::RAFT_ERROR,
-                "Configuration change to add server (id {}) was not accepted by RAFT after all {} retries",
-                task.server->get_id(),
-                coordination_settings->configuration_change_tries_count);
     }
-    else if (task.action_type == ConfigUpdateActionType::RemoveServer)
+    else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
-        LOG_INFO(log, "Will try to remove server with id {}", task.server->get_id());
-
-        bool removed = false;
-        if (task.server->get_id() == state_manager->server_id())
+        if (remove->id == state_manager->server_id())
         {
-            LOG_INFO(
-                log,
-                "Trying to remove leader node (ourself), so will yield leadership and some other node (new leader) will try remove us. "
+            LOG_INFO(log,
+                "Trying to remove leader node (ourself), so will yield leadership and some other node "
+                "(new leader) will try to remove us. "
                 "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
-
-            raft_instance->yield_leadership();
-            return;
+            return raft_instance->yield_leadership();
         }
 
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
-            if (raft_instance->get_srv_config(task.server->get_id()) == nullptr)
-            {
-                LOG_INFO(log, "Server with id {} was successfully removed", task.server->get_id());
-                removed = true;
-                break;
-            }
-
+            if (raft_instance->get_srv_config(remove->id) == nullptr)
+                return applied();
             if (!isLeader())
-            {
-                LOG_INFO(log, "We are not leader anymore, will not try to remove server {}", task.server->get_id());
-                break;
-            }
-
-            auto result = raft_instance->remove_srv(task.server->get_id());
-            if (!result->get_accepted())
-                LOG_INFO(
-                    log,
-                    "Command to remove server {} was not accepted for the {} time, will sleep for {} ms and retry",
-                    task.server->get_id(),
-                    i + 1,
-                    sleep_ms * (i + 1));
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+                return not_leader();
+            if (!raft_instance->remove_srv(remove->id)->get_accepted())
+                backoff_on_refusal(i);
         }
-        if (!removed)
-            throw Exception(
-                ErrorCodes::RAFT_ERROR,
-                "Configuration change to remove server (id {}) was not accepted by RAFT after all {} retries",
-                task.server->get_id(),
-                coordination_settings->configuration_change_tries_count);
     }
-    else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
-        raft_instance->set_priority(task.server->get_id(), task.server->get_priority());
-    else
-        LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
+    else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
+    {
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
+        return;
+    }
+
+    throw Exception(ErrorCodes::RAFT_ERROR,
+        "Configuration change {} was not accepted by Raft after {} retries",
+        action, coordination_settings->configuration_change_tries_count);
 }
 
-
-bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
+bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    if (is_recovering)
-        return false;
+    if (is_recovering) return false;
+    constexpr auto sleep_time = 500ms;
 
-    size_t sleep_ms = 500;
-    if (task.action_type == ConfigUpdateActionType::AddServer)
+    LOG_INFO(log, "Will try to wait for {}", action);
+
+    auto applied = [&] { LOG_INFO(log, "Applied {}", action); return true; };
+    auto became_leader = [&] { LOG_INFO(log, "Became leader, aborting"); return false; };
+    auto backoff = [&](size_t i) { std::this_thread::sleep_for(sleep_time * (i + 1)); };
+
+    if (const auto* add = std::get_if<AddRaftServer>(&action))
     {
-        LOG_INFO(log, "Will try to wait server with id {} to be added", task.server->get_id());
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
-            if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
-            {
-                LOG_INFO(log, "Server with id {} was successfully added by leader", task.server->get_id());
-                return true;
-            }
-
+            if (raft_instance->get_srv_config(add->id) != nullptr)
+                return applied();
             if (isLeader())
-            {
-                LOG_INFO(log, "We are leader now, probably we will have to add server {}", task.server->get_id());
-                return false;
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+                return became_leader();
+            backoff(i);
         }
-        return false;
     }
-    else if (task.action_type == ConfigUpdateActionType::RemoveServer)
+    else if (const auto* remove = std::get_if<RemoveRaftServer>(&action))
     {
-        LOG_INFO(log, "Will try to wait remove of server with id {}", task.server->get_id());
-
         for (size_t i = 0; i < coordination_settings->configuration_change_tries_count && !is_recovering; ++i)
         {
-            if (raft_instance->get_srv_config(task.server->get_id()) == nullptr)
-            {
-                LOG_INFO(log, "Server with id {} was successfully removed by leader", task.server->get_id());
-                return true;
-            }
-
+            if (raft_instance->get_srv_config(remove->id) == nullptr)
+                return applied();
             if (isLeader())
-            {
-                LOG_INFO(log, "We are leader now, probably we will have to remove server {}", task.server->get_id());
-                return false;
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+                return became_leader();
+            backoff(i);
         }
-        return false;
     }
-    else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
+    else if (std::holds_alternative<UpdateRaftServerPriority>(action))
         return true;
-    else
-        LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
-    return true;
+
+    return false;
 }
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
@@ -904,6 +975,49 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
     result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
+}
+
+uint64_t KeeperServer::createSnapshot()
+{
+    uint64_t log_idx = raft_instance->create_snapshot();
+    if (log_idx != 0)
+        LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
+    else
+        LOG_WARNING(log, "Failed to schedule snapshot creation task.");
+    return log_idx;
+}
+
+KeeperLogInfo KeeperServer::getKeeperLogInfo()
+{
+    KeeperLogInfo log_info;
+    auto log_store = state_manager->load_log_store();
+    if (log_store)
+    {
+        log_info.first_log_idx = log_store->start_index();
+        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+    }
+
+    if (raft_instance)
+    {
+        log_info.last_log_idx = raft_instance->get_last_log_idx();
+        log_info.last_log_term = raft_instance->get_last_log_term();
+        log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
+        log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
+        log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
+        log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    }
+
+    return log_info;
+}
+
+bool KeeperServer::requestLeader()
+{
+    return isLeader() || raft_instance->request_leadership();
+}
+
+void KeeperServer::recalculateStorageStats()
+{
+    state_machine->recalculateStorageStats();
 }
 
 }

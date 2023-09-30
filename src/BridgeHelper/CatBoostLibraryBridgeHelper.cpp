@@ -68,7 +68,9 @@ bool CatBoostLibraryBridgeHelper::bridgeHandShake()
     }
 
     if (result != "1")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check that bridge and server have the same version.", result);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected message from library bridge: {}. "
+                        "Check that bridge and server have the same version.", result);
 
     return true;
 }

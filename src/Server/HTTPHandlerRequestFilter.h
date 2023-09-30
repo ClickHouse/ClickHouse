@@ -5,12 +5,19 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
 
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <unordered_map>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -26,9 +33,8 @@ static inline bool checkRegexExpression(std::string_view match_str, const Compil
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-    re2::StringPiece matches[num_captures];
-    re2::StringPiece match_input(match_str.data(), match_str.size());
-    return compiled_regex->Match(match_input, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
+    std::string_view matches[num_captures];
+    return compiled_regex->Match({match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
 }
 
 static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
@@ -58,8 +64,9 @@ static inline auto getExpression(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(6));
 
     if (!compiled_regex->ok())
-        throw Exception("cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error() +
-                        ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
+                        "Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                        expression, compiled_regex->error());
     return std::make_pair(expression, compiled_regex);
 }
 

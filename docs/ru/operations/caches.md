@@ -26,4 +26,3 @@ sidebar_label: Кеши
 - Кеш страницы ОС.
 
 Чтобы очистить кеш, используйте выражение [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md).
-

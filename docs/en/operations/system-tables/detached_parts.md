@@ -10,5 +10,3 @@ For user-detached parts, the reason is empty. Such parts can be attached with [A
 For the description of other columns, see [system.parts](../../operations/system-tables/parts.md#system_tables-parts).
 
 If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../../sql-reference/statements/alter/partition.md#alter_drop-detached).
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/detached_parts) <!--hide-->

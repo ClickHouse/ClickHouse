@@ -30,9 +30,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <base/StringRef.h>
 #include <Common/DateLUT.h>
-#include <base/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -278,9 +276,9 @@ Float transformFloatMantissa(Float x, UInt64 seed)
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
-    UInt x_uint = bit_cast<UInt>(x);
-    x_uint = feistelNetwork(x_uint, mantissa_num_bits, seed);
-    return bit_cast<Float>(x_uint);
+    UInt x_uint = std::bit_cast<UInt>(x);
+    x_uint = static_cast<UInt>(feistelNetwork(x_uint, mantissa_num_bits, seed));
+    return std::bit_cast<Float>(x_uint);
 }
 
 
@@ -367,17 +365,14 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
         hash.update(seed);
         hash.update(i);
 
+        const auto checksum = getSipHash128AsArray(hash);
         if (size >= 16)
         {
-            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(hash_dst);
+            auto * hash_dst = std::min(pos, end - 16);
+            memcpy(hash_dst, checksum.data(), checksum.size());
         }
         else
-        {
-            char value[16];
-            hash.get128(value);
-            memcpy(dst, value, end - dst);
-        }
+            memcpy(dst, checksum.data(), end - dst);
 
         pos += 16;
         ++i;
@@ -395,7 +390,10 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
+    auto src_copy = src_uuid;
+    transformEndianness<std::endian::little, std::endian::native>(src_copy);
+
+    const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
 
     SipHash hash;
@@ -403,10 +401,11 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
-    hash.get128(reinterpret_cast<char *>(&dst));
+    dst = hash.get128();
 
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
+    UUIDHelpers::getLowBytes(dst_uuid) = (UUIDHelpers::getLowBytes(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getLowBytes(src_uuid) & trace[1]);
+    UUIDHelpers::getHighBytes(dst_uuid) = (UUIDHelpers::getHighBytes(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getHighBytes(src_uuid) & trace[0]);
 }
 
 class FixedStringModel : public IModel
@@ -493,7 +492,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -511,13 +510,13 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             UInt32 src_datetime = src_data[i];
-            UInt32 src_date = date_lut.toDate(src_datetime);
+            UInt32 src_date = static_cast<UInt32>(date_lut.toDate(src_datetime));
 
             Int32 src_diff = src_datetime - src_prev_value;
-            Int32 res_diff = transformSigned(src_diff, seed);
+            Int32 res_diff = static_cast<Int32>(transformSigned(src_diff, seed));
 
             UInt32 new_datetime = res_prev_value + res_diff;
-            UInt32 new_time = new_datetime - date_lut.toDate(new_datetime);
+            UInt32 new_time = new_datetime - static_cast<UInt32>(date_lut.toDate(new_datetime));
             res_data[i] = src_date + new_time;
 
             src_prev_value = src_datetime;
@@ -881,7 +880,7 @@ public:
             }
 
             if (!it)
-                throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in markov model");
 
             size_t offset_from_begin_of_string = pos - data;
             size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
@@ -1140,7 +1139,7 @@ public:
         if (const auto * type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported data type");
     }
 };
 
@@ -1303,18 +1302,14 @@ try
 
     if (structure.empty())
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+        auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-            /// stdin must be seekable
-            auto res = lseek(file->getFD(), 0, SEEK_SET);
-            if (-1 == res)
-                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        /// stdin must be seekable
+        auto res = lseek(file->getFD(), 0, SEEK_SET);
+        if (-1 == res)
+            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-            return file;
-        };
-
+        SingleReadBufferIterator read_buffer_iterator(std::move(file));
         schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
     }
     else
@@ -1385,7 +1380,7 @@ try
         UInt8 version = 0;
         readBinary(version, model_in);
         if (version != 0)
-            throw Exception("Unknown version of the model file", ErrorCodes::UNKNOWN_FORMAT_VERSION);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of the model file");
 
         readBinary(source_rows, model_in);
 
@@ -1393,14 +1388,14 @@ try
         size_t header_size = 0;
         readBinary(header_size, model_in);
         if (header_size != data_types.size())
-            throw Exception("The saved model was created for different number of columns", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "The saved model was created for different number of columns");
 
         for (size_t i = 0; i < header_size; ++i)
         {
             String type;
             readBinary(type, model_in);
             if (type != data_types[i])
-                throw Exception("The saved model was created for different types of columns", ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "The saved model was created for different types of columns");
         }
 
         obfuscator.deserialize(model_in);

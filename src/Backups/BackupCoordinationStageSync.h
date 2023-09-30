@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/ZooKeeper/Common.h>
-
+#include <Backups/WithRetries.h>
 
 namespace DB
 {
@@ -10,10 +9,13 @@ namespace DB
 class BackupCoordinationStageSync
 {
 public:
-    BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_);
+    BackupCoordinationStageSync(
+        const String & root_zookeeper_path_,
+        WithRetries & with_retries_,
+        Poco::Logger * log_);
 
     /// Sets the stage of the current host and signal other hosts if there were other hosts waiting for that.
-    void set(const String & current_host, const String & new_stage, const String & message);
+    void set(const String & current_host, const String & new_stage, const String & message, const bool & all_hosts = false);
     void setError(const String & current_host, const Exception & exception);
 
     /// Sets the stage of the current host and waits until all hosts come to the same stage.
@@ -27,12 +29,13 @@ private:
     void createRootNodes();
 
     struct State;
-    State readCurrentState(zkutil::ZooKeeperPtr zookeeper, const Strings & zk_nodes, const Strings & all_hosts, const String & stage_to_wait) const;
+    State readCurrentState(const Strings & zk_nodes, const Strings & all_hosts, const String & stage_to_wait) const;
 
     Strings waitImpl(const Strings & all_hosts, const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) const;
 
     String zookeeper_path;
-    zkutil::GetZooKeeper get_zookeeper;
+    /// A reference to the field of parent object - BackupCoordinationRemote or RestoreCoordinationRemote
+    WithRetries & with_retries;
     Poco::Logger * log;
 };
 

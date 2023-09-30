@@ -11,6 +11,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <Common/Arena.h>
 
 
 class Collator;
@@ -168,7 +169,7 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
@@ -187,8 +188,8 @@ public:
 
     void updateHashFast(SipHash & hash) const override
     {
-        hash.update(reinterpret_cast<const char *>(offsets.data()), size() * sizeof(offsets[0]));
-        hash.update(reinterpret_cast<const char *>(chars.data()), size() * sizeof(chars[0]));
+        hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
+        hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -271,6 +272,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnString>();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

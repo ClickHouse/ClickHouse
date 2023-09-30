@@ -52,12 +52,12 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
         if (left_nullable && right_nullable)
         {
-            int res = left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+            int res = left_nullable->compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
             if (res)
                 return res;
 
             /// NULL != NULL case
-            if (left_column.isNullAt(lhs_pos))
+            if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
 
             return 0;
@@ -68,7 +68,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     {
         if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
         {
-            if (left_column.isNullAt(lhs_pos))
+            if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
             return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
         }
@@ -78,7 +78,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     {
         if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
         {
-            if (right_column.isNullAt(rhs_pos))
+            if (right_nullable->isNullAt(rhs_pos))
                 return -null_direction_hint;
             return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
         }
@@ -276,7 +276,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     , log(&Poco::Logger::get("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
-        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
 
     auto strictness = table_join->getTableJoin().strictness();
     if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
@@ -300,6 +300,16 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         size_t right_idx = input_headers[1].getPositionByName(right_key);
         left_to_right_key_remap[left_idx] = right_idx;
     }
+}
+
+void MergeJoinAlgorithm::logElapsed(double seconds)
+{
+    LOG_TRACE(log,
+        "Finished pocessing in {} seconds"
+        ", left: {} blocks, {} rows; right: {} blocks, {} rows"
+        ", max blocks loaded to memory: {}",
+        seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
+        stat.max_blocks_loaded);
 }
 
 static void prepareChunk(Chunk & chunk)
@@ -329,10 +339,10 @@ void MergeJoinAlgorithm::initialize(Inputs inputs)
 void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 {
     if (input.skip_last_row)
-        throw Exception("skip_last_row is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
 
     if (input.permutation)
-        throw DB::Exception("permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
 
     if (input.chunk)
     {
@@ -844,6 +854,7 @@ MergeJoinTransform::MergeJoinTransform(
         output_header,
         /* have_all_inputs_= */ true,
         limit_hint_,
+        /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         table_join, input_headers, max_block_size)
     , log(&Poco::Logger::get("MergeJoinTransform"))

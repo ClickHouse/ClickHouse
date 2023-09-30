@@ -3,14 +3,23 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemCertificates.h>
-#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
-#include "Poco/File.h"
+#include <base/scope_guard.h>
+#include <Poco/File.h>
 #if USE_SSL
     #include <openssl/x509v3.h>
     #include "Poco/Net/SSLManager.h"
     #include "Poco/Crypto/X509Certificate.h"
+#endif
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
 #endif
 
 namespace DB

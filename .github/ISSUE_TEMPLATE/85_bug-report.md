@@ -13,14 +13,15 @@ assignees: ''
 
 > A clear and concise description of what works not as it is supposed to.
 
+> A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
+
 **Does it reproduce on recent release?**
 
 [The list of releases](https://github.com/ClickHouse/ClickHouse/blob/master/utils/list-versions/version_date.tsv)
 
 **Enable crash reporting**
 
-> If possible, change "enabled" to true in "send_crash_reports" section in `config.xml`:
-
+> Change "enabled" to true in "send_crash_reports" section in `config.xml`:
 ```
 <send_crash_reports>
         <!-- Changing <enabled> to true allows sending crash reports to -->

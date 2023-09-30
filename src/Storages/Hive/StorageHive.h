@@ -7,7 +7,6 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
@@ -60,13 +59,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool async_insert) override;
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns() const;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
@@ -98,7 +97,7 @@ private:
     void initMinMaxIndexExpression();
 
     HiveFiles collectHiveFiles(
-        unsigned max_threads,
+        size_t max_threads,
         const SelectQueryInfo & query_info,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,

@@ -18,6 +18,7 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_where("WHERE");
     ParserExpression parser_exp_elem;
     ParserKeyword s_settings("SETTINGS");
+    ParserKeyword s_on{"ON"};
 
     if (s_delete.ignore(pos, expected))
     {
@@ -26,6 +27,14 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
             return false;
+
+        if (s_on.ignore(pos, expected))
+        {
+            String cluster_str;
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+            query->cluster = cluster_str;
+        }
 
         if (!s_where.ignore(pos, expected))
             return false;

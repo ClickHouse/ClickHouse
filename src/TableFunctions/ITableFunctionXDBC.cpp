@@ -2,7 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -56,12 +56,12 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
 {
     if (!helper)
     {
-        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string);
+        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string, context->getSettingsRef().odbc_bridge_use_connection_pooling.value);
         helper->startBridgeSync();
     }
 }
 
-ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr context) const
+ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     startBridgeIfNot(context);
 
@@ -76,7 +76,14 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
     Poco::Net::HTTPBasicCredentials credentials{};
-    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context), credentials);
+    ReadWriteBufferFromHTTP buf(
+        columns_info_uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        ConnectionTimeouts::getHTTPTimeouts(
+            context->getSettingsRef(),
+            {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+        credentials);
 
     std::string columns_info;
     readStringBinary(columns_info, buf);
@@ -85,10 +92,10 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     return ColumnsDescription{columns};
 }
 
-StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     startBridgeIfNot(context);
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
     auto result = std::make_shared<StorageXDBC>(
         StorageID(getDatabaseName(), table_name), schema_name, remote_table_name, columns, ConstraintsDescription{}, String{}, context, helper);
     result->startup();

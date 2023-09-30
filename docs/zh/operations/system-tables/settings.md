@@ -51,5 +51,3 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [设置](../../operations/settings/index.md#session-settings-intro)
 -   [查询权限](../../operations/settings/permissions-for-queries.md#settings_readonly)
 -   [对设置的约束](../../operations/settings/constraints-on-settings.md)
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/settings) <!--hide-->

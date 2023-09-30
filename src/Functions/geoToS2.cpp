@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -108,6 +109,12 @@ public:
 
             /// S2 acceptes point as (latitude, longitude)
             S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
+
+            if (!lat_lng.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Point is invalid. For valid point the latitude is between -90 and 90 degrees inclusive"
+                    "and the longitude is between -180 and 180 degrees inclusive.");
+
             S2CellId id(lat_lng);
 
             dst_data[row] = id.id();

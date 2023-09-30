@@ -17,7 +17,7 @@ namespace DB
   * Disadvantages:
   * - in case you need to read a lot of data in a row, but some of them only a part is cached, you have to do seek-and.
   */
-class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadBuffer
+class CachedCompressedReadBuffer final : public CompressedReadBufferBase, public ReadBuffer
 {
 private:
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator;
@@ -36,7 +36,7 @@ private:
 
     bool nextImpl() override;
 
-    void prefetch() override;
+    void prefetch(Priority priority) override;
 
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;

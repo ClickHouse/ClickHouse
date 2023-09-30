@@ -252,7 +252,7 @@ uint64_t readOffset(std::string_view & sp, bool is64_bit)
 // Read "len" bytes
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
-    SAFE_CHECK(len <= sp.size(), "invalid string length: " + std::to_string(len) + " vs. " + std::to_string(sp.size()));
+    SAFE_CHECK(len <= sp.size(), "invalid string length: {} vs. {}", len, sp.size());
     std::string_view ret(sp.data(), len);
     sp.remove_prefix(len);
     return ret;
@@ -800,7 +800,7 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
         die,
         [&](const Attribute & attr)
         {
-            switch (attr.spec.name)
+            switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case DW_AT_addr_base:
                 case DW_AT_GNU_addr_base:
@@ -953,7 +953,7 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
 
 Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const
 {
-    SAFE_CHECK(offset < info_.size(), fmt::format("unexpected offset {}, info size {}", offset, info_.size()));
+    SAFE_CHECK(offset < info_.size(), "unexpected offset {}, info size {}", offset, info_.size());
     Die die;
     std::string_view sp{info_.data() + offset, cu.offset + cu.size - offset};
     die.offset = offset;
@@ -996,7 +996,7 @@ bool Dwarf::findLocation(
 
     forEachAttribute(cu, die, [&](const Attribute & attr)
     {
-        switch (attr.spec.name)
+        switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
         {
             case DW_AT_stmt_list:
                 // Offset in .debug_line for the line number VM program for this
@@ -1083,7 +1083,7 @@ bool Dwarf::findLocation(
                 // file+line of the non-inlined outer function making the call.
                 // locationInfo.name is already set by the caller by looking up the
                 // non-inlined function @address belongs to.
-                info.has_file_and_line = true; //-V1048
+                info.has_file_and_line = true;
                 info.file = call_locations[0].file;
                 info.line = call_locations[0].line;
 
@@ -1143,7 +1143,7 @@ void Dwarf::findSubProgramDieForAddress(const CompilationUnit & cu,
             std::optional<uint64_t> range_offset;
             forEachAttribute(cu, child_die, [&](const Attribute & attr)
             {
-                switch (attr.spec.name)
+                switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
                 {
                     case DW_AT_ranges:
                         range_offset = std::get<uint64_t>(attr.attr_value);
@@ -1234,7 +1234,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         std::optional<uint64_t> range_offset;
         forEachAttribute(cu, child_die, [&](const Attribute & attr)
         {
-            switch (attr.spec.name)
+            switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case DW_AT_ranges:
                     range_offset = std::get<uint64_t>(attr.attr_value);
@@ -1349,7 +1349,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
             // its DW_AT_call_file and DW_AT_call_line.
             forEachAttribute(srcu, die_to_look_for_name, [&](const Attribute & attr)
             {
-                switch (attr.spec.name)
+                switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
                 {
                     case DW_AT_linkage_name:
                         name = std::get<std::string_view>(attr.attr_value);
@@ -1783,7 +1783,7 @@ void Dwarf::LineNumberVM::init()
     lineRange_ = read<uint8_t>(header);
     opcodeBase_ = read<uint8_t>(header);
     SAFE_CHECK(opcodeBase_ != 0, "invalid opcode base");
-    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data()); //-V506
+    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data());
     header.remove_prefix(opcodeBase_ - 1);
 
     if (version_ <= 4)
@@ -1910,7 +1910,7 @@ Dwarf::LineNumberVM::FileName Dwarf::LineNumberVM::getFileName(uint64_t index) c
                 auto attr = readLineNumberAttribute(is64Bit_, format, file_names, debugStr_, debugLineStr_);
                 if (i == index)
                 {
-                    switch (attr.content_type_code)
+                    switch (attr.content_type_code) // NOLINT(bugprone-switch-missing-default-case)
                     {
                         case DW_LNCT_path:
                             fn.relativeName = std::get<std::string_view>(attr.attr_value);
@@ -2055,7 +2055,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     { // standard opcode
         // Only interpret opcodes that are recognized by the version we're parsing;
         // the others are vendor extensions and we should ignore them.
-        switch (opcode)
+        switch (opcode) // NOLINT(bugprone-switch-missing-default-case)
         {
             case DW_LNS_copy:
                 basicBlock_ = false;
@@ -2127,7 +2127,7 @@ Dwarf::LineNumberVM::StepResult Dwarf::LineNumberVM::step(std::string_view & pro
     auto extended_opcode = read<uint8_t>(program);
     --length;
 
-    switch (extended_opcode)
+    switch (extended_opcode) // NOLINT(bugprone-switch-missing-default-case)
     {
         case DW_LNE_end_sequence:
             return END;

@@ -1,8 +1,10 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Transforms/MergeSortingPartialResultTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -34,7 +36,7 @@ public:
         , tmp_stream(tmp_stream_)
         , log(log_)
     {
-        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.path());
+        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getPath());
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
     }
 
@@ -58,7 +60,7 @@ public:
             ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
-                tmp_stream.path(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
+                tmp_stream.getPath(), ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
         }
 
         Block block = tmp_stream.read();
@@ -135,6 +137,8 @@ void MergeSortingTransform::consume(Chunk chunk)
 
     /// If there were only const columns in sort description, then there is no need to sort.
     /// Return the chunk as is.
+    std::lock_guard lock(snapshot_mutex);
+
     if (description.empty())
     {
         generated_chunk = std::move(chunk);
@@ -185,8 +189,10 @@ void MergeSortingTransform::consume(Chunk chunk)
                     0,
                     description,
                     max_merged_block_size,
+                    /*max_merged_block_size_bytes*/0,
                     SortingQueueStrategy::Batch,
                     limit,
+                    /*always_read_till_end_=*/ false,
                     nullptr,
                     quiet,
                     use_average_block_sizes,
@@ -210,6 +216,8 @@ void MergeSortingTransform::serialize()
 
 void MergeSortingTransform::generate()
 {
+    std::lock_guard lock(snapshot_mutex);
+
     if (!generated_prefix)
     {
         size_t num_tmp_files = tmp_data ? tmp_data->getStreams().size() : 0;
@@ -268,6 +276,13 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+}
+
+ProcessorPtr MergeSortingTransform::getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    const auto & header = inputs.front().getHeader();
+    auto merge_sorting_processor = std::dynamic_pointer_cast<MergeSortingTransform>(current_processor);
+    return std::make_shared<MergeSortingPartialResultTransform>(header, std::move(merge_sorting_processor), partial_result_limit, partial_result_duration_ms);
 }
 
 }

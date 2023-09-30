@@ -28,8 +28,10 @@ class IAST;
   */
 String transformQueryForExternalDatabase(
     const SelectQueryInfo & query_info,
+    const Names & column_names,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
     ContextPtr context);

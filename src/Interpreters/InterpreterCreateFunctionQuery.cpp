@@ -5,6 +5,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 
 
@@ -18,7 +19,8 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    ASTCreateFunctionQuery & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    ASTCreateFunctionQuery & create_function_query = updated_query_ptr->as<ASTCreateFunctionQuery &>();
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);
@@ -35,7 +37,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
-        return executeDDLQueryOnCluster(query_ptr, current_context, params);
+        return executeDDLQueryOnCluster(updated_query_ptr, current_context, params);
     }
 
     current_context->checkAccess(access_rights_elements);
@@ -44,7 +46,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     bool throw_if_exists = !create_function_query.if_not_exists && !create_function_query.or_replace;
     bool replace_if_exists = create_function_query.or_replace;
 
-    UserDefinedSQLFunctionFactory::instance().registerFunction(current_context, function_name, query_ptr, throw_if_exists, replace_if_exists);
+    UserDefinedSQLFunctionFactory::instance().registerFunction(current_context, function_name, updated_query_ptr, throw_if_exists, replace_if_exists);
 
     return {};
 }

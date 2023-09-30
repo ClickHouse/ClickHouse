@@ -8,10 +8,11 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -28,12 +29,14 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
+
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
     std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
     return res;
 }
+
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
@@ -101,6 +104,14 @@ String DDLLogEntry::toString() const
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
         wb << "tracing: " << this->tracing_context;
+    /// NOTE: OPENTELEMETRY_ENABLED_VERSION has new line in TracingContext::serialize(), so no need to add one more
+
+    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
+    {
+        writeString("initial_query_id: ", wb);
+        writeEscapedString(initial_query_id, wb);
+        writeChar('\n', wb);
+    }
 
     return wb.str();
 }
@@ -147,6 +158,14 @@ void DDLLogEntry::parse(const String & data)
             rb >> "tracing: " >> this->tracing_context;
     }
 
+    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
+    {
+        checkString("initial_query_id: ", rb);
+        readEscapedString(initial_query_id, rb);
+        checkChar('\n', rb);
+    }
+
+
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -168,12 +187,19 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
+void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
+{
+    /// Convert rewritten AST back to string.
+    query_str = queryToString(*query);
+    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+}
+
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
     return query_context;
@@ -238,7 +264,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
-        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Received unknown DDL query");
 
     cluster_name = query_on_cluster->cluster;
     cluster = context->tryGetCluster(cluster_name);
@@ -265,6 +291,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
+    /// Rewrite AST without ON CLUSTER.
     WithoutOnClusterASTRewriteParams params;
     params.default_database = address_in_cluster.default_database;
     params.host_id = address_in_cluster.toString();
@@ -310,7 +337,8 @@ bool DDLTask::tryFindHostInCluster()
                         {
                             if (!query_with_table->database)
                                 throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                                                "For a distributed DDL on circular replicated cluster its table name "
+                                                "must be qualified by database name.");
 
                             if (default_database == query_with_table->getDatabase())
                                 return true;
@@ -405,13 +433,14 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
+    formatRewrittenQuery(context);
 }
 
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    query_context->getClientInfo().is_replicated_database_internal = true;
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);

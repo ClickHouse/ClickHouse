@@ -240,5 +240,3 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
-
-[原始文章](https://clickhouse.com/docs/en/query_language/agg_functions/combinators/) <!--hide-->

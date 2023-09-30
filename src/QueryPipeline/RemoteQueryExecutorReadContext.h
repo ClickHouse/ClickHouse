@@ -8,6 +8,7 @@
 #include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/Epoll.h>
+#include <Common/AsyncTaskExecutor.h>
 #include <Client/Connection.h>
 #include <Client/IConnections.h>
 #include <Poco/Timespan.h>
@@ -21,23 +22,49 @@ namespace DB
 {
 
 class MultiplexedConnections;
+class RemoteQueryExecutor;
 
-class RemoteQueryExecutorReadContext
+class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
-    std::atomic_bool is_read_in_progress = false;
+    explicit RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false);
+
+    ~RemoteQueryExecutorReadContext() override;
+
+    bool isInProgress() const { return is_in_progress.load(std::memory_order_relaxed); }
+
+    bool isCancelled() const { return AsyncTaskExecutor::isCancelled() || is_pipe_alarmed; }
+
+    bool isQuerySent() const { return is_query_sent;  }
+
+    int getFileDescriptor() const { return epoll.getFileDescriptor(); }
+
+    Packet getPacket() { return std::move(packet); }
+
+private:
+    bool checkTimeout(bool blocking = false);
+
+    bool checkBeforeTaskResume() override;
+    void afterTaskResume() override {}
+
+    void processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events) override;
+    void clearAsyncEvent() override;
+
+    void cancelBefore() override;
+
+    struct Task : public AsyncTask
+    {
+        Task(RemoteQueryExecutorReadContext & read_context_) : read_context(read_context_) {}
+
+        RemoteQueryExecutorReadContext & read_context;
+
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
+    };
+
+    std::atomic_bool is_in_progress = false;
     Packet packet;
 
-    std::exception_ptr exception;
-    FiberStack stack;
-    boost::context::fiber fiber;
-    /// This mutex for fiber is needed because fiber could be destroyed in cancel method from another thread.
-    std::mutex fiber_lock;
-
-    /// atomic is required due to data-race between setConnectionFD() and setTimer() from the cancellation path.
-    std::atomic<uint64_t> receive_timeout_usec = 0;
-    IConnections & connections;
-    Poco::Net::Socket * last_used_socket = nullptr;
+    RemoteQueryExecutor & executor;
 
     /// Here we have three descriptors we are going to wait:
     /// * connection_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
@@ -45,25 +72,18 @@ public:
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
     /// We put those descriptors into our own epoll which is used by external executor.
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
-    bool is_timer_alarmed = false;
+    Poco::Timespan timeout;
+    AsyncEventTimeoutType timeout_type;
+    std::atomic_bool is_timer_alarmed = false;
     int connection_fd = -1;
     int pipe_fd[2] = { -1, -1 };
+    std::atomic_bool is_pipe_alarmed = false;
 
     Epoll epoll;
 
     std::string connection_fd_description;
-
-    explicit RemoteQueryExecutorReadContext(IConnections & connections_);
-    ~RemoteQueryExecutorReadContext();
-
-    bool checkTimeout(bool blocking = false);
-    bool checkTimeoutImpl(bool blocking);
-
-    void setConnectionFD(int fd, Poco::Timespan timeout = 0, const std::string & fd_description = "");
-    void setTimer() const;
-
-    bool resumeRoutine();
-    void cancel();
+    bool suspend_when_query_sent = false;
+    bool is_query_sent = false;
 };
 
 }

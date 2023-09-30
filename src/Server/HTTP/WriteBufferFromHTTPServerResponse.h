@@ -36,14 +36,14 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        unsigned keep_alive_timeout_,
+        size_t keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
     ~WriteBufferFromHTTPServerResponse() override;
 
     /// Writes progress in repeating HTTP headers.
-    void onProgress(const Progress & progress);
+    void onProgress(const Progress & progress, Int64 peak_memory_usage_);
 
     /// Turn compression on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -89,6 +89,8 @@ private:
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
+    //  Used for write the header X-ClickHouse-Progress / X-ClickHouse-Summary
+    void writeHeaderProgressImpl(const char * header_name);
     // Used for write the header X-ClickHouse-Progress
     void writeHeaderProgress();
     // Used for write the header X-ClickHouse-Summary
@@ -105,7 +107,7 @@ private:
 
     bool is_http_method_head;
     bool add_cors_header = false;
-    unsigned keep_alive_timeout = 0;
+    size_t keep_alive_timeout = 0;
     bool compress = false;
     CompressionMethod compression_method;
     int compression_level = 1;
@@ -125,6 +127,8 @@ private:
     Stopwatch progress_watch;
 
     int exception_code = 0;
+
+    Int64 peak_memory_usage = 0;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

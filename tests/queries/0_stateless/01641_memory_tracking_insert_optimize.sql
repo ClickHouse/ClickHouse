@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-random-merge-tree-settings
 
 drop table if exists data_01641;
 
@@ -13,9 +13,9 @@ create table data_01641 (key Int, value String) engine=MergeTree order by (key, 
 SET max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 insert into data_01641 select number, toString(number) from numbers(120000);
 
--- Definitely should fail and it proves that memory is tracked in OPTIMIZE query.
 set max_memory_usage='10Mi', max_untracked_memory=0;
 
-optimize table data_01641 final; -- { serverError 241 }
+-- It fails iff memory is tracked in OPTIMIZE query, but it doesn't. OPTIMIZE query doesn't rely on query context.
+optimize table data_01641 final;
 
 drop table data_01641;

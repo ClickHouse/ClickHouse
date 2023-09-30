@@ -60,6 +60,8 @@ function test_distributed_push_down_limit_with_query_log()
         # disable hedged requests to avoid excessive log entries
         --use_hedged_requests 0
 
+        --async_query_sending_for_remote 0
+
         "$@"
     )
 

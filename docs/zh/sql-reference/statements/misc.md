@@ -276,7 +276,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 该 `OPTMIZE` 查询也支持 [MaterializedView](../../engines/table-engines/special/materializedview.md) 和 [Buffer](../../engines/table-engines/special/buffer.md) 引擎。 不支持其他表引擎。
 
-当 `OPTIMIZE` 与 [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) 家族的表引擎一起使用时，ClickHouse将创建一个合并任务，并等待所有节点上的执行（如果 `replication_alter_partitions_sync` 设置已启用）。
+当 `OPTIMIZE` 与 [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) 家族的表引擎一起使用时，ClickHouse将创建一个合并任务，并等待所有节点上的执行（如果 `alter_sync` 设置已启用）。
 
 -   如果 `OPTIMIZE` 出于任何原因不执行合并，它不通知客户端。 要启用通知，请使用 [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 设置。
 -   如果您指定 `PARTITION`，仅优化指定的分区。 [如何设置分区表达式](alter.md#alter-how-to-specify-part-expr).
@@ -376,5 +376,3 @@ USE db
 用于设置会话的当前数据库。
 当前数据库用于搜索表，如果数据库没有在查询中明确定义与表名之前的点。
 使用HTTP协议时无法进行此查询，因为没有会话的概念。
-
-[原始文章](https://clickhouse.com/docs/en/query_language/misc/) <!--hide-->

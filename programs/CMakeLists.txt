@@ -13,12 +13,6 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# Don't create self-extracting clickhouse for split build
-if (ENABLE_CLICKHOUSE_SELF_EXTRACTING AND SPLIT_SHARED_LIBRARIES)
-    message (STATUS "Self-extracting on split build is not supported")
-    unset (ENABLE_CLICKHOUSE_SELF_EXTRACTING CACHE)
-endif ()
-
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
@@ -61,9 +55,13 @@ option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
+option (ENABLE_CLICKHOUSE_KEEPER_CLIENT "ClickHouse Keeper Client" ${ENABLE_CLICKHOUSE_ALL})
+
 option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_DISKS "A tool to manage disks" ${ENABLE_CLICKHOUSE_ALL})
+
+option (ENABLE_CLICKHOUSE_REPORT "A tiny tool to collect a clickhouse-server state" ${ENABLE_CLICKHOUSE_ALL})
 
 if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
@@ -173,9 +171,12 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
-    set(CLICKHOUSE_ONE_SHARED ON)
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    message(STATUS "ClickHouse keeper-client mode: ON")
+else()
+    message(STATUS "ClickHouse keeper-client mode: OFF")
 endif()
+
 
 if (ENABLE_CLICKHOUSE_DISKS)
     message(STATUS "Clickhouse disks mode: ON")
@@ -192,11 +193,7 @@ endif()
 configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
-    if(NOT CLICKHOUSE_ONE_SHARED)
-        target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
-    else()
-        target_link_libraries(${target} PRIVATE clickhouse-lib)
-    endif()
+    target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
 endmacro()
 
 macro(clickhouse_program_add_library name)
@@ -208,18 +205,16 @@ macro(clickhouse_program_add_library name)
     set(CLICKHOUSE_${name_uc}_LINK ${CLICKHOUSE_${name_uc}_LINK} PARENT_SCOPE)
     set(CLICKHOUSE_${name_uc}_INCLUDE ${CLICKHOUSE_${name_uc}_INCLUDE} PARENT_SCOPE)
 
-    if(NOT CLICKHOUSE_ONE_SHARED)
-        add_library(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_SOURCES})
+    add_library(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_SOURCES})
 
-        set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
-        if(_link)
-            target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
-        endif()
+    set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
+    if(_link)
+        target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
+    endif()
 
-        set(_include ${CLICKHOUSE_${name_uc}_INCLUDE}) # can't use ${} in if()
-        if (_include)
-            target_include_directories(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_INCLUDE})
-        endif()
+    set(_include ${CLICKHOUSE_${name_uc}_INCLUDE}) # can't use ${} in if()
+    if (_include)
+        target_include_directories(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_INCLUDE})
     endif()
 endmacro()
 
@@ -251,6 +246,10 @@ if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
 
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    add_subdirectory (keeper-client)
+endif()
+
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
 endif ()
@@ -263,67 +262,7 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     add_subdirectory (self-extracting)
 endif ()
 
-if (CLICKHOUSE_ONE_SHARED)
-  add_library(clickhouse-lib SHARED
-    ${CLICKHOUSE_SERVER_SOURCES}
-    ${CLICKHOUSE_CLIENT_SOURCES}
-    ${CLICKHOUSE_LOCAL_SOURCES}
-    ${CLICKHOUSE_BENCHMARK_SOURCES}
-    ${CLICKHOUSE_COPIER_SOURCES}
-    ${CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES}
-    ${CLICKHOUSE_COMPRESSOR_SOURCES}
-    ${CLICKHOUSE_FORMAT_SOURCES}
-    ${CLICKHOUSE_OBFUSCATOR_SOURCES}
-    ${CLICKHOUSE_GIT_IMPORT_SOURCES}
-    ${CLICKHOUSE_ODBC_BRIDGE_SOURCES}
-    ${CLICKHOUSE_KEEPER_SOURCES}
-    ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES}
-    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES}
-    ${CLICKHOUSE_SU_SOURCES})
-
-    target_link_libraries(clickhouse-lib
-      ${CLICKHOUSE_SERVER_LINK}
-      ${CLICKHOUSE_CLIENT_LINK}
-      ${CLICKHOUSE_LOCAL_LINK}
-      ${CLICKHOUSE_BENCHMARK_LINK}
-      ${CLICKHOUSE_COPIER_LINK}
-      ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK}
-      ${CLICKHOUSE_COMPRESSOR_LINK}
-      ${CLICKHOUSE_FORMAT_LINK}
-      ${CLICKHOUSE_OBFUSCATOR_LINK}
-      ${CLICKHOUSE_GIT_IMPORT_LINK}
-      ${CLICKHOUSE_ODBC_BRIDGE_LINK}
-      ${CLICKHOUSE_KEEPER_LINK}
-      ${CLICKHOUSE_KEEPER_CONVERTER_LINK}
-      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK}
-      ${CLICKHOUSE_SU_LINK})
-
-    target_include_directories(clickhouse-lib
-      ${CLICKHOUSE_SERVER_INCLUDE}
-      ${CLICKHOUSE_CLIENT_INCLUDE}
-      ${CLICKHOUSE_LOCAL_INCLUDE}
-      ${CLICKHOUSE_BENCHMARK_INCLUDE}
-      ${CLICKHOUSE_COPIER_INCLUDE}
-      ${CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE}
-      ${CLICKHOUSE_COMPRESSOR_INCLUDE}
-      ${CLICKHOUSE_FORMAT_INCLUDE}
-      ${CLICKHOUSE_OBFUSCATOR_INCLUDE}
-      ${CLICKHOUSE_GIT_IMPORT_INCLUDE}
-      ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE}
-      ${CLICKHOUSE_KEEPER_INCLUDE}
-      ${CLICKHOUSE_KEEPER_CONVERTER_INCLUDE})
-
-    set_target_properties(clickhouse-lib PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse DEBUG_POSTFIX "")
-    install (TARGETS clickhouse-lib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
-endif()
-
 clickhouse_add_executable (clickhouse main.cpp)
-
-if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    # Shared split (dev) build: In CI, the server is run with custom LD_LIBRARY_PATH. This makes the harmful env check re-execute the
-    # process in a clean environment but as in CI the containing directory is not included in DT_RUNPATH/DT_RPATH, the server won't come up.
-    target_compile_definitions(clickhouse PRIVATE DISABLE_HARMFUL_ENV_VAR_CHECK)
-endif ()
 
 # A library that prevent usage of several functions from libc.
 if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
@@ -374,6 +313,9 @@ if (ENABLE_CLICKHOUSE_KEEPER)
 endif()
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     clickhouse_target_link_split_lib(clickhouse keeper-converter)
+endif()
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    clickhouse_target_link_split_lib(clickhouse keeper-client)
 endif()
 if (ENABLE_CLICKHOUSE_INSTALL)
     clickhouse_target_link_split_lib(clickhouse install)
@@ -446,6 +388,9 @@ if (ENABLE_CLICKHOUSE_SU)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-su" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-su)
 endif ()
+if (ENABLE_CLICKHOUSE_REPORT)
+    include(${ClickHouse_SOURCE_DIR}/utils/report/CMakeLists.txt)
+endif ()
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER AND CREATE_KEEPER_SYMLINK)
@@ -463,6 +408,18 @@ if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-converter)
 endif ()
+if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+    if (NOT BUILD_STANDALONE_KEEPER)
+        add_custom_target (clickhouse-keeper-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-client DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    # symlink to standalone keeper binary
+    else ()
+        add_custom_target (clickhouse-keeper-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse-keeper clickhouse-keeper-client DEPENDS clickhouse-keeper)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT clickhouse-keeper)
+    endif ()
+
+    list(APPEND CLICKHOUSE_BUNDLE clickhouse-keeper-client)
+endif ()
 if (ENABLE_CLICKHOUSE_DISKS)
     add_custom_target (clickhouse-disks ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-disks DEPENDS clickhouse)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-disks" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
@@ -470,10 +427,6 @@ if (ENABLE_CLICKHOUSE_DISKS)
 endif ()
 
 add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
-
-if (USE_GDB_ADD_INDEX)
-    add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
-endif()
 
 if (USE_BINARY_HASH)
     add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)

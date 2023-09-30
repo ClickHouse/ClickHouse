@@ -1,8 +1,10 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/StorageView.h>
 #include <sparsehash/dense_hash_set>
 
 namespace DB
@@ -23,6 +25,7 @@ void StorageSnapshot::init()
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
+    system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
@@ -76,7 +79,7 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
 {
     const auto & columns = getMetadataForQuery()->getColumns();
     auto column = columns.tryGetColumn(options, column_name);
-    if (column && (!isObject(column->type) || !options.with_extended_objects))
+    if (column && (!column->type->hasDynamicSubcolumns() || !options.with_extended_objects))
         return column;
 
     if (options.with_extended_objects)
@@ -115,30 +118,31 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
+
     const auto & columns = getMetadataForQuery()->getColumns();
-    for (const auto & name : column_names)
+    for (const auto & column_name : column_names)
     {
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
         if (column && !object_column)
         {
-            res.insert({column->type->createColumn(), column->type, column->name});
+            res.insert({column->type->createColumn(), column->type, column_name});
         }
         else if (object_column)
         {
-            res.insert({object_column->type->createColumn(), object_column->type, object_column->name});
+            res.insert({object_column->type->createColumn(), object_column->type, column_name});
         }
-        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
+        else if (auto it = virtual_columns.find(column_name); it != virtual_columns.end())
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
             const auto & type = it->second;
-            res.insert({type->createColumn(), type, name});
+            res.insert({type->createColumn(), type, column_name});
         }
         else
         {
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in table {}", backQuote(name), storage.getStorageID().getNameForLogs());
+                "Column {} not found in table {}", backQuote(column_name), storage.getStorageID().getNameForLogs());
         }
     }
     return res;

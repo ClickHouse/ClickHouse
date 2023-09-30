@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -19,28 +19,28 @@ namespace ErrorCodes
 size_t HTTPChunkedReadBuffer::readChunkHeader()
 {
     if (in->eof())
-        throw Exception("Unexpected end of file while reading chunk header of HTTP chunked data", ErrorCodes::UNEXPECTED_END_OF_FILE);
+        throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while reading chunk header of HTTP chunked data");
 
     if (!isHexDigit(*in->position()))
-        throw Exception("Unexpected data instead of HTTP chunk header", ErrorCodes::CORRUPTED_DATA);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected data instead of HTTP chunk header");
 
     size_t res = 0;
     do
     {
         if (common::mulOverflow(res, 16ul, res) || common::addOverflow<size_t>(res, unhex(*in->position()), res))
-            throw Exception("Chunk size is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size is out of bounds");
         ++in->position();
     } while (!in->eof() && isHexDigit(*in->position()));
 
     if (res > max_chunk_size)
-        throw Exception("Chunk size exceeded the limit", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Chunk size exceeded the limit (max size: {})", max_chunk_size);
 
     /// NOTE: If we want to read any chunk extensions, it should be done here.
 
     skipToCarriageReturnOrEOF(*in);
 
     if (in->eof())
-        throw Exception("Unexpected end of file while reading chunk header of HTTP chunked data", ErrorCodes::UNEXPECTED_END_OF_FILE);
+        throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while reading chunk header of HTTP chunked data");
 
     assertString("\n", *in);
     return res;

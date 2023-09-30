@@ -58,12 +58,17 @@ public:
     static void start();
     static bool isStarted();
 
+    static void maybeInjectSleep();
+    static void maybeInjectMemoryLimitException();
+
 private:
     uint64_t cpu_time_period_us = 0;
     double yield_probability = 0;
     double migrate_probability = 0;
     double sleep_probability = 0;
     double sleep_time_us = 0;
+    double explicit_sleep_probability = 0;
+    double explicit_memory_exception_probability = 0;
 
     inline static std::atomic<bool> started{true};
 

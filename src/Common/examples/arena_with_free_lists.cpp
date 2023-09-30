@@ -176,11 +176,11 @@ struct Dictionary
         {
             case AttributeUnderlyingTypeTest::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
             case AttributeUnderlyingTypeTest::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-            case AttributeUnderlyingTypeTest::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+            case AttributeUnderlyingTypeTest::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = static_cast<UInt32>(value.get<UInt64>()); break;
             case AttributeUnderlyingTypeTest::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
             case AttributeUnderlyingTypeTest::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
             case AttributeUnderlyingTypeTest::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-            case AttributeUnderlyingTypeTest::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+            case AttributeUnderlyingTypeTest::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = static_cast<Int32>(value.get<Int64>()); break;
             case AttributeUnderlyingTypeTest::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
             case AttributeUnderlyingTypeTest::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = static_cast<Float32>(value.get<Float64>()); break;
             case AttributeUnderlyingTypeTest::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
@@ -270,7 +270,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Insert info arena. Bytes: " << arena.size()
+            << "Insert info arena. Bytes: " << arena.allocatedBytes()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << sum_strings_size / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"
@@ -298,7 +298,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Randomly remove and insert elements. Bytes: " << arena.size()
+            << "Randomly remove and insert elements. Bytes: " << arena.allocatedBytes()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"
@@ -331,7 +331,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr
-            << "Filling cache. Bytes: " << arena.size()
+            << "Filling cache. Bytes: " << arena.allocatedBytes()
             << ", elapsed: " << watch.elapsedSeconds()
             << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.,"
             << " " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)"

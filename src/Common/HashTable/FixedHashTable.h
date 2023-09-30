@@ -19,7 +19,7 @@ struct FixedHashTableCell
     using mapped_type = VoidMapped;
     bool full;
 
-    FixedHashTableCell() {} //-V730 /// NOLINT
+    FixedHashTableCell() {} /// NOLINT
     FixedHashTableCell(const Key &, const State &) : full(true) {}
 
     const VoidKey getKey() const { return {}; } /// NOLINT
@@ -264,7 +264,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
+                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
 
             return cell.getValue();
         }
@@ -358,7 +358,7 @@ public:
         std::pair<LookupResult, bool> res;
         emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
-            insertSetMapped(res.first->getMapped(), x);
+            res.first->setMapped(x);
 
         return res;
     }

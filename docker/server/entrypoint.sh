@@ -80,7 +80,7 @@ do
 done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
-if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
+if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ] || [ "$CLICKHOUSE_ACCESS_MANAGEMENT" != "0" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
     <clickhouse>
@@ -120,8 +120,8 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     pid="$!"
 
     # check if clickhouse is ready to accept connections
-    # will try to send ping clickhouse via http_port (max 12 retries by default, with 1 sec timeout and 1 sec delay between retries)
-    tries=${CLICKHOUSE_INIT_TIMEOUT:-12}
+    # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
+    tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
     while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
         if [ "$tries" -le "0" ]; then
             echo >&2 'ClickHouse init process failed.'
@@ -172,7 +172,19 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-    exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+
+    # An option for easy restarting and replacing clickhouse-server in a container, especially in Kubernetes.
+    # For example, you can replace the clickhouse-server binary to another and restart it while keeping the container running.
+    if [[ "${CLICKHOUSE_DOCKER_RESTART_ON_EXIT:-0}" -eq "1" ]]; then
+        while true; do
+            # This runs the server as a child process of the shell script:
+            /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@" ||:
+            echo >&2 'ClickHouse Server exited, and the environment variable CLICKHOUSE_DOCKER_RESTART_ON_EXIT is set to 1. Restarting the server.'
+        done
+    else
+        # This replaces the shell script with the server:
+        exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+    fi
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image
