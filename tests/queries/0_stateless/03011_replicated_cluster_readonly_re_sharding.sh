@@ -50,19 +50,6 @@ sync_cluster
 sync_cluster
 
 $CLICKHOUSE_CLIENT -nm -q "
-    -- source replica may have more local parts up to 500 (original number of parts),
-    -- because parts removal is done in background,
-    -- and if the test is fast enough it should have 500,
-    -- however if the parts removal had been triggered it may have less local parts, hence min2()
-    --
-    -- destination replicas should have 250 parts, but sometimes it may have more,
-    -- since in case of migration reverts the part had been already placed on a replica,
-    -- but this information had not been reflected for the cluster partitions information
-    -- (due to some error during migration), so we cannot use strict check as well.
-    --
-    -- But note, that this is just local parts,
-    -- not cluster partitions (system.cluster_partitions) which is used as a source of truth
-    -- (and during SELECT cluster partitions will be checked, not local partitions on replicas).
-    select _table, min2(count(), 50000), min2(length(groupArrayDistinct(_partition_id)), 250) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+    select _table, count(), length(groupArrayDistinct(_partition_id)) from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
     select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 "

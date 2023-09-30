@@ -264,9 +264,9 @@ void ReplicatedMergeTreeCluster::shutdown()
 
 void ReplicatedMergeTreeCluster::sync()
 {
+    balancer.waitSynced(/* throw_if_stopped= */ true);
     /// FIXME(cluster): this is a hack to sync cluster partitions map, we need to get rid of it
     loadFromCoordinator();
-    balancer.waitSynced(/* throw_if_stopped= */ true);
 }
 
 void ReplicatedMergeTreeCluster::loadFromCoordinator(const zkutil::ZooKeeperPtr & zookeeper)

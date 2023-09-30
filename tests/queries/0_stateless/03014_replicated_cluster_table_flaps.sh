@@ -55,7 +55,7 @@ backup_replicas_thread
 sync_cluster
 
 $CLICKHOUSE_CLIENT -nm -q "
-    select _table, min2(count(), 50000), min2(length(groupArrayDistinct(_partition_id)), 5) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+    select _table, count(), length(groupArrayDistinct(_partition_id)) from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
     select count() from data_r1;
     select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 "

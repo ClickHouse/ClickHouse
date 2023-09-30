@@ -136,6 +136,8 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
             break;
     }
 
+    cleanupOldPartitions(0);
+
     if (throw_if_stopped && is_stopped)
         throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
 }
@@ -163,7 +165,7 @@ void ReplicatedMergeTreeClusterBalancer::restoreStateFromCoordinator()
 void ReplicatedMergeTreeClusterBalancer::run()
 try
 {
-    cleanupOldPartitions();
+    cleanupOldPartitions(DISTRIBUTOR_PARTITION_DROP_TTL_SEC);
 
     while (!is_stopped)
     {
@@ -762,7 +764,7 @@ void ReplicatedMergeTreeClusterBalancer::enqueueDropPartition(const zkutil::ZooK
         partition_id, source_replica, entry_delete.getDescriptionForLogs(storage.format_version));
 }
 
-void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions()
+void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions(time_t ttl)
 {
     auto zookeeper = cluster.getZooKeeper();
 
@@ -776,7 +778,7 @@ void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions()
     for (const auto & partition : partitions)
     {
         time_t modification_time = static_cast<time_t>(partition.getModificationTimeMs() / 1e3);
-        if (modification_time + DISTRIBUTOR_PARTITION_DROP_TTL_SEC > now)
+        if (modification_time + ttl > now)
             continue;
 
         if (!local_partitions.contains(partition.getPartitionId()))

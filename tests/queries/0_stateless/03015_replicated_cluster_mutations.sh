@@ -77,18 +77,26 @@ while :; do
 done
 
 $CLICKHOUSE_CLIENT -nm -q "
-    system sync replica data_r1;
-    system sync replica data_r2;
-    system sync replica data_r3;
-    system sync replica data_r4;
+    system sync replica data_r1 cluster;
+    system sync replica data_r2 cluster;
+    system sync replica data_r3 cluster;
+    system sync replica data_r4 cluster;
 "
 
 for table in data_r1 data_r2 data_r3 data_r4; do
     wait_for_all_mutations $table
 done
 
-# last sync to reflect changes in system.cluster_partitions
-$CLICKHOUSE_CLIENT -q "system sync replica data_r1 cluster"
+# FIXME:
+# - last sync for data_r1 to reflect changes in system.cluster_partitions
+# - last sync for everything else to apply all changes after previous sync...
+# And all of this should be gone!
+$CLICKHOUSE_CLIENT -nm -q "
+    system sync replica data_r1 cluster;
+    system sync replica data_r2 cluster;
+    system sync replica data_r3 cluster;
+    system sync replica data_r4 cluster;
+"
 
 # NOTE: it is possible to have non mutated parts on old replicas, but only
 # when cluster partitions map is not used/not in sync (cluster_query_shards=0),

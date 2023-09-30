@@ -16,11 +16,12 @@ system sync replica data_r1 cluster;
 system sync replica data_r2 cluster;
 system sync replica data_r3 cluster;
 system sync replica data_r4 cluster;
--- FIXME:
--- - arrayDistinct - what the heck, there should be only distinct values
--- - right now r1/r2 contains all records even after removal due to DISTRIBUTOR_PARTITION_DROP_TTL_SEC = 60
--- TODO: check real replica names
-select partition, length(arraySort(arrayDistinct(active_replicas))) from system.cluster_partitions where database = currentDatabase() and table = 'data_r1' order by 1;
+-- FIXME: we need to sync cluster twice to apply all changes
+system sync replica data_r4 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r1 cluster;
+select partition, length(arraySort(active_replicas)) from system.cluster_partitions where database = currentDatabase() and table = 'data_r1' order by 1;
 0-0	2
 0-1	2
 1-0	2
@@ -42,8 +43,8 @@ select partition, length(arraySort(arrayDistinct(active_replicas))) from system.
 9-0	2
 9-1	2
 select _table, count(), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
-data_r1	100	20
-data_r2	100	20
+data_r1	50	10
+data_r2	50	10
 data_r3	50	10
 data_r4	50	10
 select _table, count(), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=1;

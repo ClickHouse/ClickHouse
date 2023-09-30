@@ -1,5 +1,5 @@
 -- { echo }
-select _table, min2(count(), 5), min2(length(groupArrayDistinct(_partition_id)), 5) size from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+select _table, count(), length(groupArrayDistinct(_partition_id)) from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
 data_r1	5	5
 data_r2	5	5
 data_r3	5	5

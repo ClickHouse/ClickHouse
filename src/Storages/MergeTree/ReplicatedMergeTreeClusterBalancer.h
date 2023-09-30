@@ -71,7 +71,7 @@ private:
     void revert(const ReplicatedMergeTreeClusterPartition & target);
 
     void enqueueDropPartition(const zkutil::ZooKeeperPtr & zookeeper, const String & source_replica, const String & partition_id);
-    void cleanupOldPartitions();
+    void cleanupOldPartitions(time_t ttl);
 };
 
 }
