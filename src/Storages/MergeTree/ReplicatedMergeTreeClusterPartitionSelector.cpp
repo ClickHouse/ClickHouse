@@ -71,7 +71,7 @@ std::optional<ReplicatedMergeTreeClusterPartition> ReplicatedMergeTreeClusterPar
     std::unordered_set<String> unique_partitions;
     for (const auto & partition : suitable_partitions)
     {
-        const auto & replicas = partition.getActiveNonMigrationReplicas();
+        const auto & replicas = partition.getAllReplicas();
         for (const auto & replica : replicas)
         {
             const auto & partition_id = partition.getPartitionId();
