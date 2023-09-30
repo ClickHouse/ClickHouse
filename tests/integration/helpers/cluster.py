@@ -1889,9 +1889,7 @@ class ClickHouseCluster:
 
         if with_ldap and not self.with_ldap:
             cmds.append(
-                self.setup_ldap_cmd(
-                    instance, env_variables, docker_compose_yml_dir
-                )
+                self.setup_ldap_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_jdbc_bridge and not self.with_jdbc_bridge:
