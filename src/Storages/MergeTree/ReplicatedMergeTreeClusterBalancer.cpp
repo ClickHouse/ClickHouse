@@ -109,6 +109,16 @@ void ReplicatedMergeTreeClusterBalancer::waitSynced(bool throw_if_stopped)
         {
             runStep();
         }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+                throw;
+
+            if (state.step == BALANCER_REVERT)
+                tryLogCurrentException(log, "While trying to REVERT, retrying");
+            else
+                throw;
+        }
         catch (...)
         {
             if (state.step == BALANCER_REVERT)
