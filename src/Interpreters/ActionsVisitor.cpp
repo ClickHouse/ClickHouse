@@ -773,7 +773,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-		if (!untuple_alias.empty())
+        if (!untuple_alias.empty())
         {
             auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
             func->setAlias(untuple_alias + "." + element_alias);
