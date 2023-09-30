@@ -20,6 +20,8 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.expect(prompt)
 
+    client1.send("SET allow_experimental_analyzer = 0")
+    client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
     client1.send("SET window_view_heartbeat_interval = 1")
@@ -29,9 +31,9 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01070_window_view_watch_events")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01070_window_view_watch_events.mt NO DELAY")
+    client1.send("DROP TABLE IF EXISTS 01070_window_view_watch_events.mt SYNC")
     client1.expect(prompt)
-    client1.send("DROP TABLE IF EXISTS 01070_window_view_watch_events.wv NO DELAY")
+    client1.send("DROP TABLE IF EXISTS 01070_window_view_watch_events.wv SYNC")
     client1.expect(prompt)
 
     client1.send(
@@ -63,7 +65,7 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send("DROP TABLE 01070_window_view_watch_events.wv NO DELAY;")
+    client1.send("DROP TABLE 01070_window_view_watch_events.wv SYNC;")
     client1.expect(prompt)
     client1.send("DROP TABLE 01070_window_view_watch_events.mt;")
     client1.expect(prompt)

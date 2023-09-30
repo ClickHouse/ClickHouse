@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/backup
 sidebar_position: 49
 sidebar_label: "\u6570\u636E\u5907\u4EFD"
 ---
@@ -11,8 +12,9 @@ sidebar_label: "\u6570\u636E\u5907\u4EFD"
 
 不同公司有不同的可用资源和业务需求，因此不存在一个通用的解决方案可以应对各种情况下的ClickHouse备份和恢复。 适用于 1GB 数据的方案可能并不适用于几十 PB 数据的情况。 有多种具备各自优缺点的可能方法，将在下面对其进行讨论。最好使用几种方法而不是仅仅使用一种方法来弥补它们的各种缺点。。
 
-!!! note "注"
-    需要注意的是，如果您备份了某些内容并且从未尝试过还原它，那么当您实际需要它时可能无法正常恢复（或者至少需要的时间比业务能够容忍的时间更长）。 因此，无论您选择哪种备份方法，请确保自动还原过程，并定期在备用ClickHouse群集上演练。
+:::note
+需要注意的是，如果您备份了某些内容并且从未尝试过还原它，那么当您实际需要它时可能无法正常恢复（或者至少需要的时间比业务能够容忍的时间更长）。 因此，无论您选择哪种备份方法，请确保自动还原过程，并定期在备用ClickHouse群集上演练。
+:::
 
 ## 将源数据复制到其它地方 {#duplicating-source-data-somewhere-else}
 
@@ -37,5 +39,3 @@ ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表
 有关与分区操作相关的查询的详细信息，请参阅 [更改文档](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
 第三方工具可用于自动化此方法: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
-
-[原始文章](https://clickhouse.com/docs/en/operations/backup/) <!--hide-->

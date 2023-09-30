@@ -1,4 +1,5 @@
 ---
+slug: /ru/getting-started/example-datasets/star-schema
 sidebar_position: 16
 sidebar_label: Star Schema Benchmark
 ---
@@ -15,9 +16,9 @@ $ make
 
 Генерация данных:
 
-:::warning "Внимание"
-    -s 100 – dbgen генерирует 600 миллионов строк (67 ГБ)
--s 1000 – dbgen генерирует 6 миллиардов строк (занимает много времени)
+:::warning Внимание
+`-s 100` – dbgen генерирует 600 миллионов строк (67 ГБ)
+`-s 1000` – dbgen генерирует 6 миллиардов строк (занимает много времени)
 :::
 
 ``` bash
@@ -362,5 +363,3 @@ ORDER BY
     S_CITY ASC,
     P_BRAND ASC;
 ```
-
-[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

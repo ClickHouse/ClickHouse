@@ -28,19 +28,17 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     if (params.size() != 1)
-        throw Exception{"Aggregate function " + name + " requires exactly one parameter.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one parameter.",
+            name);
 
     const auto arg_count = argument_types.size();
 
     if (arg_count < 3)
-        throw Exception{"Aggregate function " + name + " requires at least 3 arguments.",
-            ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires at least 3 arguments.",
+            name);
 
     if (arg_count - 1 > max_events)
-        throw Exception{"Aggregate function " + name + " supports up to "
-            + toString(max_events) + " event arguments.",
-            ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION};
+        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} supports up to {} event arguments.", name, max_events);
 
     const auto * time_arg = argument_types.front().get();
 
@@ -48,9 +46,9 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
-            throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1)
-                + " of aggregate function " + name + ", must be UInt8",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument {} of aggregate function {}, must be UInt8",
+                            cond_arg->getName(), toString(i + 1), name);
     }
 
     String pattern = params.front().safeGet<std::string>();
@@ -65,9 +63,9 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
     else if (which.isDate())
         return std::make_shared<AggregateFunction<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types, params, pattern);
 
-    throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function "
-            + name + ", must be DateTime",
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of aggregate function {}, must be DateTime",
+                    time_arg->getName(), name);
 }
 
 }

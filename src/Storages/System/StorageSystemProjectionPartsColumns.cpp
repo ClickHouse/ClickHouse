@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -66,7 +67,8 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
+        {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
     }
     )
 {
@@ -122,7 +124,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = IMergeTreeDataPart::State;
+        using State = MergeTreeDataPartState;
 
         size_t column_position = 0;
         auto & columns_info = projection_columns_info[part->name];
@@ -211,9 +213,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.engine);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getDiskName());
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->data_part_storage->getFullPath());
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
@@ -247,6 +249,13 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.data_uncompressed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
+            if (columns_mask[src_index++])
+            {
+                if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
+                else
+                    columns[res_index++]->insertDefault();
+            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());

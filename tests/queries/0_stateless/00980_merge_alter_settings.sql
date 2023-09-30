@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: no-replicated-database
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
 DROP TABLE IF EXISTS log_for_alter;
@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS table_for_alter;
 CREATE TABLE table_for_alter (
   id UInt64,
   Data String
-) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096;
+) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096, index_granularity_bytes = '10Mi';
 
 ALTER TABLE table_for_alter MODIFY SETTING index_granularity=555; -- { serverError 472 }
 
@@ -62,7 +62,7 @@ DROP TABLE IF EXISTS table_for_reset_setting;
 CREATE TABLE table_for_reset_setting (
  id UInt64,
  Data String
-) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096;
+) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=4096, index_granularity_bytes = '10Mi';
 
 ALTER TABLE table_for_reset_setting MODIFY SETTING index_granularity=555; -- { serverError 472 }
 

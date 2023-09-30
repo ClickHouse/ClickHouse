@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/quota_usage
+---
 # system.quota_usage {#system_tables-quota_usage}
 
 当前用户的配额使用情况: 使用了多少, 还剩多少.
@@ -28,5 +31,3 @@
 ## 另请参阅 {#see-also}
 
 -   [查看配额信息](../../sql-reference/statements/show.md#show-quota-statement)
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/quota_usage) <!--hide-->

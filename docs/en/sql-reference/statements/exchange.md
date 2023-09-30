@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/exchange
 sidebar_position: 49
 sidebar_label: EXCHANGE
 ---
@@ -40,4 +41,4 @@ EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 
 **See Also**
 
--   [Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Dictionaries](../../sql-reference/dictionaries/index.md)

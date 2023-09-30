@@ -23,6 +23,7 @@ public:
     DataTypeObject(const String & schema_format_, bool is_nullable_);
 
     const char * getFamilyName() const override { return "Object"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::Object; }
 
@@ -30,16 +31,19 @@ public:
 
     Field getDefault() const override
     {
-        throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault() is not implemented for data type {}", getName());
     }
 
     bool haveSubtypes() const override { return false; }
     bool equals(const IDataType & rhs) const override;
     bool isParametric() const override { return true; }
+    bool hasDynamicSubcolumns() const override { return true; }
 
     SerializationPtr doGetDefaultSerialization() const override;
 
     bool hasNullableSubcolumns() const { return is_nullable; }
+
+    const String & getSchemaFormat() const { return schema_format; }
 };
 
 }

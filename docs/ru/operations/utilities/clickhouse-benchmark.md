@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: clickhouse-benchmark
 ---
@@ -59,7 +60,7 @@ clickhouse-benchmark [keys] < queries_file;
 -   `--stage=WORD` — стадия обработки запроса на сервере. ClickHouse останавливает обработку запроса и возвращает ответ `clickhouse-benchmark` на заданной стадии. Возможные значения: `complete`, `fetch_columns`, `with_mergeable_state`. Значение по умолчанию: `complete`.
 -   `--help` — показывает справку.
 
-Если нужно применить [настройки](../../operations/settings/) для запросов, их можно передать как ключ `--<session setting name>= SETTING_VALUE`. Например, `--max_memory_usage=1048576`.
+Если нужно применить [настройки](../../operations/settings/index.md) для запросов, их можно передать как ключ `--<session setting name>= SETTING_VALUE`. Например, `--max_memory_usage=1048576`.
 
 ## Вывод {#clickhouse-benchmark-output}
 
@@ -159,4 +160,3 @@ localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, resu
 99.900%     0.172 sec.
 99.990%     0.172 sec.
 ```
-

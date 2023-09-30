@@ -7,14 +7,14 @@ import sys
 import argparse
 
 # Create SQL statement to verify dateTime64 is accepted as argument to functions taking DateTime.
-FUNCTIONS="""
+FUNCTIONS = """
 toTimeZone(N, 'UTC')
 toYear(N, 'Asia/Istanbul')
 toQuarter(N, 'Asia/Istanbul')
 toMonth(N, 'Asia/Istanbul')
 toDayOfYear(N, 'Asia/Istanbul')
 toDayOfMonth(N, 'Asia/Istanbul')
-toDayOfWeek(N, 'Asia/Istanbul')
+toDayOfWeek(N, 0, 'Asia/Istanbul')
 toHour(N, 'Asia/Istanbul')
 toMinute(N, 'Asia/Istanbul')
 toSecond(N, 'Asia/Istanbul')
@@ -83,75 +83,58 @@ CAST(N as DateTime64(9, 'Europe/Minsk'))
 # CAST(N as DateTime64(12, 'Asia/Istanbul'))
 # DateTime64(18) will always fail due to zero precision, but it is Ok to test here:
 # CAST(N as DateTime64(18, 'Asia/Istanbul'))
-formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%', 'Asia/Istanbul')
+formatDateTime(N, '%C %d %D %e %F %H %I %j %m %i %p %R %S %T %u %V %w %y %Y %%', 'Asia/Istanbul')
 """.splitlines()
 
 # Expanded later to cartesian product of all arguments, using format string.
 extra_ops = [
     # With same type:
     (
-        ['N {op} N'],
+        ["N {op} N"],
         {
-            'op':
-            [
-                '- ', # does not work, but should it?
-                '+ ', # does not work, but should it?
-                '!=', '==', # equality and inequality supposed to take sub-second part in account
-                '< ',
-                '<=',
-                '> ',
-                '>='
+            "op": [
+                "- ",  # does not work, but should it?
+                "+ ",  # does not work, but should it?
+                "!=",
+                "==",  # equality and inequality supposed to take sub-second part in account
+                "< ",
+                "<=",
+                "> ",
+                ">=",
             ]
-        }
+        },
     ),
     # With other DateTime types:
     (
-        [
-            'N {op} {arg}',
-            '{arg} {op} N'
-        ],
+        ["N {op} {arg}", "{arg} {op} N"],
         {
-            'op':
-            [
-                '-', # does not work, but should it?
-                '!=', '==',
+            "op": [
+                "-",  # does not work, but should it?
+                "!=",
+                "==",
                 # these are naturally expected to work, but they don't:
-                '< ',
-                '<=',
-                '> ',
-                '>='
+                "< ",
+                "<=",
+                "> ",
+                ">=",
             ],
-            'arg': ['DT', 'D', 'DT64'],
-        }
+            "arg": ["DT", "D", "DT64"],
+        },
     ),
     # With arithmetic types
     (
-        [
-            'N {op} {arg}',
-            '{arg} {op} N'
-        ],
+        ["N {op} {arg}", "{arg} {op} N"],
         {
-            'op':
-            [
-                '+ ',
-                '- ',
-                '==',
-                '!=',
-                '< ',
-                '<=',
-                '> ',
-                '>='
-            ],
-            'arg':
-            [
-                'toUInt8(1)',
-                'toInt8(-1)',
-                'toUInt16(1)',
-                'toInt16(-1)',
-                'toUInt32(1)',
-                'toInt32(-1)',
-                'toUInt64(1)',
-                'toInt64(-1)'
+            "op": ["+ ", "- ", "==", "!=", "< ", "<=", "> ", ">="],
+            "arg": [
+                "toUInt8(1)",
+                "toInt8(-1)",
+                "toUInt16(1)",
+                "toInt16(-1)",
+                "toUInt32(1)",
+                "toInt32(-1)",
+                "toUInt64(1)",
+                "toInt64(-1)",
             ],
         },
     ),
@@ -167,14 +150,17 @@ for funcs, args in extra_ops:
 
 # filter out empty lines and commented out lines
 COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
-FUNCTIONS = list([f for f in FUNCTIONS if len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None])
-TYPES = ['D', 'DT', 'DT64']
+FUNCTIONS = list(
+    [f for f in FUNCTIONS if len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None]
+)
+TYPES = ["D", "DT", "DT64"]
+
 
 def escape_string(s):
     if sys.version_info[0] > 2:
-        return s.encode('unicode_escape').decode('utf-8').replace("'", "\\'")
+        return s.encode("unicode_escape").decode("utf-8").replace("'", "\\'")
     else:
-        return s.encode('string-escape').decode('utf-8')
+        return s.encode("string-escape").decode("utf-8")
 
 
 def execute_functions_for_types(functions, types):
@@ -186,18 +172,39 @@ def execute_functions_for_types(functions, types):
 WITH \
 toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, \
 toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, \
-toDate('2019-09-16') as D, {X} as N".format(X=dt)
-            print(("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(prologue=prologue, func=func)))
+toDate('2019-09-16') as D, {X} as N".format(
+                X=dt
+            )
+            print(
+                (
+                    """{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(
+                        prologue=prologue, func=func
+                    )
+                )
+            )
         print("""SELECT '------------------------------------------';""")
+
 
 def main():
     def parse_args():
         parser = argparse.ArgumentParser()
-        parser.add_argument('--functions_re', type=re.compile, help="RE to enable functions", default=None)
-        parser.add_argument('--types_re',
-                type=lambda s: re.compile('^(' + s + ')$'),
-                help="RE to enable types, supported types: " + ",".join(TYPES), default=None)
-        parser.add_argument('--list_functions', action='store_true', help="List all functions to be tested and exit")
+        parser.add_argument(
+            "--functions_re",
+            type=re.compile,
+            help="RE to enable functions",
+            default=None,
+        )
+        parser.add_argument(
+            "--types_re",
+            type=lambda s: re.compile("^(" + s + ")$"),
+            help="RE to enable types, supported types: " + ",".join(TYPES),
+            default=None,
+        )
+        parser.add_argument(
+            "--list_functions",
+            action="store_true",
+            help="List all functions to be tested and exit",
+        )
         return parser.parse_args()
 
     args = parse_args()
@@ -223,5 +230,6 @@ def main():
 
     execute_functions_for_types(functions, types)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     exit(main())

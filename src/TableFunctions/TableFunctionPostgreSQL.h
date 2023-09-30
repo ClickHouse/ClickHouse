@@ -1,10 +1,11 @@
 #pragma once
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB
@@ -19,15 +20,15 @@ public:
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,
-            const std::string & table_name, ColumnsDescription cached_columns) const override;
+            const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
     const char * getStorageTypeName() const override { return "PostgreSQL"; }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     postgres::PoolWithFailoverPtr connection_pool;
-    std::optional<StoragePostgreSQLConfiguration> configuration;
+    std::optional<StoragePostgreSQL::Configuration> configuration;
 };
 
 }

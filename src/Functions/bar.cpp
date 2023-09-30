@@ -53,15 +53,13 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception("Function " + getName()
-                    + " requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. Passed "
-                    + toString(arguments.size())
-                    + ".",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Function {} requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. "
+                    "Passed {}.", getName(), arguments.size());
 
         if (!isNumber(arguments[0]) || !isNumber(arguments[1]) || !isNumber(arguments[2])
             || (arguments.size() == 4 && !isNumber(arguments[3])))
-            throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for function {} must be numeric.", getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -85,13 +83,13 @@ public:
         }
 
         if (isNaN(max_width))
-            throw Exception("Argument 'max_width' must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 'max_width' must not be NaN");
 
         if (max_width < 1)
-            throw Exception("Argument 'max_width' must be >= 1", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Argument 'max_width' must be >= 1");
 
         if (max_width > 1000)
-            throw Exception("Argument 'max_width' must be <= 1000", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Argument 'max_width' must be <= 1000");
 
         const auto & src = *arguments[0].column;
 
@@ -114,11 +112,11 @@ public:
                 max_width);
 
             if (!isFinite(width))
-                throw Exception("Value of width must not be NaN and Inf", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of width must not be NaN and Inf");
 
             size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
             dst_chars.resize(next_size);
-            UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
+            UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]), reinterpret_cast<char *>(&dst_chars[next_size]));
             current_offset = next_size;
             dst_offsets[i] = current_offset;
         }

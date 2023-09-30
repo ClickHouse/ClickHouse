@@ -39,7 +39,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
                                                      " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
     if (!has_structure && !ast_create_query.is_dictionary)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure", backQuote(ast_create_query.getTable()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure",
+                        backQuote(ast_create_query.getTable()));
 
     if (!ast_create_query.is_dictionary)
     {
@@ -104,7 +105,8 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(table_id.database_name), backQuote(table_id.table_name));
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
+                            backQuote(table_id.database_name), backQuote(table_id.table_name));
         else
             return nullptr;
     }
@@ -141,11 +143,18 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                 if (!parser.parse(pos, ast_type, expected))
                 {
                     if (throw_on_error)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}", backQuote(table_id.database_name), backQuote(table_id.table_name));
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}",
+                                        backQuote(table_id.database_name), backQuote(table_id.table_name));
                     else
                         return nullptr;
                 }
                 ast_column_declaration->type = ast_type;
+
+                if (auto column_default = metadata_ptr->columns.getDefault(column_name_and_type.name))
+                {
+                    ast_column_declaration->default_specifier = toString(column_default->kind);
+                    ast_column_declaration->default_expression = column_default->expression;
+                }
             }
             ast_expression_list->children.emplace_back(ast_column_declaration);
         }
@@ -233,6 +242,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
                         backQuote(database_name), backQuote(table_name));
     res = it->second;
     tables.erase(it);
+    res->is_detached = true;
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -269,6 +279,10 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
     }
+
+    /// It is important to reset is_detached here since in case of RENAME in
+    /// non-Atomic database the is_detached is set to true before RENAME.
+    table->is_detached = false;
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -284,7 +298,7 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     for (const auto & kv : tables_snapshot)
     {
-        kv.second->flush();
+        kv.second->flushAndPrepareForShutdown();
     }
 
     for (const auto & kv : tables_snapshot)
@@ -329,15 +343,23 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
 
     for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
     {
+        auto storage = it->table();
+        if (!storage)
+            continue; /// Probably the table has been just dropped.
+
         auto create_table_query = tryGetCreateTableQuery(it->name(), local_context);
         if (!create_table_query)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for table {}.{}", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                            "Couldn't get a create query for table {}.{}",
+                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
 
         const auto & create = create_table_query->as<const ASTCreateQuery &>();
         if (create.getTable() != it->name())
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for table {}.{}", backQuoteIfNeed(create.getTable()), backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
+            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                            "Got a create query with unexpected name {} for table {}.{}",
+                            backQuoteIfNeed(create.getTable()),
+                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
 
-        auto storage = it->table();
         storage->adjustCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }

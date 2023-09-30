@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/settings/settings-profiles
 sidebar_position: 61
 sidebar_label: "\u8BBE\u7F6E\u914D\u7F6E"
 ---
@@ -7,8 +8,9 @@ sidebar_label: "\u8BBE\u7F6E\u914D\u7F6E"
 
 设置配置是设置的集合，并按照相同的名称进行分组。
 
-!!! note "信息"
-    ClickHouse 还支持用 [SQL驱动的工作流](../../operations/access-rights.md#access-control) 管理设置配置。我们建议使用它。
+:::info
+ClickHouse 还支持用 [SQL驱动的工作流](../../operations/access-rights.md#access-control) 管理设置配置。我们建议使用它。
+:::
 
 设置配置可以任意命名。你可以为不同的用户指定相同的设置配置。您可以在设置配置中写入的最重要的内容是 `readonly=1`，这将确保只读访问。
 
@@ -75,5 +77,3 @@ SET profile = 'web'
 这个 `default` 配置有一个特殊用途：它必须始终存在并在启动服务时应用。换句话说， `default` 配置包含默认设置。
 
 `web` 配置是一个常规的配置，它可以通过 `SET` 查询进行设定，也可以通过在HTTP查询中使用URL参数进行设定。
-
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->

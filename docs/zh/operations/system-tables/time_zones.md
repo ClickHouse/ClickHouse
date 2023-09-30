@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/time_zones
+---
 # system.time_zones {#system-time_zones}
 
 包含 ClickHouse 服务器支持的时区列表. 此时区列表可能因 ClickHouse 的版本而异
@@ -26,5 +29,3 @@ SELECT * FROM system.time_zones LIMIT 10
 │ Africa/Bissau      │
 └────────────────────┘
 ```
-
-[原始文章](https://clickhouse.com/docs/en/operations/system-tables/time_zones) <!--hide-->

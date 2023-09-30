@@ -49,7 +49,7 @@ INSERT INTO replicated_report VALUES ('IU', 'lada', '2101', toDateTime('1970-04-
 
 SELECT * FROM replicated_report  WHERE product = 'IU';
 
-ALTER TABLE replicated_report MODIFY COLUMN product Enum8('IU' = 1, 'WS' = 2, 'PS' = 3) SETTINGS replication_alter_partitions_sync=2;
+ALTER TABLE replicated_report MODIFY COLUMN product Enum8('IU' = 1, 'WS' = 2, 'PS' = 3) SETTINGS alter_sync=2;
 
 SELECT * FROM replicated_report WHERE product = 'PS';
 

@@ -5,6 +5,8 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/CurrentThread.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -96,16 +98,21 @@ struct PushingAsyncPipelineExecutor::Data
     }
 };
 
-static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+static void threadFunction(
+    PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
     setThreadName("QueryPushPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachTo(thread_group);
+            CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -129,14 +136,16 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
 
     pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
     connect(pushing_source->getPort(), *pipeline.input);
-    pipeline.processors.emplace_back(pushing_source);
+    pipeline.processors->emplace_back(pushing_source);
 }
 
 PushingAsyncPipelineExecutor::~PushingAsyncPipelineExecutor()
 {
+    /// It must be finalized explicitly. Otherwise we cancel it assuming it's due to an exception.
+    chassert(finished || std::uncaught_exceptions() || std::current_exception());
     try
     {
-        finish();
+        cancel();
     }
     catch (...)
     {
@@ -158,13 +167,13 @@ void PushingAsyncPipelineExecutor::start()
     started = true;
 
     data = std::make_unique<Data>();
-    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+    data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.partial_result_duration_ms);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
     {
-        threadFunction(*data, thread_group, pipeline.getNumThreads());
+        threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     };
 
     data->thread = ThreadFromGlobalPool(std::move(func));
@@ -180,7 +189,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 
     if (!is_pushed)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

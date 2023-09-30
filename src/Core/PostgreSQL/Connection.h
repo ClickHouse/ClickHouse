@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -46,6 +46,8 @@ public:
     void updateConnection();
 
     void tryUpdateConnection();
+
+    bool isConnected() const { return connection != nullptr && connection->is_open(); }
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
 

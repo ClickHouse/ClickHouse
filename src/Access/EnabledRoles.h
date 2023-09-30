@@ -44,9 +44,10 @@ private:
     friend class RoleCache;
     explicit EnabledRoles(const Params & params_);
 
-    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard * notifications);
-
     const Params params;
+
+    /// Called by RoleCache to store `EnabledRolesInfo` in this `EnabledRoles` after the calculation is done.
+    void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & info_, scope_guard * notifications);
 
     std::shared_ptr<const EnabledRolesInfo> info;
     mutable std::mutex info_mutex;

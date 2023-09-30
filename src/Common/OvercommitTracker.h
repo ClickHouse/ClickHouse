@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 #include <base/types.h>
+#include <Core/Types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Poco/Logger.h>
 #include <cassert>
@@ -36,6 +36,12 @@ struct OvercommitRatio
 
 class MemoryTracker;
 
+namespace DB
+{
+    class ProcessList;
+    struct ProcessListForUser;
+}
+
 enum class OvercommitResult
 {
     NONE,
@@ -55,7 +61,7 @@ enum class QueryCancellationState
 
 // Usually it's hard to set some reasonable hard memory limit
 // (especially, the default value). This class introduces new
-// mechanisim for the limiting of memory usage.
+// mechanism for the limiting of memory usage.
 // Soft limit represents guaranteed amount of memory query/user
 // may use. It's allowed to exceed this limit. But if hard limit
 // is reached, query with the biggest overcommit ratio
@@ -71,12 +77,12 @@ struct OvercommitTracker : boost::noncopyable
     virtual ~OvercommitTracker() = default;
 
 protected:
-    explicit OvercommitTracker(std::mutex & global_mutex_);
+    explicit OvercommitTracker(DB::ProcessList * process_list_);
 
     virtual void pickQueryToExcludeImpl() = 0;
 
     // This mutex is used to disallow concurrent access
-    // to picked_tracker and cancelation_state variables.
+    // to picked_tracker and cancellation_state variables.
     std::mutex overcommit_m;
     std::condition_variable cv;
 
@@ -86,6 +92,12 @@ protected:
     // overcommit tracker is in SELECTED state.
     MemoryTracker * picked_tracker;
 
+    // Global mutex stored in ProcessList is used to synchronize
+    // insertion and deletion of queries.
+    // OvercommitTracker::pickQueryToExcludeImpl() implementations
+    // require this mutex to be locked, because they read list (or sublist)
+    // of queries.
+    DB::ProcessList * process_list;
 private:
 
     void pickQueryToExclude()
@@ -113,12 +125,6 @@ private:
 
     QueryCancellationState cancellation_state;
 
-    // Global mutex which is used in ProcessList to synchronize
-    // insertion and deletion of queries.
-    // OvercommitTracker::pickQueryToExcludeImpl() implementations
-    // require this mutex to be locked, because they read list (or sublist)
-    // of queries.
-    std::mutex & global_mutex;
     Int64 freed_memory;
     Int64 required_memory;
 
@@ -128,15 +134,9 @@ private:
     bool allow_release;
 };
 
-namespace DB
-{
-    class ProcessList;
-    struct ProcessListForUser;
-}
-
 struct UserOvercommitTracker : OvercommitTracker
 {
-    explicit UserOvercommitTracker(DB::ProcessList * process_list, DB::ProcessListForUser * user_process_list_);
+    explicit UserOvercommitTracker(DB::ProcessList * process_list_, DB::ProcessListForUser * user_process_list_);
 
     ~UserOvercommitTracker() override = default;
 
@@ -155,9 +155,6 @@ struct GlobalOvercommitTracker : OvercommitTracker
 
 protected:
     void pickQueryToExcludeImpl() override;
-
-private:
-    DB::ProcessList * process_list;
 };
 
 // This class is used to disallow tracking during logging to avoid deadlocks.

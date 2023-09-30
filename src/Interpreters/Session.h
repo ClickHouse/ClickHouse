@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Access/Common/AuthenticationData.h>
+#include <Access/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SessionTracker.h>
 
 #include <chrono>
 #include <memory>
@@ -32,7 +33,7 @@ public:
     /// Stops using named sessions. The method must be called at the server shutdown.
     static void shutdownNamedSessions();
 
-    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false);
+    Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure = false, const std::string & certificate = "");
     ~Session();
 
     Session(const Session &&) = delete;
@@ -54,9 +55,22 @@ public:
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
-    /// Returns a reference to session ClientInfo.
-    ClientInfo & getClientInfo();
+    /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
+
+    /// Modify the session's ClientInfo.
+    void setClientInfo(const ClientInfo & client_info);
+    void setClientName(const String & client_name);
+    void setClientInterface(ClientInfo::Interface interface);
+    void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setClientConnectionId(uint32_t connection_id);
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setForwardedFor(const String & forwarded_for);
+    void setQuotaClientKey(const String & quota_key);
+    void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+
+    const OpenTelemetry::TracingContext & getClientTraceContext() const;
+    OpenTelemetry::TracingContext & getClientTraceContext();
 
     /// Makes a session context, can be used one or zero times.
     /// The function also assigns an user to this context.
@@ -64,6 +78,8 @@ public:
     ContextMutablePtr makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_);
     ContextMutablePtr sessionContext() { return session_context; }
     ContextPtr sessionContext() const { return session_context; }
+
+    ContextPtr  sessionOrGlobalContext() const { return session_context ? session_context : global_context; }
 
     /// Makes a query context, can be used multiple times, with or without makeSession() called earlier.
     /// The query context will be created from a copy of a session context if it exists, or from a copy of
@@ -75,9 +91,14 @@ public:
     /// Releases the currently used session ID so it becomes available for reuse by another session.
     void releaseSessionID();
 
+    /// Closes and removes session
+    void closeSession(const String & session_id);
+
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
+    void recordLoginSucess(ContextPtr login_context) const;
+
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
@@ -94,6 +115,8 @@ private:
 
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
+
+    SessionTracker::SessionTrackerHandle session_tracker_handle;
 
     Poco::Logger * log = nullptr;
 };

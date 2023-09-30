@@ -62,6 +62,9 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+int mainEntryClickHouseKeeperClient(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
@@ -133,6 +136,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
+#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
+    {"keeper-client", mainEntryClickHouseKeeperClient},
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
@@ -158,26 +164,6 @@ int printHelp(int, char **)
     for (auto & application : clickhouse_applications)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
-}
-
-bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
-{
-    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
-    if (argv.size() >= 2)
-    {
-        auto first_arg = argv.begin() + 1;
-
-        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
-        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
-        {
-            argv.erase(first_arg);
-            return true;
-        }
-    }
-
-    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
-    std::string app_name = "clickhouse-" + app_suffix;
-    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 #endif
 
@@ -219,7 +205,7 @@ auto instructionFailToString(InstructionFail fail)
         case InstructionFail::AVX512:
             ret("AVX512");
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -345,7 +331,7 @@ struct Checker
 ;
 
 
-#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
+#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -366,10 +352,10 @@ void checkHarmfulEnvironmentVariables(char ** argv)
     bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
-        if (const char * value = getenv(var); value && value[0])
+        if (const char * value = getenv(var); value && value[0]) // NOLINT(concurrency-mt-unsafe)
         {
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
-            if (setenv(var, "", true))
+            if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
             {
                 fmt::print(stderr, "Cannot override {} environment variable", var);
                 _exit(1);
@@ -401,6 +387,56 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 
 }
 
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+{
+    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
+    if (argv.size() >= 2)
+    {
+        auto first_arg = argv.begin() + 1;
+
+        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
+        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
+        {
+            argv.erase(first_arg);
+            return true;
+        }
+    }
+
+    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
+    std::string app_name = "clickhouse-" + app_suffix;
+    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
+}
+
+/// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
+/// We don't use it. But it can be used by some libraries for implementation of "plugins".
+/// We absolutely discourage the ancient technique of loading
+/// 3rd-party uncontrolled dangerous libraries into the process address space,
+/// because it is insane.
+
+#if !defined(USE_MUSL)
+extern "C"
+{
+    void * dlopen(const char *, int)
+    {
+        return nullptr;
+    }
+
+    void * dlmopen(long, const char *, int) // NOLINT
+    {
+        return nullptr;
+    }
+
+    int dlclose(void *)
+    {
+        return 0;
+    }
+
+    const char * dlerror()
+    {
+        return "ClickHouse does not allow dynamic library loading";
+    }
+}
+#endif
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
@@ -422,11 +458,17 @@ int main(int argc_, char ** argv_)
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
+    /// Note: we forbid dlopen in our code.
     updatePHDRCache();
 
-#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
+#if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
+
+    /// This is used for testing. For example,
+    /// clickhouse-local should be able to run a simple query without throw/catch.
+    if (getenv("CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION")) // NOLINT(concurrency-mt-unsafe)
+        DB::terminate_on_any_exception = true;
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

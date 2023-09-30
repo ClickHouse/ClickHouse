@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: "Разрешения для запросов"
 ---
@@ -58,4 +59,3 @@ sidebar_label: "Разрешения для запросов"
 **Значение по умолчанию**
 
 1
-

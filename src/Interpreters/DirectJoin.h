@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
 
 #include <Core/Block.h>
 
@@ -25,12 +24,19 @@ public:
         const Block & right_sample_block_,
         std::shared_ptr<const IKeyValueEntity> storage_);
 
+    DirectKeyValueJoin(
+        std::shared_ptr<TableJoin> table_join_,
+        const Block & right_sample_block_,
+        std::shared_ptr<const IKeyValueEntity> storage_,
+        const Block & right_sample_block_with_storage_column_names_);
+
+    std::string getName() const override { return "DirectKeyValueJoin"; }
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
-    virtual bool addJoinedBlock(const Block &, bool) override;
+    virtual bool addBlockToJoin(const Block &, bool) override;
     virtual void checkTypesOfKeys(const Block &) const override;
 
-    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
+    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
 
@@ -42,7 +48,7 @@ public:
 
     virtual bool isFilled() const override { return true; }
 
-    virtual std::shared_ptr<NotJoinedBlocks>
+    virtual IBlocksStreamPtr
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
     {
         return nullptr;
@@ -52,6 +58,7 @@ private:
     std::shared_ptr<TableJoin> table_join;
     std::shared_ptr<const IKeyValueEntity> storage;
     Block right_sample_block;
+    Block right_sample_block_with_storage_column_names;
     Block sample_block_with_columns_to_add;
     Poco::Logger * log;
 

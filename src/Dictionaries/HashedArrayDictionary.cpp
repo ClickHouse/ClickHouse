@@ -409,11 +409,17 @@ void HashedArrayDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-
         PullingPipelineExecutor executor(pipeline);
+        update_field_loaded_block.reset();
         Block block;
+
         while (executor.pull(block))
         {
+            if (!block.rows())
+                continue;
+
+            convertToFullIfSparse(block);
+
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
@@ -513,7 +519,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };
@@ -797,7 +803,7 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.size();
+    bytes_allocated += string_arena.allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type>

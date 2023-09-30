@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 40
@@ -49,5 +50,3 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [布局](external-dicts-dict-layout.md) — Dictionary layout in memory.
 -   [结构](external-dicts-dict-structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
 -   [使用寿命](external-dicts-dict-lifetime.md) — Frequency of dictionary updates.
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->

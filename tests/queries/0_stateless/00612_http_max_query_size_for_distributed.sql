@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS data_00612;
 DROP TABLE IF EXISTS dist_00612;
 

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <base/types.h>
 #include <future>
 #include <memory>
 #include <vector>
-#include <Common/ZooKeeper/IKeeper.h>
+#include <base/types.h>
 #include <Poco/Event.h>
+#include <Common/ZooKeeper/IKeeper.h>
 
 
 namespace zkutil
@@ -29,9 +29,14 @@ using EventPtr = std::shared_ptr<Poco::Event>;
 template <typename R>
 using AsyncResponses = std::vector<std::pair<std::string, std::future<R>>>;
 
-Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode);
+Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists = false);
 Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version);
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version);
 
+Coordination::RequestPtr makeGetRequest(const std::string & path);
+Coordination::RequestPtr
+makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+Coordination::RequestPtr makeSimpleListRequest(const std::string & path);
+Coordination::RequestPtr makeExistsRequest(const std::string & path);
 }

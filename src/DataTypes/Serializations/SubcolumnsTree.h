@@ -51,6 +51,8 @@ public:
     using NodeKind = typename Node::Kind;
     using NodePtr = std::shared_ptr<Node>;
 
+    SubcolumnsTree() : root(std::make_shared<Node>(Node::TUPLE)) {}
+
     /// Add a leaf without any data in other nodes.
     bool add(const PathInData & path, const NodeData & leaf_data)
     {
@@ -73,12 +75,8 @@ public:
     bool add(const PathInData & path, const NodeCreator & node_creator)
     {
         const auto & parts = path.getParts();
-
         if (parts.empty())
             return false;
-
-        if (!root)
-            root = std::make_shared<Node>(Node::TUPLE);
 
         Node * current_node = root.get();
         for (size_t i = 0; i < parts.size() - 1; ++i)
@@ -166,13 +164,13 @@ public:
         return node;
     }
 
-    bool empty() const { return root == nullptr; }
+    bool empty() const { return root->children.empty(); }
     size_t size() const { return leaves.size(); }
 
     using Nodes = std::vector<NodePtr>;
 
     const Nodes & getLeaves() const { return leaves; }
-    const Node * getRoot() const { return root.get(); }
+    const Node & getRoot() const { return *root; }
 
     using iterator = typename Nodes::iterator;
     using const_iterator = typename Nodes::const_iterator;
@@ -186,11 +184,11 @@ public:
 private:
     const Node * findImpl(const PathInData & path, bool find_exact) const
     {
-        if (!root)
+        if (empty())
             return nullptr;
 
         const auto & parts = path.getParts();
-        const Node * current_node = root.get();
+        const auto * current_node = root.get();
 
         for (const auto & part : parts)
         {

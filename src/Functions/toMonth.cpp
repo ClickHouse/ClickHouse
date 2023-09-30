@@ -12,10 +12,8 @@ using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonth
 REGISTER_FUNCTION(ToMonth)
 {
     factory.registerFunction<FunctionToMonth>();
-    /// MysQL compatibility alias.
-    factory.registerFunction<FunctionToMonth>("MONTH", FunctionFactory::CaseInsensitive);
+    /// MySQL compatibility alias.
+    factory.registerAlias("MONTH", "toMonth", FunctionFactory::CaseInsensitive);
 }
 
 }
-
-

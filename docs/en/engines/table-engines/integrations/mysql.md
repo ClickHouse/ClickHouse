@@ -1,5 +1,6 @@
 ---
-sidebar_position: 4
+slug: /en/engines/table-engines/integrations/mysql
+sidebar_position: 138
 sidebar_label: MySQL
 ---
 
@@ -30,25 +31,29 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the original MySQL table structure:
 
--   Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
--   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+
+:::note
+The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
+:::
 
 **Engine Parameters**
 
--   `host:port` — MySQL server address.
+- `host:port` — MySQL server address.
 
--   `database` — Remote database name.
+- `database` — Remote database name.
 
--   `table` — Remote table name.
+- `table` — Remote table name.
 
--   `user` — MySQL user.
+- `user` — MySQL user.
 
--   `password` — User password.
+- `password` — User password.
 
--   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
+- `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
 
--   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
 
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
 
@@ -120,8 +125,8 @@ Allows to automatically close the connection after query execution, i.e. disable
 
 Possible values:
 
--   1 — Auto-close connection is allowed, so the connection reuse is disabled
--   0 — Auto-close connection is not allowed, so the connection reuse is enabled
+- 1 — Auto-close connection is allowed, so the connection reuse is disabled
+- 0 — Auto-close connection is not allowed, so the connection reuse is enabled
 
 Default value: `1`.
 
@@ -131,8 +136,8 @@ Sets the number of retries for pool with failover.
 
 Possible values:
 
--   Positive integer.
--   0 — There are no retries for pool with failover.
+- Positive integer.
+- 0 — There are no retries for pool with failover.
 
 Default value: `3`.
 
@@ -142,7 +147,7 @@ Size of connection pool (if all connections are in use, the query will wait unti
 
 Possible values:
 
--   Positive integer.
+- Positive integer.
 
 Default value: `16`.
 
@@ -152,7 +157,7 @@ Timeout (in seconds) for waiting for free connection (in case of there is alread
 
 Possible values:
 
--   Positive integer.
+- Positive integer.
 
 Default value: `5`.
 
@@ -162,7 +167,7 @@ Connect timeout (in seconds).
 
 Possible values:
 
--   Positive integer.
+- Positive integer.
 
 Default value: `10`.
 
@@ -172,13 +177,11 @@ Read/write timeout (in seconds).
 
 Possible values:
 
--   Positive integer.
+- Positive integer.
 
 Default value: `300`.
 
 ## See Also {#see-also}
 
--   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
--   [Using MySQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->
+- [The mysql table function](../../../sql-reference/table-functions/mysql.md)
+- [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)

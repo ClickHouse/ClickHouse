@@ -101,7 +101,7 @@ try
     elem.type = type;
     elem.tid = tid;
     elem.fillCommonFields(&context);
-    system_log->add(elem);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {

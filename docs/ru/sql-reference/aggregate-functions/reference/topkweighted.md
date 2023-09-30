@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/topkweighted
 sidebar_position: 109
 ---
 

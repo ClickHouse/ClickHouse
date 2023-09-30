@@ -26,8 +26,10 @@ SOURCE=${SOURCE:-$PKG_ROOT}
 HELP="${0} [--test] [--rpm] [-h|--help]
   --test - adds '+test' prefix to version
   --apk - build APK packages
+  --archlinux - build archlinux packages
   --rpm - build RPM packages
   --tgz - build tarball package
+  --deb - build deb package
   --help - show this help and exit
 
 Used envs:
@@ -47,15 +49,20 @@ fi
 export CLICKHOUSE_VERSION_STRING
 
 
-
 while [[ $1 == --* ]]
 do
     case "$1" in
         --test )
             VERSION_POSTFIX+='+test'
             shift ;;
+        --deb )
+            MAKE_DEB=1
+            shift ;;
         --apk )
             MAKE_APK=1
+            shift ;;
+        --archlinux )
+            MAKE_ARCHLINUX=1
             shift ;;
         --rpm )
             MAKE_RPM=1
@@ -95,7 +102,8 @@ done
 EOF
     chmod +x "$PKG_PATH/install/doinst.sh"
     if [ -f "$PKG_PATH/DEBIAN/postinst" ]; then
-        tail +2 "$PKG_PATH/DEBIAN/postinst" > "$PKG_PATH/install/doinst.sh"
+        # we don't need debconf source in doinst in any case
+        tail +2 "$PKG_PATH/DEBIAN/postinst" | grep -v debconf/confmodule >> "$PKG_PATH/install/doinst.sh"
     fi
     rm -rf "$PKG_PATH/DEBIAN"
     if [ -f "/usr/bin/pigz" ]; then
@@ -103,6 +111,8 @@ EOF
     else
         tar -czf "$TARBALL" -C "$OUTPUT_DIR" "$PKG_DIR"
     fi
+
+    sha512sum "$TARBALL" > "$TARBALL".sha512
 
     rm -r "$PKG_PATH"
 }
@@ -131,17 +141,23 @@ CLICKHOUSE_VERSION_STRING+=$VERSION_POSTFIX
 echo -e "\nCurrent version is $CLICKHOUSE_VERSION_STRING"
 
 for config in clickhouse*.yaml; do
-    echo "Building deb package for $config"
+    if [ -n "$MAKE_DEB" ] || [ -n "$MAKE_TGZ" ]; then
+        echo "Building deb package for $config"
 
-    # Preserve package path
-    exec 9>&1
-    PKG_PATH=$(nfpm package --target "$OUTPUT_DIR" --config "$config" --packager deb | tee /dev/fd/9)
-    PKG_PATH=${PKG_PATH##*created package: }
-    exec 9>&-
+        # Preserve package path
+        exec 9>&1
+        PKG_PATH=$(nfpm package --target "$OUTPUT_DIR" --config "$config" --packager deb | tee /dev/fd/9)
+        PKG_PATH=${PKG_PATH##*created package: }
+        exec 9>&-
+    fi
 
     if [ -n "$MAKE_APK" ]; then
       echo "Building apk package for $config"
       nfpm package --target "$OUTPUT_DIR" --config "$config" --packager apk
+    fi
+    if [ -n "$MAKE_ARCHLINUX" ]; then
+      echo "Building archlinux package for $config"
+      nfpm package --target "$OUTPUT_DIR" --config "$config" --packager archlinux
     fi
     if [ -n "$MAKE_RPM" ]; then
       echo "Building rpm package for $config"

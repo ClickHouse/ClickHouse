@@ -12,8 +12,6 @@ namespace DB
 
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
- *
- * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
 class ReadBufferFromWebServer : public ReadBufferFromFileBase
 {
@@ -31,9 +29,13 @@ public:
 
     off_t getPosition() override;
 
+    String getFileName() const override { return url; }
+
+    void setReadUntilPosition(size_t position) override;
+
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
-    String getFileName() const override { return url; }
+    bool supportsRightBoundedReads() const override { return true; }
 
 private:
     std::unique_ptr<ReadBuffer> initialize();

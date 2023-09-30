@@ -42,7 +42,7 @@ namespace ErrorCodes
         #define __NR_renameat2 316
     #elif defined(__aarch64__)
         #define __NR_renameat2 276
-    #elif defined(__ppc64__)
+    #elif defined(__powerpc64__)
         #define __NR_renameat2 357
     #elif defined(__riscv)
         #define __NR_renameat2 276
@@ -195,13 +195,13 @@ static void renameNoReplaceFallback(const std::string & old_path, const std::str
 }
 
 /// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-noreturn"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
 static void renameExchangeFallback(const std::string &, const std::string &)
 {
-    throw Exception("System call renameat2() is not supported", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "System call renameat2() is not supported");
 }
-#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {

@@ -21,7 +21,6 @@ _builder.BuildTopDescriptorsAndMessages(
     DESCRIPTOR, "clickhouse_path.format_schemas.message_with_repeated_pb2", globals()
 )
 if _descriptor._USE_C_DESCRIPTORS == False:
-
     DESCRIPTOR._options = None
     DESCRIPTOR._serialized_options = b"H\001"
     _MESSAGE._serialized_start = 62

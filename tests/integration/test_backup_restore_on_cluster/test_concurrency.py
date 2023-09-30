@@ -1,4 +1,4 @@
-from random import randint
+from random import random, randint
 import pytest
 import os.path
 import time
@@ -29,7 +29,7 @@ def generate_cluster_def():
 
 
 main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
-
+# No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
 nodes = []
@@ -62,8 +62,8 @@ def drop_after_test():
     try:
         yield
     finally:
-        node0.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
-        node0.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster' NO DELAY")
+        node0.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
+        node0.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster' SYNC")
 
 
 backup_id_counter = 0
@@ -80,7 +80,7 @@ def create_and_fill_table():
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x Int32"
         ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
+        "ORDER BY tuple()"
     )
     for i in range(num_nodes):
         nodes[i].query(f"INSERT INTO tbl VALUES ({i})")
@@ -95,7 +95,7 @@ def test_replicated_table():
     backup_name = new_backup_name()
     node0.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
     node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node0.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
@@ -131,7 +131,7 @@ def test_concurrent_backups_on_same_node():
     ) == TSV([["BACKUP_CREATED", ""]] * num_concurrent_backups)
 
     for backup_name in backup_names:
-        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
         node0.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for i in range(num_nodes):
@@ -166,7 +166,7 @@ def test_concurrent_backups_on_different_nodes():
         ) == TSV([["BACKUP_CREATED", ""]])
 
     for i in range(num_concurrent_backups):
-        nodes[i].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+        nodes[i].query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         nodes[i].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_names[i]}")
         nodes[i].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for j in range(num_nodes):
@@ -175,11 +175,21 @@ def test_concurrent_backups_on_different_nodes():
 
 @pytest.mark.parametrize(
     "db_engine, table_engine",
-    [("Replicated", "ReplicatedMergeTree"), ("Ordinary", "MergeTree")],
+    [
+        ("Ordinary", "MergeTree"),
+        ("Atomic", "MergeTree"),
+        ("Replicated", "ReplicatedMergeTree"),
+        ("Memory", "MergeTree"),
+        ("Lazy", "Log"),
+    ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
         db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
+
+    if db_engine == "Lazy":
+        db_engine = "Lazy(20)"
+
     if table_engine.endswith("MergeTree"):
         table_engine += " ORDER BY tuple()"
 
@@ -189,7 +199,7 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     start_time = time.time()
     end_time = start_time + 60
 
-    def create_table():
+    def create_tables():
         while time.time() < end_time:
             node = nodes[randint(0, num_nodes - 1)]
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
@@ -200,13 +210,13 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
                 f"INSERT INTO {table_name} SELECT rand32() FROM numbers(10)"
             )
 
-    def drop_table():
+    def drop_tables():
         while time.time() < end_time:
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
             node = nodes[randint(0, num_nodes - 1)]
-            node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
+            node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
-    def rename_table():
+    def rename_tables():
         while time.time() < end_time:
             table_name1 = f"mydb.tbl{randint(1, num_nodes)}"
             table_name2 = f"mydb.tbl{randint(1, num_nodes)}"
@@ -215,7 +225,13 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
                 f"RENAME TABLE {table_name1} TO {table_name2}"
             )
 
-    def make_backup():
+    def truncate_tables():
+        while time.time() < end_time:
+            table_name = f"mydb.tbl{randint(1, num_nodes)}"
+            node = nodes[randint(0, num_nodes - 1)]
+            node.query(f"TRUNCATE TABLE IF EXISTS {table_name} SYNC")
+
+    def make_backups():
         ids = []
         while time.time() < end_time:
             time.sleep(
@@ -231,11 +247,12 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     ids = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = []
-        ids_future = executor.submit(make_backup)
+        ids_future = executor.submit(make_backups)
         futures.append(ids_future)
-        futures.append(executor.submit(create_table))
-        futures.append(executor.submit(drop_table))
-        futures.append(executor.submit(rename_table))
+        futures.append(executor.submit(create_tables))
+        futures.append(executor.submit(drop_tables))
+        futures.append(executor.submit(rename_tables))
+        futures.append(executor.submit(truncate_tables))
         for future in futures:
             future.result()
         ids = ids_future.result()
@@ -269,3 +286,42 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
         node0.query(
             f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_names[id]}"
         )
+
+
+def test_kill_mutation_during_backup():
+    repeat_count = 1
+
+    for n in range(repeat_count):
+        create_and_fill_table()
+
+        node0.query("ALTER TABLE tbl UPDATE x=x+1 WHERE 1")
+        node0.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
+        node0.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
+
+        backup_name = new_backup_name()
+
+        id = node0.query(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+        ).split("\t")[0]
+
+        time.sleep(random())
+        node0.query(
+            "KILL MUTATION WHERE database = 'default' AND table = 'tbl' AND mutation_id = '0000000001'"
+        )
+
+        time.sleep(random())
+        node0.query(
+            "KILL MUTATION WHERE database = 'default' AND table = 'tbl' AND mutation_id = '0000000002'"
+        )
+
+        assert_eq_with_retry(
+            node0,
+            f"SELECT status, error FROM system.backups WHERE id='{id}'",
+            TSV([["BACKUP_CREATED", ""]]),
+        )
+
+        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+
+        if n != repeat_count - 1:
+            node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")

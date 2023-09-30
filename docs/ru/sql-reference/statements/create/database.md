@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/create/database
 sidebar_position: 35
 sidebar_label: "База данных"
 ---

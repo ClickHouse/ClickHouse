@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/table-functions/generate
 sidebar_position: 47
 sidebar_label: generateRandom
 ---
@@ -38,4 +39,3 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 │ [68]     │  -67417.0770 │ ('2080-03-12 14:17:31.269','110425e5-413f-10a6-05ba-fa6b3e929f15') │
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
-

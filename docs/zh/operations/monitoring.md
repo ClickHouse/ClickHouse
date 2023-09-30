@@ -1,4 +1,5 @@
 ---
+slug: /zh/operations/monitoring
 sidebar_position: 45
 sidebar_label: "监控"
 ---

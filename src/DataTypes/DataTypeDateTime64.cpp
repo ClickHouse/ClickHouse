@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 static constexpr UInt32 max_scale = 9;
@@ -21,8 +22,8 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
       TimezoneMixin(time_zone_name)
 {
     if (scale > max_scale)
-        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
+            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
@@ -30,8 +31,8 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time
       TimezoneMixin(time_zone_info)
 {
     if (scale > max_scale)
-        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
+            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
 std::string DataTypeDateTime64::doGetName() const
@@ -54,6 +55,16 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
 SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDateTime64>(scale, *this);
+}
+
+std::string getDateTimeTimezone(const IDataType & data_type)
+{
+    if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
+        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+    if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
+        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get time zone from type {}", data_type.getName());
 }
 
 }

@@ -3,12 +3,16 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <numeric>
+#include <vector>
 
 
 namespace DB
@@ -20,6 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -42,6 +47,7 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -54,14 +60,24 @@ private:
                 getName(), arguments.size());
         }
 
-        for (const auto & arg : arguments)
+        if (std::find_if (arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg->onlyNull(); }) != arguments.cend())
+            return makeNullable(std::make_shared<DataTypeNothing>());
+
+        DataTypes arg_types;
+        for (size_t i = 0, size = arguments.size(); i < size; ++i)
         {
-            if (!isUnsignedInteger(arg))
-                throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            DataTypePtr type_no_nullable = removeNullable(arguments[i]);
+
+            if (i < 2 && WhichDataType(type_no_nullable).isIPv4())
+                arg_types.emplace_back(std::make_shared<DataTypeUInt32>());
+            else if (isInteger(type_no_nullable))
+                arg_types.push_back(type_no_nullable);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[i]->getName(), getName());
         }
 
-        DataTypePtr common_type = getLeastSupertype(arguments);
+        DataTypePtr common_type = getLeastSupertype(arg_types);
         return std::make_shared<DataTypeArray>(common_type);
     }
 
@@ -72,20 +88,26 @@ private:
         {
             const auto & in_data = in->getData();
             const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), size_t{},
-                [this] (const size_t lhs, const size_t rhs)
+                [this] (const size_t lhs, const T rhs)
                 {
+                    if (rhs < 0)
+                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, only support positive values when only end is provided", getName());
+
                     const auto sum = lhs + rhs;
                     if (sum < lhs)
-                        throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
                     return sum;
                 });
 
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
 
             auto data_col = ColumnVector<T>::create(total_values);
             auto offsets_col = ColumnArray::ColumnOffsets::create(in->size());
@@ -96,8 +118,8 @@ private:
             IColumn::Offset offset{};
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
-                for (size_t elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = elem_idx;
+                for (T elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
+                    out_data[offset + elem_idx] = static_cast<T>(elem_idx);
 
                 offset += in_data[row_idx];
                 out_offsets[row_idx] = offset;
@@ -121,25 +143,33 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            if (start < end_data[row_idx] && step == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            if (step == 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
-            pre_values += start >= end_data[row_idx] ? 0
-                            : (end_data[row_idx] - start - 1) / step + 1;
+            if (start < end_data[row_idx] && step > 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step) + 1;
+            else if (start > end_data[row_idx] && step < 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step) + 1;
+            else
+                row_length[row_idx] = 0;
+
+            pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -151,15 +181,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step)
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
             {
-                out_data[offset++] = st;
-
-                if (st > st + step)
-                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                out_data[offset] = static_cast<T>(start + idx * step);
+                ++offset;
             }
-
             out_offsets[row_idx] = offset;
         }
 
@@ -180,25 +206,33 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            if (start_data[row_idx] < end_data[row_idx] && step == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            if (step == 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
-            pre_values += start_data[row_idx] >= end_data[row_idx] ? 0
-                            : (end_data[row_idx] - start_data[row_idx] - 1) / step + 1;
+            if (start_data[row_idx] < end_data[row_idx] && step > 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step) + 1;
+            else if (start_data[row_idx] > end_data[row_idx] && step < 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step) + 1;
+            else
+                row_length[row_idx] = 0;
+
+            pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -210,15 +244,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t st = start_data[row_idx], ed = end_data[row_idx]; st < ed; st += step)
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
             {
-                out_data[offset++] = st;
-
-                if (st > st + step)
-                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                out_data[offset] = static_cast<T>(start_data[row_idx] + idx * step);
+                ++offset;
             }
-
             out_offsets[row_idx] = offset;
         }
 
@@ -239,25 +269,33 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            if (start < end_data[row_idx] && step_data[row_idx] == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            if (step_data[row_idx] == 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "A call to function {} overflows, the 3rd argument step can't be zero", getName());
 
-            pre_values += start >= end_data[row_idx] ? 0
-                            : (end_data[row_idx] - start - 1) / step_data[row_idx] + 1;
+            if (start < end_data[row_idx] && step_data[row_idx] > 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+            else if (start > end_data[row_idx] && step_data[row_idx] < 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_data[row_idx]) - static_cast<__int128_t>(start) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+            else
+                row_length[row_idx] = 0;
+
+            pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -269,15 +307,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t st = start, ed = end_data[row_idx]; st < ed; st += step_data[row_idx])
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
             {
-                out_data[offset++] = st;
-
-                if (st > st + step_data[row_idx])
-                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                out_data[offset] = static_cast<T>(start + idx * step_data[row_idx]);
+                ++offset;
             }
-
             out_offsets[row_idx] = offset;
         }
 
@@ -301,25 +335,33 @@ private:
 
         size_t total_values = 0;
         size_t pre_values = 0;
+        PODArray<size_t> row_length(input_rows_count);
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            if (start_data[row_idx] < end_start[row_idx] && step_data[row_idx] == 0)
-                throw Exception{"A call to function " + getName() + " overflows, the 3rd argument step can't be zero",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            if (step_data[row_idx] == 0)
+                throw Exception{ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "A call to function {} underflows, the 3rd argument step can't be less or equal to zero", getName()};
+            if (start_data[row_idx] < end_start[row_idx] && step_data[row_idx] > 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) - 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+            else if (start_data[row_idx] > end_start[row_idx] && step_data[row_idx] < 0)
+                row_length[row_idx] = (static_cast<__int128_t>(end_start[row_idx]) - static_cast<__int128_t>(start_data[row_idx]) + 1) / static_cast<__int128_t>(step_data[row_idx]) + 1;
+            else
+                row_length[row_idx] = 0;
 
-            pre_values += start_data[row_idx] >= end_start[row_idx] ? 0
-                            : (end_start[row_idx] -start_data[row_idx] - 1) / (step_data[row_idx]) + 1;
+            pre_values += row_length[row_idx];
 
             if (pre_values < total_values)
-                throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "A call to function {} overflows, investigate the values "
+                                        "of arguments you are passing", getName());
 
             total_values = pre_values;
             if (total_values > max_elements)
-                throw Exception{"A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "A call to function {} would produce {} array elements, which "
+                                "is greater than the allowed maximum of {}",
+                                getName(), std::to_string(total_values), std::to_string(max_elements));
         }
 
         auto data_col = ColumnVector<T>::create(total_values);
@@ -331,15 +373,11 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t st = start_data[row_idx], ed = end_start[row_idx]; st < ed; st += step_data[row_idx])
+            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
             {
-                out_data[offset++] = st;
-
-                if (st > st + step_data[row_idx])
-                    throw Exception{"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+                out_data[offset] = static_cast<T>(start_data[row_idx] + idx * step_data[row_idx]);
+                ++offset;
             }
-
             out_offsets[row_idx] = offset;
         }
 
@@ -348,28 +386,50 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        NullPresence null_presence = getNullPresense(arguments);
+        if (null_presence.has_null_constant)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
         DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
         WhichDataType which(elem_type);
 
-        if (!which.isUInt8()
-            && !which.isUInt16()
-            && !which.isUInt32()
-            && !which.isUInt64())
+        if (!which.isNativeUInt() && !which.isNativeInt())
         {
-            throw Exception{"Illegal columns of arguments of function " + getName()
-                + ", the function only implemented for unsigned integers up to 64 bit", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal columns of arguments of function {}, the function only implemented "
+                            "for unsigned/signed integers up to 64 bit", getName());
         }
+
+        auto throwIfNullValue = [&](const ColumnWithTypeAndName & col)
+        {
+            if (!col.type->isNullable())
+                return;
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            if (!nullable_col)
+                nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
+            if (!nullable_col)
+                return;
+            const auto & null_map = nullable_col->getNullMapData();
+            if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal (null) value column {} of argument of function {}", col.column->getName(), getName());
+        };
 
         ColumnPtr res;
         if (arguments.size() == 1)
         {
+            throwIfNullValue(arguments[0]);
             const auto * col = arguments[0].column.get();
-            if (!((res = executeInternal<UInt8>(col))
-                || (res = executeInternal<UInt16>(col))
-                || (res = executeInternal<UInt32>(col))
-                || (res = executeInternal<UInt64>(col))))
+            if (arguments[0].type->isNullable())
             {
-                throw Exception{"Illegal column " + col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+                const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
+                col = nullable->getNestedColumnPtr().get();
+            }
+
+            if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))
+                  || (res = executeInternal<UInt64>(col)) || (res = executeInternal<Int8>(col)) || (res = executeInternal<Int16>(col))
+                  || (res = executeInternal<Int32>(col)) || (res = executeInternal<Int64>(col))))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", col->getName(), getName());
             }
             return res;
         }
@@ -379,6 +439,7 @@ private:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
+            throwIfNullValue(arguments[i]);
             if (i == 1)
                 columns_holder[i] = castColumn(arguments[i], elem_type)->convertToFullColumnIfConst();
             else
@@ -402,51 +463,100 @@ private:
         bool is_step_const = isColumnConst(*column_ptrs[2]);
         if (is_start_const && is_step_const)
         {
-            UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
-            UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
-
-            if ((res = executeConstStartStep<UInt8>(column_ptrs[1], start, step, input_rows_count)) ||
-                (res = executeConstStartStep<UInt16>(column_ptrs[1], start, step, input_rows_count)) ||
-                (res = executeConstStartStep<UInt32>(column_ptrs[1], start, step, input_rows_count)) ||
-                (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
+            if (which.isNativeUInt())
             {
+                UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
+                UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
+
+                if ((res = executeConstStartStep<UInt8>(column_ptrs[1], start, step, input_rows_count))
+                    || (res = executeConstStartStep<UInt16>(column_ptrs[1], start, step, input_rows_count))
+                    || (res = executeConstStartStep<UInt32>(
+                            column_ptrs[1], static_cast<UInt32>(start), static_cast<UInt32>(step), input_rows_count))
+                    || (res = executeConstStartStep<UInt64>(column_ptrs[1], start, step, input_rows_count)))
+                {
+                }
+            }
+            else if (which.isNativeInt())
+            {
+                Int64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getInt(0);
+                Int64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getInt(0);
+
+                if ((res = executeConstStartStep<Int8>(column_ptrs[1], start, step, input_rows_count))
+                    || (res = executeConstStartStep<Int16>(column_ptrs[1], start, step, input_rows_count))
+                    || (res = executeConstStartStep<Int32>(
+                            column_ptrs[1], static_cast<Int32>(start), static_cast<Int32>(step), input_rows_count))
+                    || (res = executeConstStartStep<Int64>(column_ptrs[1], start, step, input_rows_count)))
+                {
+                }
             }
         }
         else if (is_start_const && !is_step_const)
         {
-            UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
-
-            if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
-                (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
-                (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], start, input_rows_count)) ||
-                (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+            if (which.isNativeUInt())
             {
+                UInt64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getUInt(0);
+
+                if ((res = executeConstStart<UInt8>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
+                    || (res = executeConstStart<UInt16>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
+                    || (res = executeConstStart<UInt32>(column_ptrs[1], column_ptrs[2], static_cast<UInt32>(start), input_rows_count))
+                    || (res = executeConstStart<UInt64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+                {
+                }
+            }
+            else if (which.isNativeInt())
+            {
+                Int64 start = assert_cast<const ColumnConst &>(*column_ptrs[0]).getInt(0);
+
+                if ((res = executeConstStart<Int8>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
+                    || (res = executeConstStart<Int16>(column_ptrs[1], column_ptrs[2], start, input_rows_count))
+                    || (res = executeConstStart<Int32>(column_ptrs[1], column_ptrs[2], static_cast<Int32>(start), input_rows_count))
+                    || (res = executeConstStart<Int64>(column_ptrs[1], column_ptrs[2], start, input_rows_count)))
+                {
+                }
             }
         }
         else if (!is_start_const && is_step_const)
         {
-            UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
-
-            if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
-                (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
-                (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], step, input_rows_count)) ||
-                (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+            if (which.isNativeUInt())
             {
+                UInt64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getUInt(0);
+
+                if ((res = executeConstStep<UInt8>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
+                    || (res = executeConstStep<UInt16>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
+                    || (res = executeConstStep<UInt32>(column_ptrs[0], column_ptrs[1], static_cast<UInt32>(step), input_rows_count))
+                    || (res = executeConstStep<UInt64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+                {
+                }
+            }
+            else if (which.isNativeInt())
+            {
+                Int64 step = assert_cast<const ColumnConst &>(*column_ptrs[2]).getInt(0);
+
+                if ((res = executeConstStep<Int8>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
+                    || (res = executeConstStep<Int16>(column_ptrs[0], column_ptrs[1], step, input_rows_count))
+                    || (res = executeConstStep<Int32>(column_ptrs[0], column_ptrs[1], static_cast<Int32>(step), input_rows_count))
+                    || (res = executeConstStep<Int64>(column_ptrs[0], column_ptrs[1], step, input_rows_count)))
+                {
+                }
             }
         }
         else
         {
-            if ((res = executeGeneric<UInt8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
-                (res = executeGeneric<UInt16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
-                (res = executeGeneric<UInt32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)) ||
-                (res = executeGeneric<UInt64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)))
+            if ((res = executeGeneric<UInt8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<UInt16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<UInt32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<UInt64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<Int8>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<Int16>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<Int32>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count))
+                || (res = executeGeneric<Int64>(column_ptrs[0], column_ptrs[1], column_ptrs[2], input_rows_count)))
             {
             }
         }
 
         if (!res)
         {
-            throw Exception{"Illegal columns " + column_ptrs[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} of argument of function {}", column_ptrs[0]->getName(), getName());
         }
 
         return res;

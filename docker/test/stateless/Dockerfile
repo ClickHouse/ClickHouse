@@ -11,12 +11,16 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             awscli \
             brotli \
+            lz4 \
             expect \
             golang \
             lsof \
             mysql-client=8.0* \
             ncdu \
             netcat-openbsd \
+            nodejs \
+            npm \
+            odbcinst \
             openjdk-11-jre-headless \
             openssl \
             postgresql-client \
@@ -29,14 +33,18 @@ RUN apt-get update -y \
             qemu-user-static \
             sqlite3 \
             sudo \
-            telnet \
             tree \
             unixodbc \
             wget \
+            rustc \
+            cargo \
             zstd \
             file \
+            jq \
+            pv \
+            zip \
+            p7zip-full \
     && apt-get clean
-
 
 RUN pip3 install numpy scipy pandas Jinja2
 
@@ -47,7 +55,7 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Moscow
+ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
@@ -66,7 +74,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod +x ./mc ./minio
 
 
-RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+RUN wget --no-verbose 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
     && tar -xvf hadoop-3.3.1.tar.gz \
     && rm -rf hadoop-3.3.1.tar.gz
 
@@ -74,7 +82,16 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
+RUN npm install -g azurite \
+    && npm install -g tslib
+
 COPY run.sh /
 COPY setup_minio.sh /
 COPY setup_hdfs_minicluster.sh /
+COPY attach_gdb.lib /
+COPY utils.lib /
+
+# We store stress_tests.lib in stateless image to avoid duplication of this file in stress and upgrade tests
+COPY stress_tests.lib /
+
 CMD ["/bin/bash", "/run.sh"]

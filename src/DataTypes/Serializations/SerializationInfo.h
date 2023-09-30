@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Poco/JSON/Object.h>
 
@@ -8,6 +8,7 @@
 namespace DB
 {
 
+class ReadBuffer;
 class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
@@ -51,6 +52,7 @@ public:
     virtual ~SerializationInfo() = default;
 
     virtual bool hasCustomSerialization() const { return kind != ISerialization::Kind::DEFAULT; }
+    virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(SerializationInfo) == typeid(rhs); }
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
@@ -58,6 +60,11 @@ public:
     virtual void replaceData(const SerializationInfo & other);
 
     virtual std::shared_ptr<SerializationInfo> clone() const;
+
+    virtual std::shared_ptr<SerializationInfo> createWithType(
+        const IDataType & old_type,
+        const IDataType & new_type,
+        const Settings & new_settings) const;
 
     virtual void serialializeKindBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
@@ -85,11 +92,14 @@ using MutableSerializationInfoPtr = std::shared_ptr<SerializationInfo>;
 using SerializationInfos = std::vector<SerializationInfoPtr>;
 using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
 
-class SerializationInfoByName : public std::unordered_map<String, MutableSerializationInfoPtr>
+/// The order is important because info is serialized to part metadata.
+class SerializationInfoByName : public std::map<String, MutableSerializationInfoPtr>
 {
 public:
+    using Settings = SerializationInfo::Settings;
+
     SerializationInfoByName() = default;
-    SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings);
+    SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings);
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
@@ -100,7 +110,9 @@ public:
     void replaceData(const SerializationInfoByName & other);
 
     void writeJSON(WriteBuffer & out) const;
-    void readJSON(ReadBuffer & in);
+
+    static SerializationInfoByName readJSON(
+        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
 };
 
 }

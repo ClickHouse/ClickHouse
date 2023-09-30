@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/log-family/stripelog
 sidebar_position: 32
 sidebar_label: StripeLog
 ---
@@ -89,4 +90,3 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
-

@@ -26,5 +26,9 @@ SELECT id, data, toTypeName(data) FROM t_object_convert2 ORDER BY id;
 DROP TABLE t_object_convert;
 DROP TABLE t_object_convert2;
 
-select CAST(CAST('{"x" : 1}', 'Object(\'json\')'), 'Object(Nullable(\'json\'))');
-select CAST(CAST('{"x" : 1}', 'Object(Nullable(\'json\'))'), 'Object(\'json\')');
+SELECT CAST(CAST('{"x" : 1}', 'Object(\'json\')'), 'Object(Nullable(\'json\'))');
+SELECT CAST(CAST('{"x" : 1}', 'Object(Nullable(\'json\'))'), 'Object(\'json\')');
+SELECT CAST('{"x" : [ 1 , [ 1 , 2] ]}', 'Object(\'json\')');
+SELECT CAST('{"x" : [ {} , [ 1 , 2] ]}', 'Object(\'json\')');
+SELECT CAST('{"x" : [ {} , [ 1 , [2]] ]}', 'Object(\'json\')');
+SELECT CAST('{"x" : [ {} , [ {} , [2]] ]}', 'Object(\'json\')');

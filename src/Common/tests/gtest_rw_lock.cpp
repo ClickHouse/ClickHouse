@@ -171,9 +171,8 @@ TEST(Common, RWLockDeadlock)
             auto holder2 = lock2->getLock(RWLockImpl::Read, "q1", std::chrono::milliseconds(100));
             if (!holder2)
             {
-                throw Exception(
-                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
-                        ErrorCodes::DEADLOCK_AVOIDED);
+                throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.");
             }
         }
         catch (const Exception & e)
@@ -202,9 +201,8 @@ TEST(Common, RWLockDeadlock)
             auto holder1 = lock1->getLock(RWLockImpl::Read, "q3", std::chrono::milliseconds(100));
             if (!holder1)
             {
-                throw Exception(
-                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
-                        ErrorCodes::DEADLOCK_AVOIDED);
+                throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.");
             }
         }
         catch (const Exception & e)
@@ -240,24 +238,52 @@ TEST(Common, RWLockPerfTestReaders)
 
     for (auto pool_size : pool_sizes)
     {
-            Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+        Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
-            auto func = [&] ()
+        auto func = [&] ()
+        {
+            for (auto i = 0; i < cycles; ++i)
             {
-                for (auto i = 0; i < cycles; ++i)
-                {
-                    auto lock = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
-                }
-            };
+                auto lock = fifo_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY);
+            }
+        };
 
-            std::list<std::thread> threads;
-            for (size_t thread = 0; thread < pool_size; ++thread)
-                threads.emplace_back(func);
+        std::list<std::thread> threads;
+        for (size_t thread = 0; thread < pool_size; ++thread)
+            threads.emplace_back(func);
 
-            for (auto & thread : threads)
-                thread.join();
+        for (auto & thread : threads)
+            thread.join();
 
-            auto total_time = watch.elapsedSeconds();
-            std::cout << "Threads " << pool_size << ", total_time " << std::setprecision(2) << total_time << "\n";
+        auto total_time = watch.elapsedSeconds();
+        std::cout << "Threads " << pool_size << ", total_time " << std::setprecision(2) << total_time << "\n";
     }
+}
+
+TEST(Common, RWLockNotUpgradeableWithNoQuery)
+{
+    updatePHDRCache();
+
+    static auto rw_lock = RWLockImpl::create();
+
+    std::thread read_thread([&] ()
+    {
+        auto lock = rw_lock->getLock(RWLockImpl::Read, RWLockImpl::NO_QUERY, std::chrono::duration<int, std::milli>(50000));
+        auto sleep_for = std::chrono::duration<int, std::milli>(5000);
+        std::this_thread::sleep_for(sleep_for);
+    });
+
+    {
+        auto sleep_for = std::chrono::duration<int, std::milli>(500);
+        std::this_thread::sleep_for(sleep_for);
+
+        Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+        auto get_lock = rw_lock->getLock(RWLockImpl::Write, RWLockImpl::NO_QUERY, std::chrono::duration<int, std::milli>(50000));
+
+        EXPECT_NE(get_lock.get(), nullptr);
+        /// It took some time
+        EXPECT_GT(watch.elapsedMilliseconds(), 3000);
+    }
+
+    read_thread.join();
 }

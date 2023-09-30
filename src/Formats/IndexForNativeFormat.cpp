@@ -20,8 +20,8 @@ void IndexOfBlockForNativeFormat::read(ReadBuffer & istr)
         auto & column = columns.emplace_back();
         readBinary(column.name, istr);
         readBinary(column.type, istr);
-        readBinary(column.location.offset_in_compressed_file, istr);
-        readBinary(column.location.offset_in_decompressed_block, istr);
+        readBinaryLittleEndian(column.location.offset_in_compressed_file, istr);
+        readBinaryLittleEndian(column.location.offset_in_decompressed_block, istr);
     }
 }
 
@@ -34,15 +34,15 @@ void IndexOfBlockForNativeFormat::write(WriteBuffer & ostr) const
         const auto & column = columns[i];
         writeBinary(column.name, ostr);
         writeBinary(column.type, ostr);
-        writeBinary(column.location.offset_in_compressed_file, ostr);
-        writeBinary(column.location.offset_in_decompressed_block, ostr);
+        writeBinaryLittleEndian(column.location.offset_in_compressed_file, ostr);
+        writeBinaryLittleEndian(column.location.offset_in_decompressed_block, ostr);
     }
 }
 
 IndexOfBlockForNativeFormat IndexOfBlockForNativeFormat::extractIndexForColumns(const NameSet & required_columns) const
 {
     if (num_columns < required_columns.size())
-        throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
+        throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contain less than required columns");
 
     IndexOfBlockForNativeFormat res;
     for (size_t i = 0; i < num_columns; ++i)
@@ -53,9 +53,9 @@ IndexOfBlockForNativeFormat IndexOfBlockForNativeFormat::extractIndexForColumns(
     }
 
     if (res.columns.size() < required_columns.size())
-        throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
+        throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contain less than required columns");
     if (res.columns.size() > required_columns.size())
-        throw Exception("Index contain duplicate columns", ErrorCodes::INCORRECT_INDEX);
+        throw Exception(ErrorCodes::INCORRECT_INDEX, "Index contain duplicate columns");
 
     res.num_columns = res.columns.size();
     res.num_rows = num_rows;

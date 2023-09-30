@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1000;
+CREATE TABLE test (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
 INSERT INTO test SELECT * FROM numbers(1000000);
 OPTIMIZE TABLE test;
 

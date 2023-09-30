@@ -98,10 +98,12 @@ private:
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
+    void insertFromWithOwnership(const IColumn & from, size_t n);
+
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_, size_t version_);
+    void set(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
@@ -138,7 +140,7 @@ public:
 
     bool isDefaultAt(size_t) const override
     {
-        throw Exception("Method isDefaultAt is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
     }
 
     StringRef getDataAt(size_t n) const override;
@@ -160,7 +162,7 @@ public:
 
     void insertDefault() override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const override;
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
@@ -208,22 +210,27 @@ public:
 
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
-        throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for ColumnAggregateFunction");
     }
 
     bool hasEqualValues() const override
     {
-        throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnAggregateFunction");
     }
 
     double getRatioOfDefaultRows(double) const override
     {
-        throw Exception("Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+        return 0.0;
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return 0;
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
     {
-        throw Exception("Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction");
     }
 
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,

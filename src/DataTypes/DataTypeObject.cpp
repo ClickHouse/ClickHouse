@@ -57,7 +57,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         if (func->name != "Nullable" || func->arguments->children.size() != 1)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                "Expected 'Nullable(<schema_name>)' as parameter for type Object", func->name);
+                "Expected 'Nullable(<schema_name>)' as parameter for type Object (function: {})", func->name);
 
         schema_argument = func->arguments->children[0];
         is_nullable = true;

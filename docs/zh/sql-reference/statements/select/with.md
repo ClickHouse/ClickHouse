@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/select/with
 sidebar_label: WITH
 ---
 

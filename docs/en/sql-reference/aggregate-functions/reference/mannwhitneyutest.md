@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/mannwhitneyutest
 sidebar_position: 310
 sidebar_label: mannWhitneyUTest
 ---
@@ -18,23 +19,23 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
 
 **Arguments**
 
--   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
+- `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
 
--   `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
-    -   `'two-sided'`;
-    -   `'greater'`;
-    -   `'less'`.
--   `continuity_correction` — if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
+    - `'two-sided'`;
+    - `'greater'`;
+    - `'less'`.
+- `continuity_correction` — if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two elements:
 
--   calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
--   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
+- calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
+- calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
 
 **Example**
@@ -68,7 +69,5 @@ Result:
 
 **See Also**
 
--   [Mann–Whitney U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test)
--   [Stochastic ordering](https://en.wikipedia.org/wiki/Stochastic_ordering)
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->
+- [Mann–Whitney U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test)
+- [Stochastic ordering](https://en.wikipedia.org/wiki/Stochastic_ordering)

@@ -11,7 +11,7 @@ namespace DB
 /** A buffer for reading from a compressed file with just checking checksums of
   * the compressed blocks, without any decompression.
   */
-class CheckingCompressedReadBuffer : public CompressedReadBufferBase, public ReadBuffer
+class CheckingCompressedReadBuffer final : public CompressedReadBufferBase, public ReadBuffer
 {
 protected:
     bool nextImpl() override;
