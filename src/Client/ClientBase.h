@@ -58,8 +58,6 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
