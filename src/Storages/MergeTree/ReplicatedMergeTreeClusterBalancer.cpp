@@ -724,10 +724,10 @@ void ReplicatedMergeTreeClusterBalancer::revert(const ReplicatedMergeTreeCluster
     if (error == Coordination::Error::ZOK)
     {
         cluster.updateClusterPartition(new_partition);
-        LOG_WARNING(log, "Task had been reverted for partition {}", target.toStringForLog());
+        LOG_INFO(log, "Task had been reverted for partition {}", target.toStringForLog());
     }
     if (error == Coordination::Error::ZBADVERSION)
-        LOG_WARNING(log, "Task had been reverted but partition {} had been updated by someone else, keep it as-is", target.toStringForLog());
+        LOG_INFO(log, "Task had been reverted but partition {} had been updated by someone else, keep it as-is", target.toStringForLog());
     else if (error != Coordination::Error::ZOK)
         throw zkutil::KeeperException::fromPath(error, partition_path);
 }
