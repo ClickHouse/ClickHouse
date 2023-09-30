@@ -1278,6 +1278,9 @@ void StorageReplicatedMergeTree::dropReplica(const String & drop_zookeeper_path,
 
 void StorageReplicatedMergeTree::dropClusterReplica(ContextPtr local_context)
 {
+    /// Hold "is_active" node to allow fetch from this replica
+    auto is_active_node = replica_is_active_node;
+
     flushAndPrepareForShutdown();
     partialShutdown();
     cluster->dropReplica(local_context);
