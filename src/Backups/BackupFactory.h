@@ -3,6 +3,8 @@
 #include <Backups/IBackup.h>
 #include <Backups/BackupInfo.h>
 #include <Core/Types.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
@@ -37,6 +39,9 @@ public:
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;
         bool allow_s3_native_copy = true;
+        bool use_same_s3_credentials_for_base_backup = false;
+        ReadSettings read_settings;
+        WriteSettings write_settings;
     };
 
     static BackupFactory & instance();

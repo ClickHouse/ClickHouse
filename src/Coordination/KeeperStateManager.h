@@ -93,7 +93,7 @@ public:
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
-    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const;
 
 private:
     const String & getOldServerStatePath();
@@ -131,7 +131,7 @@ private:
 
 public:
     /// Parse configuration from xml config.
-    KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
+    KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us, bool enable_async_replication) const;
 };
 
 }

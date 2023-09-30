@@ -18,7 +18,7 @@ public:
     /// You can write only one block. In-memory part can be written only at INSERT.
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) override;
+    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) override;
     void finish(bool /*sync*/) override {}
 
 private:

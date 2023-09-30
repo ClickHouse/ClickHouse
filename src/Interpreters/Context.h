@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
 #include <Common/isLocalAddress.h>
@@ -86,6 +86,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryCache;
+class ISystemLog;
 class QueryLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -103,6 +104,7 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class BackupLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -195,15 +197,12 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
-#if USE_ROCKSDB
-class MergeTreeMetadataCache;
-using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
-#endif
-
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 class SessionTracker;
+
+struct ServerSettings;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -266,7 +265,13 @@ private:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
-    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
+    struct InsertionTableInfo
+    {
+        StorageID table = StorageID::createEmpty();
+        std::optional<Names> column_names;
+    };
+
+    InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -414,6 +419,10 @@ private:
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 
+    /// Resource classifier for a query, holds smart pointers required for ResourceLink
+    /// NOTE: all resource links became invalid after `classifier` destruction
+    mutable ClassifierPtr classifier;
+
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
@@ -488,6 +497,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getFilesystemCachesPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -497,6 +507,8 @@ public:
     TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
     TemporaryDataOnDiskScopePtr getSharedTempDataOnDisk() const;
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
+
+    void setFilesystemCachesPath(const String & path);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -534,12 +546,10 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    void setUser(const UUID & user_id_, bool set_current_profiles_ = true, bool set_current_roles_ = true, bool set_current_database_ = true);
+    void setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_ = {});
     UserPtr getUser() const;
 
-    void setUserID(const UUID & user_id_);
     std::optional<UUID> getUserID() const;
-
     String getUserName() const;
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
@@ -578,7 +588,7 @@ public:
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
-    ClassifierPtr getClassifier() const;
+    ClassifierPtr getWorkloadClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -708,10 +718,13 @@ public:
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;
+    bool isCurrentQueryKilled() const;
 
-    bool hasInsertionTable() const { return !insertion_table.empty(); }
-    void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
-    const StorageID & getInsertionTable() const { return insertion_table; }
+    bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
+    bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
+    const StorageID & getInsertionTable() const { return insertion_table_info.table; }
+    const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -855,6 +868,7 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
+    QueryStatusPtr getProcessListElementSafe() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -891,10 +905,6 @@ public:
     UInt64 getClientProtocolVersion() const;
     void setClientProtocolVersion(UInt64 version);
 
-#if USE_ROCKSDB
-    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
-#endif
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
@@ -916,44 +926,38 @@ public:
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
-    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes);
-    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
-    void dropUncompressedCache() const;
+    /// --- Caches ------------------------------------------------------------------------------------------
 
-    /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes);
+    void setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
+    void clearUncompressedCache() const;
+
+    void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getMarkCache() const;
-    void dropMarkCache() const;
+    void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    ThreadPool & getPrefetchThreadpool() const;
-
-    /// Note: prefetchThreadpool is different from threadpoolReader
-    /// in the way that its tasks are - wait for marks to be loaded
-    /// and make a prefetch by putting a read task to threadpoolReader.
-    size_t getPrefetchThreadpoolSize() const;
-
-    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
-    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
-    void dropIndexUncompressedCache() const;
+    void clearIndexUncompressedCache() const;
 
-    /// Create a cache of index marks of specified size. This can be done only once.
-    void setIndexMarkCache(size_t cache_size_in_bytes);
+    void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
-    void dropIndexMarkCache() const;
+    void clearIndexMarkCache() const;
 
-    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    void setMMappedFileCache(size_t max_cache_size_in_num_entries);
+    void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
-    void dropMMappedFileCache() const;
+    void clearMMappedFileCache() const;
 
-    /// Create a cache of query results for statements which run repeatedly.
-    void setQueryCache(const Poco::Util::AbstractConfiguration & config);
+    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
-    void dropQueryCache() const;
+    void clearQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -961,7 +965,16 @@ public:
       *  (when deleting a table - it is necessary, since in its place another can appear)
       * const - because the change in the cache is not considered significant.
       */
-    void dropCaches() const;
+    void clearCaches() const;
+
+    /// -----------------------------------------------------------------------------------------------------
+
+    ThreadPool & getPrefetchThreadpool() const;
+
+    /// Note: prefetchThreadpool is different from threadpoolReader
+    /// in the way that its tasks are - wait for marks to be loaded
+    /// and make a prefetch by putting a read task to threadpoolReader.
+    size_t getPrefetchThreadpoolSize() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -996,10 +1009,6 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
-#if USE_ROCKSDB
-    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
-#endif
-
     /// Call after unexpected crash happen.
     void handleCrash() const;
 
@@ -1021,6 +1030,9 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
+    std::shared_ptr<BackupLog> getBackupLog() const;
+
+    std::vector<ISystemLog *> getSystemLogs() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -1168,13 +1180,11 @@ public:
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
 
-    /** Get settings for reading from filesystem for BACKUPs. */
-    ReadSettings getBackupReadSettings() const;
-
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    bool canUseParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
 
@@ -1190,10 +1200,14 @@ public:
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
+    const ServerSettings & getServerSettings() const;
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     void initGlobal();
+
+    void setUserID(const UUID & user_id_);
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;

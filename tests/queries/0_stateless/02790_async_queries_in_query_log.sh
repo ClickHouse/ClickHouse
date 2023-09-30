@@ -28,7 +28,7 @@ function print_flush_query_logs()
       FROM system.query_log
       WHERE
           event_date >= yesterday()
-      AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '$1')
+      AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC
       FORMAT Vertical"
@@ -50,7 +50,21 @@ function print_flush_query_logs()
       FROM system.query_views_log
       WHERE
           event_date >= yesterday()
-      AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE query_id = '$1')
+      AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
+      FORMAT Vertical"
+
+    echo ""
+    echo "system.part_log"
+    ${CLICKHOUSE_CLIENT} -q "
+      SELECT
+          database,
+          table,
+          partition_id,
+          rows
+      FROM system.part_log
+      WHERE
+          event_date >= yesterday()
+      AND query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       FORMAT Vertical"
 }
 

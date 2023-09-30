@@ -175,10 +175,13 @@ struct SocketInterruptablePollWrapper
             }
             while (rc < 0 && errno == POCO_EINTR);
 
-            if (rc >= 1 && poll_buf[0].revents & POLLIN)
-                socket_ready = true;
-            if (rc >= 2 && poll_buf[1].revents & POLLIN)
-                fd_ready = true;
+            if (rc >= 1)
+            {
+                if (poll_buf[0].revents & POLLIN)
+                    socket_ready = true;
+                if (poll_buf[1].revents & POLLIN)
+                    fd_ready = true;
+            }
 #endif
         }
 
@@ -379,9 +382,9 @@ void KeeperTCPHandler::runImpl()
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
-    auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
+    auto response_callback = [responses_ = this->responses, response_fd](const Coordination::ZooKeeperResponsePtr & response)
     {
-        if (!responses->push(response))
+        if (!responses_->push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push response with xid {} and zxid {}",
                 response->xid,

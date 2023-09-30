@@ -151,7 +151,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const UInt8 *) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }

@@ -80,6 +80,11 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        SYNC_FILESYSTEM_CACHE,
+        STOP_PULLING_REPLICATION_LOG,
+        START_PULLING_REPLICATION_LOG,
+        STOP_CLEANUP,
+        START_CLEANUP,
         END
     };
 
@@ -108,6 +113,8 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
+    std::string key_to_drop;
+    std::optional<size_t> offset_to_drop;
 
     String backup_name;
 

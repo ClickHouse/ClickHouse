@@ -238,7 +238,7 @@ inline bool memequal(const char * p1, const char * p2, size_t size)
         ++p2;
     }*/
 
-    switch (size % 16)
+    switch (size % 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 15: if (p1[14] != p2[14]) return false; [[fallthrough]];
         case 14: if (p1[13] != p2[13]) return false; [[fallthrough]];
@@ -294,7 +294,7 @@ inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
         ++p2;
     }*/
 
-    switch (size % 16)
+    switch (size % 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 15: if (p1[14] != p2[14]) return false; [[fallthrough]];
         case 14: if (p1[13] != p2[13]) return false; [[fallthrough]];
@@ -355,7 +355,7 @@ inline bool memequal_sse41_wide(const char * p1, const char * p2, size_t size)
             return false;
     }
 
-    switch ((size % 64) / 16)
+    switch ((size % 64) / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 3:
             if (!_mm_testc_si128(
@@ -424,7 +424,7 @@ inline bool memequal_sse41_wide(const char * p1, const char * p2, size_t size)
             return false;
     }*/
 
-    switch (size % 16)
+    switch (size % 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 15: if (p1[14] != p2[14]) return false; [[fallthrough]];
         case 14: if (p1[13] != p2[13]) return false; [[fallthrough]];
@@ -466,7 +466,7 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
             return false;
     }
 
-    switch ((size % 64) / 16)
+    switch ((size % 64) / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 3: if (!compare_byIntSSE(p1 + 32, p2 + 32)) return false; [[fallthrough]];
         case 2: if (!compare_byIntSSE(p1 + 16, p2 + 16)) return false; [[fallthrough]];
@@ -476,7 +476,7 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
     p1 += (size % 64) / 16 * 16;
     p2 += (size % 64) / 16 * 16;
 
-    switch (size % 16)
+    switch (size % 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 15: if (p1[14] != p2[14]) return false; [[fallthrough]];
         case 14: if (p1[13] != p2[13]) return false; [[fallthrough]];

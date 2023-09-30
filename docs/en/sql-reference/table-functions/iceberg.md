@@ -21,7 +21,7 @@ iceberg(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure])
 - `format` — The [format](/docs/en/interfaces/formats.md/#formats) of the file. By default `Parquet` is used.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
-Engine parameters can be specified using [Named Collections](../../operations/named-collections.md)
+Engine parameters can be specified using [Named Collections](/docs/en/operations/named-collections.md).
 
 **Returned value**
 

@@ -18,7 +18,7 @@ public:
 
     static void visit(ASTPtr & ast, Data &);
     static void visit(const ASTFunction &, ASTPtr & ast, Data &);
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const ASTPtr & ast, const ASTPtr &);
 };
 
 using RewriteArrayExistsFunctionVisitor = InDepthNodeVisitor<RewriteArrayExistsFunctionMatcher, false>;
