@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -448,6 +449,12 @@ public:
     /// disappear automatically after 3x session_timeout.
     void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
 
+    Coordination::ReconfigResponse reconfig(
+        const std::string & joining,
+        const std::string & leaving,
+        const std::string & new_members,
+        int32_t version = -1);
+
     /// Async interface (a small subset of operations is implemented).
     ///
     /// Usage:
@@ -527,6 +534,13 @@ public:
     FutureGetChildren asyncTryGetChildren(
         const std::string & path,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+
+    using FutureReconfig = std::future<Coordination::ReconfigResponse>;
+    FutureReconfig asyncReconfig(
+        const std::string & joining,
+        const std::string & leaving,
+        const std::string & new_members,
+        int32_t version = -1);
 
     void finalize(const String & reason);
 
@@ -668,7 +682,13 @@ public:
             return;
         try
         {
-            zookeeper.tryRemove(path);
+            if (!zookeeper.expired())
+                zookeeper.tryRemove(path);
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
+                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
+            }
         }
         catch (...)
         {

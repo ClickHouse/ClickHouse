@@ -78,7 +78,8 @@ public:
         ContextPtr context,
         std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
-        UInt32 shard_count);
+        UInt32 shard_count,
+        bool parallel_replicas_enabled);
 
     struct ShardPlans
     {

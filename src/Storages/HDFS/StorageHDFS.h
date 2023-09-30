@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -75,7 +76,7 @@ public:
     /// Is is useful because column oriented formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -86,6 +87,8 @@ public:
         ContextPtr ctx);
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:
     friend class HDFSSource;
@@ -123,7 +126,7 @@ public:
     class DisclosedGlobIterator
     {
         public:
-            DisclosedGlobIterator(ContextPtr context_, const String & uri_);
+            DisclosedGlobIterator(const String & uri_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -134,7 +137,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<String> & uris_, ContextPtr context);
+            URISIterator(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -150,13 +153,18 @@ public:
         StorageHDFSPtr storage_,
         ContextPtr context_,
         UInt64 max_block_size_,
-        std::shared_ptr<IteratorWrapper> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_,
+        bool need_only_count_,
+        const SelectQueryInfo & query_info_);
 
     String getName() const override;
 
     Chunk generate() override;
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const StorageHDFS::PathWithInfo & path_with_info);
+
     StorageHDFSPtr storage;
     Block block_for_format;
     NamesAndTypesList requested_columns;
@@ -164,6 +172,9 @@ private:
     UInt64 max_block_size;
     std::shared_ptr<IteratorWrapper> file_iterator;
     ColumnsDescription columns_description;
+    bool need_only_count;
+    size_t total_rows_in_file = 0;
+    SelectQueryInfo query_info;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;

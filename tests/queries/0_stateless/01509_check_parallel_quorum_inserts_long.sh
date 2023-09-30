@@ -21,7 +21,7 @@ done
 $CLICKHOUSE_CLIENT -n -q "SYSTEM STOP REPLICATION QUEUES r2;"
 
 function thread {
-    $CLICKHOUSE_CLIENT --insert_quorum 2 --insert_quorum_parallel 1 --query "INSERT INTO r1 SELECT $1"
+    $CLICKHOUSE_CLIENT --insert_quorum 2 --insert_quorum_parallel 1 --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r1 SELECT $1"
 }
 
 for i in $(seq 1 $NUM_INSERTS); do

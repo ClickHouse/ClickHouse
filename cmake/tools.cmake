@@ -13,7 +13,7 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version OUTPUT_VARIABLE COMPILER
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 15)
+set (CLANG_MINIMUM_VERSION 16)
 set (XCODE_MINIMUM_VERSION 12.0)
 set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 
@@ -49,14 +49,14 @@ endif ()
 
 if (NOT LINKER_NAME)
     if (COMPILER_CLANG)
-        if (OS_LINUX)
-            if (NOT ARCH_S390X) # s390x doesnt support lld
-                find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
-            endif ()
+        if (OS_LINUX AND NOT ARCH_S390X)
+            find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+        elseif (OS_DARWIN)
+            find_program (LLD_PATH NAMES "ld")
         endif ()
     endif ()
-    if (OS_LINUX)
-        if (LLD_PATH)
+    if (LLD_PATH)
+        if (OS_LINUX OR OS_DARWIN)
             if (COMPILER_CLANG)
                 # Clang driver simply allows full linker path.
                 set (LINKER_NAME ${LLD_PATH})
@@ -70,23 +70,16 @@ if (LINKER_NAME)
     if (NOT LLD_PATH)
         message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
     endif ()
-    # This a temporary quirk to emit .debug_aranges with ThinLTO, it is only the case clang/llvm <16
-    if (COMPILER_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
-        set (LLD_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/ld.lld")
-        configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ld.lld.in" "${LLD_WRAPPER}" @ONLY)
-
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_WRAPPER}")
-    else ()
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
-    endif()
-
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
 endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-else()
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
+    message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
+else ()
     message(STATUS "Using linker: <default>")
-endif()
+endif ()
 
 # Archiver
 

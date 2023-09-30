@@ -53,9 +53,16 @@ namespace DB
 /// Using this block the client can initialize the output formatter and display the prefix of resulting table
 /// beforehand.
 
+namespace EncodedUserInfo
+{
+
 /// Marker of the inter-server secret (passed in the user name)
 /// (anyway user cannot be started with a whitespace)
 const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
+/// Marker of the SSH keys based authentication (passed in the user name)
+const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
+
+};
 
 namespace Protocol
 {
@@ -81,10 +88,11 @@ namespace Protocol
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
             ProfileEvents = 14,             /// Packet with profile events from server.
-            MergeTreeAllRangesAnnounecement = 15,
+            MergeTreeAllRangesAnnouncement = 15,
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
-            MAX = TimezoneUpdate,
+            SSHChallenge = 18,              /// Return challenge for SSH signature signing
+            MAX = SSHChallenge,
 
         };
 
@@ -110,9 +118,10 @@ namespace Protocol
                 "PartUUIDs",
                 "ReadTaskRequest",
                 "ProfileEvents",
-                "MergeTreeAllRangesAnnounecement",
+                "MergeTreeAllRangesAnnouncement",
                 "MergeTreeReadTaskRequest",
                 "TimezoneUpdate",
+                "SSHChallenge",
             };
             return packet <= MAX
                 ? data[packet]
@@ -150,7 +159,10 @@ namespace Protocol
             IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
-            MAX = MergeTreeReadTaskResponse,
+
+            SSHChallengeRequest = 11,       /// Request for SSH signature challenge
+            SSHChallengeResponse = 12,       /// Request for SSH signature challenge
+            MAX = SSHChallengeResponse,
         };
 
         inline const char * toString(UInt64 packet)
@@ -166,7 +178,9 @@ namespace Protocol
                 "Scalar",
                 "IgnoredPartUUIDs",
                 "ReadTaskResponse",
-                "MergeTreeReadTaskResponse"
+                "MergeTreeReadTaskResponse",
+                "SSHChallengeRequest",
+                "SSHChallengeResponse"
             };
             return packet <= MAX
                 ? data[packet]

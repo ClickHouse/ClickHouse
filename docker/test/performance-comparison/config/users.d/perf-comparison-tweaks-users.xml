@@ -21,6 +21,7 @@
             <!-- disable JIT for perf tests -->
             <compile_expressions>0</compile_expressions>
             <compile_aggregate_expressions>0</compile_aggregate_expressions>
+            <compile_sort_description>0</compile_sort_description>
 
             <!-- Don't fail some prewarm queries too early -->
             <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>

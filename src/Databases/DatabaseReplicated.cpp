@@ -263,7 +263,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
 std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr & cluster_) const
 {
     Strings paths;
-    const auto & addresses_with_failover = cluster->getShardsAddresses();
+    const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
@@ -603,7 +603,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
                     args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
                 }
-                catch (...)
+                catch (...) // NOLINT(bugprone-empty-catch)
                 {
                 }
             }
@@ -830,6 +830,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_experimental_hash_functions", 1);
         query_context->setSetting("allow_experimental_object_type", 1);
         query_context->setSetting("allow_experimental_annoy_index", 1);
+        query_context->setSetting("allow_experimental_usearch_index", 1);
         query_context->setSetting("allow_experimental_bigint_types", 1);
         query_context->setSetting("allow_experimental_window_functions", 1);
         query_context->setSetting("allow_experimental_geo_types", 1);
