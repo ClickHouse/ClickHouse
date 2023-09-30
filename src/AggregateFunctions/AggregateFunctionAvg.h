@@ -109,7 +109,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        writeBinary(this->data(place).numerator, buf);
+        writeBinaryLittleEndian(this->data(place).numerator, buf);
 
         if constexpr (std::is_unsigned_v<Denominator>)
             writeVarUInt(this->data(place).denominator, buf);
@@ -119,7 +119,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        readBinary(this->data(place).numerator, buf);
+        readBinaryLittleEndian(this->data(place).numerator, buf);
 
         if constexpr (std::is_unsigned_v<Denominator>)
             readVarUInt(this->data(place).denominator, buf);

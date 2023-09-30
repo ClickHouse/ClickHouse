@@ -116,6 +116,13 @@ inline void readPODBinary(T & x, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
+inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
+{
+    auto & uuid = x.toUnderType();
+    readPODBinary(uuid.items[0], buf);
+    readPODBinary(uuid.items[1], buf);
+}
+
 template <typename T>
 inline void readIntBinary(T & x, ReadBuffer & buf)
 {
@@ -529,6 +536,11 @@ void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 template <typename T> void readFloatText(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
 
+template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
+template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
+
 
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
@@ -624,6 +636,9 @@ bool tryReadQuotedStringInto(Vector & s, ReadBuffer & buf);
 /// So, it may form a JSON object, but it can be incorrenct.
 template <typename Vector, typename ReturnType = void>
 ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readJSONArrayInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -1080,6 +1095,97 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     datetime.second((s[6] - '0') * 10 + (s[7] - '0'));
 }
 
+/// In h*:mm:ss format.
+template <typename ReturnType = void>
+inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    int16_t hours;
+    int16_t minutes;
+    int16_t seconds;
+
+    readIntText(hours, buf);
+
+    int negative_multiplier = hours < 0 ? -1 : 1;
+
+    // :mm:ss
+    const size_t remaining_time_size = 6;
+
+    char s[remaining_time_size];
+
+    size_t size = buf.read(s, remaining_time_size);
+    if (size != remaining_time_size)
+    {
+        s[size] = 0;
+
+        if constexpr (throw_exception)
+            throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
+        else
+            return false;
+    }
+
+    minutes = (s[1] - '0') * 10 + (s[2] - '0');
+    seconds = (s[4] - '0') * 10 + (s[5] - '0');
+
+    time = hours * 3600 + (minutes * 60 + seconds) * negative_multiplier;
+
+    return ReturnType(true);
+}
+
+template <typename ReturnType>
+inline ReturnType readTimeTextImpl(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
+{
+    time_t whole;
+    if (!readTimeTextImpl<bool>(whole, buf))
+    {
+        return ReturnType(false);
+    }
+
+    DB::DecimalUtils::DecimalComponents<Decimal64> components{static_cast<Decimal64::NativeType>(whole), 0};
+
+    if (!buf.eof() && *buf.position() == '.')
+    {
+        ++buf.position();
+
+        /// Read digits, up to 'scale' positions.
+        for (size_t i = 0; i < scale; ++i)
+        {
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                components.fractional *= 10;
+                components.fractional += *buf.position() - '0';
+                ++buf.position();
+            }
+            else
+            {
+                /// Adjust to scale.
+                components.fractional *= 10;
+            }
+        }
+
+        /// Ignore digits that are out of precision.
+        while (!buf.eof() && isNumericASCII(*buf.position()))
+            ++buf.position();
+    }
+
+    bool is_ok = true;
+    if constexpr (std::is_same_v<ReturnType, void>)
+    {
+        time64 = DecimalUtils::decimalFromComponents<Decimal64>(components, scale);
+    }
+    else
+    {
+        is_ok = DecimalUtils::tryGetDecimalFromComponents<Decimal64>(components, scale, time64);
+    }
+
+    return ReturnType(is_ok);
+}
+
+inline void readTime64Text(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
+{
+    readTimeTextImpl<void>(time64, scale, buf);
+}
 
 /// Generic methods to read value in native binary format.
 template <typename T>
@@ -1096,24 +1202,31 @@ inline void readBinary(bool & x, ReadBuffer & buf)
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(Int32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Int256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+
+inline void readBinary(UUID & x, ReadBuffer & buf)
+{
+    readUUIDBinary(x, buf);
+}
+
+inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
+{
+    readPODBinary(x.low64, buf);
+    readPODBinary(x.high64, buf);
+}
 
 inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
 {
-    readPODBinary(x, buf);
+    readBinary(x, buf);
     transformEndianness<endian>(x);
 }
 

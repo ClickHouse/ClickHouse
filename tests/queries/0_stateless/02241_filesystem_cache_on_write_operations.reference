@@ -24,8 +24,9 @@ state:                    DOWNLOADED
 8	2014
 8	2014
 24	84045
-35	168815
-44	252113
+32	167243
+41	250541
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
 5010500
 18816
 Using storage policy: local_cache
@@ -54,7 +55,8 @@ state:                    DOWNLOADED
 8	2014
 8	2014
 24	84045
-35	168815
-44	252113
+32	167243
+41	250541
+INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)	0
 5010500
 18816

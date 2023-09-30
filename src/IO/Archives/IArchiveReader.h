@@ -40,17 +40,25 @@ public:
         virtual bool nextFile() = 0;
     };
 
+    virtual const std::string & getPath() const = 0;
+
     /// Starts enumerating files in the archive.
     virtual std::unique_ptr<FileEnumerator> firstFile() = 0;
+
+    using NameFilter = std::function<bool(const std::string &)>;
 
     /// Starts reading a file from the archive. The function returns a read buffer,
     /// you can read that buffer to extract uncompressed data from the archive.
     /// Several read buffers can be used at the same time in parallel.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename) = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename, bool throw_on_not_found) = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(NameFilter filter, bool throw_on_not_found) = 0;
 
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) = 0;
     virtual std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) = 0;
+
+    virtual std::vector<std::string> getAllFiles() = 0;
+    virtual std::vector<std::string> getAllFiles(NameFilter filter) = 0;
 
     /// Sets password used to decrypt files in the archive.
     virtual void setPassword(const String & /* password */) {}

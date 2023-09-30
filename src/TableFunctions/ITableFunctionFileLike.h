@@ -27,7 +27,7 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
-    bool supportsReadingSubsetOfColumns() override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
     static size_t getMaxNumberOfArguments() { return 4; }
 
@@ -42,6 +42,7 @@ protected:
     virtual String getFormatFromFirstArgument();
 
     String filename;
+    String path_to_archive;
     String format = "auto";
     String structure = "auto";
     String compression_method = "auto";

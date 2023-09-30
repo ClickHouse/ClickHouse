@@ -24,6 +24,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), allow_alias_without_as_keyword).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(false, true), allow_alias_without_as_keyword).parse(pos, res->table_function, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(true, true), allow_alias_without_as_keyword)
+                .parse(pos, res->database_and_table_name, expected)
+        && !ParserWithOptionalAlias(std::make_unique<ParserTableAsStringLiteralIdentifier>(), allow_alias_without_as_keyword)
                 .parse(pos, res->database_and_table_name, expected))
         return false;
 

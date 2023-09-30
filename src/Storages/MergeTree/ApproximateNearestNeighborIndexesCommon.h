@@ -9,6 +9,9 @@
 namespace DB
 {
 
+static constexpr auto DISTANCE_FUNCTION_L2 = "L2Distance";
+static constexpr auto DISTANCE_FUNCTION_COSINE = "cosineDistance";
+
 /// Approximate Nearest Neighbour queries have a similar structure:
 /// - reference vector from which all distances are calculated
 /// - metric name (e.g L2Distance, LpDistance, etc.)

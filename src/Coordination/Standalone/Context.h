@@ -13,6 +13,7 @@
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
+#include <IO/IResourceManager.h>
 
 #include <Poco/Util/Application.h>
 
@@ -98,6 +99,14 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
 
+    enum class ApplicationType
+    {
+        KEEPER
+    };
+
+    void setApplicationType(ApplicationType) {}
+    ApplicationType getApplicationType() const { return ApplicationType::KEEPER; }
+
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
     ThreadPool & getThreadPoolWriter() const;
@@ -109,6 +118,10 @@ public:
     ThrottlerPtr getLocalWriteThrottler() const;
 
     ReadSettings getReadSettings() const;
+
+    /// Resource management related
+    ResourceManagerPtr getResourceManager() const;
+    ClassifierPtr getWorkloadClassifier() const;
 
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;

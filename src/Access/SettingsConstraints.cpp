@@ -301,10 +301,10 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                                          ReactionOnViolation reaction,
                                          SettingSource source) const
 {
-    if (!explain.empty())
+    if (!explain.text.empty())
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception::createDeprecated(explain, code);
+            throw Exception(explain, code);
         else
             return false;
     }
@@ -340,7 +340,12 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+            throw Exception(
+                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                "The maximum ({}) value is less than the minimum ({}) value for setting {}",
+                max_value,
+                min_value,
+                setting_name);
         else
             return false;
     }
@@ -389,7 +394,8 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 {
     auto resolved_name = resolveSettingNameWithCache(setting_name);
     if (!current_settings.allow_ddl && resolved_name == "allow_ddl")
-        return Checker("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+        return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
+                       ErrorCodes::QUERY_IS_PROHIBITED);
 
     /** The `readonly` value is understood as follows:
       * 0 - no read-only restrictions.
@@ -398,13 +404,14 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
       */
 
     if (current_settings.readonly > 1 && resolved_name == "readonly")
-        return Checker("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
+        return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
     auto it = constraints.find(resolved_name);
     if (current_settings.readonly == 1)
     {
         if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
-            return Checker("Cannot modify '" + String(setting_name) + "' setting in readonly mode", ErrorCodes::READONLY);
+            return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
+                           ErrorCodes::READONLY);
     }
     else // For both readonly=0 and readonly=2
     {

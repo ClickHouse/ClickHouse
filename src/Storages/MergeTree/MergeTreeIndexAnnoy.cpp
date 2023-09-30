@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 template <typename Distance>
 AnnoyIndexWithSerialization<Distance>::AnnoyIndexWithSerialization(size_t dimensions)
     : Base::AnnoyIndex(dimensions)
@@ -114,17 +113,20 @@ template <typename Distance>
 MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    UInt64 trees_)
+    UInt64 trees_,
+    size_t max_threads_for_creation_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , trees(trees_)
+    , max_threads_for_creation(max_threads_for_creation_)
 {}
 
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
-    // NOLINTNEXTLINE(*)
-    index->build(static_cast<int>(trees), /*number_of_threads=*/1);
+    int threads = (max_threads_for_creation == 0) ? -1 : static_cast<int>(max_threads_for_creation);
+    /// clang-tidy reports a false positive: it considers %p with an outdated pointer in fprintf() (used by logging which we don't do) dereferencing
+    index->build(static_cast<int>(trees), threads);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
@@ -144,6 +146,9 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     if (rows_read == 0)
         return;
 
+    if (rows_read > std::numeric_limits<uint32_t>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than 4B rows per index granule.");
+
     if (index_sample_block.columns() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
 
@@ -152,35 +157,49 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
 
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
-        const auto & data = column_array->getData();
-        const auto & array = typeid_cast<const ColumnFloat32 &>(data).getData();
+        const auto & column_array_data = column_array->getData();
+        const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
+        const auto & column_array_data_float_data = column_array_data_float.getData();
 
-        if (array.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array has 0 rows, {} rows expected", rows_read);
+        const auto & column_array_offsets = column_array->getOffsets();
+        const size_t num_rows = column_array_offsets.size();
 
-        const auto & offsets = column_array->getOffsets();
-        const size_t num_rows = offsets.size();
+        if (column_array->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
+
+        /// The Annoy algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
+        /// are INSERTed into an Annoy-indexed column or if no value was specified at all in which case the arrays take on their default
+        /// value which is also empty.
+        if (column_array->isDefaultAt(0))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The arrays in column '{}' must not be empty. Did you try to INSERT default values?", index_column_name);
 
         /// Check all sizes are the same
-        size_t size = offsets[0];
+        size_t dimension = column_array_offsets[0];
         for (size_t i = 0; i < num_rows - 1; ++i)
-            if (offsets[i + 1] - offsets[i] != size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column {} must have equal length", index_column_name);
+            if (column_array_offsets[i + 1] - column_array_offsets[i] != dimension)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(size);
+        /// Also check that previously inserted blocks have the same size as this block.
+        /// Note that this guarantees consistency of dimension only within parts. We are unable to detect inconsistent dimensions across
+        /// parts - for this, a little help from the user is needed, e.g. CONSTRAINT cnstr CHECK length(array) = 42.
+        if (index && index->getDimensions() != dimension)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column '{}' must have equal length", index_column_name);
+
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(dimension);
 
         /// Add all rows of block
-        index->add_item(index->get_n_items(), array.data());
+        index->add_item(index->get_n_items(), column_array_data_float_data.data());
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
-            index->add_item(index->get_n_items(), &array[offsets[current_row - 1]]);
+            index->add_item(index->get_n_items(), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
-        const auto & columns = column_tuple->getColumns();
+        const auto & column_tuple_columns = column_tuple->getColumns();
 
         /// TODO check if calling index->add_item() directly on the block's tuples is faster than materializing everything
-        std::vector<std::vector<Float32>> data{column_tuple->size(), std::vector<Float32>()};
-        for (const auto & column : columns)
+        std::vector<std::vector<Float32>> data(column_tuple->size(), std::vector<Float32>());
+        for (const auto & column : column_tuple_columns)
         {
             const auto & pod_array = typeid_cast<const ColumnFloat32 *>(column.get())->getData();
             for (size_t i = 0; i < pod_array.size(); ++i)
@@ -190,7 +209,8 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         if (data.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple has 0 rows, {} rows expected", rows_read);
 
-        index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
+        if (!index)
+            index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(data[0].size());
 
         for (const auto & item : data)
             index->add_item(index->get_n_items(), item.data());
@@ -224,9 +244,9 @@ bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
 
 std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return getUsefulRangesImpl<Annoy::Euclidean>(idx_granule);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return getUsefulRangesImpl<Annoy::Angular>(idx_granule);
     std::unreachable();
 }
@@ -265,20 +285,20 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     chassert(neighbors.size() == distances.size());
 
-    std::vector<size_t> granule_numbers;
-    granule_numbers.reserve(neighbors.size());
+    std::vector<size_t> granules;
+    granules.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granule_numbers.push_back(neighbors[i] / index_granularity);
+        granules.push_back(neighbors[i] / index_granularity);
     }
 
     /// make unique
-    std::sort(granule_numbers.begin(), granule_numbers.end());
-    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
+    std::sort(granules.begin(), granules.end());
+    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
 
-    return granule_numbers;
+    return granules;
 }
 
 MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, UInt64 trees_, const String & distance_function_)
@@ -289,20 +309,20 @@ MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, UInt64
 
 MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
 {
-    if (distance_function == "L2Distance")
+    if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Euclidean>>(index.name, index.sample_block);
-    else if (distance_function == "cosineDistance")
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
         return std::make_shared<MergeTreeIndexGranuleAnnoy<Annoy::Angular>>(index.name, index.sample_block);
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator(const MergeTreeWriterSettings & settings) const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
-    if (distance_function == "L2Distance")
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
-    else if (distance_function == "cosineDistance")
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
+    if (distance_function == DISTANCE_FUNCTION_L2)
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
+    else if (distance_function == DISTANCE_FUNCTION_COSINE)
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     std::unreachable();
 }
 
@@ -313,14 +333,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexAnnoy::createIndexCondition(const Selec
 
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
 {
-    static constexpr auto default_trees = 100uz;
-    static constexpr auto default_distance_function = "L2Distance";
-
-    String distance_function = default_distance_function;
+    static constexpr auto DEFAULT_DISTANCE_FUNCTION = DISTANCE_FUNCTION_L2;
+    String distance_function = DEFAULT_DISTANCE_FUNCTION;
     if (!index.arguments.empty())
         distance_function = index.arguments[0].get<String>();
 
-    UInt64 trees = default_trees;
+    static constexpr auto DEFAULT_TREES = 100uz;
+    UInt64 trees = DEFAULT_TREES;
     if (index.arguments.size() > 1)
         trees = index.arguments[1].get<UInt64>();
 
@@ -350,8 +369,8 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     if (!index.arguments.empty())
     {
         String distance_name = index.arguments[0].get<String>();
-        if (distance_name != "L2Distance" && distance_name != "cosineDistance")
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index only supports distance functions 'L2Distance' and 'cosineDistance'");
+        if (distance_name != DISTANCE_FUNCTION_L2 && distance_name != DISTANCE_FUNCTION_COSINE)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Annoy index only supports distance functions '{}' and '{}'", DISTANCE_FUNCTION_L2, DISTANCE_FUNCTION_COSINE);
     }
 
     /// Check data type of indexed column:
@@ -360,7 +379,7 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32)");
+            "Annoy indexes can only be created on columns of type Array(Float32) and Tuple(Float32[, Float32[, ...]])");
     };
 
     DataTypePtr data_type = index.sample_block.getDataTypes()[0];

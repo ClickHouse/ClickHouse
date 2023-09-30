@@ -38,7 +38,7 @@ select makeDateTime64(1984, 1, 41, 0, 0, 0, 0, 9, 'UTC');
 select makeDateTime64(1984, 1, 1, 25, 0, 0, 0, 9, 'UTC');
 select makeDateTime64(1984, 1, 1, 0, 70, 0, 0, 9, 'UTC');
 select makeDateTime64(1984, 1, 1, 0, 0, 70, 0, 9, 'UTC');
-select makeDateTime64(1984, 1, 1, 0, 0, 0, 0, 9, 'not a timezone'); -- { serverError 1000 }
+select makeDateTime64(1984, 1, 1, 0, 0, 0, 0, 9, 'not a timezone'); -- { serverError BAD_ARGUMENTS }
 
 select makeDateTime64(1984, 1, 1, 2, 3, 4, 5, 9, 'UTC');
 select makeDateTime64(1984, 2, 29, 2, 3, 4, 5, 9, 'UTC');
@@ -86,4 +86,4 @@ select makeDateTime64(year, 1, 1, 1, 0, 0, 0, precision, timezone) from (
     select 1984 as year, 5 as precision, 'UTC' as timezone
     union all
     select 1985 as year, 5 as precision, 'UTC' as timezone
-); -- { serverError 43 }
+); -- { serverError 44 }
