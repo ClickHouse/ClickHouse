@@ -76,12 +76,6 @@ while :; do
     break
 done
 
-for table in data_r1 data_r2 data_r3 data_r4; do
-    wait_for_all_mutations $table
-done
-
-# after previous we may have newly added entries to process (i.e. mutations),
-# so regular replication queue should be synced as well
 $CLICKHOUSE_CLIENT -nm -q "
     system sync replica data_r1;
     system sync replica data_r2;
@@ -89,16 +83,14 @@ $CLICKHOUSE_CLIENT -nm -q "
     system sync replica data_r4;
 "
 
+for table in data_r1 data_r2 data_r3 data_r4; do
+    wait_for_all_mutations $table
+done
+
 # last sync to reflect changes in system.cluster_partitions
 $CLICKHOUSE_CLIENT -q "system sync replica data_r1 cluster"
 
-# FIXME: some parts can be cloned instead of migrated, because at that time
-# there were only 3 replicas for instance, but we don't have DROP command for
-# cluster partitions, so such parts will be stored more times that it should be,
-# hence we should adjust values here using if().
-# TODO: this can be and should be fixed with forcing parts removal
-#
-# FIXME: it is possible to have non mutated parts on old replicas, but only
+# NOTE: it is possible to have non mutated parts on old replicas, but only
 # when cluster partitions map is not used/not in sync (cluster_query_shards=0),
 # consider the following situation:
 # - data_r1 has partition p1
@@ -109,8 +101,7 @@ $CLICKHOUSE_CLIENT -q "system sync replica data_r1 cluster"
 # And after this you will have non mutated part on data_r2 until it got removed from it.
 $CLICKHOUSE_CLIENT -nm -q "
 -- { echo }
-select _table, count(), countIf(value <= 0), length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_(r3|r4)') group by _table order by 1 settings cluster_query_shards=0;
-select _table, count(), /* countIf(value <= 0), */ length(groupArrayDistinct(_partition_id)) size from merge(currentDatabase(), '^data_(r1|r2)') group by _table order by 1 settings cluster_query_shards=0;
+select _table, count(), countIf(value <= 0), length(groupArrayDistinct(_partition_id)) from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
 select count(), countIf(value <= 0) from data_r1;
 select replica, if(length(groupArray(partition)) as cnt == 5, cnt, (cnt - 1)::UInt64) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
 select partition, if(count() as cnt == 2, cnt, (cnt - 1)::UInt64) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
