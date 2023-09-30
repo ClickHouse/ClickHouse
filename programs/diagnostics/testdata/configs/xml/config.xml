@@ -649,73 +649,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_two_shards_localhost>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_localhost>
-        <test_cluster_two_shards>
-            <shard>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards>
-        <test_cluster_two_shards_internal_replication>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <internal_replication>true</internal_replication>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-        </test_cluster_two_shards_internal_replication>
-        <test_shard_localhost_secure>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9440</port>
-                    <secure>1</secure>
-                </replica>
-            </shard>
-        </test_shard_localhost_secure>
-        <test_unavailable_shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>localhost</host>
-                    <port>1</port>
-                </replica>
-            </shard>
-        </test_unavailable_shard>
     </remote_servers>
 
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
@@ -825,27 +758,6 @@
         <events_cumulative>false</events_cumulative>
         <asynchronous_metrics>false</asynchronous_metrics>
     </graphite>
-    -->
-
-    <!-- Serve endpoint for Prometheus monitoring. -->
-    <!--
-        endpoint - mertics path (relative to root, statring with "/")
-        port - port to setup server. If not defined or 0 than http_port used
-        metrics - send data from table system.metrics
-        events - send data from table system.events
-        asynchronous_metrics - send data from table system.asynchronous_metrics
-        status_info - send data from different component from CH, ex: Dictionaries status
-    -->
-    <!--
-    <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>9363</port>
-
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
-    </prometheus>
     -->
 
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
@@ -1276,8 +1188,6 @@
                 <single_read_retries>4</single_read_retries>
                 <min_bytes_for_seek>1000</min_bytes_for_seek>
                 <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </s3>
         </disks>

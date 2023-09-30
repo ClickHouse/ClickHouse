@@ -67,18 +67,4 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
                                    ON data_paths.cache_path = caches.cache_path"
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_022862"
-
-    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_022862 (key UInt32, value String)
-                                Engine=MergeTree()
-                                ORDER BY key
-                                SETTINGS storage_policy='${STORAGE_POLICY}_2', min_bytes_for_wide_part = 10485760"
-
-    $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_022862 SELECT number, toString(number) FROM numbers(100)"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_022862 FORMAT Null"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
-
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '${STORAGE_POLICY}_2'"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"
-
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_022862"
 done

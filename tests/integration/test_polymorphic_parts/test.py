@@ -363,6 +363,7 @@ node7 = cluster.add_instance(
     tag="19.17.8.54",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 node8 = cluster.add_instance(
     "node8",
@@ -413,54 +414,6 @@ def start_cluster_diff_versions():
         cluster.shutdown()
 
 
-@pytest.mark.skip(reason="compatability is temporary broken")
-def test_polymorphic_parts_diff_versions(start_cluster_diff_versions):
-    # Check that replication with Wide parts works between different versions.
-
-    node_old = node7
-    node_new = node8
-
-    insert_random_data("polymorphic_table", node7, 100)
-    node8.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
-
-    assert node8.query("SELECT count() FROM polymorphic_table") == "100\n"
-    assert (
-        node8.query(
-            "SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table' and active"
-        )
-        == "Wide\n"
-    )
-
-
-@pytest.mark.skip(reason="compatability is temporary broken")
-def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
-    # Replication doesn't work on old version if part is created in compact format, because
-    #  this version doesn't know anything about it. It's considered to be ok.
-
-    node_old = node7
-    node_new = node8
-
-    insert_random_data("polymorphic_table_2", node_new, 100)
-
-    assert node_new.query("SELECT count() FROM polymorphic_table_2") == "100\n"
-    assert node_old.query("SELECT count() FROM polymorphic_table_2") == "0\n"
-    with pytest.raises(Exception):
-        node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=3)
-
-    node_old.restart_with_latest_version(fix_metadata=True)
-
-    node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=20)
-
-    # Works after update
-    assert node_old.query("SELECT count() FROM polymorphic_table_2") == "100\n"
-    assert (
-        node_old.query(
-            "SELECT DISTINCT part_type FROM system.parts WHERE table = 'polymorphic_table_2' and active"
-        )
-        == "Compact\n"
-    )
-
-
 def test_polymorphic_parts_non_adaptive(start_cluster):
     node1.query("SYSTEM STOP MERGES")
     node2.query("SYSTEM STOP MERGES")
@@ -498,7 +451,7 @@ def test_polymorphic_parts_index(start_cluster):
         """
         CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
-        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false"""
+        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"""
     )
 
     node1.query(

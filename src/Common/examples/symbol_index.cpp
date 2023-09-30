@@ -22,8 +22,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    auto symbol_index_ptr = SymbolIndex::instance();
-    const SymbolIndex & symbol_index = *symbol_index_ptr;
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
 
     for (const auto & elem : symbol_index.symbols())
         std::cout << elem.name << ": " << elem.address_begin << " ... " << elem.address_end << "\n";

@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/embedded-rocksdb
-sidebar_position: 9
+sidebar_position: 50
 sidebar_label: EmbeddedRocksDB
 ---
 
@@ -8,7 +8,7 @@ sidebar_label: EmbeddedRocksDB
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
-## Creating a Table {#table_engine-EmbeddedRocksDB-creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -85,7 +85,7 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
 </rocksdb>
 ```
 
-## Supported operations {#table_engine-EmbeddedRocksDB-supported-operations}
+## Supported operations {#supported-operations}
 
 ### Inserts
 
@@ -99,7 +99,7 @@ INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
 
 ### Deletes
 
-Rows can be deleted using `DELETE` query or `TRUNCATE`. 
+Rows can be deleted using `DELETE` query or `TRUNCATE`.
 
 ```sql
 DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;

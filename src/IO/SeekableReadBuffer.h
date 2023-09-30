@@ -83,6 +83,10 @@ public:
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }
+
+    /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
+    /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
+    virtual bool seekIsCheap() { return false; }
 };
 
 
@@ -94,6 +98,7 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableRead
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
 
 /// Helper for implementing readBigAt().
-size_t copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, bool * out_cancelled = nullptr);
+/// Updates *out_bytes_copied after each call to the callback, as well as at the end.
+void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

@@ -1,22 +1,22 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/AllocationTrace.h>
 
 /// Convenience methods, that use current thread's memory_tracker if it is available.
 struct CurrentMemoryTracker
 {
     /// Call the following functions before calling of corresponding operations with memory allocators.
-    static void alloc(Int64 size);
-    static void allocNoThrow(Int64 size);
-    static void realloc(Int64 old_size, Int64 new_size);
+    [[nodiscard]] static AllocationTrace alloc(Int64 size);
+    [[nodiscard]] static AllocationTrace allocNoThrow(Int64 size);
 
     /// This function should be called after memory deallocation.
-    static void free(Int64 size);
+    [[nodiscard]] static AllocationTrace free(Int64 size);
     static void check();
 
     /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)
     static void injectFault();
 
 private:
-    static void allocImpl(Int64 size, bool throw_if_memory_exceeded);
+    [[nodiscard]] static AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded);
 };

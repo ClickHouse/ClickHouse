@@ -43,7 +43,7 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
     structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "structure");
 }
 
-ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
@@ -58,9 +58,9 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
+    auto storage = std::make_shared<StorageInput>(StorageID(getDatabaseName(), table_name), getActualTableStructure(context, is_insert_query));
     storage->startup();
     return storage;
 }

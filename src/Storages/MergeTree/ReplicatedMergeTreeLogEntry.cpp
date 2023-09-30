@@ -48,7 +48,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
 
     out << "format version: " << format_version << "\n"
-        << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
+        << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
 
@@ -199,7 +199,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
     {
         LocalDateTime create_time_dt;
         in >> "create_time: " >> create_time_dt >> "\n";
-        create_time = DateLUT::instance().makeDateTime(
+        create_time = DateLUT::serverTimezoneInstance().makeDateTime(
             create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
             create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
     }

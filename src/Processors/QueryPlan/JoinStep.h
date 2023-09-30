@@ -27,12 +27,17 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void describeActions(FormatSettings & settings) const override;
+
     const JoinPtr & getJoin() const { return join; }
     bool allowPushDownToRight() const;
 
-    void updateInputStream(const DataStream & new_input_stream_, size_t idx);
+    bool canUpdateInputStream() const override { return true; }
 
 private:
+    void updateOutputStream() override;
+
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;
