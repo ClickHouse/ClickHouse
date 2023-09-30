@@ -197,6 +197,15 @@ void ReplicatedMergeTreeClusterBalancer::runStep()
                 state.target.reset();
                 state.step = BALANCER_SELECT_PARTITION;
             }
+            catch (const Coordination::Exception & e)
+            {
+                if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+                    throw;
+
+                state.target->revert();
+                state.step = BALANCER_REVERT;
+                tryLogCurrentException(log, fmt::format("Cannot process partition {}, will revert", state.target->toStringForLog()));
+            }
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY)
