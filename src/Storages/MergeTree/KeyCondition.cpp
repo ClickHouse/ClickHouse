@@ -1267,6 +1267,10 @@ bool KeyCondition::tryPrepareSetIndex(
     size_t set_types_size = set_types.size();
     size_t indexes_mapping_size = indexes_mapping.size();
 
+    /// When doing strict matches, we have to check all elements in set.
+    if (strict && indexes_mapping_size < set_types_size)
+        return false;
+
     for (auto & index_mapping : indexes_mapping)
         if (index_mapping.tuple_index >= set_types_size)
             return false;
