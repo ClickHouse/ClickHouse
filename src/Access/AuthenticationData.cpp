@@ -501,7 +501,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (args_size > 1)
             scheme = parseHTTPAuthenticationScheme(checkAndGetLiteralArgument<String>(args[1], "scheme"));
 
-        auth_data.setHTTPAuthenticationServerName(std::move(server));
+        auth_data.setHTTPAuthenticationServerName(server);
         auth_data.setHTTPAuthenticationScheme(scheme);
     }
     else
