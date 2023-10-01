@@ -288,7 +288,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     std::size_t kerberos_keys_count = 0;
     std::size_t http_auth_server_keys_count = 0;
 
-    const auto http_auth_servers_config = "http_authentication_servers";
+    const String http_auth_servers_config = "http_authentication_servers";
 
     for (auto key : all_keys)
     {
@@ -315,7 +315,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     Poco::Util::AbstractConfiguration::Keys http_auth_server_names;
     config.keys(http_auth_servers_config, http_auth_server_names);
     http_auth_servers.clear();
-    for (auto http_auth_server_name : http_auth_server_names)
+    for (const auto & http_auth_server_name : http_auth_server_names)
     {
         String prefix = fmt::format("{}.{}", http_auth_servers_config, http_auth_server_name);
         try
