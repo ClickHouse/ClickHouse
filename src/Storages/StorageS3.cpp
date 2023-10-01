@@ -1437,12 +1437,15 @@ bool StorageS3::Configuration::update(ContextPtr context)
 
 void StorageS3::Configuration::connect(ContextPtr context)
 {
+    const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
+    const Settings & local_settings = context->getSettingsRef();
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
-        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+        static_cast<unsigned>(global_settings.s3_max_redirects),
+        static_cast<unsigned>(global_settings.s3_retry_attempts),
+        global_settings.enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,
@@ -1450,7 +1453,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = context->getGlobalContext()->getSettingsRef().s3_http_connection_pool_size;
+    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
@@ -1461,6 +1464,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
     client = S3::ClientFactory::instance().create(
         client_configuration,
         url.is_virtual_hosted_style,
+        local_settings.s3_disable_checksum,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,

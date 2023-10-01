@@ -43,6 +43,9 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     const S3ObjectStorageSettings & settings)
 {
+    const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
+    const Settings & local_settings = context->getSettingsRef();
+
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
     if (!uri.key.ends_with('/'))
@@ -51,9 +54,9 @@ std::unique_ptr<S3::Client> getClient(
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
         context->getRemoteHostFilter(),
-        static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-        static_cast<int>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
-        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+        static_cast<int>(global_settings.s3_max_redirects),
+        static_cast<int>(global_settings.s3_retry_attempts),
+        global_settings.enable_s3_requests_logging,
         /* for_disk_s3 = */ true,
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler,
@@ -96,6 +99,7 @@ std::unique_ptr<S3::Client> getClient(
     return S3::ClientFactory::instance().create(
         client_configuration,
         uri.is_virtual_hosted_style,
+        local_settings.s3_disable_checksum,
         config.getString(config_prefix + ".access_key_id", ""),
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
