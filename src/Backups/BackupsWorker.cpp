@@ -218,15 +218,108 @@ namespace
 }
 
 
+/// We have to use multiple thread pools because
+/// 1) there should be separate thread pools for BACKUP and RESTORE;
+/// 2) a task from a thread pool can't wait another task from the same thread pool. (Because if it schedules and waits
+/// while the thread pool is still occupied with the waiting task then a scheduled task can be never executed).
+enum class BackupsWorker::ThreadPoolId
+{
+    BACKUP_COPIER,
+    BACKUP_ASYNC,
+    BACKUP_ON_CLUSTER_ASYNC,
+
+    RESTORE_COPIER,
+    RESTORE_ASYNC,
+    RESTORE_ON_CLUSTER_ASYNC,
+
+    MAX,
+};
+
+
+/// Keeps thread pools for BackupsWorker.
+class BackupsWorker::ThreadPools
+{
+public:
+    ThreadPools(size_t num_backup_threads_, size_t num_restore_threads_)
+        : num_backup_threads(num_backup_threads_), num_restore_threads(num_restore_threads_)
+    {
+    }
+
+    /// Returns a thread pool, creates it if it's not created yet.
+    ThreadPool & getThreadPool(ThreadPoolId thread_pool_id)
+    {
+        std::lock_guard lock{mutex};
+        if (!thread_pools[static_cast<size_t>(thread_pool_id)])
+        {
+            switch (thread_pool_id)
+            {
+                case ThreadPoolId::BACKUP_COPIER:
+                case ThreadPoolId::BACKUP_ASYNC:
+                case ThreadPoolId::BACKUP_ON_CLUSTER_ASYNC:
+                    /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP query running right now.
+                    thread_pools[static_cast<size_t>(thread_pool_id)] = std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads);
+                    break;
+                case ThreadPoolId::RESTORE_COPIER:
+                case ThreadPoolId::RESTORE_ASYNC:
+                case ThreadPoolId::RESTORE_ON_CLUSTER_ASYNC:
+                    /// We set max_free_threads = 0 because we don't want to keep any threads if there is no RESTORE query running right now.
+                    thread_pools[static_cast<size_t>(thread_pool_id)] = std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads);
+                    break;
+                case ThreadPoolId::MAX:
+                    UNREACHABLE();
+            }
+        }
+        return *thread_pools[static_cast<size_t>(thread_pool_id)];
+    }
+
+    /// Waits for all threads to finish.
+    void wait()
+    {
+        auto wait_sequence = {
+            ThreadPoolId::RESTORE_ON_CLUSTER_ASYNC,
+            ThreadPoolId::RESTORE_ASYNC,
+            ThreadPoolId::RESTORE_COPIER,
+            ThreadPoolId::BACKUP_ON_CLUSTER_ASYNC,
+            ThreadPoolId::BACKUP_ASYNC,
+            ThreadPoolId::BACKUP_COPIER,
+        };
+
+        for (auto thread_pool_id : wait_sequence)
+        {
+            ThreadPool * thread_pool;
+            {
+                std::lock_guard lock{mutex};
+                thread_pool = thread_pools[static_cast<size_t>(thread_pool_id)].get();
+            }
+            if (thread_pool)
+                thread_pool->wait();
+        }
+    }
+
+private:
+    const size_t num_backup_threads;
+    const size_t num_restore_threads;
+    std::unique_ptr<ThreadPool> thread_pools[static_cast<size_t>(ThreadPoolId::MAX)] TSA_GUARDED_BY(mutex);
+    std::mutex mutex;
+};
+
+
 BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
-    : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
-    , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
-    , log(&Poco::Logger::get("BackupsWorker"))
+    : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
+    , log(&Poco::Logger::get("BackupsWorker"))
 {
     backup_log = global_context->getBackupLog();
-    /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
+}
+
+
+BackupsWorker::~BackupsWorker() = default;
+
+
+ThreadPool & BackupsWorker::getThreadPool(ThreadPoolId thread_pool_id)
+{
+    return thread_pools->getThreadPool(thread_pool_id);
 }
 
 
@@ -286,7 +379,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
         if (backup_settings.async)
         {
-            backups_thread_pool->scheduleOrThrowOnError(
+            auto & thread_pool = getThreadPool(on_cluster ? ThreadPoolId::BACKUP_ON_CLUSTER_ASYNC : ThreadPoolId::BACKUP_ASYNC);
+            thread_pool.scheduleOrThrowOnError(
                 [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
                 {
                     doBackup(
@@ -480,7 +574,7 @@ void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, con
     LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, *backups_thread_pool));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_COPIER)));
 }
 
 
@@ -506,6 +600,7 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
     std::exception_ptr exception;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
+    auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP_COPIER);
     auto thread_group = CurrentThread::getGroup();
 
     for (size_t i = 0; i != backup_entries.size(); ++i)
@@ -573,7 +668,7 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
             continue;
         }
 
-        backups_thread_pool->scheduleOrThrowOnError([job] { job(true); });
+        thread_pool.scheduleOrThrowOnError([job] { job(true); });
     }
 
     {
@@ -631,7 +726,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
         if (restore_settings.async)
         {
-            restores_thread_pool->scheduleOrThrowOnError(
+            auto & thread_pool = getThreadPool(on_cluster ? ThreadPoolId::RESTORE_ON_CLUSTER_ASYNC : ThreadPoolId::RESTORE_ASYNC);
+            thread_pool.scheduleOrThrowOnError(
                 [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
                 {
                     doRestore(
@@ -776,7 +872,7 @@ void BackupsWorker::doRestore(
             }
 
             /// Execute the data restoring tasks.
-            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), *restores_thread_pool);
+            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), getThreadPool(ThreadPoolId::RESTORE_COPIER));
 
             /// We have restored everything, we need to tell other hosts (they could be waiting for it).
             restore_coordination->setStage(Stage::COMPLETED, "");
@@ -1007,8 +1103,7 @@ void BackupsWorker::shutdown()
     if (has_active_backups_and_restores)
         LOG_INFO(log, "Waiting for {} backups and {} restores to be finished", num_active_backups, num_active_restores);
 
-    backups_thread_pool->wait();
-    restores_thread_pool->wait();
+    thread_pools->wait();
 
     if (has_active_backups_and_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");
