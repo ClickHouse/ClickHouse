@@ -118,6 +118,10 @@ private:
 
     SessionTracker::SessionTrackerHandle session_tracker_handle;
 
+    /// Settings received from authentication server during authentication process
+    /// to set when creating a session context
+    SettingsChanges settings_from_auth_server;
+
     Poco::Logger * log = nullptr;
 };
 

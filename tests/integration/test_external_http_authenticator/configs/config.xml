@@ -1,0 +1,11 @@
+<clickhouse>
+    <http_authentication_servers>
+        <basic_server>
+          <uri>http://localhost:8000/basic_auth</uri>
+          <connection_timeout_ms>1000</connection_timeout_ms>
+          <receive_timeout_ms>1000</receive_timeout_ms>
+          <send_timeout_ms>1000</send_timeout_ms>
+        </basic_server>
+    </http_authentication_servers>
+    <custom_settings_prefixes>auth_</custom_settings_prefixes>
+</clickhouse>
