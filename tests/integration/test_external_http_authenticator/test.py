@@ -19,7 +19,6 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 def run_echo_server():
-
     tmp = instance.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "http_auth_server.py"),
         "/http_auth_server.py",
