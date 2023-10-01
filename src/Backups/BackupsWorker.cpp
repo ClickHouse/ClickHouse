@@ -954,23 +954,21 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
             ++num_active_jobs;
         }
 
-        auto job = [&](bool async)
+        auto job = [&]()
         {
             SCOPE_EXIT_SAFE(
                 std::lock_guard lock{mutex};
                 if (!--num_active_jobs)
                     event.notify_all();
-                if (async)
-                    CurrentThread::detachFromGroupIfNotDetached();
+                CurrentThread::detachFromGroupIfNotDetached();
             );
 
             try
             {
-                if (async && thread_group)
+                if (thread_group)
                     CurrentThread::attachToGroup(thread_group);
 
-                if (async)
-                    setThreadName("RestoreWorker");
+                setThreadName("RestoreWorker");
 
                 {
                     std::lock_guard lock{mutex};
@@ -997,7 +995,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
             }
         };
 
-        thread_pool.scheduleOrThrowOnError([job] { job(true); });
+        thread_pool.scheduleOrThrowOnError(job);
     }
 
     {
