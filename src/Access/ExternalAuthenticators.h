@@ -42,7 +42,7 @@ public:
     bool checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
-    bool checkHTTPBasicCredentials(const String& uri, const BasicCredentials & credentials, SettingsChanges & settings) const;
+    bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
 
