@@ -1222,9 +1222,9 @@ private:
 
     std::shared_lock<SharedMutex> getGlobalSharedLock() const;
 
-    std::unique_lock<SharedMutex> getLock() const;
+    std::unique_lock<SharedMutex> getLocalLock() const;
 
-    std::shared_lock<SharedMutex> getSharedLock() const;
+    std::shared_lock<SharedMutex> getLocalSharedLock() const;
 
     const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::unique_lock<SharedMutex> & lock) const;
 
