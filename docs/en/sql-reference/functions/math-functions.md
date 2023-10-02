@@ -714,7 +714,7 @@ Result:
 
 ## byteSwap
 
-Accepts an integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
+Accepts an unsigned integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
 
 **Syntax**
 
@@ -736,10 +736,21 @@ Result:
 └──────────────────────┘
 ```
 
-The above example can be understood in the following manner:
-1. First, the integer operand (base 10) is converted to bytes (base 2) in little-endian i.e. 3351772109 -> CD FB C7 C7
-2. Then, the bytes are reversed i.e CD FB C7 C7 -> C7 C7 FB CD
-3. Finally, the bytes are interpreted back to an integer assuming little-endian i.e. C7 C7 FB CD -> 3455829959
+The above example can be worked out in the following manner:
+1. First, convert the integer operand (base 10) to its equivalent hexadecimal interpretation (base 16) in big-endian format i.e. 3351772109 -> C7 C7 FB CD (4 bytes)
+2. Then, reverse the bytes i.e. C7 C7 FB CD -> CD FB C7 C7
+3. Finally, the convert the hexadecimal number back to an integer assuming big-endian i.e. CD FB C7 C7  -> 3455829959
 
-Note that, in step#1, we can also choose to convert the operand to bytes in big-endian as long as we also assume big-endian when
-converting back to integer in step#3.
+Note that, in step#1, one can also choose to convert the operand to bytes in little-endian as long as one also assumes little-endian when converting back to integer in step#3.
+
+This can be particularly useful when one wants to reverse values of data-types which are stored as unsigned integers under the hood and allow conversions from unsigned integers to themselves (such as IPV4). For example:
+
+```result
+┌─toIPv4(3351772109)─┐
+│ 199.199.251.205    │
+└────────────────────┘
+
+┌─toIPv4(byteSwap(3351772109))─┐
+│ 205.251.199.199              │
+└──────────────────────────────┘
+```
