@@ -1592,6 +1592,7 @@ class ClickHouseCluster:
             clickhouse_start_command += " --log-file=" + clickhouse_log_file
         if clickhouse_error_log_file:
             clickhouse_start_command += " --errorlog-file=" + clickhouse_error_log_file
+        logging.debug(f"clickhouse_start_command: {clickhouse_start_command}")
 
         instance = ClickHouseInstance(
             cluster=self,
