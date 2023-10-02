@@ -32,7 +32,7 @@ def cluster():
             env_variables={
                 "http_proxy": "http://proxy1",
             },
-            exclusive_env_variables=True,
+            instance_env_variables=True,
         )
 
         logging.info("Starting cluster...")
