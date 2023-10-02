@@ -689,21 +689,21 @@ Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance
 **Syntax**
 
 ```sql
-byteHammingDistance(string2, string2)
+byteHammingDistance(string1, string2)
 ```
 
 **Examples**
 
 ``` sql
-SELECT byteHammingDistance('abc', 'ab') ;
+SELECT byteHammingDistance('karolin', 'kathrin');
 ```
 
 Result:
 
 ``` text
-┌─byteHammingDistance('abc', 'ab')─┐
-│                                1 │
-└──────────────────────────────────┘
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
 ```
 
 - Alias: mismatches
