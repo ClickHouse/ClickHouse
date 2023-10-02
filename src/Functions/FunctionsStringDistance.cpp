@@ -156,9 +156,8 @@ struct ByteEditDistanceImpl
         if (haystack_size > max_string_size || needle_size > max_string_size)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "The string size is too big for function byteEditDistance. "
-                "Should be at most {}",
-                max_string_size);
+                "The string size is too big for function editDistance, "
+                "should be at most {}", max_string_size);
 
         PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
         PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
@@ -196,18 +195,19 @@ struct NameByteHammingDistance
 {
     static constexpr auto name = "byteHammingDistance";
 };
+using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
 
 struct NameEditDistance
 {
     static constexpr auto name = "editDistance";
 };
+using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
 
-using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
-
-using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
-
-struct NameJaccardIndex { static constexpr auto name = "jaccardIndex"; };
-using FunctionByteJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl>, NameJaccardIndex>;
+struct NameJaccardIndex
+{
+    static constexpr auto name = "stringJaccardIndex";
+};
+using FunctionStringJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl>, NameJaccardIndex>;
 
 REGISTER_FUNCTION(StringDistance)
 {
@@ -215,11 +215,11 @@ REGISTER_FUNCTION(StringDistance)
         FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
-    factory.registerFunction<FunctionByteEditDistance>(
+    factory.registerFunction<FunctionEditDistance>(
         FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
-    factory.registerFunction<FunctionByteJaccardIndex>(
+    factory.registerFunction<FunctionStringJaccardIndex>(
         FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.)"});
 }
 }
