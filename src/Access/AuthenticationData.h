@@ -97,7 +97,7 @@ private:
     std::vector<ssh::SSHKey> ssh_keys;
     /// HTTP authentication properties
     String http_auth_server_name;
-    HTTPAuthenticationScheme http_auth_scheme;
+    HTTPAuthenticationScheme http_auth_scheme = HTTPAuthenticationScheme::BASIC;
 };
 
 }
