@@ -4469,7 +4469,10 @@ class ClickHouseInstance:
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )
 
-        # 
+        # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
+        # are shared with all nodes within the same cluster, even if it is specified for a single node.
+        # In order not to break the existing tests, the `self.exclusive_env_variables` option was added as a workaround.
+        # IMHO, it would be better to make `self.env_variables` exclusive by defaultand remove the `self.exclusive_env_variables` option.
         if self.exclusive_env_variables:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
