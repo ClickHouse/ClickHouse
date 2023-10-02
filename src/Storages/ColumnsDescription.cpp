@@ -102,6 +102,7 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         DB::writeText("SETTINGS ", buf);
         DB::writeText("(", buf);
         ASTSetQuery ast;
+        ast.is_standalone = false;
         ast.changes = settings;
         writeEscapedString(queryToString(ast), buf);
         DB::writeText(")", buf);
