@@ -1,7 +1,5 @@
-#include <type_traits>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
-#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -12,53 +10,46 @@ extern const int NOT_IMPLEMENTED;
 
 namespace
 {
-
 template <typename T>
-requires std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32))
-inline T roundDownToPowerOfTwo(T x)
+requires std::is_same_v<T, UInt8>
+inline T byteSwap(T x)
 {
-    return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
+    return x;
 }
 
 template <typename T>
-requires std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64))
-inline T roundDownToPowerOfTwo(T x)
+requires std::is_same_v<T, UInt16>
+inline T byteSwap(T x)
 {
-    return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
+    return __builtin_bswap16(x);
 }
 
 template <typename T>
-requires std::is_same_v<T, Float32>
-inline T roundDownToPowerOfTwo(T x)
+requires std::is_same_v<T, UInt32>
+inline T byteSwap(T x)
 {
-    return bit_cast<T>(bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
+    return __builtin_bswap32(x);
 }
 
 template <typename T>
-requires std::is_same_v<T, Float64>
-inline T roundDownToPowerOfTwo(T x)
+requires std::is_same_v<T, UInt64>
+inline T byteSwap(T x)
 {
-    return bit_cast<T>(bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
+    return __builtin_bswap64(x);
 }
 
 template <typename T>
-requires is_big_int_v<T>
-inline T roundDownToPowerOfTwo(T)
+inline T byteSwap(T)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "roundToExp2() for big integers is not implemented");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap() is not implemented for {} datatype", demangle(typeid(T).name()));
 }
-
 
 template <typename T>
 struct ByteSwapImpl
 {
     using ResultType = T;
-
-    static inline T apply(T x)
-    {
-        // return roundDownToPowerOfTwo<T>(x);
-        return x;
-    }
+    static constexpr const bool allow_string_or_fixed_string = false;
+    static inline T apply(T x) { return byteSwap<T>(x); }
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false;
@@ -74,8 +65,10 @@ using FunctionByteSwap = FunctionUnaryArithmetic<ByteSwapImpl, NameByteSwap, fal
 }
 
 template <>
-struct FunctionUnaryArithmeticMonotonicity<FunctionByteSwap> : PositiveMonotonicity
+struct FunctionUnaryArithmeticMonotonicity<NameByteSwap>
 {
+    static bool has() { return false; }
+    static IFunction::Monotonicity get(const Field &, const Field &) { return {}; }
 };
 
 REGISTER_FUNCTION(ByteSwap)
