@@ -15,23 +15,23 @@ create table t
 
 insert into t values ('abcdefg', 'abcdef') ('abcdefg', 'bcdefg') ('abcdefg', '') ('mouse', 'clickhouse');
 select 'byteHammingDistance';
-select byteHammingDistance(s1, s2) from t;
+select byteHammingDistance(s1, s2) FROM t ORDER BY s1, s2;
 select 'byteHammingDistance(const, non const)';
-select byteHammingDistance('abc', s2) from t;
+select byteHammingDistance('abc', s2) FROM t ORDER BY s1, s2;
 select 'byteHammingDistance(non const, const)';
-select byteHammingDistance(s2, 'def') from t;
+select byteHammingDistance(s2, 'def') FROM t ORDER BY s1, s2;
 
 select 'mismatches(alias)';
-select mismatches(s1, s2) from t;
-select mismatches('abc', s2) from t;
-select mismatches(s2, 'def') from t;
+select mismatches(s1, s2) FROM t ORDER BY s1, s2;
+select mismatches('abc', s2) FROM t ORDER BY s1, s2;
+select mismatches(s2, 'def') FROM t ORDER BY s1, s2;
 
 select 'jaccardIndex';
-select jaccardIndex(s1, s2) from t;
+select jaccardIndex(s1, s2) FROM t ORDER BY s1, s2;
 select 'editDistance';
-select editDistance(s1, s2) from t;
+select editDistance(s1, s2) FROM t ORDER BY s1, s2;
 select 'levenshteinDistance';
-select levenshteinDistance(s1, s2) from t;
+select levenshteinDistance(s1, s2) FROM t ORDER BY s1, s2;
 
 SELECT editDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
