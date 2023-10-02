@@ -97,7 +97,7 @@ void ReplicatedMergeTreeGeoReplicationController::threadFunction()
         createEphemeralRegionNode();
         enterLeaderElection();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(log_name.c_str());
         task->scheduleAfter(DBMS_GEO_REPLICATION_CONTROL_INIT_PERIOD_MS);
