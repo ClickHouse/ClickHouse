@@ -215,8 +215,12 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
 {
-    static MergeTreeSettings merge_tree_settings;
-    static std::set<String> allowed_column_level_settings = {"min_compress_block_size", "max_compress_block_size"};
+    static const MergeTreeSettings merge_tree_settings;
+    static const std::set<String> allowed_column_level_settings =
+    {
+        "min_compress_block_size",
+        "max_compress_block_size"
+    };
     for (const auto & change : changes)
     {
         if (!allowed_column_level_settings.contains(change.name))
@@ -228,4 +232,5 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
         merge_tree_settings.checkCanSet(change.name, change.value);
     }
 }
+
 }

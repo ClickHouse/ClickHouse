@@ -8,7 +8,7 @@ CREATE TABLE t
     `v3` Float32 CODEC(ZSTD(1)),
     `v4` Float64 CODEC(ZSTD(1))
 )
-ENGINE = MergeTree
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t/2870', 'r1')
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1;
 
@@ -40,3 +40,11 @@ CREATE TABLE t3
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1; -- {serverError 115}
+
+CREATE TABLE t4
+(
+    `id` UInt64 CODEC(ZSTD(1)),
+    `long_string` String CODEC(ZSTD(1)) SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
+)
+ENGINE = TinyLog
+ORDER BY id; -- {serverError 44}
