@@ -4393,6 +4393,8 @@ class ClickHouseInstance:
         if self.with_azurite:
             depends_on.append("azurite1")
 
+        # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
+        # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
         if self.exclusive_env_variables is True:
             self.env_variables.update(self.cluster.env_variables)
         else:
