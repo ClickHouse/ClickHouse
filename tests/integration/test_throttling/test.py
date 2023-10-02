@@ -33,9 +33,14 @@ def elapsed(func, *args, **kwargs):
 node = cluster.add_instance(
     "node",
     stay_alive=True,
-    main_configs=["configs/server_backups.xml", "configs/server_overrides.xml"],
+    main_configs=[
+        "configs/server_backups.xml",
+        "configs/server_overrides.xml",
+        "configs/ssl.xml",
+    ],
     user_configs=["configs/users_overrides.xml"],
     with_minio=True,
+    minio_certs_dir="minio_certs",
 )
 
 
