@@ -1,7 +1,5 @@
 import logging
 import helpers.s3_url_proxy_tests_util as proxy_util
-import os
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
