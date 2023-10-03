@@ -89,7 +89,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
                           .argument("task-file").binding("task-file"));
-    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
+    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists. Default is false.")
                           .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
                           .binding("safe-mode"));

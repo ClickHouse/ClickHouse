@@ -1,8 +1,11 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
+#include <base/getThreadId.h>
 #include <base/scope_guard.h>
 #include <base/defines.h> /// THREAD_SANITIZER
+#include <sys/resource.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <cstdint>
 
 #if defined(OS_FREEBSD)
@@ -69,7 +72,30 @@ static size_t getStackSize(void ** out_address)
 
     if (0 != pthread_attr_getstack(&attr, &address, &size))
         throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
-#endif // OS_DARWIN
+
+#ifdef USE_MUSL
+    /// Adjust stack size for the main thread under musl.
+    /// musl returns not the maximum available stack, but current stack.
+    ///
+    /// TL;DR;
+    ///
+    /// musl uses mremap() and calls it until it returns ENOMEM, but after the
+    /// available stack there will be a guard page (that is handled by the
+    /// kernel to expand the stack), and when you will try to mremap() on it
+    /// you will get EFAULT.
+    if (static_cast<pid_t>(getThreadId()) == getpid())
+    {
+        ::rlimit rlimit{};
+        if (::getrlimit(RLIMIT_STACK, &rlimit))
+            return 0;
+
+        address = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(address) + size);
+        size = rlimit.rlim_cur;
+        address = reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(address) - size);
+    }
+#endif
+
+#endif
 
     if (out_address)
         *out_address = address;

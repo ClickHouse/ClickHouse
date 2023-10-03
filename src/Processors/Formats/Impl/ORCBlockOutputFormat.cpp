@@ -432,7 +432,7 @@ void ORCBlockOutputFormat::writeColumn(
                     [scale](UInt64 value){ return (value % UInt64(std::pow(10, scale))) * std::pow(10, 9 - scale); });
             break;
         }
-        case TypeIndex::Decimal32:;
+        case TypeIndex::Decimal32:
         {
             writeDecimals<Decimal32, orc::Decimal64VectorBatch>(
                     orc_column,

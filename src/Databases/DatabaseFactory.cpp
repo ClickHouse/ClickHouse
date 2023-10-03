@@ -107,9 +107,6 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 {
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    /// Creates store/xxx/ for Atomic
-    fs::create_directories(fs::path(metadata_path).parent_path());
-
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)

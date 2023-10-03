@@ -10,9 +10,9 @@ sidebar_label: cluster
 
 Функция `clusterAllReplicas` работает также как `cluster`, но каждая реплика в кластере используется как отдельный шард/отдельное соединение.
 
-    :::note "Примечание"
-    Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
-    :::
+:::note Примечание
+Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
+:::
 **Синтаксис**
 
 ``` sql

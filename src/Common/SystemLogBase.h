@@ -29,16 +29,21 @@
     M(TextLogElement) \
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
-    M(AsynchronousInsertLogElement)
+    M(AsynchronousInsertLogElement) \
+    M(BackupLogElement)
 
 namespace Poco
 {
+
 class Logger;
+
 namespace Util
 {
     class AbstractConfiguration;
 }
+
 }
+
 
 namespace DB
 {

@@ -12,6 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function wait_query_by_id_started()
 {
+    # As the query we are waiting for is running simultaneously, let's give it a little time to actually start. The
+    # queries are supposed to run for multiple seconds, so sleeping 0.5 seconds is not a big deal, especially when
+    # flushing the logs can take up to 3 to 5 seconds. Basically waiting a bit here we can increase the chance that we
+    # don't have spend precious time on flushing logs.
+    sleep 0.5
     local query_id=$1 && shift
     # wait for query to be started
     while [ "$($CLICKHOUSE_CLIENT "$@" -q "select count() from system.processes where query_id = '$query_id'")" -ne 1 ]; do

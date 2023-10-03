@@ -1,7 +1,6 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
-#include <iostream>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
@@ -118,7 +117,6 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 
         elem.event_time = msg_ext.time_seconds;
         elem.event_time_microseconds = msg_ext.time_in_microseconds;
-        elem.microseconds = msg_ext.time_microseconds;
 
         elem.thread_name = getThreadName();
         elem.thread_id = msg_ext.thread_id;

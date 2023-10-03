@@ -15,6 +15,7 @@ node2 = cluster.add_instance(
     tag="21.2",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 
 # Use differents nodes because if there is node.restart_from_latest_version(), then in later tests
@@ -25,6 +26,7 @@ node3 = cluster.add_instance(
     tag="21.5",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 node4 = cluster.add_instance(
     "node4",
@@ -32,6 +34,7 @@ node4 = cluster.add_instance(
     tag="21.5",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 node5 = cluster.add_instance(
     "node5",
@@ -39,6 +42,7 @@ node5 = cluster.add_instance(
     tag="21.5",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 node6 = cluster.add_instance(
     "node6",
@@ -46,6 +50,7 @@ node6 = cluster.add_instance(
     tag="21.5",
     with_installed_binary=True,
     stay_alive=True,
+    allow_analyzer=False,
 )
 
 

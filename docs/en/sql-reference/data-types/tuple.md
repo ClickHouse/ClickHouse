@@ -4,7 +4,7 @@ sidebar_position: 54
 sidebar_label: Tuple(T1, T2, ...)
 ---
 
-# Tuple(t1, T2, …)
+# Tuple(T1, T2, …)
 
 A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types). Tuple must contain at least one element.
 
