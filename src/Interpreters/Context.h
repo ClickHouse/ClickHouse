@@ -1181,6 +1181,7 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    bool canUseParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
 

@@ -111,6 +111,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event ContextLockWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -721,7 +722,10 @@ std::unique_lock<std::recursive_mutex> Context::getLock() const
 {
     ProfileEvents::increment(ProfileEvents::ContextLock);
     CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    return std::unique_lock(shared->mutex);
+    Stopwatch watch;
+    auto lock = std::unique_lock(shared->mutex);
+    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
+    return lock;
 }
 
 ProcessList & Context::getProcessList() { return shared->process_list; }
@@ -4645,18 +4649,20 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     return SAMPLE_KEY;
 }
 
-bool Context::canUseParallelReplicasOnInitiator() const
+bool Context::canUseParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
-        && !getClientInfo().collaborate_with_initiator;
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
+}
+
+bool Context::canUseParallelReplicasOnInitiator() const
+{
+    return canUseParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    const auto & settings_ref = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1
-        && getClientInfo().collaborate_with_initiator;
+    return canUseParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

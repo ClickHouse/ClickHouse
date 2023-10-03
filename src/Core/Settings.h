@@ -169,7 +169,7 @@ class IColumn;
     M(String, parallel_replicas_custom_key, "", "Custom key assigning work to replicas when parallel replicas are used.", 0) \
     M(ParallelReplicasCustomKeyFilterType, parallel_replicas_custom_key_filter_type, ParallelReplicasCustomKeyFilterType::DEFAULT, "Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.", 0) \
     \
-    M(String, cluster_for_parallel_replicas, "default", "Cluster for a shard in which current server is located", 0) \
+    M(String, cluster_for_parallel_replicas, "", "Cluster for a shard in which current server is located", 0) \
     M(UInt64, allow_experimental_parallel_reading_from_replicas, 0, "Use all the replicas from a shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure", 0) \
     M(Float, parallel_replicas_single_task_marks_count_multiplier, 2, "A multiplier which will be added during calculation for minimal number of marks to retrieve from coordinator. This will be applied only for remote replicas.", 0) \
     M(Bool, parallel_replicas_for_non_replicated_merge_tree, false, "If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables", 0) \
@@ -797,9 +797,10 @@ class IColumn;
     M(UInt64, extract_kvp_max_pairs_per_row, 1000, "Max number pairs that can be produced by extractKeyValuePairs function. Used to safeguard against consuming too much memory.", 0) \
     M(Timezone, session_timezone, "", "This setting can be removed in the future due to potential caveats. It is experimental and is not suitable for production usage. The default timezone for current session or query. The server default timezone if empty.", 0) \
     M(Bool, allow_create_index_without_type, false, "Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.", 0)\
-    M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0)\
+    M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0)                                                                                                  \
+
     // End of COMMON_SETTINGS
-    // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
+    // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
@@ -852,9 +853,6 @@ class IColumn;
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
     MAKE_OBSOLETE(M, UInt64, backup_threads, 16) \
     MAKE_OBSOLETE(M, UInt64, restore_threads, 16) \
-    MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, optimize_duplicate_order_by_and_distinct, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
@@ -1058,10 +1056,17 @@ class IColumn;
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 
-#define LIST_OF_SETTINGS(M, ALIAS)    \
-    COMMON_SETTINGS(M, ALIAS)         \
-    OBSOLETE_SETTINGS(M, ALIAS)       \
-    FORMAT_FACTORY_SETTINGS(M, ALIAS)
+#define OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
+    /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
+
+#define LIST_OF_SETTINGS(M, ALIAS)     \
+    COMMON_SETTINGS(M, ALIAS)          \
+    OBSOLETE_SETTINGS(M, ALIAS)        \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 
@@ -1100,10 +1105,14 @@ private:
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
 
+#define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)         \
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)        \
+
 /*
  * User-specified file format settings for File and URL engines.
  */
-DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
+DECLARE_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 struct FormatFactorySettings : public BaseSettings<FormatFactorySettingsTraits>
 {
