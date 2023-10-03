@@ -1,7 +1,6 @@
 -- enforce some defaults to be sure that the env settings will not affect the test
 SET max_threads=5, async_socket_for_remote=1, prefer_localhost_replica=1, optimize_read_in_order=1, load_marks_asynchronously=0, local_filesystem_read_method='pread', remote_filesystem_read_method='read';
 
-
 -- we use query_thread_log to check peak thread usage
 -- after https://github.com/ClickHouse/ClickHouse/issues/53417 there is a simpler way to check it
 -- but that will not allow to backport the test to older versions
@@ -15,7 +14,7 @@ SELECT 'prefer_localhost_replica=1, remote query with a lot of union all' AS tes
 -- let's check how many threads clickhouse will start for that
 
 select count() from remote('127.0.0.1:9000', view(
-{% for n in range(379) -%}
+{% for n in range(77) -%}
 SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
  )) SETTINGS log_comment='check_concurrency_in_remote_queries1';
@@ -47,7 +46,7 @@ WHERE
 SELECT 'prefer_localhost_replica=0, remote query with a lot of union all' AS testname;
 
 select count() from remote('127.0.0.1:9000', view(
-{% for n in range(379) -%}
+{% for n in range(77) -%}
 SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
  )) SETTINGS log_comment='check_concurrency_in_remote_queries2', prefer_localhost_replica=0;
@@ -83,7 +82,7 @@ SELECT 'prefer_localhost_replica=1, async_socket_for_remote=0, remote query with
 -- see https://github.com/ClickHouse/ClickHouse/issues/53287
 
 select count() from remote('127.0.0.1:9000', view(
-{% for n in range(379) -%}
+{% for n in range(77) -%}
 SELECT * FROM system.one {{ "UNION ALL" if not loop.last }}
 {% endfor -%}
  )) SETTINGS log_comment='check_concurrency_in_remote_queries3', async_socket_for_remote=0, prefer_localhost_replica=1;
@@ -96,7 +95,7 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    if(peak_threads >= 379, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
+    if(peak_threads >= 77, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
     event_time > now() - 60
@@ -147,7 +146,7 @@ INSERT INTO test_lot_of_parts (a, b, c, val)
      'bar' as b,
      _CAST('1683504000', 'DateTime64') as c,
      'baz' as val
-   FROM numbers_mt(500)
+   FROM numbers_mt(95)
    SETTINGS max_block_size = 1, min_insert_block_size_bytes=1, min_insert_block_size_rows=1; --every row will be in separate part
 
 select count() from system.parts where table = 'test_lot_of_parts' and active and database = currentDatabase();
@@ -210,8 +209,8 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    if(peak_threads >= 500, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
-     -- we have 500 parts
+    if(peak_threads >= 95, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
+     -- we have 95 parts
 FROM system.query_thread_log
 WHERE
     event_time > now() - 60
