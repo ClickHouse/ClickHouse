@@ -123,7 +123,7 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-## Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
+## Storing Dictionaries in Memory {#storing-dictionaries-in-memory}
 
 There are a variety of ways to store dictionaries in memory.
 

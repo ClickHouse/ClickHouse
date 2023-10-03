@@ -54,7 +54,7 @@ namespace
             res.access_flags = access_flags;
             res.grant_option = grant_option;
             res.is_partial_revoke = is_partial_revoke;
-            switch (full_name.size())
+            switch (full_name.size()) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case 0:
                 {

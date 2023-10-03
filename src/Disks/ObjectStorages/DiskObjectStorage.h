@@ -5,7 +5,15 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace CurrentMetrics
 {
@@ -154,7 +162,8 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const WriteSettings & settings = {}) override;
+        const ReadSettings & read_settings = {},
+        const WriteSettings & write_settings = {}) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
