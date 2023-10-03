@@ -661,9 +661,6 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        // for (const auto & [k, v] : conjunction)
-        //     std::cerr << k->result_name << ' ' << v.dumpStructure() << ' ' << v.column->getUInt(0) << std::endl;
-
         auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, false);
         for (const auto & column : columns)
             if (!column.column)
@@ -680,23 +677,12 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     size_t max_elements)
 {
     auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    // std::cerr << "--- inverted dag\n";
-    // std::cerr << inverted_dag->dumpDAG() << std::endl;
     auto matches = matchTrees(expr, *inverted_dag, false);
-
-    // for (const auto & [node, match] : matches)
-    // {
-    //     LOG_TRACE(&Poco::Logger::get("eeocc"), "Match {} {} -> {} {} (with monotonicity : {})",
-    //         static_cast<const void *>(node), node->result_name,
-    //         static_cast<const void *>(match.node), (match.node ? match.node->result_name : ""), match.monotonicity != std::nullopt);
-    // }
 
     auto predicates = analyze(inverted_dag->getOutputs().at(0), matches, context, max_elements);
 
     if (!predicates)
         return {};
-
-    // std::cerr << "--- num predicates " << predicates->size() << std::endl;
 
     ConstantVariants res;
     for (auto & conjunction : *predicates)
