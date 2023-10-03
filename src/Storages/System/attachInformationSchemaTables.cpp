@@ -174,6 +174,7 @@ static constexpr std::string_view columns = R"(
         `domain_catalog` Nullable(String),
         `domain_schema` Nullable(String),
         `domain_name` Nullable(String),
+        `extras` Nullable(String),
         `column_comment` String,
         `column_type` String,
         `TABLE_CATALOG` String,
@@ -199,6 +200,7 @@ static constexpr std::string_view columns = R"(
         `DOMAIN_CATALOG` Nullable(String),
         `DOMAIN_SCHEMA` Nullable(String),
         `DOMAIN_NAME` Nullable(String),
+        `EXTRAS` Nullable(String),
         `COLUMN_COMMENT` String,
         `COLUMN_TYPE` String
     ) AS
@@ -226,6 +228,11 @@ static constexpr std::string_view columns = R"(
         NULL AS domain_catalog,
         NULL AS domain_schema,
         NULL AS domain_name,
+        multiIf(default_kind = 'DEFAULT',      'DEFAULT_GENERATED',
+                default_kind = 'MATERIALIZED', 'STORED GENERATED',
+                default_kind = 'ALIAS',        'VIRTUAL GENERATED',
+                ''
+               ) AS extras,
         comment AS column_comment,
         type AS column_type,
         table_catalog AS TABLE_CATALOG,
@@ -251,6 +258,7 @@ static constexpr std::string_view columns = R"(
         domain_catalog AS DOMAIN_CATALOG,
         domain_schema AS DOMAIN_SCHEMA,
         domain_name AS DOMAIN_NAME,
+        extras AS EXTRAS,
         column_comment AS COLUMN_COMMENT,
         column_type AS COLUMN_TYPE
     FROM system.columns

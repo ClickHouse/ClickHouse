@@ -69,6 +69,7 @@ Columns:
 - `domain_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+- `extras` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `STORED GENERATED` for `MATERIALIZED`-type columns, `VIRTUAL GENERATED` for `ALIAS`-type columns, `DEFAULT_GENERATED` for `DEFAULT`-type columns, or `NULL`.
 
 **Example**
 
