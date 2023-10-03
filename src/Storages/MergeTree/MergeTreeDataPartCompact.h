@@ -57,7 +57,7 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
-    String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
     ~MergeTreeDataPartCompact() override;
 

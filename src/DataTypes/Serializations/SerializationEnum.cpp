@@ -115,7 +115,7 @@ template <typename Type>
 void SerializationEnum<Type>::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.output_format_markdown_escape_special_characters)
+    if (settings.markdown.escape_special_characters)
         writeMarkdownEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);

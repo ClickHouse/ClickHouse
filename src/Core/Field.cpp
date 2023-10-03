@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    switch (type)
+    switch (static_cast<Field::Types::Which>(type))
     {
         case Field::Types::Null:
         {
@@ -133,8 +133,14 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return bool(value);
         }
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+        case Field::Types::CustomType:
+            return Field();
     }
-    return Field();
+    UNREACHABLE();
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
