@@ -198,6 +198,8 @@ Columns:
     - `FOREIGN TABLE`
     - `LOCAL TEMPORARY`
     - `SYSTEM VIEW`
+- `data_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total
+  number of rows. NULL if it could not be determined.
 - `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of
   the data on-disk. NULL if it could not be determined.
 - `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
