@@ -4397,7 +4397,11 @@ class ClickHouseInstance:
         # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
         # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
         if self.exclusive_env_variables is True:
-            self.env_variables.update(self.cluster.env_variables)
+            # Create a dictionary containing cluster & instance env variables.
+            # Instance env variables will override cluster's.
+            temp_env_variables = self.cluster.env_variables.copy()
+            temp_env_variables.update(self.env_variables)
+            self.env_variables = temp_env_variables
         else:
             self.cluster.env_variables.update(self.env_variables)
 
