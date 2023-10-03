@@ -49,6 +49,10 @@ private:
     bool is_finished = false;
     bool commit_in_suffix;
 
+    /// proton: porting start. TODO: remove comments
+    bool is_streaming = false;
+    /// proton: porting ends. TODO: remove comments
+
     const Block non_virtual_header;
     const Block virtual_header;
     const StreamingHandleErrorMode handle_error_mode;

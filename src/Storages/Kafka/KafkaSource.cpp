@@ -44,6 +44,7 @@ KafkaSource::KafkaSource(
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
+    , is_streaming(true)    /// proton: porting. TODO: remove comment, get this from context
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
@@ -78,7 +79,14 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        /// proton: porting start. TODO: remove comments
+        std::chrono::milliseconds timeout;
+        if (is_streaming)
+            timeout = std::chrono::milliseconds::zero();
+        else
+            timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        /// proton: porting ends. TODO: remove comments
+
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)
@@ -92,7 +100,8 @@ Chunk KafkaSource::generateImpl()
     if (is_finished)
         return {};
 
-    is_finished = true;
+    if (!is_streaming)
+        is_finished = true;
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy
@@ -220,6 +229,8 @@ Chunk KafkaSource::generateImpl()
             }
 
             total_rows = total_rows + new_rows;
+            if (is_streaming)
+                break;
         }
         else if (consumer->polledDataUnusable())
         {
@@ -239,7 +250,7 @@ Chunk KafkaSource::generateImpl()
         }
 
         if (!consumer->hasMorePolledMessages()
-            && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && !is_streaming && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             break;
         }
