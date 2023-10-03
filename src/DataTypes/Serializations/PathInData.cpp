@@ -65,9 +65,7 @@ UInt128 PathInData::getPartsHash(const Parts::const_iterator & begin, const Part
         hash.update(part_it->anonymous_array_level);
     }
 
-    UInt128 res;
-    hash.get128(res);
-    return res;
+    return hash.get128();
 }
 
 void PathInData::buildPath(const Parts & other_parts)

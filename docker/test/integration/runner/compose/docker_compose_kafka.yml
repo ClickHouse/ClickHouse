@@ -31,6 +31,8 @@ services:
       - kafka_zookeeper
     security_opt:
       - label:disable
+    sysctls:
+      net.ipv4.ip_local_port_range: '55000 65535'
 
   schema-registry:
     image: confluentinc/cp-schema-registry:5.2.0

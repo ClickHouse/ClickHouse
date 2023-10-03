@@ -238,7 +238,7 @@ def build_and_push_image(
     result = []  # type: TestResults
     if os != "ubuntu":
         tag += f"-{os}"
-    init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
+    init_args = ["docker", "buildx", "build"]
     if push:
         init_args.append("--push")
         init_args.append("--output=type=image,push-by-digest=true")
@@ -265,7 +265,7 @@ def build_and_push_image(
                 f"--build-arg=VERSION='{version.string}'",
                 "--progress=plain",
                 f"--file={dockerfile}",
-                image.full_path,
+                image.full_path.as_posix(),
             ]
         )
         cmd = " ".join(cmd_args)

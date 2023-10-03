@@ -1918,6 +1918,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
         subquery_context->setSettings(subquery_settings);
+        /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
+        /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
+        subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, options);
@@ -2033,7 +2036,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     auto & nearest_query_scope_query_node = nearest_query_scope->scope_node->as<QueryNode &>();
     auto & mutable_context = nearest_query_scope_query_node.getMutableContext();
 
-    auto scalar_query_hash_string = std::to_string(node_with_hash.hash.first) + '_' + std::to_string(node_with_hash.hash.second);
+    auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
 
     if (mutable_context->hasQueryContext())
         mutable_context->getQueryContext()->addScalar(scalar_query_hash_string, scalar_block);
@@ -6240,11 +6243,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            const auto & insert_structure = DatabaseCatalog::instance()
-                                                .getTable(insertion_table, scope_context)
-                                                ->getInMemoryMetadataPtr()
-                                                ->getColumns()
-                                                .getInsertable();
+            const auto & insert_columns = DatabaseCatalog::instance()
+                                              .getTable(insertion_table, scope_context)
+                                              ->getInMemoryMetadataPtr()
+                                              ->getColumns();
+            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -6252,8 +6255,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
-            auto insert_column = insert_structure.begin();
-            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
+            auto insert_column_name_it = insert_column_names.begin();
+            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
@@ -6261,7 +6264,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
+            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
             {
                 if (auto * identifier_node = (*expression)->as<IdentifierNode>())
                 {
@@ -6277,15 +6280,19 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                             break;
                         }
 
-                        structure_hint.add({ identifier_node->getIdentifier().getFullName(), insert_column->type });
+                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                        column.name = identifier_node->getIdentifier().getFullName();
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
+                        structure_hint.add(std::move(column));
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
                 else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
                 {
@@ -6319,18 +6326,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
                 else
                 {
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
             }
 
@@ -6338,9 +6345,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             {
                 /// For input function we should check if input format supports reading subset of columns.
                 if (table_function_ptr->getName() == "input")
-                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat());
+                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(scope.context->getInsertFormat(), scope.context);
                 else
-                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
+                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(scope.context);
             }
 
             if (use_columns_from_insert_query)
@@ -6350,8 +6357,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// Append tail of insert structure to the hint
                     if (asterisk)
                     {
-                        for (; insert_column != insert_structure_end; ++insert_column)
-                            structure_hint.add({ insert_column->name, insert_column->type });
+                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
+                        {
+                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                            /// Change ephemeral columns to default columns.
+                            column.default_desc.kind = ColumnDefaultKind::Default;
+                            structure_hint.add(insert_columns.get(*insert_column_name_it));
+                        }
                     }
 
                     if (!structure_hint.empty())
@@ -6887,13 +6899,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
     }
 
-    std::erase_if(with_nodes, [](const QueryTreeNodePtr & node)
-    {
-        auto * subquery_node = node->as<QueryNode>();
-        auto * union_node = node->as<UnionNode>();
-
-        return (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
-    });
+    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
+      * and CTE for other sections to use.
+      *
+      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
+      */
+    query_node_typed.getWith().getNodes().clear();
 
     for (auto & window_node : query_node_typed.getWindow().getNodes())
     {
@@ -6951,9 +6962,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
     }
-
-    if (query_node_typed.hasWith())
-        resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.getPrewhere())
         resolveExpressionNode(query_node_typed.getPrewhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -7122,13 +7130,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 column.type->getName(),
                 scope.scope_node->formatASTForErrorMessage());
     }
-
-    /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
-      * and CTE for other sections to use.
-      *
-      * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
-      */
-    query_node_typed.getWith().getNodes().clear();
 
     /** WINDOW section can be safely removed, because WINDOW section can only provide window definition to window functions.
       *

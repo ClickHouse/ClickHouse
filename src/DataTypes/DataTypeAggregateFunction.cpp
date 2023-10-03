@@ -117,6 +117,33 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
+{
+    const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
+    const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
+
+    if (!lhs_state || !rhs_state)
+        return false;
+
+    if (lhs_state->function->getName() != rhs_state->function->getName())
+        return false;
+
+    if (lhs_state->parameters.size() != rhs_state->parameters.size())
+        return false;
+
+    for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
+        if (lhs_state->parameters[i] != rhs_state->parameters[i])
+            return false;
+
+    if (lhs_state->argument_types.size() != rhs_state->argument_types.size())
+        return false;
+
+    for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
+        if (!lhs_state->argument_types[i]->equals(*rhs_state->argument_types[i]))
+            return false;
+
+    return true;
+}
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
@@ -126,34 +153,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
     auto lhs_state_type = function->getNormalizedStateType();
     auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
 
-    if (typeid(lhs_state_type.get()) != typeid(rhs_state_type.get()))
-        return false;
-
-    if (const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get()))
-    {
-        const auto & rhs_state = typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type);
-
-        if (lhs_state->function->getName() != rhs_state.function->getName())
-            return false;
-
-        if (lhs_state->parameters.size() != rhs_state.parameters.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
-            if (lhs_state->parameters[i] != rhs_state.parameters[i])
-                return false;
-
-        if (lhs_state->argument_types.size() != rhs_state.argument_types.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
-            if (!lhs_state->argument_types[i]->equals(*rhs_state.argument_types[i]))
-                return false;
-
-        return true;
-    }
-
-    return lhs_state_type->equals(*rhs_state_type);
+    return strictEquals(lhs_state_type, rhs_state_type);
 }
 
 

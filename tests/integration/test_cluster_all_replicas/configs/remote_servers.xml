@@ -1,6 +1,6 @@
 <clickhouse>
     <remote_servers>
-        <two_shards>
+        <one_shard_two_nodes>
             <shard>
                 <replica>
                     <host>node1</host>
@@ -11,6 +11,52 @@
                     <port>9000</port>
                 </replica>
             </shard>
-        </two_shards>
+        </one_shard_two_nodes>
+        <one_shard_three_nodes>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_shard_three_nodes>
+        <two_shards_three_nodes>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node4</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node5</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node6</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </two_shards_three_nodes>
     </remote_servers>
 </clickhouse>
