@@ -86,6 +86,18 @@ def run_test_single_node(started_cluster):
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_6", "b", True)
     check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_6", "c", False)
 
+    node1.query("ALTER TABLE test_stat RENAME COLUMN b TO c")
+
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_7", "a", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_7", "b", False)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_7", "c", True)
+
+    node1.query("ALTER TABLE test_stat RENAME COLUMN c TO b")
+
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_8", "a", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_8", "b", True)
+    check_stat_file_on_disk(node1, "test_stat", "all_1_1_0_8", "c", False)
+
 
 def test_single_node_wide(started_cluster):
     node1.query("DROP TABLE IF EXISTS test_stat")

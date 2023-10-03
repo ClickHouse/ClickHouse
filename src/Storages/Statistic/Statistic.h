@@ -35,7 +35,6 @@ public:
     }
     virtual ~IStatistic() = default;
 
-    /// statistic_[col_name]_[type]
     String getFileName() const
     {
         return STAT_FILE_PREFIX + columnName();
@@ -50,7 +49,7 @@ public:
 
     virtual void deserialize(ReadBuffer & buf) = 0;
 
-    virtual void update(const Block & block) = 0;
+    virtual void update(const ColumnPtr & column) = 0;
 
     virtual UInt64 count() = 0;
 
@@ -84,18 +83,7 @@ public:
         data.deserialize(buf);
     }
 
-    void update(const Block & block) override
-    {
-        const auto & column_with_type = block.getByName(columnName());
-        size_t size = block.rows();
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            /// TODO: support more types.
-            Float64 value = column_with_type.column->getFloat64(i);
-            data.add(value, 1);
-        }
-    }
+    void update(const ColumnPtr & column) override;
 
     UInt64 count() override
     {

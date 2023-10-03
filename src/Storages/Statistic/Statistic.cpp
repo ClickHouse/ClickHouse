@@ -17,9 +17,20 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTIC;
 }
 
+void TDigestStatistic::update(const ColumnPtr & column)
+{
+    size_t size = column->size();
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        /// TODO: support more types.
+        Float64 value = column->getFloat64(i);
+        data.add(value, 1);
+    }
+}
+
 StatisticPtr TDigestCreator(const StatisticDescription & stat)
 {
-    /// TODO: check column data types.
     return StatisticPtr(new TDigestStatistic(stat));
 }
 

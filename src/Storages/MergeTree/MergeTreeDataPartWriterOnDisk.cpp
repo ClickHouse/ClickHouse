@@ -331,7 +331,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
 {
     for (const auto & stat_ptr : stats)
     {
-        stat_ptr->update(block);
+        stat_ptr->update(block.getByName(stat_ptr->columnName()).column);
     }
 }
 

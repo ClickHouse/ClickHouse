@@ -727,6 +727,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
                     rename_visitor.visit(column_to_modify.ttl);
+                if (column_to_modify.name == column_name && column_to_modify.stat)
+                    column_to_modify.stat->column_name = rename_to;
             });
         }
         if (metadata.table_ttl.definition_ast)

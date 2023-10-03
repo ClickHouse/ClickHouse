@@ -47,4 +47,11 @@ SELECT 'After merge';
 EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 SELECT count(*) FROM t1 WHERE b < 10 and a < 10;
 
+ALTER TABLE t1 RENAME COLUMN b TO c;
+SHOW CREATE TABLE t1;
+
+SELECT 'After rename';
+EXPLAIN SYNTAX SELECT count(*) FROM t1 WHERE c < 10 and a < 10;
+SELECT count(*) FROM t1 WHERE c < 10 and a < 10;
+
 DROP TABLE IF EXISTS t1;
