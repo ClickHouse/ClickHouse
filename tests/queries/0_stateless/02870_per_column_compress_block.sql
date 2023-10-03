@@ -1,8 +1,11 @@
 -- Tags: no-random-merge-tree-settings
+DROP DATABASE IF EXISTS db_02780;
+CREATE DATABASE db_02780;
+USE db_02780;
 CREATE TABLE t
 (
     `id` UInt64 CODEC(ZSTD(1)),
-    `long_string` String CODEC(ZSTD(9, 24)) SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
+    `long_string` String CODEC(ZSTD(9, 24)) SETTINGS (min_compress_block_size = 163840, max_compress_block_size = 163840),
     `v1` String CODEC(ZSTD(1)),
     `v2` UInt64 CODEC(ZSTD(1)),
     `v3` Float32 CODEC(ZSTD(1)),
@@ -12,9 +15,21 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t/2870', 'r1')
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1;
 
+SHOW CREATE t;
+
 INSERT INTO TABLE t SELECT number, randomPrintableASCII(1000), randomPrintableASCII(10), rand(number), rand(number+1), rand(number+2) FROM numbers(1000);
 
 SELECT count() FROM t;
+
+ALTER TABLE t MODIFY COLUMN long_string REMOVE SETTING min_compress_block_size, max_compress_block_size;
+
+SHOW CREATE t;
+
+ALTER TABLE t MODIFY COLUMN long_string String CODEC(ZSTD(9, 24)) SETTINGS (min_compress_block_size = 163840, max_compress_block_size = 163840);
+
+SHOW CREATE t;
+
+DROP TABLE t;
 
 SET allow_experimental_object_type = 1;
 
@@ -48,3 +63,5 @@ CREATE TABLE t4
 )
 ENGINE = TinyLog
 ORDER BY id; -- {serverError 44}
+
+DROP DATABASE db_02780;

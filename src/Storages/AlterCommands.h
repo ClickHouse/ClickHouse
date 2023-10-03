@@ -62,7 +62,7 @@ struct AlterCommand
         COMMENT,
         CODEC,
         TTL,
-        SETTINGS
+        SETTING
     };
 
     Type type = UNKNOWN;
@@ -131,10 +131,10 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
 
-    /// For MODIFY SETTING or MODIFY COLUMN SETTINGS
+    /// For MODIFY SETTING or MODIFY COLUMN with SETTINGS (...)
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING
+    /// For RESET SETTING or MODIFY COLUMN REMOVE SETTING (...)
     std::set<String> settings_resets;
 
     /// For MODIFY_QUERY

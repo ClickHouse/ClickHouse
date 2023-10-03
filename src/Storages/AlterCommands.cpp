@@ -66,8 +66,8 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::CODEC;
     else if (property == "TTL")
         return AlterCommand::RemoveProperty::TTL;
-    else if (property == "COLUMN SETTINGS")
-        return AlterCommand::RemoveProperty::SETTINGS;
+    else if (property == "SETTING")
+        return AlterCommand::RemoveProperty::SETTING;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
@@ -143,6 +143,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
+        if (command.to_remove == RemoveProperty::SETTING)
+        {
+            for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
+            {
+                const auto & identifier = identifier_ast->as<ASTIdentifier &>();
+                auto insertion = command.settings_resets.emplace(identifier.name());
+                if (!insertion.second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(identifier.name()));
+            }
+        }
 
         if (ast_col_decl.type)
         {
@@ -434,9 +444,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 column.ttl.reset();
             }
-            else if (to_remove == RemoveProperty::SETTINGS)
+            else if (to_remove == RemoveProperty::SETTING)
             {
-                column.settings.clear();
+                for (const auto & setting : settings_resets)
+                    column.settings.removeSetting(setting);
             }
             else
             {
@@ -1205,11 +1216,15 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have COMMENT, cannot remove it",
                         backQuote(column_name));
-                if (command.to_remove == AlterCommand::RemoveProperty::SETTINGS && column_from_table.settings.empty())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Column {} doesn't have SETTINGS, cannot remove it",
-                        backQuote(column_name));
+                if (command.to_remove == AlterCommand::RemoveProperty::SETTING)
+                {
+                    for (const auto & setting : command.settings_resets)
+                    {
+                        if (!column_from_table.settings.tryGet(setting))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS, "Column {} doesn't have SETTINGS, cannot remove it", backQuote(column_name));
+                    }
+                }
             }
 
             modified_columns.emplace(column_name);
