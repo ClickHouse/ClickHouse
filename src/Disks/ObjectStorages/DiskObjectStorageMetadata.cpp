@@ -81,10 +81,7 @@ void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    if (inline_data.empty())
-        writeIntText(VERSION_READ_ONLY_FLAG, buf);
-    else
-        writeIntText(VERSION_INLINE_DATA, buf);
+    writeIntText(VERSION_INLINE_DATA, buf);
 
     writeChar('\n', buf);
 
@@ -107,11 +104,13 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeBoolText(read_only, buf);
     writeChar('\n', buf);
 
-    if (!inline_data.empty())
-    {
-        writeEscapedString(inline_data, buf);
-        writeChar('\n', buf);
-    }
+    /// Metadata version describes the format of the file
+    /// It determines the possibility to write and read particular set of the fields from the file no matter the fields values
+    /// It should not be depended on field values
+    /// We always write inline_data in file when we declare VERSION_INLINE_DATA as a file version
+    /// Unless it is impossible to introduce the next version of format
+    writeEscapedString(inline_data, buf);
+    writeChar('\n', buf);
 
     buf.finalize();
     if (sync)
