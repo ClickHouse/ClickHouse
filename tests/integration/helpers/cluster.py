@@ -1536,7 +1536,7 @@ class ClickHouseCluster:
         allow_analyzer=True,
         hostname=None,
         env_variables=None,
-        exclusive_env_variables=False,
+        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
         stay_alive=False,
@@ -1646,7 +1646,7 @@ class ClickHouseCluster:
             copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
-            exclusive_env_variables=exclusive_env_variables,
+            instance_env_variables=instance_env_variables,
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -3187,7 +3187,7 @@ class ClickHouseInstance:
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
-        exclusive_env_variables=False,
+        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag="latest",
         stay_alive=False,
@@ -3277,7 +3277,7 @@ class ClickHouseInstance:
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, "docker-compose.yml")
         self.env_variables = env_variables or {}
-        self.exclusive_env_variables = exclusive_env_variables
+        self.instance_env_variables = instance_env_variables
         self.env_file = self.cluster.env_file
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
@@ -4396,7 +4396,7 @@ class ClickHouseInstance:
 
         # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
         # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
-        if self.exclusive_env_variables is True:
+        if self.instance_env_variables is True:
             # Create a dictionary containing cluster & instance env variables.
             # Instance env variables will override cluster's.
             temp_env_variables = self.cluster.env_variables.copy()
@@ -4478,9 +4478,9 @@ class ClickHouseInstance:
 
         # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
         # are shared with all nodes within the same cluster, even if it is specified for a single node.
-        # In order not to break the existing tests, the `self.exclusive_env_variables` option was added as a workaround.
-        # IMHO, it would be better to make `self.env_variables` exclusive by defaultand remove the `self.exclusive_env_variables` option.
-        if self.exclusive_env_variables:
+        # In order not to break the existing tests, the `self.instance_env_variables` option was added as a workaround.
+        # IMHO, it would be better to make `self.env_variables` exclusive by defaultand remove the `self.instance_env_variables` option.
+        if self.instance_env_variables:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
 
