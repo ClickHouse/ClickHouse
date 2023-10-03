@@ -580,11 +580,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     }
 
     // GROUP BY
-    bool has_aggregates = query_info.has_aggregates;
-    if (query_info.syntax_analyzer_result)
-        has_aggregates = !query_info.syntax_analyzer_result->aggregates.empty();
-
-    if (has_aggregates || query_node.hasGroupBy())
+    if (query_node.hasGroupBy())
     {
         if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
             return {};
@@ -1510,16 +1506,12 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
             ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
             sharding_key_column_name, sharding_key_dag.dumpDAG());
 
-    // std::cerr << "--- expr\n";
-    // std::cerr << sharding_key_dag.dumpDAG() << std::endl;
     const auto * predicate = filter_actions_dag->getOutputs().at(0);
     const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
 
     // Can't get a definite answer if we can skip any shards
     if (!variants)
         return nullptr;
-
-    // std::cerr << "==== num variants " << variants->size() << std::endl;
 
     std::set<int> shards;
 
@@ -1528,9 +1520,6 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
         const auto selector = createSelector(cluster, variant.at(0));
         shards.insert(selector.begin(), selector.end());
     }
-
-    // for (int i : shards)
-    //     std::cerr << ".. shard " << i << std::endl;
 
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
 }
