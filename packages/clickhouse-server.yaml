@@ -1,6 +1,13 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-server"
+description: |
+  Server binary for ClickHouse
+    ClickHouse is a column-oriented database management system
+    that allows generating analytical data reports in real time.
+    This package provides clickhouse common configuration files
+
+# Common packages config
 arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
@@ -9,7 +16,12 @@ homepage: "https://clickhouse.com"
 license: "Apache"
 section: "database"
 priority: "optional"
+maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
+deb:
+  fields:
+    Source: clickhouse
 
+# Package specific content
 conflicts:
 - clickhouse-keeper
 replaces:
@@ -20,13 +32,6 @@ provides:
 recommends:
 - libcap2-bin
 
-maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
-description: |
-  Server binary for ClickHouse
-    ClickHouse is a column-oriented database management system
-    that allows generating analytical data reports in real time.
-    This package provides clickhouse common configuration files
-
 overrides:
   deb:
     depends:
@@ -34,10 +39,6 @@ overrides:
   rpm:
     depends:
     - clickhouse-common-static = ${CLICKHOUSE_VERSION_STRING}
-
-deb:
-  fields:
-    Source: clickhouse
 
 contents:
 - src: root/etc/clickhouse-server/config.xml
