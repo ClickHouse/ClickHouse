@@ -1393,7 +1393,8 @@ try
             if (global_context->areBackgroundExecutorsInitialized())
             {
                 auto new_pool_size = new_server_settings.background_fetches_pool_size;
-                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+                auto new_ratio = new_server_settings.background_fetches_concurrency_ratio;
+                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
             }
 
             if (global_context->areBackgroundExecutorsInitialized())

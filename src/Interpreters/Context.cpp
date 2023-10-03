@@ -4832,6 +4832,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     String background_merges_mutations_scheduling_policy = server_settings.background_merges_mutations_scheduling_policy;
     size_t background_move_pool_size = server_settings.background_move_pool_size;
     size_t background_fetches_pool_size = server_settings.background_fetches_pool_size;
+    auto background_fetches_concurrency_ratio = server_settings.background_fetches_concurrency_ratio;
+    auto background_fetches_max_tasks_count = static_cast<size_t>(background_fetches_pool_size * background_fetches_concurrency_ratio);
     size_t background_common_pool_size = server_settings.background_common_pool_size;
 
     /// With this executor we can execute more tasks than threads we have
@@ -4866,7 +4868,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     (
         "Fetch",
         background_fetches_pool_size,
-        background_fetches_pool_size,
+        background_fetches_max_tasks_count,
         CurrentMetrics::BackgroundFetchesPoolTask,
         CurrentMetrics::BackgroundFetchesPoolSize
     );
