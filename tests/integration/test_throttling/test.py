@@ -122,8 +122,13 @@ def assert_took(took, should_took):
     # we need to decrease the lower limit because the server limits could
     # be enforced by throttling some server background IO instead of query IO
     # and we have no control over it
-    # Note that throttler does not apply any restrictions on upper bound, so we can only tell how much time required "at least", not "at most"
-    assert took >= should_took * 0.85
+    #
+    # and the same for upper limit, it can be slightly larger, due to for
+    # instance network latencies or CPU starvation
+    if should_took > 0:
+        assert took >= should_took * 0.85 and took <= should_took * 1.8
+    else:
+        assert took >= should_took * 0.85
 
 
 @pytest.mark.parametrize(
