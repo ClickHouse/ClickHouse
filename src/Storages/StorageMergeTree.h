@@ -166,8 +166,14 @@ private:
         }
     };
 
-    CacheBase<std::pair<std::string, UInt64>, bool, pair_hash> mutation_equivalent_cache{10000};
-
+    /// Cache that parts with different versions are equivalent
+    ///   (not affected by mutations because their scope is limited by partititons)
+    /// or not equivalent
+    /// if distance between these versions is meaningfull (>= min_cache_mutations)
+    static constexpr size_t min_cache_mutations = 5;
+    using VersionsEquivalenceCache = CacheBase<std::pair<std::string, UInt64>, bool, pair_hash>;
+    using VersionsEquivalenceCachePtr = std::unique_ptr<VersionsEquivalenceCache>;
+    VersionsEquivalenceCachePtr versions_equivalence_cache_ptr;
 
     void loadMutations();
 
