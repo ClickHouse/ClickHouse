@@ -1950,9 +1950,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        std::cout << std::endl
-            << processed_rows << " row" << (processed_rows == 1 ? "" : "s")
-            << " in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        std::cout << std::endl;
+        if (!server_exception)
+            std::cout << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
+        std::cout << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
         std::cout << std::endl << std::endl;
     }
