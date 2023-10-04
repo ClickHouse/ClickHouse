@@ -2676,6 +2676,10 @@ class ClickHouseCluster:
         raise Exception("Can't wait LDAP to start")
 
     def cleanup_if_retry(self):
+        logging.warning(
+            "cleanup after retry"
+        )
+
         self.cleanup()
         shutil.rmtree(self.instances_dir, ignore_errors=True)
         FreePort.change_ports(self.instances.values())
@@ -2689,11 +2693,6 @@ class ClickHouseCluster:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
-        logging.debug(f"Cluster start called. is_up={self.is_up}")
-        self.print_all_docker_pieces()
-
-        if self.is_up:
-            return
 
         try:
             for instance in list(self.instances.values()):
@@ -3051,6 +3050,12 @@ class ClickHouseCluster:
             raise
 
     def start(self):
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
+        if self.is_up:
+            return
+
         try:
             self.cleanup()
         except Exception as e:
@@ -3065,7 +3070,6 @@ class ClickHouseCluster:
                 cleanup=self.cleanup_if_retry,
                 exception=PortCollisionException,
             )
-            self.is_up = True
 
         except BaseException as e:
             logging.debug("Failed to start cluster: ")
