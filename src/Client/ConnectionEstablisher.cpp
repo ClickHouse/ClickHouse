@@ -170,7 +170,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
 
     epoll_event events[2];
     events[0].data.fd = events[1].data.fd = -1;
-    size_t ready_count = epoll.getManyReady(2, events, false);
+    size_t ready_count = epoll.getManyReady(2, events, 0);
     for (size_t i = 0; i != ready_count; ++i)
     {
         if (events[i].data.fd == socket_fd)

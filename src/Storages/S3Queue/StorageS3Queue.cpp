@@ -32,7 +32,6 @@
 #    include <Storages/StorageS3.h>
 #    include <Storages/StorageSnapshot.h>
 #    include <Storages/VirtualColumnUtils.h>
-#    include <Storages/getVirtualsForStorage.h>
 #    include <Storages/prepareReadingFromFormat.h>
 #    include <Common/NamedCollections/NamedCollections.h>
 
@@ -75,7 +74,6 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_NOT_ALLOWED;
-    extern const int NO_ZOOKEEPER;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int INCOMPATIBLE_COLUMNS;
 }
@@ -107,42 +105,23 @@ StorageS3Queue::StorageS3Queue(
     if (!withGlobs())
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
 
-    String setting_zk_path = s3queue_settings->keeper_path;
-    if (setting_zk_path.empty())
+    std::string zk_path_prefix = getContext()->getSettingsRef().s3queue_default_zookeeper_path.value;
+    if (zk_path_prefix.empty())
+        zk_path_prefix = "/";
+
+    std::string result_zk_path;
+    if (s3queue_settings->keeper_path.changed)
     {
-        auto database = DatabaseCatalog::instance().getDatabase(table_id_.database_name);
-        bool is_in_replicated_database = database->getEngineName() == "Replicated";
-
-        auto default_path = getContext()->getSettingsRef().s3queue_default_zookeeper_path.value;
-        String zk_path_prefix;
-
-        if (!default_path.empty())
-        {
-            zk_path_prefix = default_path;
-        }
-        else if (is_in_replicated_database)
-        {
-            LOG_INFO(log, "S3Queue engine zookeeper path is not specified. "
-                     "Using replicated database zookeeper path");
-
-            zk_path_prefix = fs::path(assert_cast<const DatabaseReplicated *>(database.get())->getZooKeeperPath()) / "s3queue";
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NO_ZOOKEEPER,
-                            "S3Queue keeper_path engine setting not specified, "
-                            "s3queue_default_zookeeper_path_prefix not specified");
-        }
-
-        zk_path = zkutil::extractZooKeeperPath(
-            fs::path(zk_path_prefix) / toString(table_id_.uuid), /* check_starts_with_slash */ true, log);
+        /// We do not add table uuid here on purpose.
+        result_zk_path = fs::path(zk_path_prefix) / s3queue_settings->keeper_path.value;
     }
     else
     {
-        /// We do not add table uuid here on purpose.
-        zk_path = zkutil::extractZooKeeperPath(s3queue_settings->keeper_path.value, /* check_starts_with_slash */ true, log);
+        auto database_uuid = DatabaseCatalog::instance().getDatabase(table_id_.database_name)->getUUID();
+        result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id_.uuid);
     }
 
+    zk_path = zkutil::extractZooKeeperPath(result_zk_path, true/* check_starts_with_slash */, log);
     LOG_INFO(log, "Using zookeeper path: {}", zk_path);
 
     FormatFactory::instance().checkFormatName(configuration.format);
@@ -171,15 +150,7 @@ StorageS3Queue::StorageS3Queue(
     }
 
     files_metadata = std::make_shared<S3QueueFilesMetadata>(this, *s3queue_settings);
-
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-
-    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
-    for (const auto & column : virtual_columns)
-        virtual_block.insert({column.type->createColumn(), column.type, column.name});
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 
     auto poll_thread = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
     task = std::make_shared<TaskContext>(std::move(poll_thread));
@@ -191,9 +162,9 @@ bool StorageS3Queue::supportsSubcolumns() const
     return true;
 }
 
-bool StorageS3Queue::supportsSubsetOfColumns() const
+bool StorageS3Queue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
 }
 
 Pipe StorageS3Queue::read(
@@ -216,7 +187,7 @@ Pipe StorageS3Queue::read(
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(local_context, query_info.query);
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     const size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
 
@@ -232,6 +203,7 @@ Pipe StorageS3Queue::read(
         query_configuration.client,
         query_configuration.url.bucket,
         query_configuration.url.version_id,
+        query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
         iterator_wrapper,
         files_metadata,
         after_processing,
@@ -391,7 +363,7 @@ void StorageS3Queue::streamToViews()
     // Create a stream for each consumer and join them in a union stream
 
     std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(s3queue_context, nullptr);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(getContext()), getVirtuals());
     const size_t max_download_threads = s3queue_context->getSettingsRef().max_download_threads;
 
     auto pipe = Pipe(std::make_shared<StorageS3QueueSource>(
@@ -406,6 +378,7 @@ void StorageS3Queue::streamToViews()
         query_configuration.client,
         query_configuration.url.bucket,
         query_configuration.url.version_id,
+        query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
         iterator_wrapper,
         files_metadata,
         after_processing,
@@ -527,7 +500,7 @@ StorageS3Queue::createFileIterator(ContextPtr local_context, ASTPtr query)
         *configuration.client,
         configuration.url,
         query,
-        virtual_block,
+        virtual_columns,
         local_context,
         s3queue_settings->s3queue_polling_size.value,
         configuration.request_settings);
@@ -566,6 +539,9 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
         name,
         [](const StorageFactory::Arguments & args)
         {
+            if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_s3queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3Queue is experimental. You can enable it with the `allow_experimental_s3queue` setting.");
+
             auto & engine_args = args.engine_args;
             if (engine_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");

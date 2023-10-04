@@ -1,15 +1,11 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
 
 #include <Formats/NativeWriter.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Core/ProtocolDefines.h>
-#include <Disks/IVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -17,6 +13,9 @@
 #include <fmt/format.h>
 
 #include <Formats/formatBlock.h>
+
+#include <numeric>
+
 
 namespace CurrentMetrics
 {
