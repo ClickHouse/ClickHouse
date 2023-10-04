@@ -188,12 +188,12 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const ASTSelectQuery & select,
+        const SelectQueryInfo & query_info,
         const TreeRewriterResultPtr & syntax_analyzer_result) const;
 
     ClusterPtr skipUnusedShards(
         ClusterPtr cluster,
-        const ASTSelectQuery & select,
+        const SelectQueryInfo & query_info,
         const TreeRewriterResultPtr & syntax_analyzer_result,
         const StorageSnapshotPtr & storage_snapshot,
         ContextPtr context) const;
