@@ -977,7 +977,8 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
             ? std::make_tuple(left->info.partition_id, leftMutationVersion, rightMutationVersion)
             : std::make_tuple(right->info.partition_id, rightMutationVersion, leftMutationVersion);
 
-        if (auto cached_is_equivalent = mutation_equivalent_cache.get({follower_id, to}); cached_is_equivalent)
+        VersionsEquivalenceCache::MappedPtr cached_is_equivalent;
+        if (versions_equivalence_cache_ptr && (cached_is_equivalent = versions_equivalence_cache_ptr->get({follower_id, to})))
         {
             is_equivalent = *cached_is_equivalent;
         }
@@ -986,7 +987,8 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
             auto mutations_it = current_mutations_by_version.upper_bound(from);
             auto mutations_end_it = current_mutations_by_version.upper_bound(to);
 
-            for (; mutations_it != mutations_end_it; ++mutations_it)
+            size_t mutations_cnt = 0;
+            for (; mutations_it != mutations_end_it; ++mutations_it, ++mutations_cnt)
             {
                 if (mutations_it->second.affectsPartition(follower_id))
                 {
@@ -994,7 +996,14 @@ bool StorageMergeTree::mutationVersionsEquivalent(const DataPartPtr & left, cons
                     break;
                 }
             }
-            mutation_equivalent_cache.set({follower_id, to}, std::make_shared<bool>(is_equivalent));
+            if (mutations_cnt >= min_cache_mutations)
+            {
+                if (!versions_equivalence_cache_ptr)
+                {
+                    versions_equivalence_cache_ptr = std::make_unique<VersionsEquivalenceCache>(10000);
+                }
+                versions_equivalence_cache_ptr->set({follower_id, to}, std::make_shared<bool>(is_equivalent));
+            }
         }
     }
 
