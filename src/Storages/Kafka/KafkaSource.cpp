@@ -44,7 +44,7 @@ KafkaSource::KafkaSource(
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , is_streaming(true)    /// proton: porting. TODO: remove comment, get this from context
+    , is_streaming(context_->getSettingsRef().query_mode.value == "streaming")    /// proton: porting. TODO: remove comment, get this from context
     , header_chunk(storage_snapshot_->getSampleBlockForColumns(columns).getColumns(), 0)    /// proton: porting. TODO: remove comment, get this from context
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
@@ -60,7 +60,8 @@ KafkaSource::~KafkaSource()
     if (broken)
         consumer->unsubscribe();
 
-    storage.pushConsumer(consumer);
+    if (!is_streaming)
+        storage.pushConsumer(consumer);
 }
 
 bool KafkaSource::checkTimeLimit() const
@@ -81,14 +82,16 @@ Chunk KafkaSource::generateImpl()
     if (!consumer)
     {
         /// proton: porting start. TODO: remove comments
-        std::chrono::milliseconds timeout;
         if (is_streaming)
-            timeout = std::chrono::milliseconds::zero();
+        {
+            consumer = storage.createConsumer(0, context->getCurrentQueryId());
+        }
         else
-            timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+        {
+            auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+            consumer = storage.popConsumer(timeout);
+        }
         /// proton: porting ends. TODO: remove comments
-
-        consumer = storage.popConsumer(timeout);
 
         if (!consumer)
             return {};

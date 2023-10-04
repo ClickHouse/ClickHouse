@@ -494,10 +494,16 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
 
 KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
 {
+    return createConsumer(consumer_number, group);
+}
+
+
+KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number, String consumer_group)
+{
     cppkafka::Configuration conf;
 
     conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
+    conf.set("group.id", consumer_group);
     if (num_consumers > 1)
     {
         conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));

@@ -74,6 +74,11 @@ public:
     KafkaConsumerPtr popConsumer();
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
+    /// proton: porting start. TODO: remove comments
+    KafkaConsumerPtr createConsumer(size_t consumer_number, String consumer_group);
+    /// proton: porting end. TODO: remove comments
+
+
     const auto & getFormatName() const { return format_name; }
 
     NamesAndTypesList getVirtuals() const override;
