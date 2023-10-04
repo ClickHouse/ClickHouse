@@ -5,6 +5,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import os
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
