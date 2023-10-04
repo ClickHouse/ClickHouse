@@ -23,7 +23,7 @@ cp app.py "$PACKAGE"
 if [ -f requirements.txt ]; then
   VENV=lambda-venv
   rm -rf "$VENV" lambda-package.zip
-  docker run --rm --user="${UID}" -e HOME=/tmp --entrypoint=/bin/bash \
+  docker run --net=host --rm --user="${UID}" -e HOME=/tmp --entrypoint=/bin/bash \
     --volume="${WORKDIR}/..:/ci" --workdir="/ci/${DIR_NAME}" "${DOCKER_IMAGE}" \
     -exc "
       '$PY_EXEC' -m venv '$VENV' &&

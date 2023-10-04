@@ -9,10 +9,10 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <ostream>
 #include <gtest/gtest.h>
 #include <initializer_list>
 #include <Core/iostream_debug_helpers.h>
+
 
 namespace
 {
@@ -174,5 +174,3 @@ INSTANTIATE_TEST_SUITE_P(InvalidEscapeSeqInValue, extractKVPairKeyValuePairExtra
         }
     )
 );
-
-

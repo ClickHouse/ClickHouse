@@ -35,4 +35,7 @@ ENV LC_ALL en_US.UTF-8
 ENV TZ=Europe/Amsterdam
 RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
+# This script is used to setup realtime export of server logs from the CI into external ClickHouse cluster:
+COPY setup_export_logs.sh /
+
 CMD sleep 1

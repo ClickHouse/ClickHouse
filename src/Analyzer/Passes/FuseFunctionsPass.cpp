@@ -14,6 +14,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 
+#include <numeric>
+
+
 namespace DB
 {
 

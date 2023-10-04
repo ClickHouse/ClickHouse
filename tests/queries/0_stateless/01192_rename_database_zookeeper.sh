@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 15000000 -q "INSE
 sleep 1
 
 $CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192 TO default" 2>&1| grep -F "already exists" > /dev/null && echo "ok"
-$CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192_notexisting TO test_01192_renamed" 2>&1| grep -F "doesn't exist" > /dev/null && echo "ok"
+$CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192_notexisting TO test_01192_renamed" 2>&1| grep -F "does not exist" > /dev/null && echo "ok"
 $CLICKHOUSE_CLIENT -q "RENAME DATABASE test_01192 TO test_01192_renamed" && echo "renamed"
 wait
 
@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT -q "RENAME TABLE test_01192.mt TO test_01192_atomic.mt, test_
 # 6. check data after RENAME
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mt"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.rmt"
-$CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mv" 2>&1| grep -F "doesn't exist" > /dev/null && echo "ok"
+$CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM test_01192_atomic.mv" 2>&1| grep -F "does not exist" > /dev/null && echo "ok"
 
 # 7. create dictionary and check it
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01192.mt (n UInt64, _part String) ENGINE=Memory" # mock

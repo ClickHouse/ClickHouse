@@ -31,7 +31,6 @@ try:
     import pymysql
     import nats
     import ssl
-    import meilisearch
     import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
@@ -432,7 +431,6 @@ class ClickHouseCluster:
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
-        self.with_meili = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -509,12 +507,6 @@ class ClickHouseCluster:
         self._mongo_port = 0
         self.mongo_no_cred_host = "mongo2"
         self._mongo_no_cred_port = 0
-
-        # available when with_meili == True
-        self.meili_host = "meili1"
-        self._meili_port = 0
-        self.meili_secure_host = "meili_secure"
-        self._meili_secure_port = 0
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -686,20 +678,6 @@ class ClickHouseCluster:
             return self._mongo_no_cred_port
         self._mongo_no_cred_port = get_free_port()
         return self._mongo_no_cred_port
-
-    @property
-    def meili_port(self):
-        if self._meili_port:
-            return self._meili_port
-        self._meili_port = get_free_port()
-        return self._meili_port
-
-    @property
-    def meili_secure_port(self):
-        if self._meili_secure_port:
-            return self._meili_secure_port
-        self._meili_secure_port = get_free_port()
-        return self._meili_secure_port
 
     @property
     def redis_port(self):
@@ -1363,30 +1341,6 @@ class ClickHouseCluster:
 
         return self.base_coredns_cmd
 
-    def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        self.with_meili = True
-        env_variables["MEILI_HOST"] = self.meili_host
-        env_variables["MEILI_EXTERNAL_PORT"] = str(self.meili_port)
-        env_variables["MEILI_INTERNAL_PORT"] = "7700"
-
-        env_variables["MEILI_SECURE_HOST"] = self.meili_secure_host
-        env_variables["MEILI_SECURE_EXTERNAL_PORT"] = str(self.meili_secure_port)
-        env_variables["MEILI_SECURE_INTERNAL_PORT"] = "7700"
-
-        self.base_cmd.extend(
-            ["--file", p.join(docker_compose_yml_dir, "docker_compose_meili.yml")]
-        )
-        self.base_meili_cmd = [
-            "docker-compose",
-            "--env-file",
-            instance.env_file,
-            "--project-name",
-            self.project_name,
-            "--file",
-            p.join(docker_compose_yml_dir, "docker_compose_meili.yml"),
-        ]
-        return self.base_meili_cmd
-
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
@@ -1524,7 +1478,6 @@ class ClickHouseCluster:
         with_kerberized_hdfs=False,
         with_mongo=False,
         with_mongo_secure=False,
-        with_meili=False,
         with_nginx=False,
         with_redis=False,
         with_minio=False,
@@ -1623,7 +1576,6 @@ class ClickHouseCluster:
             or with_kerberos_kdc
             or with_kerberized_kafka,
             with_mongo=with_mongo or with_mongo_secure,
-            with_meili=with_meili,
             with_redis=with_redis,
             with_minio=with_minio,
             with_azurite=with_azurite,
@@ -1813,11 +1765,6 @@ class ClickHouseCluster:
         if with_coredns and not self.with_coredns:
             cmds.append(
                 self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
-            )
-
-        if with_meili and not self.with_meili:
-            cmds.append(
-                self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if self.with_net_trics:
@@ -2415,30 +2362,6 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
-    def wait_meili_to_start(self, timeout=30):
-        connection_str = "http://{host}:{port}".format(
-            host="localhost", port=self.meili_port
-        )
-        client = meilisearch.Client(connection_str)
-
-        connection_str_secure = "http://{host}:{port}".format(
-            host="localhost", port=self.meili_secure_port
-        )
-        client_secure = meilisearch.Client(connection_str_secure, "password")
-
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                client.get_all_stats()
-                client_secure.get_all_stats()
-                logging.debug(
-                    f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}"
-                )
-                return
-            except Exception as ex:
-                logging.debug("Can't connect to MeiliSearch " + str(ex))
-                time.sleep(1)
-
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
         self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
@@ -2836,12 +2759,6 @@ class ClickHouseCluster:
                 self.up_called = True
                 time.sleep(10)
 
-            if self.with_meili and self.base_meili_cmd:
-                logging.debug("Setup MeiliSearch")
-                run_and_check(self.base_meili_cmd + common_opts)
-                self.up_called = True
-                self.wait_meili_to_start()
-
             if self.with_redis and self.base_redis_cmd:
                 logging.debug("Setup Redis")
                 subprocess_check_call(self.base_redis_cmd + common_opts)
@@ -3163,7 +3080,6 @@ class ClickHouseInstance:
         with_kerberized_hdfs,
         with_secrets,
         with_mongo,
-        with_meili,
         with_redis,
         with_minio,
         with_azurite,
@@ -3250,7 +3166,6 @@ class ClickHouseInstance:
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
-        self.with_meili = with_meili
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_azurite = with_azurite
@@ -3476,6 +3391,7 @@ class ClickHouseInstance:
         user=None,
         password=None,
         database=None,
+        query_id=None,
     ):
         logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_answer_with_error(
@@ -3486,6 +3402,7 @@ class ClickHouseInstance:
             user=user,
             password=password,
             database=database,
+            query_id=query_id,
         )
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
@@ -3916,7 +3833,11 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(
-        self, stop_start_wait_sec=300, callback_onstop=None, signal=15
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
     ):
         begin_time = time.time()
         if not self.stay_alive:
@@ -3944,6 +3865,17 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+
+        if clear_data_dir:
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "rm -rf /var/lib/clickhouse/metadata && rm -rf /var/lib/clickhouse/data",
+                ],
+                user="root",
+            )
+
         self.exec_in_container(
             [
                 "bash",
@@ -4257,6 +4189,23 @@ class ClickHouseInstance:
 
         if len(self.custom_dictionaries_paths):
             write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
+
+        version = None
+        version_parts = self.tag.split(".")
+        if version_parts[0].isdigit() and version_parts[1].isdigit():
+            version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+
+        # async replication is only supported in version 23.9+
+        # for tags that don't specify a version we assume it has a version of ClickHouse
+        # that supports async replication if a test for it is present
+        if (
+            version == None
+            or version["major"] > 23
+            or (version["major"] == 23 and version["minor"] >= 9)
+        ):
+            write_embedded_config(
+                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
+            )
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()

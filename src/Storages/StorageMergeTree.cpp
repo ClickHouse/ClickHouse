@@ -13,7 +13,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
@@ -220,7 +219,8 @@ void StorageMergeTree::read(
             local_context, query_info.query,
             table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
 
-        auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+        String cluster_for_parallel_replicas = local_context->getSettingsRef().cluster_for_parallel_replicas;
+        auto cluster = local_context->getCluster(cluster_for_parallel_replicas);
 
         Block header;
 
@@ -237,9 +237,13 @@ void StorageMergeTree::read(
                 processed_stage);
 
         ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,
-            select_stream_factory, modified_query_ast,
-            local_context, query_info, cluster);
+            query_plan,
+            getStorageID(),
+            select_stream_factory,
+            modified_query_ast,
+            local_context,
+            query_info.storage_limits,
+            cluster);
     }
     else
     {
@@ -287,7 +291,7 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
-void StorageMergeTree::checkTableCanBeDropped() const
+void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
@@ -330,6 +334,11 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    }
+    else if (commands.isCommentAlter())
+    {
+        setInMemoryMetadata(new_metadata);
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     }
     else
@@ -919,15 +928,12 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
         if (getCurrentMutationVersion(left, lock) != getCurrentMutationVersion(right, lock))
         {
-            disable_reason = "Some parts have differ mmutatuon version";
+            disable_reason = "Some parts have different mutation version";
             return false;
         }
 
-        if (!partsContainSameProjections(left, right))
-        {
-            disable_reason = "Some parts contains differ projections";
+        if (!partsContainSameProjections(left, right, disable_reason))
             return false;
-        }
 
         auto max_possible_level = getMaxLevelInBetween(left, right);
         if (max_possible_level > std::max(left->info.level, right->info.level))
@@ -1379,8 +1385,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                if (getSettings()->merge_tree_enable_clear_old_broken_detached)
-                    cleared_count += clearOldBrokenPartsFromDetachedDirectory();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
@@ -1653,11 +1657,7 @@ struct FutureNewEmptyPart
     MergeTreePartition partition;
     std::string part_name;
 
-    scope_guard tmp_dir_guard;
-
     StorageMergeTree::MutableDataPartPtr data_part;
-
-    std::string getDirName() const { return StorageMergeTree::EMPTY_PART_TMP_PREFIX + part_name; }
 };
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
@@ -1688,19 +1688,19 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
     return future_parts;
 }
 
-StorageMergeTree::MutableDataPartsVector createEmptyDataParts(MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
+std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> createEmptyDataParts(
+    MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
-    StorageMergeTree::MutableDataPartsVector data_parts;
+    std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
-        data_parts.push_back(data.createEmptyPart(part.part_info, part.partition, part.part_name, txn));
+    {
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, txn);
+        data_parts.first.emplace_back(std::move(new_data_part));
+        data_parts.second.emplace_back(std::move(tmp_dir_holder));
+    }
     return data_parts;
 }
 
-void captureTmpDirectoryHolders(MergeTreeData & data, FutureNewEmptyParts & future_parts)
-{
-    for (auto & part : future_parts)
-        part.tmp_dir_guard = data.getTemporaryPartDirectoryHolder(part.getDirName());
-}
 
 void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
 {
@@ -1767,9 +1767,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                      transaction.getTID());
 
-            captureTmpDirectoryHolders(*this, future_parts);
-
-            auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -1817,8 +1815,10 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (detach)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr();
-                LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                part->makeCloneInDetached("", metadata_snapshot);
+                String part_dir = part->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
             }
 
             {
@@ -1828,9 +1828,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
                          transaction.getTID());
 
-                captureTmpDirectoryHolders(*this, future_parts);
-
-                auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
                 renameAndCommitEmptyParts(new_data_parts, transaction);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -1902,8 +1900,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 for (const auto & part : parts)
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr();
-                    LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-                    part->makeCloneInDetached("", metadata_snapshot);
+                    String part_dir = part->getDataPartStorage().getPartDirectory();
+                    LOG_INFO(log, "Detaching {}", part_dir);
+                    auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                 }
             }
 
@@ -1914,9 +1914,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
                      transaction.getTID());
 
-            captureTmpDirectoryHolders(*this, future_parts);
 
-            auto new_data_parts = createEmptyDataParts(*this, future_parts, txn);
+            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
             renameAndCommitEmptyParts(new_data_parts, transaction);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -1944,8 +1943,10 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         /// NOTE: no race with background cleanup until we hold pointers to parts
         for (const auto & part : parts_to_remove)
         {
-            LOG_INFO(log, "Detaching {}", part->getDataPartStorage().getPartDirectory());
-            part->makeCloneInDetached("", metadata_snapshot);
+            String part_dir = part->getDataPartStorage().getPartDirectory();
+            LOG_INFO(log, "Detaching {}", part_dir);
+            auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
+            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
 
@@ -1992,6 +1993,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         renamed_parts.old_and_new_names[i].old_name.clear();
 
         results.push_back(PartitionCommandResultInfo{
+            .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
             .old_part_name = old_name,
@@ -2001,7 +2003,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     }
 
     /// New parts with other data may appear in place of deleted parts.
-    local_context->dropCaches();
+    local_context->clearCaches();
     return results;
 }
 
@@ -2037,7 +2039,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, clone_params);
+        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+            src_part,
+            TMP_PREFIX,
+            dst_part_info,
+            my_metadata_snapshot,
+            clone_params,
+            local_context->getReadSettings(),
+            local_context->getWriteSettings());
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
     }
@@ -2136,7 +2145,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
-        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, clone_params);
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(
+            src_part,
+            TMP_PREFIX,
+            dst_part_info,
+            dest_metadata_snapshot,
+            clone_params,
+            local_context->getReadSettings(),
+            local_context->getWriteSettings()
+        );
         dst_parts.emplace_back(std::move(dst_part));
         dst_parts_locks.emplace_back(std::move(part_lock));
     }
@@ -2197,8 +2214,9 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
         background_moves_assignee.trigger();
 }
 
-IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
+CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
 {
+    CheckResults results;
     DataPartsVector data_parts;
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
@@ -2208,14 +2226,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(const ASTPtr
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    return std::make_unique<DataValidationTasks>(std::move(data_parts), local_context);
-}
-
-CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
-{
-    auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
-    auto local_context = data_validation_tasks->context;
-    if (auto part = data_validation_tasks->next())
+    for (auto & part : data_parts)
     {
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
@@ -2229,13 +2240,15 @@ CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
-                part->checkMetadata();
-                return CheckResult(part->name, true, "Checksums recounted and written to disk.");
+                results.emplace_back(part->name, true, "Checksums recounted and written to disk.");
             }
-            catch (const Exception & ex)
+            catch (...)
             {
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + getCurrentExceptionMessage(false) + "'");
             }
         }
         else
@@ -2243,20 +2256,18 @@ CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_
             try
             {
                 checkDataPart(part, true);
-                part->checkMetadata();
-                return CheckResult(part->name, true, "");
+                results.emplace_back(part->name, true, "");
             }
-            catch (const Exception & ex)
+            catch (...)
             {
-                return CheckResult(part->name, false, ex.message());
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
+                results.emplace_back(part->name, false, getCurrentExceptionMessage(false));
             }
         }
     }
-    else
-    {
-        has_nothing_to_do = true;
-        return {};
-    }
+    return results;
 }
 
 

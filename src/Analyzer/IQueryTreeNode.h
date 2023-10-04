@@ -106,7 +106,7 @@ public:
       */
     bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
 
-    using Hash = std::pair<UInt64, UInt64>;
+    using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
 
     /** Get tree hash identifying current tree

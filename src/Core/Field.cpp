@@ -11,8 +11,11 @@
 #include <Common/FieldVisitorWriteBinary.h>
 
 
+using namespace std::literals;
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
@@ -21,7 +24,7 @@ namespace ErrorCodes
 
 inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
-    switch (type)
+    switch (static_cast<Field::Types::Which>(type))
     {
         case Field::Types::Null:
         {
@@ -130,8 +133,14 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinary(value, buf);
             return bool(value);
         }
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+        case Field::Types::CustomType:
+            return Field();
     }
-    return Field();
+    UNREACHABLE();
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
@@ -582,34 +591,41 @@ String toString(const Field & x)
         x);
 }
 
-String fieldTypeToString(Field::Types::Which type)
+std::string_view fieldTypeToString(Field::Types::Which type)
 {
     switch (type)
     {
-        case Field::Types::Which::Null: return "Null";
-        case Field::Types::Which::Array: return "Array";
-        case Field::Types::Which::Tuple: return "Tuple";
-        case Field::Types::Which::Map: return "Map";
-        case Field::Types::Which::Object: return "Object";
-        case Field::Types::Which::AggregateFunctionState: return "AggregateFunctionState";
-        case Field::Types::Which::Bool: return "Bool";
-        case Field::Types::Which::String: return "String";
-        case Field::Types::Which::Decimal32: return "Decimal32";
-        case Field::Types::Which::Decimal64: return "Decimal64";
-        case Field::Types::Which::Decimal128: return "Decimal128";
-        case Field::Types::Which::Decimal256: return "Decimal256";
-        case Field::Types::Which::Float64: return "Float64";
-        case Field::Types::Which::Int64: return "Int64";
-        case Field::Types::Which::Int128: return "Int128";
-        case Field::Types::Which::Int256: return "Int256";
-        case Field::Types::Which::UInt64: return "UInt64";
-        case Field::Types::Which::UInt128: return "UInt128";
-        case Field::Types::Which::UInt256: return "UInt256";
-        case Field::Types::Which::UUID: return "UUID";
-        case Field::Types::Which::IPv4: return "IPv4";
-        case Field::Types::Which::IPv6: return "IPv6";
-        case Field::Types::Which::CustomType: return "CustomType";
+        case Field::Types::Which::Null: return "Null"sv;
+        case Field::Types::Which::Array: return "Array"sv;
+        case Field::Types::Which::Tuple: return "Tuple"sv;
+        case Field::Types::Which::Map: return "Map"sv;
+        case Field::Types::Which::Object: return "Object"sv;
+        case Field::Types::Which::AggregateFunctionState: return "AggregateFunctionState"sv;
+        case Field::Types::Which::Bool: return "Bool"sv;
+        case Field::Types::Which::String: return "String"sv;
+        case Field::Types::Which::Decimal32: return "Decimal32"sv;
+        case Field::Types::Which::Decimal64: return "Decimal64"sv;
+        case Field::Types::Which::Decimal128: return "Decimal128"sv;
+        case Field::Types::Which::Decimal256: return "Decimal256"sv;
+        case Field::Types::Which::Float64: return "Float64"sv;
+        case Field::Types::Which::Int64: return "Int64"sv;
+        case Field::Types::Which::Int128: return "Int128"sv;
+        case Field::Types::Which::Int256: return "Int256"sv;
+        case Field::Types::Which::UInt64: return "UInt64"sv;
+        case Field::Types::Which::UInt128: return "UInt128"sv;
+        case Field::Types::Which::UInt256: return "UInt256"sv;
+        case Field::Types::Which::UUID: return "UUID"sv;
+        case Field::Types::Which::IPv4: return "IPv4"sv;
+        case Field::Types::Which::IPv6: return "IPv6"sv;
+        case Field::Types::Which::CustomType: return "CustomType"sv;
     }
 }
+
+/// Keep in mind, that "magic_enum" is very expensive for compiler, that's why we don't use it.
+std::string_view Field::getTypeName() const
+{
+    return fieldTypeToString(which);
+}
+
 
 }
