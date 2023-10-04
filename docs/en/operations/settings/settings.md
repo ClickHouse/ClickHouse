@@ -4708,3 +4708,5 @@ SELECT _path, _file FROM file('my_directory/{data1/f1,data2/f2}.csv', CSV) SETTI
 │ <full path to file>     │ <file name> │
 └─────────────────────────┴─────────────┘
 ```
+
+just to get a build, docs will be in a different pr which will be merged before this one
