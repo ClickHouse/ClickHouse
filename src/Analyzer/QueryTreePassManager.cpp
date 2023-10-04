@@ -44,6 +44,7 @@
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/AnyFunctionPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
+#include <Analyzer/Passes/OptimizeMultipleConstantComparisonPass.h>
 
 
 namespace DB
@@ -263,6 +264,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
 
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
+    manager.addPass(std::make_unique<OptimizeMultipleConstantComparisonPass>());
+    manager.addPass(std::make_unique<OptimizeMultipleConstantComparisonPass>(1));
 
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
