@@ -383,7 +383,7 @@ class ReadFromMerge::RowPolicyData
 {
 public:
     /// Row policy requires extra filtering
-    bool needCare()
+    bool hasRowPolicy()
     {
         return static_cast<bool>(row_policy_filter_ptr);
     }
@@ -708,7 +708,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 storage,
                 modified_context);
 
-            if (row_policy_data.needCare())
+            if (row_policy_data.hasRowPolicy())
             {
                 row_policy_data.extendNames(real_column_names);
             }
@@ -725,7 +725,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             if (!plan.isInitialized())
                 return {};
 
-            if (row_policy_data.needCare())
+            if (row_policy_data.hasRowPolicy())
             {
                 if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter*>((plan.getRootNode()->step.get())))
                 {
@@ -880,7 +880,7 @@ void ReadFromMerge::RowPolicyData::init(RowPolicyFilterPtr row_policy_filter_ptr
         auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
         auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
-        actions_dag = expression_analyzer.getActionsDAG(true, false);
+        actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
         filter_actions = std::make_shared<ExpressionActions>(actions_dag,
             ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
         filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
@@ -897,15 +897,21 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names)
     RequiredSourceColumnsVisitor::Data columns_context;
     RequiredSourceColumnsVisitor(columns_context).visit(expr);
 
-    auto req_columns = columns_context.requiredColumns();
+    const auto req_columns = columns_context.requiredColumns();
+
+    std::sort(names.begin(), names.end());
+    NameSet added_names;
+
     for (const auto & req_column : req_columns)
     {
-        std::sort(names.begin(), names.end());
-
         if (!std::binary_search(names.begin(), names.end(), req_column))
         {
-            names.push_back(req_column);
+            added_names.insert(req_column);
         }
+    }
+    if (!added_names.empty())
+    {
+        std::copy(added_names.begin(), added_names.end(), std::back_inserter(names));
     }
 }
 
@@ -931,7 +937,7 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & bui
 
     builder.addSimpleTransform([&](const Block & stream_header)
     {
-        return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_column_name, true /* remove fake column */);
+        return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_column_name, true /* remove filter column */);
     });
 }
 
@@ -1135,7 +1141,7 @@ void ReadFromMerge::convertingSourceStream(
     QueryProcessingStage::Enum processed_stage,
     RowPolicyData & row_policy_data)
 {
-    if (row_policy_data.needCare())
+    if (row_policy_data.hasRowPolicy())
     {
         row_policy_data.addFilterTransform(builder);
     }
