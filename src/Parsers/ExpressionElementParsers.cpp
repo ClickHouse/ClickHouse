@@ -1483,6 +1483,7 @@ const char * ParserAlias::restricted_keywords[] =
     "INTERSECT",
     "EXCEPT",
     "ELSE",
+    "EMIT",
     nullptr
 };
 

@@ -31,6 +31,9 @@ public:
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
+        /// proton: porting starts. TODO: remove comments
+        EMIT,
+        /// proton: porting ends. TODO: remove comments
         SETTINGS,
         INTERPOLATE
     };
@@ -67,6 +70,8 @@ public:
                 return "LIMIT OFFSET";
             case Expression::LIMIT_LENGTH:
                 return "LIMIT LENGTH";
+            case Expression::EMIT:
+                return "EMIT";
             case Expression::SETTINGS:
                 return "SETTINGS";
             case Expression::INTERPOLATE:

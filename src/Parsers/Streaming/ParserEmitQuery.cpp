@@ -13,6 +13,23 @@ namespace ErrorCodes
 extern const int SYNTAX_ERROR;
 }
 
+// namespace
+// {
+// bool parseIntervalExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+// {
+//     if (ParserIntervalAliasExpression().parse(pos, node, expected))
+//         return true;
+
+//     if (ParserKeyword("INTERVAL").ignore(pos, expected))
+//     {
+//         auto start = std::make_unique<IntervalLayer>();
+//         return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+//     }
+
+//     return false;
+// }
+// }
+
 bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// EMIT [STREAM]
@@ -52,7 +69,7 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// [PERIODIC INTERVAL '3' SECONDS]
             if (periodic_interval)
-                throw Exception("Can not use repeat 'PERIODIC' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use repeat 'PERIODIC' in EMIT clause");
 
             if (!interval_alias_p.parse(pos, periodic_interval, expected))
                 return false;
@@ -60,11 +77,11 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (ParserKeyword("AFTER").ignore(pos, expected))
         {
             if (!ParserKeyword("WATERMARK").ignore(pos, expected))
-                throw Exception("Expect 'WATERMARK' after 'AFTER' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Expect 'WATERMARK' after 'AFTER' in EMIT clause");
 
             /// [AFTER WATERMARK]
             if (after_watermark)
-                throw Exception("Can not use repeat 'AFTER WATERMARK' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use repeat 'AFTER WATERMARK' in EMIT clause");
 
             after_watermark = true;
         }
@@ -72,7 +89,7 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// [DELAY INTERVAL '3' SECONDS]
             if (delay_interval)
-                throw Exception("Can not use repeat 'DELAY' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use repeat 'DELAY' in EMIT clause");
 
             if (!interval_alias_p.parse(pos, delay_interval, expected))
                 return false;
@@ -81,7 +98,7 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// [LAST <last-x>]
             if (last_interval)
-                throw Exception("Can not use repeat 'LAST' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use repeat 'LAST' in EMIT clause");
 
             if (!interval_alias_p.parse(pos, last_interval, expected))
                 return false;
@@ -91,14 +108,14 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (ParserKeyword("PROCTIME").ignore(pos, expected))
                     proctime = true;
                 else
-                    throw Exception("Expect 'PROCTIME' after 'ON' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Expect 'PROCTIME' after 'ON' in EMIT clause");
             }
         }
         else if (ParserKeyword("TIMEOUT").ignore(pos, expected))
         {
             /// [TIMEOUT INTERVAL '5' SECONDS]
             if (timeout_interval)
-                throw Exception("Can not use repeat 'TIMEOUT' in EMIT clause", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use repeat 'TIMEOUT' in EMIT clause");
 
             if (!interval_alias_p.parse(pos, timeout_interval, expected))
                 return false;

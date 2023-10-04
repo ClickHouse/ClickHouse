@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/Streaming/ParserEmitQuery.h>
 #include <Poco/String.h>
 
 
@@ -51,6 +52,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_limit("LIMIT");
+    /// proton: porting starts. TODO: remove comments
+    ParserKeyword s_emit("EMIT");
+    /// proton: porting ends. TODO: remove comments
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
     ParserKeyword s_rollup("ROLLUP");
@@ -95,6 +99,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_offset;
     ASTPtr limit_length;
     ASTPtr top_length;
+    /// proton: porting starts. TODO: remove comments
+    ASTPtr emit;
+    /// proton: porting ends. TODO: remove comments
     ASTPtr settings;
 
     /// WITH expr_list
@@ -472,6 +479,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!order_expression_list && select_query->limit_with_ties)
         throw Exception(ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY, "Can not use WITH TIES without ORDER BY");
 
+    /// proton: porting starts. TODO: remove comments
+    if (s_emit.ignore(pos, expected))
+    {
+        ParserEmitQuery parser_emit(true);
+        if (!parser_emit.parse(pos, emit, expected))
+            return false;
+    }
+    /// proton: porting ends. TODO: remove comments
+
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))
     {
@@ -495,6 +511,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    /// proton: porting starts. TODO: remove comments
+    select_query->setExpression(ASTSelectQuery::Expression::EMIT, std::move(emit));
+    /// proton: porting ends. TODO: remove comments
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
     return true;
