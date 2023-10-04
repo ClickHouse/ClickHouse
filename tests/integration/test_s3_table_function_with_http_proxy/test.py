@@ -3,7 +3,7 @@ import helpers.s3_url_proxy_tests_util as proxy_util
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-
+import os
 
 @pytest.fixture(scope="module")
 def cluster():
