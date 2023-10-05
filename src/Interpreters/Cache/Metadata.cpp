@@ -542,7 +542,9 @@ void CacheMetadata::downloadThreadFunc()
         {
             if (holder)
             {
-                const auto & file_segment = holder->front();
+                auto & file_segment = holder->front();
+                file_segment.disableBackgroundDownload();
+
                 LOG_ERROR(
                     log, "Error during background download of {}:{} ({}): {}",
                     file_segment.key(), file_segment.offset(),
@@ -581,52 +583,60 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
             file_segment.getInfoForLog());
     }
 
-    /// If remote_fs_read_method == 'threadpool',
-    /// reader itself never owns/allocates the buffer.
-    if (reader->internalBuffer().empty())
+    try
     {
-        if (!memory)
-            memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
-        reader->set(memory->data(), memory->size());
-    }
-
-    size_t offset = file_segment.getCurrentWriteOffset();
-    if (offset != static_cast<size_t>(reader->getPosition()))
-        reader->seek(offset, SEEK_SET);
-
-    while (!reader->eof())
-    {
-        auto size = reader->available();
-
-        if (!file_segment.reserve(size))
+        /// If remote_fs_read_method == 'threadpool',
+        /// reader itself never owns/allocates the buffer.
+        if (reader->internalBuffer().empty())
         {
-            LOG_TEST(
-                log, "Failed to reserve space during background download "
-                "for {}:{} (downloaded size: {}/{})",
-                file_segment.key(), file_segment.offset(),
-                file_segment.getDownloadedSize(), file_segment.range().size());
-            return;
+            if (!memory)
+                memory.emplace(DBMS_DEFAULT_BUFFER_SIZE);
+            reader->set(memory->data(), memory->size());
         }
 
-        try
+        size_t offset = file_segment.getCurrentWriteOffset();
+        if (offset != static_cast<size_t>(reader->getPosition()))
+            reader->seek(offset, SEEK_SET);
+
+        while (!reader->eof())
         {
-            file_segment.write(reader->position(), size, offset);
-            offset += size;
-            reader->position() += size;
-        }
-        catch (ErrnoException & e)
-        {
-            int code = e.getErrno();
-            if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+            auto size = reader->available();
+
+            if (!file_segment.reserve(size))
             {
-                LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+                LOG_TEST(
+                    log, "Failed to reserve space during background download "
+                    "for {}:{} (downloaded size: {}/{})",
+                    file_segment.key(), file_segment.offset(),
+                    file_segment.getDownloadedSize(), file_segment.range().size());
                 return;
             }
-            throw;
-        }
-    }
 
-    LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
+            try
+            {
+                file_segment.write(reader->position(), size, offset);
+                offset += size;
+                reader->position() += size;
+            }
+            catch (ErrnoException & e)
+            {
+                int code = e.getErrno();
+                if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+                {
+                    LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+                    return;
+                }
+                throw;
+            }
+        }
+
+        LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
+    }
+    catch (...)
+    {
+        file_segment.resetRemoteFileReader();
+        throw;
+    }
 }
 
 void CacheMetadata::cancelDownload()
@@ -802,7 +812,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
 
     metadata->file_segment = std::make_shared<FileSegment>(
         getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
-        CreateFileSegmentSettings(file_segment->getKind()),
+        CreateFileSegmentSettings(file_segment->getKind()), false,
         file_segment->cache, key_metadata, file_segment->queue_iterator);
 
     if (diff)

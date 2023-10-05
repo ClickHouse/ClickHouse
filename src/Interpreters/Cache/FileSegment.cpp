@@ -44,6 +44,7 @@ FileSegment::FileSegment(
         size_t size_,
         State download_state_,
         const CreateFileSegmentSettings & settings,
+        bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
         Priority::Iterator queue_iterator_)
@@ -51,6 +52,7 @@ FileSegment::FileSegment(
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
+    , background_download_enabled(background_download_enabled_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
@@ -652,7 +654,7 @@ void FileSegment::complete()
 
             if (is_last_holder)
             {
-                if (remote_file_reader)
+                if (background_download_enabled && remote_file_reader)
                 {
                     LOG_TEST(
                         log, "Submitting file segment for background download "
@@ -906,6 +908,12 @@ void FileSegment::use()
         auto cache_lock = cache->lockCache();
         hits_count = it->use(cache_lock);
     }
+}
+
+void FileSegment::disableBackgroundDownload()
+{
+    auto lock = lockFileSegment();
+    background_download_enabled = false;
 }
 
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
