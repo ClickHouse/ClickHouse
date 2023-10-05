@@ -1,0 +1,25 @@
+13857	1	null	a.cpp	0	['subprogram','compile_unit']	[13827,12]				0	[]	[]	[]	[]
+2355	5	formal_parameter	a.cpp	0	['subprogram','class_type','namespace','compile_unit']	[2349,2076,43,12]				0	['type','artificial']	['ref4','flag_present']	[7415,1]	['','']
+9267	7	imported_declaration	a.cpp	0	['namespace','compile_unit']	[9241,12]			cstdlib	200	['decl_file','decl_line','import']	['data1','data1','ref4']	[38,200,11139]	['cstdlib','','']
+8880	5	formal_parameter	a.cpp	0	['subprogram','compile_unit']	[8860,12]				0	['type']	['ref4']	[8821]	['']
+2941	1	null	a.cpp	0	['subprogram','class_type','namespace','compile_unit']	[2915,2782,43,12]				0	[]	[]	[]	[]
+4165	5	subprogram	a.cpp	0	['structure_type','namespace','compile_unit']	[4093,43,12]	_Tuple_impl		tuple	434	['name','decl_file','decl_line','declaration','explicit']	['strx1','data1','data2','flag_present','flag_present']	[0,11,434,1,1]	['_Tuple_impl','tuple','','','']
+3087	1	null	a.cpp	0	['subprogram','structure_type','namespace','compile_unit']	[3067,2943,43,12]				0	[]	[]	[]	[]
+73	7	structure_type	a.cpp	0	['namespace','namespace','compile_unit']	[62,43,12]	duration<long, std::ratio<1L, 1L> >		chrono	459	['calling_convention','name','byte_size','decl_file','decl_line']	['data1','strx1','data1','data1','data2']	[5,0,8,5,459]	['','duration<long, std::ratio<1L, 1L> >','','chrono','']
+9151	1	null	a.cpp	0	['subprogram','compile_unit']	[9131,12]				0	[]	[]	[]	[]
+11619	5	formal_parameter	a.cpp	0	['subprogram','compile_unit']	[11603,12]				0	['type']	['ref4']	[11491]	['']
+offset	16023471350623073201	13857
+size	5435489408010792888	18
+tag	17905751708343214984	template_type_parameter
+unit_name	8657192746161260862	a.cpp
+unit_offset	14905628884015248742	0
+ancestor_tags	830906299496007322	['structure_type','compile_unit']
+ancestor_offsets	18099428250664153593	[10047,12]
+name	13953303733802802013	tuple_element<0UL, std::tuple<std::thread::_State *, std::default_delete<std::thread::_State> > >
+linkage_name	2553262765459789953	_ZNSt6chrono15duration_valuesIlE3maxEv
+decl_file	9506789155169696987	ctype.h
+decl_line	5651408086801131471	540
+attr_name	8508813696511238777	['linkage_name','name','decl_file','decl_line','type','declaration','external','accessibility','explicit']
+attr_form	2204414726958745669	['strx1','data1','data2','flag_present','flag_present']
+attr_int	3798582667264880443	[4432,11,0,0,1]
+attr_str	13716946669142575194	['putwc','wchar.h','','','','']

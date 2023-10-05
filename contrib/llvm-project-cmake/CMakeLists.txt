@@ -6,7 +6,9 @@ endif()
 
 option (ENABLE_EMBEDDED_COMPILER "Enable support for JIT compilation during query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
-if (NOT ENABLE_EMBEDDED_COMPILER)
+option (ENABLE_DWARF_PARSER "Enable support for DWARF input format" ON)
+
+if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER)
     message(STATUS "Not using LLVM")
     return()
 endif()
