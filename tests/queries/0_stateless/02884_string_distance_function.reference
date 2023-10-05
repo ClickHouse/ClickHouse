@@ -2,7 +2,7 @@ const arguments byteHammingDistance
 0
 const arguments editDistance
 6
-const arguments jaccardIndex
+const arguments stringJaccardIndex
 0.4
 byteHammingDistance
 7
@@ -32,7 +32,7 @@ mismatches(alias)
 6
 6
 10
-jaccardIndex
+stringJaccardIndex
 0
 0.8571428571428571
 0.8571428571428571
