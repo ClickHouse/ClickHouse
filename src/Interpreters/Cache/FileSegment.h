@@ -263,7 +263,7 @@ public:
 
     void setDownloadedSize(size_t delta);
 
-    void disableBackgroundDownload();
+    void setDownloadFailed();
 
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
@@ -293,7 +293,7 @@ private:
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
     const bool is_unbound = false;
-    bool background_download_enabled;
+    const bool background_download_enabled;
 
     std::atomic<State> download_state;
     DownloaderId downloader_id; /// The one who prepares the download
