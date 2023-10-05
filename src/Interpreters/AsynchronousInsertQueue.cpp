@@ -270,9 +270,6 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         }
     }
 
-    if (auto quota = query_context->getQuota())
-        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
-
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
 
     InsertQuery key{query, settings, query_context->getUserID(), query_context->getCurrentRoles()};
