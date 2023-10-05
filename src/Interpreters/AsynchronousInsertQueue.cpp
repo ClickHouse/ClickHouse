@@ -87,6 +87,8 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
     {
         query = other.query->clone();
         query_str = other.query_str;
+        user_id = other.user_id;
+        current_roles = other.current_roles;
         settings = other.settings;
         hash = other.hash;
     }
@@ -98,6 +100,13 @@ UInt128 AsynchronousInsertQueue::InsertQuery::calculateHash() const
 {
     SipHash siphash;
     query->updateTreeHash(siphash);
+
+    if (user_id)
+    {
+        siphash.update(*user_id);
+        for (const auto & current_role : current_roles)
+            siphash.update(current_role);
+    }
 
     for (const auto & setting : settings.allChanged())
     {
@@ -114,7 +123,7 @@ UInt128 AsynchronousInsertQueue::InsertQuery::calculateHash() const
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
-    return query_str == other.query_str && settings == other.settings;
+    return query_str == other.query_str && user_id == other.user_id && current_roles == other.current_roles && settings == other.settings;
 }
 
 AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, const String & async_dedup_token_, MemoryTracker * user_memory_tracker_)
