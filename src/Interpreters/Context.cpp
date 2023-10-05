@@ -3417,9 +3417,8 @@ void Context::initializeSystemLogs()
     /// triggered from another thread, that is launched while initializing the system logs,
     /// for example, system.filesystem_cache_log will be triggered by parts loading
     /// of any other table if it is stored on a disk with cache.
-    callOnce(shared->system_logs_initializer, [&] {
-        shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
-    });
+    auto lock = getGlobalLock();
+    shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
 }
 
 void Context::initializeTraceCollector()
