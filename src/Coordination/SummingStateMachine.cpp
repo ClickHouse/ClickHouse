@@ -1,4 +1,5 @@
 #include <Coordination/SummingStateMachine.h>
+#include <iostream>
 #include <cstring>
 
 namespace DB

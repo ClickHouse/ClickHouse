@@ -103,7 +103,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments &
     auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
     auto info = getInfoIfClickHouseDictionarySource(config, data.global_context);
 
-    if (!info || !info->is_local || info->table_name.table.empty())
+    if (!info || !info->is_local)
         return;
 
     if (info->table_name.database.empty())

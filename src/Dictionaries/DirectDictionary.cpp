@@ -288,8 +288,7 @@ public:
         : ISource(pipeline_.getHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
-    {
-    }
+    {}
 
     std::string getName() const override
     {

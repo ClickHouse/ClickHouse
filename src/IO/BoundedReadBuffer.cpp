@@ -19,6 +19,14 @@ void BoundedReadBuffer::setReadUntilEnd()
     read_until_position.reset();
 }
 
+SeekableReadBuffer::Range BoundedReadBuffer::getRemainingReadRange() const
+{
+    std::optional<size_t> right_bound_included;
+    if (read_until_position)
+        right_bound_included = *read_until_position - 1;
+    return Range{file_offset_of_buffer_end, right_bound_included};
+}
+
 off_t BoundedReadBuffer::getPosition()
 {
     return file_offset_of_buffer_end - (working_buffer.end() - pos);

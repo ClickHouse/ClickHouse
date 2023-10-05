@@ -96,7 +96,7 @@ BlockIO InterpreterDescribeQuery::execute()
     else if (table_expression.table_function)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, getContext());
-        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext());
         for (const auto & table_function_column_description : table_function_column_descriptions)
             columns.emplace_back(table_function_column_description);
     }
@@ -124,16 +124,10 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         res_columns[0]->insert(column.name);
 
-        DataTypePtr type;
         if (extend_object_types)
-            type = storage_snapshot->getConcreteType(column.name);
+            res_columns[1]->insert(storage_snapshot->getConcreteType(column.name)->getName());
         else
-            type = column.type;
-
-        if (getContext()->getSettingsRef().print_pretty_type_names)
-            res_columns[1]->insert(type->getPrettyName());
-        else
-            res_columns[1]->insert(type->getName());
+            res_columns[1]->insert(column.type->getName());
 
         if (column.default_desc.expression)
         {

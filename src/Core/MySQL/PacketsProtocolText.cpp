@@ -1,12 +1,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "Common/assert_cast.h"
-#include "Core/MySQL/IMySQLWritePacket.h"
-#include "DataTypes/DataTypeLowCardinality.h"
-#include "DataTypes/DataTypeNullable.h"
-#include "DataTypes/DataTypesDecimal.h"
 
 namespace DB
 {
@@ -136,25 +131,16 @@ void ColumnDefinition::writePayloadImpl(WriteBuffer & buffer) const
     }
 }
 
-ColumnDefinition getColumnDefinition(const String & column_name, const DataTypePtr & data_type)
+ColumnDefinition getColumnDefinition(const String & column_name, const TypeIndex type_index)
 {
     ColumnType column_type;
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
-    uint8_t decimals = 0;
-    TypeIndex type_index = removeLowCardinality(removeNullable(data_type))->getTypeId();
     switch (type_index)
     {
         case TypeIndex::UInt8:
-            if (data_type->getName() == "Bool")
-            {
-                column_type = ColumnType::MYSQL_TYPE_BIT;
-            }
-            else
-            {
-                column_type = ColumnType::MYSQL_TYPE_TINY;
-                flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
-            }
+            column_type = ColumnType::MYSQL_TYPE_TINY;
+            flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
             break;
         case TypeIndex::UInt16:
             column_type = ColumnType::MYSQL_TYPE_SHORT;
@@ -187,51 +173,30 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
         case TypeIndex::Float32:
             column_type = ColumnType::MYSQL_TYPE_FLOAT;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
-            decimals = 31;
             break;
         case TypeIndex::Float64:
             column_type = ColumnType::MYSQL_TYPE_DOUBLE;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
-            decimals = 31;
             break;
         case TypeIndex::Date:
-        case TypeIndex::Date32:
             column_type = ColumnType::MYSQL_TYPE_DATE;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             break;
         case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
             column_type = ColumnType::MYSQL_TYPE_DATETIME;
             flags = ColumnDefinitionFlags::BINARY_FLAG;
             break;
-        case TypeIndex::Decimal32:
-        case TypeIndex::Decimal64:
-            column_type = ColumnType::MYSQL_TYPE_DECIMAL;
-            flags = ColumnDefinitionFlags::BINARY_FLAG;
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+            column_type = ColumnType::MYSQL_TYPE_STRING;
+            charset = CharacterSet::utf8_general_ci;
             break;
-        case TypeIndex::Decimal128: {
-            // MySQL Decimal has max 65 precision and 30 scale
-            // Decimal256 (min scale is 39) is higher than the MySQL supported range and handled in the default case
-            // See https://dev.mysql.com/doc/refman/8.0/en/precision-math-decimal-characteristics.html
-            const auto & type = assert_cast<const DataTypeDecimal128 &>(*data_type);
-            if (type.getPrecision() > 65 || type.getScale() > 30)
-            {
-                column_type = ColumnType::MYSQL_TYPE_STRING;
-                charset = CharacterSet::utf8_general_ci;
-            }
-            else
-            {
-                column_type = ColumnType::MYSQL_TYPE_DECIMAL;
-                flags = ColumnDefinitionFlags::BINARY_FLAG;
-            }
-            break;
-        }
         default:
             column_type = ColumnType::MYSQL_TYPE_STRING;
             charset = CharacterSet::utf8_general_ci;
             break;
     }
-    return ColumnDefinition(column_name, charset, 0, column_type, flags, decimals);
+    return ColumnDefinition(column_name, charset, 0, column_type, flags, 0);
 }
 
 }

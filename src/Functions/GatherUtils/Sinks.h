@@ -15,6 +15,7 @@
 
 namespace DB::GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySource;
@@ -214,4 +215,5 @@ struct NullableArraySink : public ArraySink
     }
 };
 
+#pragma GCC visibility pop
 }

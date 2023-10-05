@@ -33,7 +33,7 @@ SELECT sparkbar(4,toDate('2020-01-01'),toDate('2020-01-08'))(event_date,cnt) FRO
 SELECT sparkbar(5,toDate('2020-01-01'),toDate('2020-01-10'))(event_date,cnt) FROM spark_bar_test;
 SELECT sparkbar(9,toDate('2020-01-01'),toDate('2020-01-10'))(event_date,cnt) FROM spark_bar_test;
 
-WITH number DIV 50 AS k, toUInt32(number % 50) AS value SELECT k, sparkbar(50, 0, 99)(number, value) FROM numbers(100) GROUP BY k ORDER BY k;
+WITH number DIV 50 AS k, number % 50 AS value SELECT k, sparkbar(50, 0, 99)(number, value) FROM numbers(100) GROUP BY k ORDER BY k;
 
 SELECT sparkbar(128, 0, 9223372036854775806)(toUInt64(9223372036854775806), number % 65535) FROM numbers(100);
 SELECT sparkbar(128)(toUInt64(9223372036854775806), number % 65535) FROM numbers(100);
@@ -58,11 +58,5 @@ SELECT sparkbar(2, -5, 1)(number, number) FROM numbers(10); -- { serverError ILL
 SELECT sparkbar(2)(toInt32(number),  number) FROM numbers(10); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT sparkbar(2, 0)(number, number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT sparkbar(2, 0, 5, 8)(number, number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
--- it causes overflow, just check that it doesn't crash under UBSan, do not check the result it's not really reasonable
-SELECT sparkbar(10)(number, toInt64(number)) FROM numbers(toUInt64(9223372036854775807), 20) FORMAT Null;
-SELECT sparkbar(10)(number, -number) FROM numbers(toUInt64(9223372036854775807), 7) FORMAT Null;
-SELECT sparkbar(10)(number, number) FROM numbers(18446744073709551615, 7) FORMAT Null;
-SELECT sparkbar(16)(number, number) FROM numbers(18446744073709551600, 16) FORMAT Null;
 
 DROP TABLE IF EXISTS spark_bar_test;

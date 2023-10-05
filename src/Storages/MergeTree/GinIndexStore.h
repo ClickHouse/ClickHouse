@@ -52,7 +52,7 @@ public:
     void add(UInt32 row_id);
 
     /// Serialize the content of builder to given WriteBuffer, returns the bytes of serialized data
-    UInt64 serialize(WriteBuffer & buffer);
+    UInt64 serialize(WriteBuffer & buffer) const;
 
     /// Deserialize the postings list data from given ReadBuffer, return a pointer to the GinIndexPostingsList created by deserialization
     static GinIndexPostingsListPtr deserialize(ReadBuffer & buffer);

@@ -20,10 +20,10 @@ namespace Poco {
 namespace MongoDB {
 
 
-MessageHeader::MessageHeader(OpCode opCode):
-	_messageLength(0),
-	_requestID(0),
-	_responseTo(0),
+MessageHeader::MessageHeader(OpCode opCode): 
+	_messageLength(0), 
+	_requestID(0), 
+	_responseTo(0), 
 	_opCode(opCode)
 {
 }
@@ -42,7 +42,7 @@ void MessageHeader::read(BinaryReader& reader)
 
 	Int32 opCode;
 	reader >> opCode;
-	_opCode = static_cast<OpCode>(opCode);
+	_opCode = (OpCode) opCode;
 
 	if (!reader.good())
 	{
@@ -56,7 +56,7 @@ void MessageHeader::write(BinaryWriter& writer)
 	writer << _messageLength;
 	writer << _requestID;
 	writer << _responseTo;
-	writer << static_cast<Int32>(_opCode);
+	writer << (Int32) _opCode;
 }
 
 

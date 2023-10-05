@@ -79,7 +79,7 @@ protected:
         if (block_size == 0)
             return {};
 
-        UInt64 curr = state->counter.fetch_add(block_size, std::memory_order_relaxed);
+        UInt64 curr = state->counter.fetch_add(block_size, std::memory_order_acquire);
 
         if (curr >= max_counter)
             return {};
