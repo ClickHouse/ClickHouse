@@ -60,10 +60,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
+AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_, const std::optional<UUID> & user_id_, const std::vector<UUID> & current_roles_)
     : query(query_->clone())
     , query_str(queryToString(query))
     , settings(settings_)
+    , user_id(user_id_)
+    , current_roles(current_roles_)
     , hash(calculateHash())
 {
 }
@@ -72,6 +74,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     : query(other.query->clone())
     , query_str(other.query_str)
     , settings(other.settings)
+    , user_id(other.user_id)
+    , current_roles(other.current_roles)
     , hash(other.hash)
 {
 }
@@ -262,7 +266,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
 
-    InsertQuery key{query, settings};
+    InsertQuery key{query, settings, query_context->getUserID(), query_context->getCurrentRoles()};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
 
@@ -469,6 +473,11 @@ try
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings.set("input_format_parallel_parsing", false);
     insert_context->makeQueryContext();
+
+    /// Access rights must be checked for the user who executed the initial INSERT query.
+    if (key.user_id)
+        insert_context->setUser(*key.user_id, key.current_roles);
+
     insert_context->setSettings(key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
