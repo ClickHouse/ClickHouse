@@ -233,6 +233,8 @@ def assert_took(took, should_took):
         # - second for calculating the signature
         # - and finally to write the payload to S3
         # Hence the value should be multipled by 3.
+        #
+        # BUT: only in case of HTTP, HTTPS will not require this.
         pytest.param(
             "default",
             next_backup_name("remote"),
@@ -242,24 +244,24 @@ def assert_took(took, should_took):
             0,
             id="no_local_to_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds, but for S3Client it is 2x more
+        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
         pytest.param(
             "default",
             next_backup_name("remote"),
             "user",
             "max_backup_bandwidth",
             "1M",
-            7 * 3,
+            7 * 2,
             id="user_local_to_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds, but for S3Client it is 2x more
+        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
         pytest.param(
             "default",
             next_backup_name("remote"),
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
-            3 * 3,
+            3 * 2,
             id="server_local_to_remote_throttling",
         ),
     ],
