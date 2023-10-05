@@ -134,7 +134,7 @@ Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-referen
 **Syntax**
 
 ``` sql
-makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
+makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
 ```
 
 ## timestamp
