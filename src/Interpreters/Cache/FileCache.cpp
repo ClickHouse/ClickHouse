@@ -123,6 +123,8 @@ void FileCache::initialize()
         {
             fs::create_directories(getBasePath());
         }
+
+        status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
     }
     catch (...)
     {

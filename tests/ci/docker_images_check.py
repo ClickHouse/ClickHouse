@@ -2,9 +2,7 @@
 import argparse
 import json
 import logging
-import os
 import platform
-import shutil
 import subprocess
 import time
 import sys
@@ -15,7 +13,7 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
+from env_helper import REPO_COPY, RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -26,8 +24,8 @@ from upload_result_helper import upload_results
 from docker_images_helper import ImagesDict, IMAGES_FILE_PATH, get_images_dict
 
 NAME = "Push to Dockerhub"
-
-TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
+TEMP_PATH = Path(RUNNER_TEMP) / "docker_images_check"
+TEMP_PATH.mkdir(parents=True, exist_ok=True)
 
 
 class DockerImage:
@@ -37,10 +35,11 @@ class DockerImage:
         repo: str,
         only_amd64: bool,
         parent: Optional["DockerImage"] = None,
-        gh_repo_path: str = GITHUB_WORKSPACE,
+        gh_repo: str = REPO_COPY,
     ):
+        assert not path.startswith("/")
         self.path = path
-        self.full_path = os.path.join(gh_repo_path, path)
+        self.full_path = Path(gh_repo) / path
         self.repo = repo
         self.only_amd64 = only_amd64
         self.parent = parent
@@ -378,9 +377,9 @@ def main():
     if args.suffix:
         global NAME
         NAME += f" {args.suffix}"
-        changed_json = os.path.join(TEMP_PATH, f"changed_images_{args.suffix}.json")
+        changed_json = TEMP_PATH / f"changed_images_{args.suffix}.json"
     else:
-        changed_json = os.path.join(TEMP_PATH, "changed_images.json")
+        changed_json = TEMP_PATH / "changed_images.json"
 
     if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
@@ -390,11 +389,7 @@ def main():
             shell=True,
         )
 
-    if os.path.exists(TEMP_PATH):
-        shutil.rmtree(TEMP_PATH)
-    os.makedirs(TEMP_PATH)
-
-    images_dict = get_images_dict(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
+    images_dict = get_images_dict(Path(REPO_COPY), IMAGES_FILE_PATH)
 
     pr_info = PRInfo()
     if args.all:
@@ -442,6 +437,7 @@ def main():
     description = format_description(description)
 
     with open(changed_json, "w", encoding="utf-8") as images_file:
+        logging.info("Saving changed images file %s", changed_json)
         json.dump(result_images, images_file)
 
     s3_helper = S3Helper()
