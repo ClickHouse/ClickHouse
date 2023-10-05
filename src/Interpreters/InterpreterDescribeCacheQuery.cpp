@@ -54,7 +54,7 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[i++]->insert(cache->getFileSegmentsNum());
     res_columns[i++]->insert(cache->getBasePath());
     res_columns[i++]->insert(settings.background_download_threads);
-    res_columns[i++]->insert(settings.enable_bypass_cache_with_threshold);
+    res_columns[i++]->insert(settings.enable_bypass_cache_with_threashold);
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();

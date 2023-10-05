@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class HTTPPathHints : public IHints<>
+class HTTPPathHints : public IHints<1, HTTPPathHints>
 {
 public:
     std::vector<String> getAllRegisteredNames() const override;

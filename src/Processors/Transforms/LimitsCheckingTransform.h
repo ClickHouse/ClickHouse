@@ -33,8 +33,6 @@ public:
 
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
 
-    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::SkipSupported; }
-
 protected:
     void transform(Chunk & chunk) override;
 

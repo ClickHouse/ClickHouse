@@ -2403,7 +2403,7 @@ bool BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(
         }
     }
 
-    return MergeTreeData::partsContainSameProjections(left, right, out_reason);
+    return MergeTreeData::partsContainSameProjections(left, right);
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>

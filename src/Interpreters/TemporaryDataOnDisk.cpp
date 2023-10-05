@@ -11,7 +11,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
-#include <Core/Defines.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 
 namespace DB
@@ -205,16 +205,16 @@ struct TemporaryFileStream::OutputWriter
 
 struct TemporaryFileStream::InputReader
 {
-    InputReader(const String & path, const Block & header_, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    InputReader(const String & path, const Block & header_)
+        : in_file_buf(path)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
     {
         LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
     }
 
-    explicit InputReader(const String & path, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    explicit InputReader(const String & path)
+        : in_file_buf(path)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
     {
@@ -305,7 +305,7 @@ Block TemporaryFileStream::read()
 
     if (!in_reader)
     {
-        in_reader = std::make_unique<InputReader>(getPath(), header, getSize());
+        in_reader = std::make_unique<InputReader>(getPath(), header);
     }
 
     Block block = in_reader->read();
@@ -368,16 +368,6 @@ String TemporaryFileStream::getPath() const
         return file->getAbsolutePath();
     if (segment_holder && !segment_holder->empty())
         return segment_holder->front().getPathInLocalCache();
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
-}
-
-size_t TemporaryFileStream::getSize() const
-{
-    if (file)
-        return file->getDisk()->getFileSize(file->getRelativePath());
-    if (segment_holder && !segment_holder->empty())
-        return segment_holder->front().getReservedSize();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
 }

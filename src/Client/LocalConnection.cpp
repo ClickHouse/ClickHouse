@@ -42,7 +42,7 @@ LocalConnection::~LocalConnection()
         {
             LocalConnection::sendCancel();
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
             /// Just ignore any exception.
         }

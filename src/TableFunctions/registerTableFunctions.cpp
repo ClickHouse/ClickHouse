@@ -23,6 +23,8 @@ void registerTableFunctions()
     registerTableFunctionMongoDB(factory);
     registerTableFunctionRedis(factory);
 
+    registerTableFunctionMeiliSearch(factory);
+
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);

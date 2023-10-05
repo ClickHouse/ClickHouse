@@ -6,6 +6,7 @@ file
 generateRandom
 input
 jdbc
+meilisearch
 merge
 mongodb
 null

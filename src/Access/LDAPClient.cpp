@@ -93,7 +93,7 @@ namespace
 
         for (auto ch : src)
         {
-            switch (ch) // NOLINT(bugprone-switch-missing-default-case)
+            switch (ch)
             {
                 case ',':
                 case '\\':
@@ -450,7 +450,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
          msg = ldap_next_message(handle, msg)
     )
     {
-        switch (ldap_msgtype(msg)) // NOLINT(bugprone-switch-missing-default-case)
+        switch (ldap_msgtype(msg))
         {
             case LDAP_RES_SEARCH_ENTRY:
             {

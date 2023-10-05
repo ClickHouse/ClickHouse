@@ -105,7 +105,6 @@ class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
-class BackupLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
@@ -198,6 +197,11 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
+#if USE_ROCKSDB
+class MergeTreeMetadataCache;
+using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
+#endif
+
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
@@ -259,13 +263,7 @@ protected:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
-    struct InsertionTableInfo
-    {
-        StorageID table = StorageID::createEmpty();
-        std::optional<Names> column_names;
-    };
-
-    InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
+    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -412,10 +410,6 @@ protected:
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
-
-    /// Resource classifier for a query, holds smart pointers required for ResourceLink
-    /// NOTE: all resource links became invalid after `classifier` destruction
-    mutable ClassifierPtr classifier;
 
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
@@ -605,7 +599,7 @@ public:
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
-    ClassifierPtr getWorkloadClassifier() const;
+    ClassifierPtr getClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -735,13 +729,10 @@ public:
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;
-    bool isCurrentQueryKilled() const;
 
-    bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
-    bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
-    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
-    const StorageID & getInsertionTable() const { return insertion_table_info.table; }
-    const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
+    bool hasInsertionTable() const { return !insertion_table.empty(); }
+    void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
+    const StorageID & getInsertionTable() const { return insertion_table; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -885,7 +876,6 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
-    QueryStatusPtr getProcessListElementSafe() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -921,6 +911,10 @@ public:
     UInt32 getZooKeeperSessionUptime() const;
     UInt64 getClientProtocolVersion() const;
     void setClientProtocolVersion(UInt64 version);
+
+#if USE_ROCKSDB
+    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
+#endif
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
@@ -1026,6 +1020,10 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
+#if USE_ROCKSDB
+    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
+#endif
+
     /// Call after unexpected crash happen.
     void handleCrash() const;
 
@@ -1047,7 +1045,6 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
-    std::shared_ptr<BackupLog> getBackupLog() const;
 
     std::vector<ISystemLog *> getSystemLogs() const;
 
