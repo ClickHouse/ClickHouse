@@ -1,8 +1,9 @@
+#include <gtest/gtest.h>
+
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 
-#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <numeric>
@@ -22,7 +23,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
 #include <base/sleep.h>
-#include <gtest/gtest.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/CurrentThread.h>
