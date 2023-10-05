@@ -590,6 +590,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
+            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
             need_rebuild_indexes = true;
             need_rebuild_projections = true;
         }
@@ -696,6 +697,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
+            /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
+            /// the part granularity, so we need to rebuild indexes
             if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
                 need_rebuild_indexes = true;
         }
