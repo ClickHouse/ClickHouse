@@ -541,6 +541,12 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
     chassert(fs::file_size(getPathInLocalCache()) == downloaded_size);
 }
 
+void FileSegment::setDownloadFailed()
+{
+    auto lock = lockFileSegment();
+    setDownloadFailedUnlocked(lock);
+}
+
 void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 {
     LOG_INFO(log, "Setting download as failed: {}", getInfoForLogUnlocked(lock));
@@ -908,12 +914,6 @@ void FileSegment::use()
         auto cache_lock = cache->lockCache();
         hits_count = it->use(cache_lock);
     }
-}
-
-void FileSegment::disableBackgroundDownload()
-{
-    auto lock = lockFileSegment();
-    background_download_enabled = false;
 }
 
 FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
