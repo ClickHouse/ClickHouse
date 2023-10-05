@@ -21,7 +21,7 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from docker_pull_helper import get_image_with_version
-from env_helper import GITHUB_WORKSPACE, TEMP_PATH
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from git_helper import git_runner
@@ -43,29 +43,34 @@ GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
 
 
 def process_result(
-    result_directory: Path,
-) -> Tuple[str, str, TestResults, List[Path]]:
+    result_folder: str,
+) -> Tuple[str, str, TestResults, List[str]]:
     test_results = []  # type: TestResults
     additional_files = []
-    # Just upload all files from result_directory.
+    # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible
-    # for content of result_directory.
-    if result_directory.exists():
-        additional_files = [p for p in result_directory.iterdir() if p.is_file()]
+    # for content of result_folder.
+    if os.path.exists(result_folder):
+        test_files = [
+            f
+            for f in os.listdir(result_folder)
+            if os.path.isfile(os.path.join(result_folder, f))
+        ]
+        additional_files = [os.path.join(result_folder, f) for f in test_files]
 
     status = []
-    status_path = result_directory / "check_status.tsv"
-    if status_path.exists():
+    status_path = os.path.join(result_folder, "check_status.tsv")
+    if os.path.exists(status_path):
         logging.info("Found check_status.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
-        logging.info("Files in result folder %s", os.listdir(result_directory))
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = result_directory / "test_results.tsv"
+        results_path = Path(result_folder) / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
             raise Exception("Empty results")
@@ -139,9 +144,8 @@ def main():
 
     stopwatch = Stopwatch()
 
-    repo_path = Path(GITHUB_WORKSPACE)
-    temp_path = Path(TEMP_PATH) / "style_check"
-    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = GITHUB_WORKSPACE
+    temp_path = os.path.join(RUNNER_TEMP, "style_check")
 
     pr_info = PRInfo()
     if args.push:
@@ -160,6 +164,9 @@ def main():
         # state == "success" -> code = 0
         code = int(state != "success")
         sys.exit(code)
+
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
     s3_helper = S3Helper()

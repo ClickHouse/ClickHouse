@@ -1,10 +1,12 @@
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -50,21 +52,13 @@ void JSONColumnsReaderBase::skipColumn()
     while (!in->eof() && balance)
     {
         if (inside_quotes)
-            pos = find_first_symbols<'\\', '"'>(in->position(), in->buffer().end());
+            pos = find_first_symbols<'"'>(in->position(), in->buffer().end());
         else
-            pos = find_first_symbols<'[', ']', '"', '\\'>(in->position(), in->buffer().end());
+            pos = find_first_symbols<'[', ']', '"'>(in->position(), in->buffer().end());
 
         in->position() = pos;
         if (in->position() == in->buffer().end())
             continue;
-
-        if (*in->position() == '\\')
-        {
-            ++in->position();
-            if (!in->eof())
-                ++in->position();
-            continue;
-        }
 
         if (*in->position() == '"')
             inside_quotes = !inside_quotes;
@@ -124,31 +118,6 @@ Chunk JSONColumnsBlockInputFormatBase::generate()
         return Chunk(std::move(columns), 0);
 
     size_t chunk_start = getDataOffsetMaybeCompressed(*in);
-
-    if (need_only_count)
-    {
-        /// Count rows in first column and skip the rest columns.
-        reader->readColumnStart();
-        size_t num_rows = 0;
-        if (!reader->checkColumnEnd())
-        {
-            do
-            {
-                skipJSONField(*in, "skip_field");
-                ++num_rows;
-            } while (!reader->checkColumnEndOrSkipFieldDelimiter());
-        }
-
-        while (!reader->checkChunkEndOrSkipColumnDelimiter())
-        {
-            reader->readColumnStart();
-            reader->skipColumn();
-        }
-
-        approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - chunk_start;
-        return getChunkForCount(num_rows);
-    }
-
     std::vector<UInt8> seen_columns(columns.size(), 0);
     Int64 rows = -1;
     size_t iteration = 0;
@@ -294,7 +263,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
         /// Don't check/change types from hints.
         if (!hints.contains(name))
         {
-            transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+            transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
             /// Check that we could determine the type of this column.
             checkFinalInferredType(type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference, hints_parsing_error);
         }

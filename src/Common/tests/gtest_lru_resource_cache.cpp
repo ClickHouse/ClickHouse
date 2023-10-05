@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <iostream>
 #include <gtest/gtest.h>
 #include <Common/LRUResourceCache.h>
 

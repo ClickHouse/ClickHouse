@@ -46,7 +46,6 @@ class JavaConnectorTest {
         Connection conn = null;
         Statement stmt = null;
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
             conn = DriverManager.getConnection(jdbcUrl, user, password);
             stmt = conn.createStatement();
             stmt.executeUpdate(CREATE_TABLE_SQL);
@@ -70,7 +69,7 @@ class JavaConnectorTest {
 
             stmt.close();
             conn.close();
-        } catch (Exception e) {
+        } catch (SQLException e) {
             e.printStackTrace();
             System.exit(1);
         }

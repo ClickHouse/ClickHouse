@@ -635,7 +635,6 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
-        Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
             const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
@@ -645,9 +644,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
             table_join->setRename(*source_column_name, result_column.name);
-            required_column_names.push_back(*source_column_name);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext(), required_column_names);
+        return storage->getJoinLocked(table_join, planner_context->getQueryContext());
     }
 
     /** JOIN with constant.

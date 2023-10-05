@@ -28,12 +28,7 @@ protected:
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
 
-    void clearLastLines(size_t lines_number);
-    void consumePartialResult(Chunk) override;
-
     size_t total_rows = 0;
-    size_t prev_partial_block_rows = 0;
-
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;
@@ -60,7 +55,6 @@ protected:
     void resetFormatterImpl() override
     {
         total_rows = 0;
-        prev_partial_block_rows = 0;
     }
 
 private:

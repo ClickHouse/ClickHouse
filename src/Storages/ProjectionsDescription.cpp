@@ -356,8 +356,9 @@ const ProjectionDescription & ProjectionsDescription::get(const String & project
     auto it = map.find(projection_name);
     if (it == map.end())
     {
-        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE, "There is no projection {} in table{}",
-                        projection_name, getHintsMessage(projection_name));
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
     }
 
     return *(it->second);
@@ -400,8 +401,9 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
         if (if_exists)
             return;
 
-        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE, "There is no projection {} in table{}",
-                        projection_name, getHintsMessage(projection_name));
+        String exception_message = fmt::format("There is no projection {} in table", projection_name);
+        appendHintsMessage(exception_message, projection_name);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
     }
 
     projections.erase(it->second);

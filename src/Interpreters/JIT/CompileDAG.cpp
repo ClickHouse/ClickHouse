@@ -160,7 +160,9 @@ UInt128 CompileDAG::hash() const
         }
     }
 
-    return hash.get128();
+    UInt128 result;
+    hash.get128(result);
+    return result;
 }
 
 }

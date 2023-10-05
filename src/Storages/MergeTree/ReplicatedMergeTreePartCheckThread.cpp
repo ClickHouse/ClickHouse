@@ -372,14 +372,20 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
                 return result;
             }
 
+            part->checkMetadata();
+
             LOG_INFO(log, "Part {} looks good.", part_name);
             result.status = {part_name, true, ""};
             result.action = ReplicatedCheckResult::DoNothing;
             return result;
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            if (isRetryableException(std::current_exception()))
+            /// Don't count the part as broken if we got known retryable exception.
+            /// In fact, there can be other similar situations because not all
+            /// of the exceptions are classified as retryable/non-retryable. But it is OK,
+            /// because there is a safety guard against deleting too many parts.
+            if (isRetryableException(e))
                 throw;
 
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
@@ -391,7 +397,6 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
             result.status = {part_name, false, message};
             result.action = ReplicatedCheckResult::TryFetchMissing;
             return result;
-
         }
     }
     else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < current_time)

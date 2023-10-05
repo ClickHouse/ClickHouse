@@ -1,0 +1,4 @@
+# This is for tar --exclude-vcs-ignores (and just in case someone will run
+# docker build locally with build context created via tar):
+target
+vendor

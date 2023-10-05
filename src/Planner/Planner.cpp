@@ -290,7 +290,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings.max_block_size,
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
-        settings.optimize_group_by_constant_keys,
         stats_collecting_params);
 
     return aggregator_params;
@@ -1048,7 +1047,7 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_)
+    const SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
@@ -1056,7 +1055,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_,
+    const SelectQueryOptions & select_query_options_,
     GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
@@ -1065,7 +1064,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_,
+    const SelectQueryOptions & select_query_options_,
     PlannerContextPtr planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)

@@ -114,8 +114,7 @@ void SelectStreamFactory::createForShard(
     ContextPtr context,
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
-    UInt32 shard_count,
-    bool parallel_replicas_enabled)
+    UInt32 shard_count)
 {
     auto it = objects_by_shard.find(shard_info.shard_num);
     if (it != objects_by_shard.end())
@@ -124,7 +123,7 @@ void SelectStreamFactory::createForShard(
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
@@ -147,10 +146,7 @@ void SelectStreamFactory::createForShard(
         return;
     });
 
-    // prefer_localhost_replica is not effective in case of parallel replicas
-    // (1) prefer_localhost_replica is about choosing one replica on a shard
-    // (2) parallel replica coordinator has own logic to choose replicas to read from
-    if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
+    if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
         StoragePtr main_table_storage;
 
@@ -191,7 +187,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
         {

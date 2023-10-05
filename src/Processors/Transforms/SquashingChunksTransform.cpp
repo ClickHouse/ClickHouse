@@ -1,4 +1,5 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <iostream>
 
 namespace DB
 {

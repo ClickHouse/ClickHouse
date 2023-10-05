@@ -14,7 +14,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/BackupLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -45,7 +44,7 @@ namespace ErrorCodes
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
-using OperationID = BackupOperationID;
+using OperationID = BackupsWorker::OperationID;
 namespace Stage = BackupCoordinationStage;
 
 namespace
@@ -134,7 +133,7 @@ namespace
             if (coordination)
                 coordination->setError(exception);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
         }
     }
@@ -179,53 +178,16 @@ namespace
     {
         return status == BackupStatus::RESTORING;
     }
-
-    /// We use slightly different read and write settings for backup/restore
-    /// with a separate throttler and limited usage of filesystem cache.
-    ReadSettings getReadSettingsForBackup(const ContextPtr & context, const BackupSettings & backup_settings)
-    {
-        auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
-        read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
-        return read_settings;
-    }
-
-    WriteSettings getWriteSettingsForBackup(const ContextPtr & context)
-    {
-        auto write_settings = context->getWriteSettings();
-        write_settings.enable_filesystem_cache_on_write_operations = false;
-        return write_settings;
-    }
-
-    ReadSettings getReadSettingsForRestore(const ContextPtr & context)
-    {
-        auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
-        read_settings.enable_filesystem_cache = false;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
-        return read_settings;
-    }
-
-    WriteSettings getWriteSettingsForRestore(const ContextPtr & context)
-    {
-        auto write_settings = context->getWriteSettings();
-        write_settings.enable_filesystem_cache_on_write_operations = false;
-        return write_settings;
-    }
 }
 
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
     : backups_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads))
     , restores_thread_pool(std::make_unique<ThreadPool>(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads))
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
 {
-    backup_log = global_context->getBackupLog();
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
 
@@ -382,15 +344,11 @@ void BackupsWorker::doBackup(
         backup_create_params.compression_method = backup_settings.compression_method;
         backup_create_params.compression_level = backup_settings.compression_level;
         backup_create_params.password = backup_settings.password;
-        backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
         backup_create_params.is_internal_backup = backup_settings.internal;
         backup_create_params.backup_coordination = backup_coordination;
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
         backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
         backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
-        backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;
-        backup_create_params.read_settings = getReadSettingsForBackup(context, backup_settings);
-        backup_create_params.write_settings = getWriteSettingsForBackup(context);
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -419,12 +377,12 @@ void BackupsWorker::doBackup(
             /// Prepare backup entries.
             BackupEntries backup_entries;
             {
-                BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, backup_create_params.read_settings, context};
+                BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context};
                 backup_entries = backup_entries_collector.run();
             }
 
             /// Write the backup entries to the backup.
-            buildFileInfosForBackupEntries(backup, backup_entries, backup_create_params.read_settings, backup_coordination);
+            buildFileInfosForBackupEntries(backup, backup_entries, backup_coordination);
             writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
@@ -452,10 +410,9 @@ void BackupsWorker::doBackup(
         backup.reset();
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
+        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
         /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
         setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
-        /// NOTE: setStatus is called after setNumFilesAndSize in order to have actual information in a backup log record
-        setStatus(backup_id, BackupStatus::BACKUP_CREATED);
     }
     catch (...)
     {
@@ -475,12 +432,12 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination)
 {
     LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, *backups_thread_pool));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), *backups_thread_pool));
 }
 
 
@@ -567,13 +524,8 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
             }
         };
 
-        if (always_single_threaded)
-        {
+        if (always_single_threaded || !backups_thread_pool->trySchedule([job] { job(true); }))
             job(false);
-            continue;
-        }
-
-        backups_thread_pool->scheduleOrThrowOnError([job] { job(true); });
     }
 
     {
@@ -697,9 +649,6 @@ void BackupsWorker::doRestore(
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
         backup_open_params.password = restore_settings.password;
         backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
-        backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
-        backup_open_params.read_settings = getReadSettingsForRestore(context);
-        backup_open_params.write_settings = getWriteSettingsForRestore(context);
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         String current_database = context->getCurrentDatabase();
@@ -864,7 +813,8 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
             }
         };
 
-        thread_pool.scheduleOrThrowOnError([job] { job(true); });
+        if (!thread_pool.trySchedule([job] { job(true); }))
+            job(false);
     }
 
     {
@@ -878,7 +828,7 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 
 void BackupsWorker::addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status)
 {
-    BackupOperationInfo info;
+    Info info;
     info.id = id;
     info.name = name;
     info.internal = internal;
@@ -898,9 +848,6 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, bool in
         if (!isFinalStatus(current_status))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: ID {} is already in use", id);
     }
-
-    if (backup_log)
-        backup_log->add(BackupLogElement{info});
 
     infos[id] = std::move(info);
 
@@ -935,9 +882,6 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
         info.exception = std::current_exception();
     }
 
-    if (backup_log)
-        backup_log->add(BackupLogElement{info});
-
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
 }
@@ -947,7 +891,6 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
                                        UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
 
 {
-    /// Current operation's info entry is updated here. The backup_log table is updated on its basis within a subsequent setStatus() call.
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
     if (it == infos.end())
@@ -980,7 +923,7 @@ void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
     });
 }
 
-BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
+BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -989,9 +932,9 @@ BackupOperationInfo BackupsWorker::getInfo(const OperationID & id) const
     return it->second;
 }
 
-std::vector<BackupOperationInfo> BackupsWorker::getAllInfos() const
+std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
 {
-    std::vector<BackupOperationInfo> res_infos;
+    std::vector<Info> res_infos;
     std::lock_guard lock{infos_mutex};
     for (const auto & info : infos | boost::adaptors::map_values)
     {

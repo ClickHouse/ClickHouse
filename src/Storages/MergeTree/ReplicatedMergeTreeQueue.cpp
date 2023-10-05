@@ -77,6 +77,15 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
         virtual_parts.add(part_name, nullptr);
     }
 
+    /// Drop parts can negatively affect virtual parts. So when we load parts
+    /// from zookeeper we can break invariant with virtual parts. To fix this we
+    /// have it here.
+    for (const LogEntryPtr & entry : queue)
+    {
+        if (entry->isDropPart(format_version))
+            virtual_parts.removePartAndCoveredParts(*entry->getDropRange(format_version));
+    }
+
     LOG_TRACE(log, "Queue initialized");
 }
 
@@ -857,7 +866,7 @@ ActiveDataPartSet getPartNamesToMutate(
 
 }
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -1797,18 +1806,11 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
     LOG_TEST(log, "Looking for mutations for part {} (part data version {}, part metadata version {})", part->name, part_data_version, part_metadata_version);
 
     std::map<int64_t, MutationCommands> result;
-
-    bool seen_all_data_mutations = false;
-    bool seen_all_metadata_mutations = false;
-
     /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
     /// of part's metadata.
     for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
     {
-        if (seen_all_data_mutations && seen_all_metadata_mutations)
-            break;
-
         auto alter_version = mutation_status->entry->alter_version;
         if (alter_version != -1)
         {
@@ -1818,19 +1820,14 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
                 result[mutation_version] = mutation_status->entry->commands;
-            else
-                seen_all_metadata_mutations = true;
         }
-        else
+        else if (mutation_version > part_data_version)
         {
-            if (mutation_version > part_data_version)
-                result[mutation_version] = mutation_status->entry->commands;
-            else
-                seen_all_data_mutations = true;
+            result[mutation_version] = mutation_status->entry->commands;
         }
     }
 
-    LOG_TEST(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
+    LOG_TRACE(log, "Got {} commands for part {} (part data version {}, part metadata version {})",
         result.size(), part->name, part_data_version, part_metadata_version);
 
     return result;
@@ -2172,7 +2169,7 @@ CommittingBlocks BaseMergePredicate<VirtualPartsT, MutationsStateT>::getCommitti
     {
         auto & response = locks_children[i];
         if (response.error != Coordination::Error::ZOK && !partition_ids_hint)
-            throw Coordination::Exception::fromPath(response.error, paths[i]);
+            throw Coordination::Exception(response.error, paths[i]);
 
         if (response.error != Coordination::Error::ZOK)
         {

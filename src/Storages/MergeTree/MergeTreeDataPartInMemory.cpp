@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DIRECTORY_ALREADY_EXISTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 MergeTreeDataPartInMemory::MergeTreeDataPartInMemory(
@@ -139,12 +138,8 @@ MutableDataPartStoragePtr MergeTreeDataPartInMemory::flushToDisk(const String & 
     return new_data_part_storage;
 }
 
-DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix,
-                                                                  const StorageMetadataPtr & metadata_snapshot,
-                                                                  const DiskTransactionPtr & disk_transaction) const
+DataPartStoragePtr MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const
 {
-    if (disk_transaction)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "InMemory parts are not compatible with disk transactions");
     String detached_path = *getRelativePathForDetachedPart(prefix, /* broken */ false);
     return flushToDisk(detached_path, metadata_snapshot);
 }
@@ -172,7 +167,7 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
         column.column->updateHashFast(hash);
 
     checksum.uncompressed_size = block.bytes();
-    checksum.uncompressed_hash = getSipHash128AsPair(hash);
+    hash.get128(checksum.uncompressed_hash);
     return checksum;
 }
 

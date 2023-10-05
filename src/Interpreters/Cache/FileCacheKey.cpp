@@ -7,10 +7,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 FileCacheKey::FileCacheKey(const std::string & path)
     : key(sipHash128(path.data(), path.size()))
@@ -30,13 +26,6 @@ std::string FileCacheKey::toString() const
 FileCacheKey FileCacheKey::random()
 {
     return FileCacheKey(UUIDHelpers::generateV4().toUnderType());
-}
-
-FileCacheKey FileCacheKey::fromKeyString(const std::string & key_str)
-{
-    if (key_str.size() != 32)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid cache key hex: {}", key_str);
-    return FileCacheKey(unhexUInt<UInt128>(key_str.data()));
 }
 
 }

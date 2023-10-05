@@ -79,7 +79,7 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Do the same cycle as schedulerThread() but never block or wait postponed events
+                // Do the same cycle as schedulerThread() but never block, just exit instead
                 bool has_work = true;
                 while (has_work)
                 {
@@ -88,7 +88,7 @@ public:
                         execute(request);
                     else
                         has_work = false;
-                    while (events.forceProcess())
+                    while (events.tryProcess())
                         has_work = true;
                 }
             }
@@ -97,8 +97,6 @@ public:
 
     bool equals(ISchedulerNode * other) override
     {
-        if (!ISchedulerNode::equals(other))
-            return false;
         if (auto * o = dynamic_cast<SchedulerRoot *>(other))
             return true;
         return false;
@@ -158,19 +156,12 @@ public:
         else
             current = current->next; // Just move round-robin pointer
 
-        dequeued_requests++;
-        dequeued_cost += request->cost;
         return {request, current != nullptr};
     }
 
     bool isActive() override
     {
         return current != nullptr;
-    }
-
-    size_t activeChildren() override
-    {
-        return 0;
     }
 
     void activateChild(ISchedulerNode * child) override
@@ -214,7 +205,6 @@ private:
                 value->next = nullptr;
                 value->prev = nullptr;
                 current = nullptr;
-                busy_periods++;
                 return;
             }
             else // Just move current to next to avoid invalidation

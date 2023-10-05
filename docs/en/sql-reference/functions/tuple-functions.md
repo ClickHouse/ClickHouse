@@ -559,29 +559,6 @@ Result:
 └────────────────────────────┘
 ```
 
-## tupleConcat
-
-Combines tuples passed as arguments.
-
-``` sql
-tupleConcat(tuples)
-```
-
-**Arguments**
-
-- `tuples` – Arbitrary number of arguments of [Tuple](../../sql-reference/data-types/tuple.md) type.
-
-**Example**
-
-``` sql
-SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
-```
-
-``` text
-┌─res──────────────────┐
-│ (1,2,3,4,true,false) │
-└──────────────────────┘
-```
 
 ## Distance functions
 
