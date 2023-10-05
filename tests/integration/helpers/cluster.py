@@ -2676,9 +2676,7 @@ class ClickHouseCluster:
         raise Exception("Can't wait LDAP to start")
 
     def cleanup_if_retry(self):
-        logging.warning(
-            "cleanup after retry"
-        )
+        logging.warning("cleanup after retry")
 
         self.cleanup()
         shutil.rmtree(self.instances_dir, ignore_errors=True)
