@@ -211,6 +211,7 @@
     \
     M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
+    M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds") \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.") \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.") \
@@ -252,6 +253,13 @@ The server successfully detected this situation and will download merged part fr
     M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on another replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.") \
     M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.") \
     M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.") \
+    \
+    M(USearchAddCount, "Number of vectors added to usearch indexes.") \
+    M(USearchAddVisitedMembers, "Number of nodes visited when adding vectors to usearch indexes.") \
+    M(USearchAddComputedDistances, "Number of times distance was computed when adding vectors to usearch indexes.") \
+    M(USearchSearchCount, "Number of search operations performed in usearch indexes.") \
+    M(USearchSearchVisitedMembers, "Number of nodes visited when searching in usearch indexes.") \
+    M(USearchSearchComputedDistances, "Number of times distance was computed when searching usearch indexes.") \
     \
     M(RWLockAcquiredReadLocks, "Number of times a read lock was acquired (in a heavy RWLock).") \
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).") \

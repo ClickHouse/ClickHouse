@@ -850,14 +850,6 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             if (skipped)
                 return {};
 
-            if (value_type_hint && !value_type_hint->equals(*value_column.type))
-            {
-                /// Cast value column to target type, because it can happen
-                /// that parsed type cannot be ClickHouse Map value type.
-                value_column.column = castColumn(value_column, value_type_hint);
-                value_column.type = value_type_hint;
-            }
-
             auto offsets_column = readOffsetsFromORCListColumn(orc_map_column);
             auto map_column = ColumnMap::create(key_column.column, value_column.column, offsets_column);
             auto map_type = std::make_shared<DataTypeMap>(key_column.type, value_column.type);

@@ -337,15 +337,22 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
         if (node.tryGetConstant(const_value, const_type))
         {
             /// Check constant like in KeyCondition
-            if (const_value.getType() == Field::Types::UInt64
-                || const_value.getType() == Field::Types::Int64
-                || const_value.getType() == Field::Types::Float64)
-            {
-                /// Zero in all types is represented in memory the same way as in UInt64.
-                out.function = const_value.get<UInt64>()
-                            ? RPNElement::ALWAYS_TRUE
-                            : RPNElement::ALWAYS_FALSE;
 
+            if (const_value.getType() == Field::Types::UInt64)
+            {
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Int64)
+            {
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -672,7 +679,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorFullText>(index.column_names, index.name, params, token_extractor.get());
 }

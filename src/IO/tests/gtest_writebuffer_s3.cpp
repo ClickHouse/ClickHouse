@@ -228,6 +228,7 @@ struct Client : DB::S3::Client
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
+            /* s3_retry_attempts = */ 0,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* get_request_throttler = */ {},

@@ -720,3 +720,84 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
+
+## Valid JSON/XML response on exception during HTTP streaming {valid-output-on-exception-http-streaming} 
+
+While query execution over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text
+even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
+To prevent it, you can use setting `http_write_exception_in_output_format` (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+
+Examples:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+system.numbers+format+JSON+settings+max_block_size=1&http_write_exception_in_output_format=1'
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "throwIf(greater(number, 2))",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": "0",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "1",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "2",
+			"throwIf(greater(number, 2))": 0
+		}
+	],
+
+	"rows": 3,
+
+	"exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
+}
+```
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>2)+from+system.numbers+format+XML+settings+max_block_size=1&http_write_exception_in_output_format=1'
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>throwIf(greater(number, 2))</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<number>0</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>1</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>2</number>
+			<field>0</field>
+		</row>
+	</data>
+	<rows>3</rows>
+	<exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
+</result>
+```
+

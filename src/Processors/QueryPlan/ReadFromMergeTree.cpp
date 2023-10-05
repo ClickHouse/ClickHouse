@@ -1029,10 +1029,10 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection)
 {
     const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
+    const auto & data_settings = data.getSettings();
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
@@ -1067,7 +1067,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         parts_to_merge_ranges.push_back(parts_with_ranges.end());
     }
 
-    Pipes partition_pipes;
+    Pipes merging_pipes;
+    Pipes no_merging_pipes;
 
     /// If do_not_merge_across_partitions_select_final is true and num_streams > 1
     /// we will store lonely parts with level > 0 to use parallel select on them.
@@ -1078,20 +1079,21 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
+        /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
+        /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
+        /// can use parallel select on such parts.
+        bool no_merging_final = settings.do_not_merge_across_partitions_select_final &&
+            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
+            data.merging_params.is_deleted_column.empty();
         Pipes pipes;
         {
             RangesInDataParts new_parts;
 
-            /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
-            /// with level > 0 then we won't postprocess this part and if num_streams > 1 we
-            /// can use parallel select on such parts. We save such parts in one vector and then use
-            /// MergeTreeReadPool and MergeTreeThreadSelectProcessor for parallel select.
-            if (num_streams > 1 && settings.do_not_merge_across_partitions_select_final &&
-                std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-                parts_to_merge_ranges[range_index]->data_part->info.level > 0
-                && data.merging_params.is_deleted_column.empty())
+            if (no_merging_final)
             {
-                sum_marks_in_lonely_parts += parts_to_merge_ranges[range_index]->getMarksCount();
+                if (num_streams > 1)
+                    sum_marks_in_lonely_parts += parts_to_merge_ranges[range_index]->getMarksCount();
                 lonely_parts.push_back(std::move(*parts_to_merge_ranges[range_index]));
                 continue;
             }
@@ -1142,16 +1144,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 out_projection = createProjection(pipes.front().getHeader());
         }
 
-        /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
-        /// with level > 0 then we won't postprocess this part
-        if (settings.do_not_merge_across_partitions_select_final &&
-            std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty())
-        {
-            partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
-            continue;
-        }
 
         Names sort_columns = metadata_for_reading->getSortingKeyColumns();
         SortDescription sort_description;
@@ -1174,40 +1166,72 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 partition_key_columns,
                 block_size.max_block_size_rows);
 
-        partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
+        merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
 
     if (!lonely_parts.empty())
     {
-        size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
-
-        const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-            settings.merge_tree_min_rows_for_concurrent_read,
-            settings.merge_tree_min_bytes_for_concurrent_read,
-            data_settings->index_granularity,
-            info.index_granularity_bytes,
-            sum_marks_in_lonely_parts);
-
-        /// Reduce the number of num_streams_for_lonely_parts if the data is small.
-        if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read && lonely_parts.size() < num_streams_for_lonely_parts)
-            num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
-
-        auto pipe = read(std::move(lonely_parts), column_names, ReadType::Default,
-                num_streams_for_lonely_parts, min_marks_for_concurrent_read, info.use_uncompressed_cache);
-
-        /// Drop temporary columns, added by 'sorting_key_expr'
-        if (!out_projection)
-            out_projection = createProjection(pipe.getHeader());
-
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
+        Pipe pipe;
+        if (num_streams > 1)
         {
-            return std::make_shared<ExpressionTransform>(header, sorting_expr);
-        });
+            size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
 
-        partition_pipes.emplace_back(std::move(pipe));
+            const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
+                settings.merge_tree_min_rows_for_concurrent_read,
+                settings.merge_tree_min_bytes_for_concurrent_read,
+                data_settings->index_granularity,
+                info.index_granularity_bytes,
+                sum_marks_in_lonely_parts);
+
+            /// Reduce the number of num_streams_for_lonely_parts if the data is small.
+            if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read
+                && lonely_parts.size() < num_streams_for_lonely_parts)
+                num_streams_for_lonely_parts = std::max(
+                    (sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read,
+                    lonely_parts.size());
+
+            pipe = read(
+                std::move(lonely_parts),
+                origin_column_names,
+                ReadFromMergeTree::ReadType::Default,
+                num_streams_for_lonely_parts,
+                min_marks_for_concurrent_read,
+                info.use_uncompressed_cache);
+        }
+        else
+        {
+            pipe = read(
+                std::move(lonely_parts),
+                origin_column_names,
+                ReadFromMergeTree::ReadType::InOrder,
+                num_streams,
+                0,
+                info.use_uncompressed_cache);
+        }
+        no_merging_pipes.emplace_back(std::move(pipe));
     }
 
-    return Pipe::unitePipes(std::move(partition_pipes));
+    if (!merging_pipes.empty() && !no_merging_pipes.empty())
+    {
+        out_projection = nullptr; /// We do projection here
+        Pipes pipes;
+        pipes.resize(2);
+        pipes[0] = Pipe::unitePipes(std::move(merging_pipes));
+        pipes[1] = Pipe::unitePipes(std::move(no_merging_pipes));
+        auto conversion_action = ActionsDAG::makeConvertingActions(
+            pipes[0].getHeader().getColumnsWithTypeAndName(),
+            pipes[1].getHeader().getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+        pipes[0].addSimpleTransform(
+            [conversion_action](const Block & header)
+            {
+                auto converting_expr = std::make_shared<ExpressionActions>(conversion_action);
+                return std::make_shared<ExpressionTransform>(header, converting_expr);
+            });
+        return Pipe::unitePipes(std::move(pipes));
+    }
+    else
+        return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
@@ -1322,7 +1346,10 @@ static void buildIndexes(
     }
 
     /// TODO Support row_policy_filter and additional_filters
-    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
+    if (settings.allow_experimental_analyzer)
+        indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
+    else
+        indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, query_info.query, context);
 
     indexes->use_skip_indexes = settings.use_skip_indexes;
     bool final = query_info.isFinal();
@@ -1797,7 +1824,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         ::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
-        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection);
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
     }
     else if (input_order_info)
     {

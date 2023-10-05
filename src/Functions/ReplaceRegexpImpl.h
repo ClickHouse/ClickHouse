@@ -4,9 +4,14 @@
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
 
-#include "config.h"
-#include <re2_st/re2.h>
-
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -95,7 +100,7 @@ struct ReplaceRegexpImpl
         size_t haystack_length,
         ColumnString::Chars & res_data,
         ColumnString::Offset & res_offset,
-        const re2_st::RE2 & searcher,
+        const re2::RE2 & searcher,
         int num_captures,
         const Instructions & instructions)
     {
@@ -110,7 +115,7 @@ struct ReplaceRegexpImpl
             /// If no more replacements possible for current string
             bool can_finish_current_string = false;
 
-            if (searcher.Match(haystack, match_pos, haystack_length, re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
+            if (searcher.Match(haystack, match_pos, haystack_length, re2::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
                 const auto & match = matches[0]; /// Complete match (\0)
                 size_t bytes_to_copy = (match.data() - haystack.data()) - copy_pos;
@@ -181,11 +186,11 @@ struct ReplaceRegexpImpl
         size_t haystack_size = haystack_offsets.size();
         res_offsets.resize(haystack_size);
 
-        re2_st::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
         regexp_options.set_log_errors(false);
 
-        re2_st::RE2 searcher(needle, regexp_options);
+        re2::RE2 searcher(needle, regexp_options);
 
         if (!searcher.ok())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
@@ -223,7 +228,7 @@ struct ReplaceRegexpImpl
         size_t haystack_size = haystack_offsets.size();
         res_offsets.resize(haystack_size);
 
-        re2_st::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
         regexp_options.set_log_errors(false);
 
@@ -242,7 +247,7 @@ struct ReplaceRegexpImpl
             if (needle.empty())
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
 
-            re2_st::RE2 searcher(needle, regexp_options);
+            re2::RE2 searcher(needle, regexp_options);
             if (!searcher.ok())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
             int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
@@ -272,11 +277,11 @@ struct ReplaceRegexpImpl
         size_t haystack_size = haystack_offsets.size();
         res_offsets.resize(haystack_size);
 
-        re2_st::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
         regexp_options.set_log_errors(false);
 
-        re2_st::RE2 searcher(needle, regexp_options);
+        re2::RE2 searcher(needle, regexp_options);
 
         if (!searcher.ok())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
@@ -319,7 +324,7 @@ struct ReplaceRegexpImpl
         size_t haystack_size = haystack_offsets.size();
         res_offsets.resize(haystack_size);
 
-        re2_st::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
         regexp_options.set_log_errors(false);
 
@@ -342,7 +347,7 @@ struct ReplaceRegexpImpl
             const char * repl_data = reinterpret_cast<const char *>(replacement_data.data() + repl_from);
             const size_t repl_length = static_cast<unsigned>(replacement_offsets[i] - repl_from - 1);
 
-            re2_st::RE2 searcher(needle, regexp_options);
+            re2::RE2 searcher(needle, regexp_options);
             if (!searcher.ok())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
             int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
@@ -369,11 +374,11 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(haystack_size);
 
-        re2_st::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
         /// Don't write error messages to stderr.
         regexp_options.set_log_errors(false);
 
-        re2_st::RE2 searcher(needle, regexp_options);
+        re2::RE2 searcher(needle, regexp_options);
 
         if (!searcher.ok())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The pattern argument is not a valid re2 pattern: {}", searcher.error());
