@@ -1260,8 +1260,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 return false;
             };
 
-            /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
-            /// It doesn't hold such a guarantee for streams with const keys.
+            /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
+            /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
             /// Note: it's also doesn't work with the read-in-order optimization.
             /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
             bool has_non_const_keys = has_non_const(left_plan.getCurrentDataStream().header, join_clause.key_names_left)

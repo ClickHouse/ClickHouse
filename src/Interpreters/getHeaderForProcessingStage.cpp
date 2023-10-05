@@ -129,7 +129,7 @@ Block getHeaderForProcessingStage(
                 if (!query_info.syntax_analyzer_result)
                 {
                     if (!query_info.planner_context)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
 
                     const auto & query_node = query_info.query_tree->as<QueryNode &>();
                     const auto & join_tree = query_node.getJoinTree();
