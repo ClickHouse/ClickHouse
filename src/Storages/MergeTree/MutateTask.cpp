@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include "Common/Priority.h"
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -523,7 +522,9 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
 }
 
 static std::unordered_map<String, size_t> getStreamCounts(
-    const MergeTreeDataPartPtr & data_part, const Names & column_names)
+    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeDataPartChecksums & source_part_checksums,
+    const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
 
@@ -533,8 +534,9 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
-                ++stream_counts[stream_name];
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, source_part_checksums);
+                if (stream_name)
+                    ++stream_counts[*stream_name];
             };
 
             serialization->enumerateStreams(callback);
@@ -543,7 +545,6 @@ static std::unordered_map<String, size_t> getStreamCounts(
 
     return stream_counts;
 }
-
 
 /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
 /// Because we will generate new versions of them after we perform mutation.
@@ -572,9 +573,10 @@ static NameSet collectFilesToSkip(
 
     if (isWidePart(source_part))
     {
-        auto new_stream_counts = getStreamCounts(new_part, new_part->getColumns().getNames());
-        auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
-        auto new_updated_stream_counts = getStreamCounts(new_part, updated_header.getNames());
+        auto new_stream_counts = getStreamCounts(new_part, source_part->checksums, new_part->getColumns().getNames());
+        auto source_updated_stream_counts = getStreamCounts(source_part, source_part->checksums, updated_header.getNames());
+        auto new_updated_stream_counts = getStreamCounts(new_part, source_part->checksums, updated_header.getNames());
+
 
         /// Skip all modified files in new part.
         for (const auto & [stream_name, _] : new_updated_stream_counts)
@@ -615,7 +617,7 @@ static NameToNameVector collectFilesForRenames(
     const String & mrk_extension)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
-    auto stream_counts = getStreamCounts(source_part, source_part->getColumns().getNames());
+    auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
     NameToNameVector rename_vector;
     NameSet collected_names;
 
@@ -652,12 +654,13 @@ static NameToNameVector collectFilesForRenames(
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    String stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, source_part->checksums);
+
                     /// Delete files if they are no longer shared with another column.
-                    if (--stream_counts[stream_name] == 0)
+                    if (stream_name && --stream_counts[*stream_name] == 0)
                     {
-                        add_rename(stream_name + ".bin", "");
-                        add_rename(stream_name + mrk_extension, "");
+                        add_rename(*stream_name + ".bin", "");
+                        add_rename(*stream_name + mrk_extension, "");
                     }
                 };
 
@@ -671,13 +674,25 @@ static NameToNameVector collectFilesForRenames(
 
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    String stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
-                    String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
+                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
+                    String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
+
+                    auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, source_part->checksums);
+                    if (!stream_from)
+                        return;
+
+                    String stream_to;
+                    auto storage_settings = source_part->storage.getSettings();
+
+                    if (storage_settings->replace_long_file_name_to_hash && full_stream_to.size() > storage_settings->max_file_name_length)
+                        stream_to = sipHash128String(full_stream_to);
+                    else
+                        stream_to = full_stream_to;
 
                     if (stream_from != stream_to)
                     {
-                        add_rename(stream_from + ".bin", stream_to + ".bin");
-                        add_rename(stream_from + mrk_extension, stream_to + mrk_extension);
+                        add_rename(*stream_from + ".bin", stream_to + ".bin");
+                        add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);
                     }
                 };
 
@@ -690,8 +705,8 @@ static NameToNameVector collectFilesForRenames(
                 /// but were removed in new_part by MODIFY COLUMN from
                 /// type with higher number of streams (e.g. LowCardinality -> String).
 
-                auto old_streams = getStreamCounts(source_part, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->getColumns().getNames());
+                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
+                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
 
                 for (const auto & [old_stream, _] : old_streams)
                 {
@@ -1845,7 +1860,14 @@ bool MutateTask::prepare()
             .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
         };
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getWriteSettings());
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(
+            ctx->source_part,
+            prefix,
+            ctx->future_part->part_info,
+            ctx->metadata_snapshot,
+            clone_params,
+            ctx->context->getReadSettings(),
+            ctx->context->getWriteSettings());
         part->getDataPartStorage().beginTransaction();
 
         ctx->temporary_directory_lock = std::move(lock);

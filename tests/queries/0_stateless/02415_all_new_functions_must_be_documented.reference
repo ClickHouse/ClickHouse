@@ -68,6 +68,7 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
+addDate
 addDays
 addHours
 addMicroseconds
@@ -429,7 +430,6 @@ mapUpdate
 match
 materialize
 max2
-meiliMatch
 metroHash64
 min2
 minSampleSizeContinous
@@ -668,6 +668,7 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
+subDate
 substring
 substringIndex
 substringIndexUTF8

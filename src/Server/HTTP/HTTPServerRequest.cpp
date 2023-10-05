@@ -81,7 +81,7 @@ bool HTTPServerRequest::checkPeerConnected() const
         if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
             return false;
     }
-    catch (Poco::TimeoutException &)
+    catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
     {
     }
     catch (...)

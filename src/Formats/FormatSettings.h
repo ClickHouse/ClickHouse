@@ -46,8 +46,6 @@ struct FormatSettings
     bool try_infer_dates = false;
     bool try_infer_datetimes = false;
 
-    bool output_format_markdown_escape_special_characters = false;
-
     enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -196,11 +194,16 @@ struct FormatSettings
         bool read_bools_as_numbers = true;
         bool read_numbers_as_strings = true;
         bool read_objects_as_strings = true;
+        bool read_arrays_as_strings = true;
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
         bool allow_object_type = false;
+        bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
+        bool try_infer_objects_as_tuples = false;
+        bool infer_incomplete_types_as_strings = true;
+
     } json;
 
     struct
@@ -288,6 +291,14 @@ struct FormatSettings
         uint32_t client_capabilities = 0;
         size_t max_packet_size = 0;
         uint8_t * sequence_id = nullptr; /// Not null if it's MySQLWire output format used to handle MySQL protocol connections.
+        /**
+         * COM_QUERY uses Text ResultSet
+         * https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset.html
+         * COM_STMT_EXECUTE uses Binary Protocol ResultSet
+         * https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_execute_response.html
+         * By default, use Text ResultSet.
+         */
+        bool binary_protocol = false;
     } mysql_wire;
 
     struct
@@ -407,6 +418,16 @@ struct FormatSettings
     {
         bool allow_types_conversion = true;
     } native;
+
+    struct
+    {
+        bool valid_output_on_exception = false;
+    } xml;
+
+    struct
+    {
+        bool escape_special_characters = false;
+    } markdown;
 };
 
 }

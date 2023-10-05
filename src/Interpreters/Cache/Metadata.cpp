@@ -362,12 +362,6 @@ public:
                 return;
             inserted = keys.insert(key).second;
         }
-        /// There is an invariant that key cannot be submitted for removal if it is already in removal queue.
-        /// Because
-        /// 1) when submit key to removal it acquires state REMOVING and we submit key for removal only if it has ACTIVE state.
-        /// 2) if a key is added to cache and it was found in removal queue - it will be removed from the queue and get state ACTIVE.
-        /// and both these actions are synchronized by the same KeyGuard.
-        chassert(inserted);
         if (inserted)
         {
             CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
