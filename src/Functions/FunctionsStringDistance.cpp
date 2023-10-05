@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSimilarity.h>
 #include <Common/PODArray.h>
+#include <Common/UTF8Helpers.h>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -14,6 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -108,6 +110,7 @@ struct ByteHammingDistanceImpl
     }
 };
 
+template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
     using ResultType = Float64;
@@ -117,20 +120,97 @@ struct ByteJaccardIndexImpl
         if (haystack_size == 0 || needle_size == 0)
             return 0;
 
+        const char * haystack_end = haystack + haystack_size;
+        const char * needle_end = needle + needle_size;
+
+        /// For byte strings use plain array as a set
         constexpr size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
         std::array<UInt8, max_size> haystack_set;
         std::array<UInt8, max_size> needle_set;
 
+        /// For UTF-8 strings we also use sets of code points greater than max_size
+        std::set<UInt32> haystack_utf8_set;
+        std::set<UInt32> needle_utf8_set;
+
         haystack_set.fill(0);
         needle_set.fill(0);
 
-        for (size_t i = 0; i < haystack_size; ++i)
-            haystack_set[static_cast<unsigned char>(haystack[i])] = 1;
-        for (size_t i = 0; i < needle_size; ++i)
-            needle_set[static_cast<unsigned char>(needle[i])] = 1;
+        while (haystack < haystack_end)
+        {
+            size_t len = 1;
+            if constexpr (is_utf8)
+                len = UTF8::seqLength(*haystack);
+
+            if (len == 1)
+            {
+                haystack_set[static_cast<unsigned char>(*haystack)] = 1;
+                ++haystack;
+            }
+            else
+            {
+                auto code_point = UTF8::convertUTF8ToCodePoint(haystack, haystack_end - haystack);
+                if (code_point.has_value())
+                {
+                    haystack_utf8_set.insert(code_point.value());
+                    haystack += len;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(haystack, haystack_end - haystack));
+                }
+            }
+        }
+
+        while (needle < needle_end)
+        {
+
+            size_t len = 1;
+            if constexpr (is_utf8)
+                len = UTF8::seqLength(*needle);
+
+            if (len == 1)
+            {
+                needle_set[static_cast<unsigned char>(*needle)] = 1;
+                ++needle;
+            }
+            else
+            {
+                auto code_point = UTF8::convertUTF8ToCodePoint(needle, needle_end - needle);
+                if (code_point.has_value())
+                {
+                    needle_utf8_set.insert(code_point.value());
+                    needle += len;
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(needle, needle_end - needle));
+                }
+            }
+        }
 
         UInt8 intersection = 0;
         UInt8 union_size = 0;
+
+        if constexpr (is_utf8)
+        {
+            auto lit = haystack_utf8_set.begin();
+            auto rit = needle_utf8_set.begin();
+            while (lit != haystack_utf8_set.end() && rit != needle_utf8_set.end())
+            {
+                if (*lit == *rit)
+                {
+                    ++intersection;
+                    ++lit;
+                    ++rit;
+                }
+                else if (*lit < *rit)
+                    ++lit;
+                else
+                    ++rit;
+            }
+            union_size = haystack_utf8_set.size() + needle_utf8_set.size() - intersection;
+        }
+
         for (size_t i = 0; i < max_size; ++i)
         {
             intersection += haystack_set[i] & needle_set[i];
@@ -207,7 +287,13 @@ struct NameJaccardIndex
 {
     static constexpr auto name = "stringJaccardIndex";
 };
-using FunctionStringJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl>, NameJaccardIndex>;
+using FunctionStringJaccardIndex = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl<false>>, NameJaccardIndex>;
+
+struct NameJaccardIndexUTF8
+{
+    static constexpr auto name = "stringJaccardIndexUTF8";
+};
+using FunctionStringJaccardIndexUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteJaccardIndexImpl<true>>, NameJaccardIndexUTF8>;
 
 REGISTER_FUNCTION(StringDistance)
 {
@@ -221,5 +307,7 @@ REGISTER_FUNCTION(StringDistance)
 
     factory.registerFunction<FunctionStringJaccardIndex>(
         FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.)"});
+    factory.registerFunction<FunctionStringJaccardIndexUTF8>(
+        FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two UTF8 strings.)"});
 }
 }
