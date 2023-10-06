@@ -99,6 +99,7 @@ public:
         switch (feature_flag)
         {
             case DB::KeeperFeatureFlag::CHECK_NOT_EXISTS:
+            case DB::KeeperFeatureFlag::FILTERED_LIST:
                 return true;
             default:
                 return false;

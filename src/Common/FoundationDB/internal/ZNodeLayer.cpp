@@ -194,8 +194,10 @@ void ZNodeLayer::registerEphemeralUnsafe(AsyncTrxVar<SessionID> var_session, Asy
 
         auto ephemeral_key = keys.getEphemeral(session, resp.path_created);
         auto meta_owner_key = keys.getMetaPrefix(resp.path_created) + static_cast<char>(KeeperKeys::ephemeralOwner);
+        auto child_key = keys.getChild(resp.path_created);
         fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(ephemeral_key), nullptr, 0);
         fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_owner_key), FDB_VALUE_FROM_POD(session));
+        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), FDB_VALUE_FROM_POD(KeeperKeys::ListFilterEphemeral));
 
         return nullptr;
     });
@@ -495,12 +497,12 @@ void ZNodeLayer::removeUnsafeTrx(FDBTransaction * tr, const KeeperKeys & keys, c
 #undef SET_META_PARENT
 }
 
-void ZNodeLayer::list(AsyncTrxVar<ListResponse> var_resp)
+void ZNodeLayer::list(AsyncTrxVar<ListResponse> var_resp, Coordination::ListRequestType list_request_type)
 {
     auto children_key_prefix = keys.getChildrenPrefix(path);
     auto var_iterator = trxb.varDefault<int>(0);
     stat(var_resp);
-    trxb.then(TRX_STEP(var_iterator, var_resp, children_key_prefix) {
+    trxb.then(TRX_STEP(var_iterator, var_resp, children_key_prefix, list_request_type) {
         auto & iterator = *ctx.getVar(var_iterator);
         auto & list = ctx.getVar(var_resp)->names;
         String children_key_begin;
@@ -519,8 +521,13 @@ void ZNodeLayer::list(AsyncTrxVar<ListResponse> var_resp)
             {
                 const auto & kv = kvs[i];
 
-                list.emplace_back(
-                    reinterpret_cast<const char *>(kv.key) + children_key_prefix.size(), kv.key_length - children_key_prefix.size());
+                bool is_ephemeral = kv.value_length > 0 && (*kv.value & KeeperKeys::ListFilterEphemeral) == KeeperKeys::ListFilterEphemeral;
+
+                if (list_request_type == Coordination::ListRequestType::ALL
+                    || (is_ephemeral && list_request_type == Coordination::ListRequestType::EPHEMERAL_ONLY)
+                    || (!is_ephemeral && list_request_type == Coordination::ListRequestType::PERSISTENT_ONLY))
+                    list.emplace_back(
+                        reinterpret_cast<const char *>(kv.key) + children_key_prefix.size(), kv.key_length - children_key_prefix.size());
             }
 
             if (!more)

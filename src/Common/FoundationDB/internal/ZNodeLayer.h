@@ -55,7 +55,9 @@ public:
     static void removeUnsafeTrx(FDBTransaction * tr, const KeeperKeys & keys, const String & path);
 
     /// List children. Implicitly assert exists.
-    void list(AsyncTrxVar<Coordination::ListResponse> var_resp);
+    void list(
+        AsyncTrxVar<Coordination::ListResponse> var_resp,
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     /// Watch data change
     void watch(Coordination::WatchCallbackPtr cb, const String & request_path);

@@ -12,4 +12,6 @@ KeeperException::KeeperException(Coordination::Error error_)
     : Exception(Coordination::errorMessage(error_), ErrorCodes::FDB_EXCEPTION), error(error_)
 {
 }
+
+const UInt8 KeeperKeys::ListFilterEphemeral = (1 << 7);
 }

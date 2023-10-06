@@ -1419,3 +1419,45 @@ TEST_P(FDBKeeperChrootSuite, CheckNotExists)
         ASSERT_EQ(resp.error, Error::ZOK);
     }
 };
+
+TEST_P(FDBKeeperChrootSuite, ListWithTypeFilter)
+{
+    ASSERT_TRUE(keeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST));
+
+    {
+        KEEPER_CREATE(create, "/a", "abc", false, false, {});
+        ASSERT_EQ(wait(create_future).error, Error::ZOK);
+    }
+
+    auto create_node = [&](const std::string & name, bool emphemeral)
+    {
+        KEEPER_CREATE(create, "/a/" + name, "abc", emphemeral, false, {});
+        ASSERT_EQ(wait(create_future).error, Error::ZOK);
+    };
+    create_node("a", false);
+    create_node("b", false);
+    create_node("c", true);
+    create_node("d", true);
+
+    {
+        SCOPED_TRACE("List PERSISTENT_ONLY");
+        KEEPER_LIST(list, "/a", ListRequestType::PERSISTENT_ONLY);
+        auto resp = wait(list_future);
+        ASSERT_EQ(resp.error, Error::ZOK);
+        ASSERT_EQ(resp.names.size(), 2);
+        ASSERT_EQ(resp.names[0], "a");
+        ASSERT_EQ(resp.names[1], "b");
+        ASSERT_EQ(resp.stat.numChildren, 4);
+    }
+
+    {
+        SCOPED_TRACE("List EPHEMERAL_ONLY");
+        KEEPER_LIST(list, "/a", ListRequestType::EPHEMERAL_ONLY);
+        auto resp = wait(list_future);
+        ASSERT_EQ(resp.error, Error::ZOK);
+        ASSERT_EQ(resp.names.size(), 2);
+        ASSERT_EQ(resp.names[0], "c");
+        ASSERT_EQ(resp.names[1], "d");
+        ASSERT_EQ(resp.stat.numChildren, 4);
+    }
+}

@@ -88,7 +88,7 @@ struct BigEndianTimestamp
 /// Keys of FDBKeeper
 ///
 /// Children key:
-///   {$path} + 'child' + {$child_name} = None
+///   {$path} + 'child' + {$child_name} = list_filter_flags (1byte)
 /// Stat key:
 ///   {$path} + 'stat' + {$stat_name} = {$stat_value}
 /// Data key:
@@ -112,6 +112,8 @@ public:
         APPLY_FOR_ZNODE_STATS(M)
 #undef M
     };
+
+    const static UInt8 ListFilterEphemeral;
 
     explicit KeeperKeys(const String & prefix_) : prefix(prefix_) { }
 

@@ -341,12 +341,10 @@ void FDBKeeper::list(const String & path, ListRequestType list_request_type, Lis
 {
     String chrooted_path = chroot_path(chroot, path);
 
-    /// FIXME: list_request_type is ignored
-    UNUSED(list_request_type);
     AsyncTrxBuilder trxb;
     ZNodeLayer znode(trxb, chrooted_path, *keys);
     auto var_resp = trxb.var<ListResponse>();
-    znode.list(var_resp);
+    znode.list(var_resp, list_request_type);
 
     if (watch)
     {
