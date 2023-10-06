@@ -1449,13 +1449,13 @@ Result:
 ```
 
 ```sql
-SELECT formatQuery('select 1;') == formatQuery('SeLecT 1');
+SELECT formatQuery('SeLecT 1');
 ```
 
 Result:
 
 ```result
-┌─equals(formatQuery('select 1;'), formatQuery('SeLecT 1'))─┐
-│                                                         1 │
-└───────────────────────────────────────────────────────────┘
+┌─formatQuery('SeLecT 1')──┐
+│ SELECT 1                 │
+└──────────────────────────┘
 ```
