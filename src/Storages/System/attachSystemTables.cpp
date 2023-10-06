@@ -110,64 +110,64 @@ namespace DB
 
 void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 {
-    attach<StorageSystemOne>(context, system_database, "one");
-    attach<StorageSystemNumbers>(context, system_database, "numbers", false);
-    attach<StorageSystemNumbers>(context, system_database, "numbers_mt", true);
-    attach<StorageSystemZeros>(context, system_database, "zeros", false);
-    attach<StorageSystemZeros>(context, system_database, "zeros_mt", true);
-    attach<StorageSystemDatabases>(context, system_database, "databases");
-    attach<StorageSystemTables>(context, system_database, "tables");
-    attach<StorageSystemColumns>(context, system_database, "columns");
-    attach<StorageSystemFunctions>(context, system_database, "functions");
-    attach<StorageSystemEvents>(context, system_database, "events");
-    attach<StorageSystemSettings>(context, system_database, "settings");
-    attach<StorageSystemServerSettings>(context, system_database, "server_settings");
-    attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes");
-    attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings");
-    attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings");
-    attach<StorageSystemBuildOptions>(context, system_database, "build_options");
-    attach<StorageSystemFormats>(context, system_database, "formats");
-    attach<StorageSystemTableFunctions>(context, system_database, "table_functions");
-    attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
-    attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
-    attach<StorageSystemCollations>(context, system_database, "collations");
-    attach<StorageSystemTableEngines>(context, system_database, "table_engines");
-    attach<StorageSystemContributors>(context, system_database, "contributors");
-    attach<StorageSystemUsers>(context, system_database, "users");
-    attach<StorageSystemRoles>(context, system_database, "roles");
-    attach<StorageSystemGrants>(context, system_database, "grants");
-    attach<StorageSystemRoleGrants>(context, system_database, "role_grants");
-    attach<StorageSystemCurrentRoles>(context, system_database, "current_roles");
-    attach<StorageSystemEnabledRoles>(context, system_database, "enabled_roles");
-    attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles");
-    attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements");
-    attach<StorageSystemRowPolicies>(context, system_database, "row_policies");
-    attach<StorageSystemQuotas>(context, system_database, "quotas");
-    attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits");
-    attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage");
-    attach<StorageSystemQuotasUsage>(context, system_database, "quotas_usage");
-    attach<StorageSystemUserDirectories>(context, system_database, "user_directories");
-    attach<StorageSystemPrivileges>(context, system_database, "privileges");
-    attach<StorageSystemErrors>(context, system_database, "errors");
-    attach<StorageSystemWarnings>(context, system_database, "warnings");
-    attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
-    attach<StorageSystemLicenses>(context, system_database, "licenses");
-    attach<StorageSystemTimeZones>(context, system_database, "time_zones");
-    attach<StorageSystemBackups>(context, system_database, "backups");
-    attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
-    attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
-    attach<StorageSystemScheduler>(context, system_database, "scheduler");
+    attachLazy<StorageSystemOne>(context, system_database, "one");
+    attachLazy<StorageSystemNumbers>(context, system_database, "numbers", false);
+    attachLazy<StorageSystemNumbers>(context, system_database, "numbers_mt", true);
+    attachLazy<StorageSystemZeros>(context, system_database, "zeros", false);
+    attachLazy<StorageSystemZeros>(context, system_database, "zeros_mt", true);
+    attachLazy<StorageSystemDatabases>(context, system_database, "databases");
+    attachLazy<StorageSystemTables>(context, system_database, "tables");
+    attachLazy<StorageSystemColumns>(context, system_database, "columns");
+    attachLazy<StorageSystemFunctions>(context, system_database, "functions");
+    attachLazy<StorageSystemEvents>(context, system_database, "events");
+    attachLazy<StorageSystemSettings>(context, system_database, "settings");
+    attachLazy<StorageSystemServerSettings>(context, system_database, "server_settings");
+    attachLazy<StorageSystemSettingsChanges>(context, system_database, "settings_changes");
+    attachLazy<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings");
+    attachLazy<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings");
+    attachLazy<StorageSystemBuildOptions>(context, system_database, "build_options");
+    attachLazy<StorageSystemFormats>(context, system_database, "formats");
+    attachLazy<StorageSystemTableFunctions>(context, system_database, "table_functions");
+    attachLazy<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
+    attachLazy<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
+    attachLazy<StorageSystemCollations>(context, system_database, "collations");
+    attachLazy<StorageSystemTableEngines>(context, system_database, "table_engines");
+    attachLazy<StorageSystemContributors>(context, system_database, "contributors");
+    attachLazy<StorageSystemUsers>(context, system_database, "users");
+    attachLazy<StorageSystemRoles>(context, system_database, "roles");
+    attachLazy<StorageSystemGrants>(context, system_database, "grants");
+    attachLazy<StorageSystemRoleGrants>(context, system_database, "role_grants");
+    attachLazy<StorageSystemCurrentRoles>(context, system_database, "current_roles");
+    attachLazy<StorageSystemEnabledRoles>(context, system_database, "enabled_roles");
+    attachLazy<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles");
+    attachLazy<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements");
+    attachLazy<StorageSystemRowPolicies>(context, system_database, "row_policies");
+    attachLazy<StorageSystemQuotas>(context, system_database, "quotas");
+    attachLazy<StorageSystemQuotaLimits>(context, system_database, "quota_limits");
+    attachLazy<StorageSystemQuotaUsage>(context, system_database, "quota_usage");
+    attachLazy<StorageSystemQuotasUsage>(context, system_database, "quotas_usage");
+    attachLazy<StorageSystemUserDirectories>(context, system_database, "user_directories");
+    attachLazy<StorageSystemPrivileges>(context, system_database, "privileges");
+    attachLazy<StorageSystemErrors>(context, system_database, "errors");
+    attachLazy<StorageSystemWarnings>(context, system_database, "warnings");
+    attachLazy<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
+    attachLazy<StorageSystemLicenses>(context, system_database, "licenses");
+    attachLazy<StorageSystemTimeZones>(context, system_database, "time_zones");
+    attachLazy<StorageSystemBackups>(context, system_database, "backups");
+    attachLazy<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
+    attachLazy<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
+    attachLazy<StorageSystemScheduler>(context, system_database, "scheduler");
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    attach<StorageSystemSymbols>(context, system_database, "symbols");
+    attachLazy<StorageSystemSymbols>(context, system_database, "symbols");
 #endif
 #if USE_RDKAFKA
-    attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
+    attachLazy<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
 #endif
 #ifdef OS_LINUX
-    attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
+    attachLazy<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
 #if USE_ROCKSDB
-    attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
+    attachLazy<StorageSystemRocksDB>(context, system_database, "rocksdb");
 #endif
 }
 

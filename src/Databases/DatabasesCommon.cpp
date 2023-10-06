@@ -7,6 +7,7 @@
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -193,7 +194,7 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end();
+    return tables.find(table_name) != tables.end() || lazy_tables.find(table_name) != lazy_tables.end();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
@@ -205,6 +206,9 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
 {
     std::lock_guard lock(mutex);
+
+    loadLazyTables();
+
     if (!filter_by_table_name)
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 
@@ -256,6 +260,12 @@ void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const Str
     attachTableUnlocked(table_name, table);
 }
 
+void DatabaseWithOwnTablesBase::registerLazyTable(ContextPtr, const String & table_name, LazyTableCreator table_creator, const String &)
+{
+    std::lock_guard lock(mutex);
+    registerLazyTableUnlocked(table_name, std::move(table_creator));
+}
+
 void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
 {
     auto table_id = table->getStorageID();
@@ -279,6 +289,12 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     /// It is important to reset is_detached here since in case of RENAME in
     /// non-Atomic database the is_detached is set to true before RENAME.
     table->is_detached = false;
+}
+
+void DatabaseWithOwnTablesBase::registerLazyTableUnlocked(const String & table_name, LazyTableCreator table_creator)
+{
+    if (!lazy_tables.emplace(table_name, std::move(table_creator)).second)
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already registered.", table_name);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -381,10 +397,43 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
 StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
 {
     std::lock_guard lock(mutex);
+
     auto it = tables.find(table_name);
     if (it != tables.end())
         return it->second;
+
+    const auto lazy_it = lazy_tables.find(table_name);
+    if (lazy_it != lazy_tables.end())
+    {
+        LOG_DEBUG(log, "Attaching lazy table {}", backQuoteIfNeed(table_name));
+        auto storage = lazy_it->second();
+        lazy_tables.erase(lazy_it);
+        /// FIXME: it should call attachTable(), but need to reorder locking bits for this
+        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(table_name, storage);
+
+        it = tables.find(table_name);
+        if (it != tables.end())
+            return it->second;
+    }
+
     return {};
+}
+
+void DatabaseWithOwnTablesBase::loadLazyTables() const
+{
+    while (!lazy_tables.empty())
+    {
+        auto lazy_it = lazy_tables.begin();
+
+        const auto table_name = lazy_it->first;
+        LOG_DEBUG(log, "Attaching lazy table {}", backQuoteIfNeed(table_name));
+        auto storage = lazy_it->second();
+
+        lazy_tables.erase(lazy_it);
+
+        /// FIXME: it should call attachTable(), but need to reorder locking bits for this
+        (const_cast<DatabaseWithOwnTablesBase *>(this))->attachTableUnlocked(table_name, storage);
+    }
 }
 
 }
