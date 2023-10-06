@@ -48,7 +48,6 @@ template <typename T>
 struct ByteSwapImpl
 {
     using ResultType = T;
-    // byteSwap on a String/FixedString is equivalent to `reverse` which is already implemented.
     static constexpr const bool allow_string_or_fixed_string = false;
     static inline T apply(T x) { return byteSwap<T>(x); }
 
