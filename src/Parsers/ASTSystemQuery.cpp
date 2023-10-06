@@ -229,6 +229,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             }
         }
     }
+    else if (type == Type::DROP_SCHEMA_CACHE)
+    {
+        if (!schema_cache_storage.empty())
+            settings.ostr << (settings.hilite ? hilite_none : "") << " FOR " << backQuoteIfNeed(schema_cache_storage);
+    }
     else if (type == Type::UNFREEZE)
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
