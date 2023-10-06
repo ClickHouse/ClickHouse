@@ -35,7 +35,7 @@ public:
         bool use_average_block_sizes = false,
         bool cleanup = false,
         size_t * cleanedup_rows_count = nullptr,
-        bool require_sorted_output = true);
+        bool use_skipping_final = false);
 
     const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
@@ -47,7 +47,7 @@ private:
     ssize_t version_column_number = -1;
     bool cleanup = false;
     size_t * cleanedup_rows_count = nullptr;
-    bool require_sorted_output;
+    bool use_skipping_final;
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.

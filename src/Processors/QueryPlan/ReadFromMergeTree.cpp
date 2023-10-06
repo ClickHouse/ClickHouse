@@ -982,7 +982,8 @@ static void addMergingFinal(
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
-    size_t max_block_size_rows)
+    size_t max_block_size_rows,
+    bool use_skipping_final)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1022,7 +1023,7 @@ static void addMergingFinal(
                     /*use_average_block_sizes*/ false,
                     /*cleanup*/ !merging_params.is_deleted_column.empty(),
                     /*cleanedup_rows_count*/ nullptr,
-                    /*require_sorted_output*/ false);
+                    /*use_skipping_final*/ use_skipping_final);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1179,7 +1180,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 sort_description,
                 data.merging_params,
                 partition_key_columns,
-                block_size.max_block_size_rows);
+                block_size.max_block_size_rows,
+                settings.use_skipping_final);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }

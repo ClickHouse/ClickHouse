@@ -29,7 +29,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes)
     , cleanup(cleanup_)
     , cleanedup_rows_count(cleanedup_rows_count_)
-    , require_sorted_output(require_sorted_output_)
+    , use_skipping_final(require_sorted_output_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -48,7 +48,7 @@ void ReplacingSortedAlgorithm::insertRow()
                                    current_row_sources.size() * sizeof(RowSourcePart));
         current_row_sources.resize(0);
     }
-    if (!require_sorted_output)
+    if (use_skipping_final)
     {
         if (!selected_row.owned_chunk->replace_final_selection)
             selected_row.owned_chunk->replace_final_selection = ColumnUInt32::create();
@@ -65,22 +65,23 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     /// Take the rows in needed order and put them into `merged_columns` until rows no more than `max_block_size`
     while (queue.isValid())
     {
-        if (!require_sorted_output && merged_data.hasEnoughRows())
-            return Status(merged_data.pull());
-
         SortCursor current = queue.current();
 
-        if (current->isLast() && skipLastRowFor(current->order))
+        if (current->isLast())
         {
-            if (auto & chunk = sources[current.impl->order].chunk; !require_sorted_output && chunk->replace_final_selection)
+            auto & chunk = sources[current.impl->order].chunk;
+            if (skipLastRowFor(current->order) && use_skipping_final && !chunk->empty() && chunk->replace_final_selection)
             {
-                size_t num_rows = chunk->getNumRows();
                 chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-                merged_data.insertChunk(std::move(*chunk), num_rows);
+                selected_row.clear();
+                return Status(std::move(*chunk));
             }
-            /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
+            else if (skipLastRowFor(current->order) || chunk->empty())
+            {
+                /// Get the next block from the corresponding source, if there is one.
+                queue.removeTop();
+                return Status(current.impl->order);
+            }
         }
 
         RowRef current_row;
@@ -144,15 +145,18 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         }
         else
         {
-            if (auto & chunk = sources[current.impl->order].chunk; !require_sorted_output && chunk->replace_final_selection)
+            if (auto & chunk = sources[current.impl->order].chunk; use_skipping_final && !chunk->empty() && chunk->replace_final_selection)
             {
-                size_t num_rows = chunk->getNumRows();
                 chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-                merged_data.insertChunk(std::move(*chunk), num_rows);
+                selected_row.clear();
+                return Status(std::move(*chunk));
+            }
+            else
+            {
+                queue.removeTop();
+                return Status(current.impl->order);
             }
             /// We get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
         }
     }
 
@@ -178,11 +182,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         else
             insertRow();
 
-        if (!require_sorted_output && chunk->replace_final_selection)
+        if (use_skipping_final && chunk->replace_final_selection)
         {
-            auto num_rows = chunk->getNumRows();
             chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-            merged_data.insertChunk(std::move(*chunk), num_rows);
+            Status(std::move(*chunk), true);
         }
     }
 

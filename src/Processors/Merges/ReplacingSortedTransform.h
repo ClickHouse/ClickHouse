@@ -21,7 +21,7 @@ public:
         bool use_average_block_sizes = false,
         bool cleanup = false,
         size_t * cleanedup_rows_count = nullptr,
-        bool require_sorted_output = true)
+        bool use_skipping_final = false)
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
@@ -35,7 +35,7 @@ public:
             use_average_block_sizes,
             cleanup,
             cleanedup_rows_count,
-            require_sorted_output)
+            use_skipping_final)
     {
     }
 

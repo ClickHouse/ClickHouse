@@ -18,11 +18,11 @@ public:
     void transform(Chunk & chunk) override
     {
         size_t num_rows = chunk.getNumRows();
-        if (!chunk.hasChunkInfo())
-            return;
         auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo());
+
         if (!select_final_indices_info || !select_final_indices_info->select_final_indices)
             return;
+
         const auto & index_column = select_final_indices_info->select_final_indices;
 
         if (index_column->size() == num_rows)

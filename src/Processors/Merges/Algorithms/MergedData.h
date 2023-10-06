@@ -80,8 +80,6 @@ public:
             for (auto & column : columns)
                 column->popBack(pop_size);
         }
-        if (chunk.hasChunkInfo())
-            info = chunk.getChunkInfo();
 
         need_flush = true;
         total_merged_rows += rows_size;
@@ -98,10 +96,7 @@ public:
 
         empty_columns.swap(columns);
         Chunk chunk(std::move(empty_columns), merged_rows);
-        if (info)
-            chunk.setChunkInfo(std::move(info));
 
-        info.reset();
         merged_rows = 0;
         sum_blocks_granularity = 0;
         ++total_chunks;
@@ -151,7 +146,6 @@ public:
 
 protected:
     MutableColumns columns;
-    ChunkInfoPtr info;
 
     UInt64 sum_blocks_granularity = 0;
     UInt64 merged_rows = 0;
