@@ -55,8 +55,6 @@ struct MergeTreeDataPartChecksums;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
-class IStoragePolicy;
-
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
@@ -252,7 +250,8 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
-        const WriteSettings & settings,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
 
@@ -261,6 +260,7 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
+        const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         Poco::Logger * log) const = 0;
 

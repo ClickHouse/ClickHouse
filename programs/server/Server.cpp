@@ -42,6 +42,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
@@ -491,7 +492,7 @@ static void sanityChecks(Server & server)
         if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -501,7 +502,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) == 2)
             server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -511,7 +512,7 @@ static void sanityChecks(Server & server)
         if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -521,7 +522,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -531,7 +532,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -545,7 +546,7 @@ static void sanityChecks(Server & server)
         if (getAvailableMemoryAmount() < (2l << 30))
             server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -554,7 +555,7 @@ static void sanityChecks(Server & server)
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
             server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -567,7 +568,7 @@ static void sanityChecks(Server & server)
                 server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -883,6 +884,8 @@ try
             }
         }
     }
+
+    FailPointInjection::enableFromGlobalConfig(config());
 
     int default_oom_score = 0;
 
@@ -1390,7 +1393,7 @@ try
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
     const auto listen_try = getListenTry(config());
 
-    if (config().has("keeper_server"))
+    if (config().has("keeper_server.server_id"))
     {
 #if USE_NURAFT
         //// If we don't have configured connection probably someone trying to use clickhouse-server instead
@@ -1513,11 +1516,13 @@ try
 
     global_context->setStopServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         stopServers(servers, server_type);
     });
 
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         createServers(
             config(),
             listen_hosts,
@@ -1599,7 +1604,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
@@ -1906,7 +1911,7 @@ try
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."

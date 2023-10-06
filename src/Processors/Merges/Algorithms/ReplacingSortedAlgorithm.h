@@ -34,8 +34,10 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
         bool cleanup = false,
+        size_t * cleanedup_rows_count = nullptr,
         bool require_sorted_output = true);
 
+    const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
 
 private:
@@ -44,6 +46,7 @@ private:
     ssize_t is_deleted_column_number = -1;
     ssize_t version_column_number = -1;
     bool cleanup = false;
+    size_t * cleanedup_rows_count = nullptr;
     bool require_sorted_output;
 
     using RowRef = detail::RowRefWithOwnedChunk;
