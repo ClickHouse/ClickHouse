@@ -56,6 +56,8 @@
 #include <Databases/DatabaseHDFS.h>
 #endif
 
+#include <Databases/DatabasesOverlay.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -137,7 +139,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS", "Overlay"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
@@ -178,6 +180,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabaseMemory>(database_name, context);
     else if (engine_name == "Dictionary")
         return std::make_shared<DatabaseDictionary>(database_name, context);
+    else if (engine_name == "Overlay")
+        return std::make_shared<DatabasesOverlay>(database_name, context);
 
 #if USE_MYSQL
 
