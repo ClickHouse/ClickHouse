@@ -1461,3 +1461,78 @@ TEST_P(FDBKeeperChrootSuite, ListWithTypeFilter)
         ASSERT_EQ(resp.stat.numChildren, 4);
     }
 }
+
+TEST_P(FDBKeeperChrootSuite, MultiRead)
+{
+    ASSERT_TRUE(keeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ));
+
+    {
+        KEEPER_CREATE(create, "/a", "aaa", false, false, {});
+        ASSERT_EQ(wait(create_future).error, Error::ZOK);
+    }
+
+    auto create_node = [&](const std::string & name, bool emphemeral)
+    {
+        KEEPER_CREATE(create, "/a/" + name, "abc", emphemeral, false, {});
+        ASSERT_EQ(wait(create_future).error, Error::ZOK);
+    };
+    create_node("a", false);
+    create_node("b", false);
+    create_node("c", true);
+    create_node("d", true);
+
+    using namespace zkutil;
+    {
+        SCOPED_TRACE("Multi success request");
+        KEEPER_MULTI(
+            multi,
+            {
+                makeGetRequest("/a"),
+                makeGetRequest("/a/c"),
+                makeSimpleListRequest("/a"),
+                makeListRequest("/a", ListRequestType::EPHEMERAL_ONLY),
+                makeExistsRequest("/a/a"),
+            });
+        auto resps = wait(multi_future);
+        ASSERT_EQ(resps.error, Error::ZOK);
+        ASSERT_EQ(resps.responses.size(), 5);
+
+        auto resp0 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[0]);
+        ASSERT_EQ(resp0.data, "aaa");
+
+        auto resp1 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[1]);
+        ASSERT_EQ(resp1.data, "abc");
+
+        auto resp2 = dynamic_cast<const Coordination::ListResponse &>(*resps.responses[2]);
+        ASSERT_EQ(resp2.names.size(), 4);
+
+        auto resp3 = dynamic_cast<const Coordination::ListResponse &>(*resps.responses[3]);
+        ASSERT_EQ(resp3.names.size(), 2);
+
+        auto resp4 = dynamic_cast<const Coordination::ExistsResponse &>(*resps.responses[4]);
+        ASSERT_EQ(resp4.stat.dataLength, 3);
+    }
+
+    {
+        SCOPED_TRACE("Multi failed request");
+        KEEPER_MULTI(
+            multi,
+            {
+                makeGetRequest("/a"),
+                makeExistsRequest("/b"),
+                makeGetRequest("/b"),
+            });
+        auto resps = wait(multi_future);
+        ASSERT_EQ(resps.error, Error::ZNONODE);
+        ASSERT_EQ(resps.responses.size(), 3);
+
+        auto resp0 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[0]);
+        ASSERT_EQ(resp0.data, "aaa");
+
+        auto resp1 = dynamic_cast<const Coordination::ExistsResponse &>(*resps.responses[1]);
+        ASSERT_EQ(resp1.error, Error::ZNONODE);
+
+        auto resp2 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[2]);
+        ASSERT_EQ(resp2.error, Error::ZRUNTIMEINCONSISTENCY);
+    }
+}

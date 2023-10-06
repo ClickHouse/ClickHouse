@@ -100,9 +100,8 @@ public:
         {
             case DB::KeeperFeatureFlag::CHECK_NOT_EXISTS:
             case DB::KeeperFeatureFlag::FILTERED_LIST:
+            case DB::KeeperFeatureFlag::MULTI_READ:
                 return true;
-            default:
-                return false;
         }
     }
 

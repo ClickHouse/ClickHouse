@@ -8,6 +8,7 @@
 #include <Common/FoundationDB/FDBKeeper.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include "internal/AsyncTrx.h"
 #include "internal/KeeperCleaner.h"
@@ -407,6 +408,13 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
     };
     bool need_commit = false;
 
+    std::optional<bool> is_multi_read;
+    auto assert_is_read = [&is_multi_read](bool is_read)
+    {
+        chassert(!is_multi_read.has_value() || *is_multi_read == is_read);
+        is_multi_read = is_read;
+    };
+
     /// CreateRequest set <path><meta><*zxid> = versionstamp.
     /// SetRequest require <path><meta><{c,p}zxid> to build stat in response.
     /// But versionstamp is not avaiable unitl commit.
@@ -437,6 +445,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 #ifdef FDBKEEPER_DEBUG_LOG
             multi_requests_description += ", create " + chrooted_path;
 #endif
+            assert_is_read(false);
 
             if (concrete_request_create->is_ephemeral && !session_filled)
             {
@@ -473,6 +482,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 #ifdef FDBKEEPER_DEBUG_LOG
             multi_requests_description += ", remove " + chrooted_path;
 #endif
+            assert_is_read(false);
 
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<RemoveResponse>();
@@ -488,8 +498,9 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(request.get()))
         {
 #ifdef FDBKEEPER_DEBUG_LOG
-    multi_requests_description += ", set " + chrooted_path;
+            multi_requests_description += ", set " + chrooted_path;
 #endif
+            assert_is_read(false);
 
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<SetResponse>();
@@ -533,6 +544,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 #ifdef FDBKEEPER_DEBUG_LOG
             multi_requests_description += ", check " + chrooted_path;
 #endif
+            assert_is_read(false);
 
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<CheckResponse>();
@@ -543,6 +555,48 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
             /// Register response
             all_responses_var.emplace_back(resp.as<Response>(), createResponseInMulti<CheckResponse>);
+        }
+        else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(request.get()))
+        {
+            assert_is_read(true);
+
+            ZNodeLayer znode(trxb, chrooted_path, *keys);
+            auto var_resp = trxb.var<GetResponse>();
+            znode.get(var_resp);
+
+            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<GetResponse>);
+        }
+        else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(request.get()))
+        {
+            assert_is_read(true);
+
+            ZNodeLayer znode(trxb, chrooted_path, *keys);
+            auto var_resp = trxb.var<ExistsResponse>();
+            znode.stat(var_resp);
+
+            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ExistsResponse>);
+        }
+        else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(request.get()))
+        {
+            assert_is_read(true);
+
+            ZNodeLayer znode(trxb, chrooted_path, *keys);
+            auto var_resp = trxb.var<ListResponse>();
+            znode.list(var_resp);
+            ListResponse resp;
+
+            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ListResponse>);
+        }
+        else if (const auto * concrete_request_filted_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(request.get()))
+        {
+            assert_is_read(true);
+
+            ZNodeLayer znode(trxb, chrooted_path, *keys);
+            auto var_resp = trxb.var<ListResponse>();
+            znode.list(var_resp, concrete_request_filted_list->list_request_type);
+            ListResponse resp;
+
+            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ListResponse>);
         }
         else
             throw Exception(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
