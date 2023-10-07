@@ -155,7 +155,6 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         /// do it under share lock
         cleaned_other += storage.clearOldWriteAheadLogs();
         cleaned_part_like += storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
-        cleaned_part_like += storage.clearOldBrokenPartsFromDetachedDirectory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment

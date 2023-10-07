@@ -61,12 +61,14 @@ static constexpr std::string_view tables = R"(
         `table_schema` String,
         `table_name` String,
         `table_type` String,
+        `data_length` Nullable(UInt64),
         `table_collation` Nullable(String),
         `table_comment` Nullable(String),
         `TABLE_CATALOG` String,
         `TABLE_SCHEMA` String,
         `TABLE_NAME` String,
         `TABLE_TYPE` String,
+        `DATA_LENGTH` Nullable(UInt64),
         `TABLE_COLLATION` Nullable(String),
         `TABLE_COMMENT` Nullable(String)
     ) AS
@@ -80,12 +82,14 @@ static constexpr std::string_view tables = R"(
                 has_own_data = 0,      'FOREIGN TABLE',
                 'BASE TABLE'
                 )            AS table_type,
+        total_bytes AS data_length,
         'utf8mb4_0900_ai_ci' AS table_collation,
         comment              AS table_comment,
         table_catalog        AS TABLE_CATALOG,
         table_schema         AS TABLE_SCHEMA,
         table_name           AS TABLE_NAME,
         table_type           AS TABLE_TYPE,
+        data_length          AS DATA_LENGTH,
         table_collation      AS TABLE_COLLATION,
         table_comment        AS TABLE_COMMENT
     FROM system.tables

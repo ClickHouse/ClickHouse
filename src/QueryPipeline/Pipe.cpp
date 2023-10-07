@@ -14,6 +14,8 @@
 #include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 
+#include <QueryPipeline/printPipeline.h>
+
 namespace DB
 {
 
@@ -311,21 +313,23 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 
     for (auto & pipe : pipes)
     {
+        if (res.isPartialResultActive() && pipe.isPartialResultActive())
+        {
+            res.partial_result_ports.insert(res.partial_result_ports.end(), pipe.partial_result_ports.begin(), pipe.partial_result_ports.end());
+        }
+        else
+        {
+            if (pipe.isPartialResultActive())
+                pipe.dropPartialResult();
+            if (res.isPartialResultActive())
+                res.dropPartialResult();
+        }
+
         if (!allow_empty_header || pipe.header)
             assertCompatibleHeader(pipe.header, res.header, "Pipe::unitePipes");
 
         res.processors->insert(res.processors->end(), pipe.processors->begin(), pipe.processors->end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
-
-        if (res.isPartialResultActive() && pipe.isPartialResultActive())
-        {
-            res.partial_result_ports.insert(
-                res.partial_result_ports.end(),
-                pipe.partial_result_ports.begin(),
-                pipe.partial_result_ports.end());
-        }
-        else
-            res.dropPartialResult();
 
         res.max_parallel_streams += pipe.max_parallel_streams;
 
@@ -652,7 +656,15 @@ void Pipe::addPartialResultTransform(const ProcessorPtr & transform)
 {
     if (isPartialResultActive())
     {
-        size_t new_outputs_size = transform->getOutputs().size();
+        size_t new_outputs_size = 0;
+        for (const auto & output : transform->getOutputs())
+        {
+            /// We do not use totals_port and extremes_port in partial result
+            if ((totals_port && totals_port == &output) || (extremes_port && extremes_port == &output))
+                continue;
+            ++new_outputs_size;
+        }
+
         auto partial_result_status = transform->getPartialResultProcessorSupportStatus();
 
         if (partial_result_status == IProcessor::PartialResultStatus::SkipSupported && new_outputs_size != partial_result_ports.size())
@@ -669,6 +681,7 @@ void Pipe::addPartialResultTransform(const ProcessorPtr & transform)
                 dropPort(partial_result_port, *processors, collected_processors);
 
             partial_result_ports.assign(new_outputs_size, nullptr);
+            return;
         }
 
         if (partial_result_status != IProcessor::PartialResultStatus::FullSupported)
@@ -678,12 +691,18 @@ void Pipe::addPartialResultTransform(const ProcessorPtr & transform)
         auto & inputs = partial_result_transform->getInputs();
 
         if (inputs.size() != partial_result_ports.size())
+        {
+            WriteBufferFromOwnString out;
+            if (processors && !processors->empty())
+                printPipeline(*processors, out);
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Cannot add partial result transform {} to Pipe because it has {} input ports, but {} expected",
+                "Cannot add partial result transform {} to Pipe because it has {} input ports, but {} expected\n{}",
                 partial_result_transform->getName(),
                 inputs.size(),
-                partial_result_ports.size());
+                partial_result_ports.size(), out.str());
+        }
 
         size_t next_port = 0;
         for (auto & input : inputs)
@@ -994,5 +1013,11 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
+
+OutputPort * Pipe::getPartialResultPort(size_t pos) const
+{
+    return partial_result_ports.empty() ? nullptr : partial_result_ports[pos];
+}
+
 
 }
