@@ -61,7 +61,7 @@ echo "SELECT getHttpHeader('key_from_query_1'), getHttpHeader('key_from_query_2'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.02884_get_http_header"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test.02884_header_from_table (header_name String) Engine=Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE IF NOT EXISTS test.02884_header_from_table (header_name String) Engine=Memory"
 $CLICKHOUSE_CLIENT -q "INSERT INTO test.02884_header_from_table values ('X-Clickhouse-User'), ('http_key1'), ('http_key2')"
 
 echo "SELECT getHttpHeader(header_name) as value from  (select * FROM test.02884_header_from_table) order by value" | curl -s -H 'X-Clickhouse-User: default' \
