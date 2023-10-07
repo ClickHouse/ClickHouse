@@ -50,8 +50,6 @@ private:
     bool commit_in_suffix;
 
     /// proton: porting start. TODO: remove comments
-    bool is_streaming = false;
-
     Chunk header_chunk;
     /// proton: porting ends. TODO: remove comments
 

@@ -366,6 +366,14 @@ public:
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
     virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
+    /// proton: porting starts. TODO: remove comments
+    void setStreaming(bool is_streaming_) { is_streaming = is_streaming_; }
+    bool isStreaming() const { return is_streaming; }
+    /// proton: porting ends. TODO: remove comments
+protected:
+    bool is_streaming = false;
+    /// proton: ends.
+
 protected:
     virtual void onCancel() {}
 

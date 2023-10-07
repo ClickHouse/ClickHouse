@@ -44,6 +44,10 @@ public:
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::None;
 
+    /// proton: porting starts.
+    bool is_streaming = false;
+    /// proton: porting ends.
+
     /// Things which may be added:
     /// * limit
     /// * estimated rows number
@@ -132,6 +136,13 @@ public:
     }
 
     virtual bool canUpdateInputStream() const { return false; }
+
+    bool isStreaming() const
+    {
+        return output_stream
+            ? output_stream->is_streaming
+            : std::any_of(input_streams.begin(), input_streams.end(), [](const auto & stream) { return stream.is_streaming; });
+    }
 
 protected:
     virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }

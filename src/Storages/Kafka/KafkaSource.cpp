@@ -44,12 +44,12 @@ KafkaSource::KafkaSource(
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , is_streaming(context_->getSettingsRef().query_mode.value == "streaming")    /// proton: porting. TODO: remove comment, get this from context
     , header_chunk(storage_snapshot_->getSampleBlockForColumns(columns).getColumns(), 0)    /// proton: porting. TODO: remove comment, get this from context
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
+    setStreaming(context->getSettingsRef().query_mode.value == "streaming");
 }
 
 KafkaSource::~KafkaSource()
@@ -60,7 +60,7 @@ KafkaSource::~KafkaSource()
     if (broken)
         consumer->unsubscribe();
 
-    if (!is_streaming)
+    if (!isStreaming())
         storage.pushConsumer(consumer);
 }
 
@@ -82,7 +82,7 @@ Chunk KafkaSource::generateImpl()
     if (!consumer)
     {
         /// proton: porting start. TODO: remove comments
-        if (is_streaming)
+        if (isStreaming())
         {
             consumer = storage.createConsumer(0, context->getCurrentQueryId());
         }
@@ -104,7 +104,7 @@ Chunk KafkaSource::generateImpl()
     if (is_finished)
         return {};
 
-    if (!is_streaming)
+    if (!isStreaming())
         is_finished = true;
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
@@ -252,7 +252,7 @@ Chunk KafkaSource::generateImpl()
         }
 
         /// proton: porting start. TODO: remove comments
-        if (is_streaming)
+        if (isStreaming())
             break;
         /// proton: porting end. TODO: remove comments
 
@@ -266,7 +266,7 @@ Chunk KafkaSource::generateImpl()
     if (total_rows == 0)
     {
         /// proton: porting start. TODO: remove comments
-        if (is_streaming)
+        if (isStreaming())
             return header_chunk.clone();
         else
             return {};

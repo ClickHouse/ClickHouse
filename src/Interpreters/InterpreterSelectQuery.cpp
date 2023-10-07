@@ -1501,7 +1501,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
     if (options.only_analyze)
     {
-        auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
+        /// proton: porting starts. TODO: remove comments
+        /// We need keep the streaming flag is same with actual source
+        auto read_nothing = std::make_unique<ReadNothingStep>(source_header, isStreaming());
+        /// proton: porting ends. TODO: remove comments
         query_plan.addStep(std::move(read_nothing));
 
         if (expressions.filter_info)
@@ -2371,6 +2374,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     const Settings & settings = context->getSettingsRef();
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
+        && !syntax_analyzer_result->streaming
         && (max_parallel_replicas <= 1)
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
