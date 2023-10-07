@@ -592,11 +592,34 @@ Rounds down the date with time to the start of the fifteen-minute interval.
 
 ## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\])
 
-This is a generalization of other functions named `toStartOf*`. For example,
-`toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
-`toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
-`toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
-`toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
+This function generalizes other `toStartOf*()` functions. For example,
+- `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
+- `toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
+- `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
+- `toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)`.
+
+The calculation is performed relative to specific points in time:
+
+| Interval    | Start                  |
+|-------------|------------------------|
+| year        | year 0                 |
+| quarter     | 1900 Q1                |
+| month       | 1900 January           |
+| week        | 1970, 1st week (01-05) |
+| day         | 1970-01-01             |
+| hour        | (*)                    |
+| minute      | 1970-01-01 00:00:00    |
+| second      | 1970-01-01 00:00:00    |
+| millisecond | 1970-01-01 00:00:00    |
+| microsecond | 1970-01-01 00:00:00    |
+| nanosecond  | 1970-01-01 00:00:00    |
+
+(*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
+    hour values between 1 and 23 are useful
+
+**See Also**
+
+- [date_trunc](#date_trunc)
 
 ## toTime
 
