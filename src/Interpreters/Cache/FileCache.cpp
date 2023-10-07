@@ -123,6 +123,8 @@ void FileCache::initialize()
         {
             fs::create_directories(getBasePath());
         }
+
+        status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
     }
     catch (...)
     {
@@ -1059,6 +1061,9 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 FileCache::~FileCache()
 {
     deactivateBackgroundOperations();
+#ifdef ABORT_ON_LOGICAL_ERROR
+    assertCacheCorrectness();
+#endif
 }
 
 void FileCache::deactivateBackgroundOperations()
@@ -1143,14 +1148,15 @@ size_t FileCache::getFileSegmentsNum() const
 
 void FileCache::assertCacheCorrectness()
 {
-    auto lock = lockCache();
-    main_priority->iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
+    metadata.iterate([&](LockedKey & locked_key)
     {
-        const auto & file_segment = *segment_metadata->file_segment;
-        UNUSED(file_segment);
-        chassert(file_segment.assertCorrectness());
-        return PriorityIterationResult::CONTINUE;
-    }, lock);
+        for (const auto & [_, file_segment_metadata] : locked_key)
+        {
+            const auto & file_segment = *file_segment_metadata->file_segment;
+            UNUSED(file_segment);
+            chassert(file_segment.assertCorrectness());
+        }
+    });
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(
