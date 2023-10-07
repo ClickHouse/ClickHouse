@@ -1415,6 +1415,7 @@ encodeXMLComponent
 encodings
 encryptions
 endian
+endianness
 endsWith
 endsWithUTF
 enum
