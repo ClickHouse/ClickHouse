@@ -147,7 +147,7 @@ CacheGuard::Lock FileCache::lockCache() const
     return cache_guard.lock();
 }
 
-FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const
+FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
 {
     /// Given range = [left, right] and non-overlapping ordered set of file segments,
     /// find list [segment1, ..., segmentN] of segments which intersect with given range.
@@ -166,6 +166,9 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
     FileSegments result;
     auto add_to_result = [&](const FileSegmentMetadata & file_segment_metadata)
     {
+        if (file_segments_limit && result.size() == file_segments_limit)
+            return false;
+
         FileSegmentPtr file_segment;
         if (!file_segment_metadata.evicting())
         {
@@ -181,6 +184,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         }
 
         result.push_back(file_segment);
+        return true;
     };
 
     auto segment_it = file_segments.lower_bound(range.left);
@@ -197,7 +201,8 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         if (file_segment_metadata.file_segment->range().right < range.left)
             return {};
 
-        add_to_result(file_segment_metadata);
+        if (!add_to_result(file_segment_metadata))
+            return result;
     }
     else /// segment_it <-- segmment{k}
     {
@@ -213,7 +218,8 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
                 ///       [___________
                 ///       ^
                 ///       range.left
-                add_to_result(prev_file_segment_metadata);
+                if (!add_to_result(prev_file_segment_metadata))
+                    return result;
             }
         }
 
@@ -229,7 +235,8 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             if (range.right < file_segment_metadata.file_segment->range().left)
                 break;
 
-            add_to_result(file_segment_metadata);
+            if (!add_to_result(file_segment_metadata))
+                return result;
             ++segment_it;
         }
     }
@@ -273,6 +280,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     LockedKey & locked_key,
     FileSegments & file_segments,
     const FileSegment::Range & range,
+    size_t file_segments_limit,
     bool fill_with_detached_file_segments,
     const CreateFileSegmentSettings & settings)
 {
@@ -338,6 +346,9 @@ void FileCache::fillHolesWithEmptyFileSegments(
         ++it;
     }
 
+    if (file_segments.size() >= file_segments_limit)
+        return;
+
     if (current_pos <= range.right)
     {
         ///   ________]     -- requested range
@@ -374,7 +385,7 @@ FileSegmentsHolderPtr FileCache::set(
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY);
     FileSegment::Range range(offset, offset + size - 1);
 
-    auto file_segments = getImpl(*locked_key, range);
+    auto file_segments = getImpl(*locked_key, range, /* file_segments_limit */0);
     if (!file_segments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Having intersection with already existing cache");
 
@@ -416,19 +427,46 @@ FileCache::getOrSet(
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY);
 
     /// Get all segments which intersect with the given range.
-    auto file_segments = getImpl(*locked_key, range);
+    auto file_segments = getImpl(*locked_key, range, file_segments_limit);
+
+    bool limit_reached = false;
     if (file_segments.empty())
     {
         file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, settings);
+
+        while (!file_segments.empty() && file_segments.front()->range().right < offset)
+            file_segments.pop_front();
     }
     else
     {
-        fillHolesWithEmptyFileSegments(
-            *locked_key, file_segments, range, /* fill_with_detached */false, settings);
-    }
+        limit_reached = file_segments_limit && file_segments.size() >= file_segments_limit;
 
-    while (!file_segments.empty() && file_segments.front()->range().right < offset)
-        file_segments.pop_front();
+        /// A while loop for the case if we set a limit to n, but all these n file segments are removed
+        /// as they turned out redundant because of the alignment of offset to aligned_offset.
+        while (true)
+        {
+            size_t last_offset = file_segments.back()->range().right;
+
+            while (!file_segments.empty() && file_segments.front()->range().right < offset)
+                file_segments.pop_front();
+
+            if (!file_segments.empty())
+                break;
+
+            if (!limit_reached)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of file segments");
+
+            range.left = std::min(offset, last_offset + 1);
+            file_segments = getImpl(*locked_key, range, file_segments_limit);
+        }
+
+        range.left = std::min(offset, file_segments.front()->range().left);
+        if (limit_reached)
+            range.right =  file_segments.back()->range().right;
+
+        fillHolesWithEmptyFileSegments(
+            *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */false, settings);
+    }
 
     while (!file_segments.empty() && file_segments.back()->range().left >= offset + size)
         file_segments.pop_back();
@@ -439,7 +477,9 @@ FileCache::getOrSet(
             file_segments.pop_back();
     }
 
-    chassert(!file_segments.empty());
+    if (file_segments.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of file segments for offset {}, size {} (file size: {})", offset, size, file_size);
+
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
@@ -455,11 +495,11 @@ FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size
         FileSegment::Range range(offset, offset + size - 1);
 
         /// Get all segments which intersect with the given range.
-        auto file_segments = getImpl(*locked_key, range);
+        auto file_segments = getImpl(*locked_key, range, file_segments_limit);
         if (!file_segments.empty())
         {
             fillHolesWithEmptyFileSegments(
-                *locked_key, file_segments, range, /* fill_with_detached */true, CreateFileSegmentSettings{});
+                *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */true, CreateFileSegmentSettings{});
 
             if (file_segments_limit)
             {

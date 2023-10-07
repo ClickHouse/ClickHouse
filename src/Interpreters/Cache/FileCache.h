@@ -215,7 +215,7 @@ private:
     void loadMetadataImpl();
     void loadMetadataForKeys(const std::filesystem::path & keys_dir);
 
-    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range) const;
+    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const;
 
     FileSegments splitRangeIntoFileSegments(
         LockedKey & locked_key,
@@ -228,6 +228,7 @@ private:
         LockedKey & locked_key,
         FileSegments & file_segments,
         const FileSegment::Range & range,
+        size_t file_segments_limit,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings);
 
