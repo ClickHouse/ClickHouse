@@ -716,11 +716,7 @@ Result:
 
 Accepts an unsigned integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
 
-**Syntax**
-
-```sql
-byteSwap(operand)
-```
+Currently, this is implemented for UInt8, UInt16, UInt32 and UInt64.
 
 **Example**
 
@@ -743,8 +739,7 @@ The above example can be worked out in the following manner:
 
 Note that, in step#1, one can also choose to convert the operand to bytes in little-endian as long as one also assumes little-endian when converting back to integer in step#3.
 
-This can be particularly useful when one wants to reverse values of data-types which are stored as unsigned integers under the hood and allow conversions from unsigned integers to themselves (such as IPV4). For example:
-
+One use-case of this function is reversing IPv4s:
 ```result
 ┌─toIPv4(3351772109)─┐
 │ 199.199.251.205    │
