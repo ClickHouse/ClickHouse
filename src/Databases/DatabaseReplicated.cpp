@@ -603,7 +603,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
                     args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
                 }
-                catch (...)
+                catch (...) // NOLINT(bugprone-empty-catch)
                 {
                 }
             }

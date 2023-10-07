@@ -684,12 +684,12 @@ Like [hasSubsequenceUTF8](#hasSubsequenceUTF8) but searches case-insensitively.
 
 ## byteHammingDistance
 
-Calculates the hamming distance between two byte strings.
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteHammingDistance(haystack, needle)
+byteHammingDistance(string2, string2)
 ```
 
 **Examples**
@@ -708,53 +708,52 @@ Result:
 
 - Alias: mismatches
 
-## byteJaccardIndex
+## jaccardIndex
 
-Calculates the jaccard similarity index between two byte strings.
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteJaccardIndex(haystack, needle)
+byteJaccardIndex(string1, string2)
 ```
 
 **Examples**
 
 ``` sql
-SELECT byteJaccardIndex('clickhouse', 'mouse');
+SELECT jaccardIndex('clickhouse', 'mouse');
 ```
 
 Result:
 
 ``` text
-┌─byteJaccardIndex('clickhouse', 'mouse')─┐
+┌─jaccardIndex('clickhouse', 'mouse')─┐
 │                                     0.4 │
 └─────────────────────────────────────────┘
 ```
 
-## byteEditDistance
+## editDistance
 
-Calculates the edit distance between two byte strings.
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
 
 **Syntax**
 
 ```sql
-byteEidtDistance(haystack, needle)
+editDistance(string1, string2)
 ```
 
 **Examples**
 
 ``` sql
-SELECT byteEditDistance('clickhouse', 'mouse');
+SELECT editDistance('clickhouse', 'mouse');
 ```
 
 Result:
 
 ``` text
-┌─byteEditDistance('clickhouse', 'mouse')─┐
+┌─editDistance('clickhouse', 'mouse')─┐
 │                                       6 │
 └─────────────────────────────────────────┘
 ```
 
-- Alias: byteLevenshteinDistance
-
+- Alias: levenshteinDistance
