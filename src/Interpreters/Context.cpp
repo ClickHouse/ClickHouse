@@ -3418,7 +3418,9 @@ void Context::initializeSystemLogs()
     /// for example, system.filesystem_cache_log will be triggered by parts loading
     /// of any other table if it is stored on a disk with cache.
     callOnce(shared->system_logs_initializer, [&] {
-        shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
+        auto system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
+        auto lock = getGlobalLock();
+        shared->system_logs = std::move(system_logs);
     });
 }
 
