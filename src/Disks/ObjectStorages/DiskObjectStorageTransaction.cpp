@@ -6,6 +6,7 @@
 #include <ranges>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Disks/WriteMode.h>
 #include <base/defines.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
@@ -682,10 +683,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     if (autocommit)
     {
-        create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
+        create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name](size_t count)
         {
             if (mode == WriteMode::Rewrite)
+            {
+                /// Otherwise we will produce lost blobs which nobody points to
+                if (tx->metadata_storage.exists(path))
+                    tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
                 tx->metadata_transaction->createMetadataFile(path, blob_name, count);
+            }
             else
                 tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
 
@@ -694,7 +700,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     }
     else
     {
-        create_metadata_callback = [write_op = write_operation.get(), mode, path, blob_name] (size_t count)
+        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, blob_name](size_t count)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
@@ -706,15 +712,23 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// ...
             /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
             /// tx->commit()
-            write_op->setOnExecute([mode, path, blob_name, count](MetadataTransactionPtr tx)
+            write_op->setOnExecute([object_storage_tx, mode, path, blob_name, count](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)
+                {
+                    /// Otherwise we will produce lost blobs which nobody points to
+                    if (object_storage_tx->metadata_storage.exists(path))
+                    {
+                        object_storage_tx->object_storage.removeObjectsIfExist(
+                            object_storage_tx->metadata_storage.getStorageObjects(path));
+                    }
+
                     tx->createMetadataFile(path, blob_name, count);
+                }
                 else
                     tx->addBlobToMetadata(path, blob_name, count);
             });
         };
-
     }
 
     operations_to_execute.emplace_back(std::move(write_operation));
