@@ -932,11 +932,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
             return false;
         }
 
-        if (!partsContainSameProjections(left, right))
-        {
-            disable_reason = "Some parts contains differ projections";
+        if (!partsContainSameProjections(left, right, disable_reason))
             return false;
-        }
 
         auto max_possible_level = getMaxLevelInBetween(left, right);
         if (max_possible_level > std::max(left->info.level, right->info.level))
@@ -1388,7 +1385,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldWriteAheadLogs();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                cleared_count += clearOldBrokenPartsFromDetachedDirectory();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
