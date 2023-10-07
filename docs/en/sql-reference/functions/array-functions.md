@@ -2121,7 +2121,7 @@ Result:
 
 ## arrayRandomSample
 
-The `arrayRandomSample` function randomly selects elements from the input array, ensuring that the specified number of elements is included in the sample. If the `samples` exceeds the size of the input array, the sample size is automatically limited to the size of the array. In such cases, all elements of the array may be returned, but the order is not guaranteed. The function can handle both flat arrays and nested arrays.
+Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array. In this case, all elements of the input array are returned, but the order is not guaranteed. The function can handle both flat arrays and nested arrays.
 
 **Syntax**
 
@@ -2131,7 +2131,7 @@ arrayRandomSample(arr, samples)
 
 **Arguments**
 
-- `arr` — The input array from which to sample elements. This can include both flat arrays (e.g., integers, strings) and nested arrays.
+- `arr` — The input array from which to sample elements. This may be flat or nested arrays.
 - `samples` — An unsigned integer specifying the number of elements to include in the random sample.
 
 **Returned Value**
