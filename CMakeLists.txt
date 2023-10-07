@@ -102,17 +102,6 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
-option (ENABLE_WOBOQ_CODEBROWSER "Build for woboq codebrowser" OFF)
-
-if (ENABLE_WOBOQ_CODEBROWSER)
-    set (ENABLE_EMBEDDED_COMPILER 0)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-poison-system-directories")
-    # woboq codebrowser uses clang tooling, and they could add default system
-    # clang includes, and later clang will warn for those added by itself
-    # includes.
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-poison-system-directories")
-endif()
-
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -329,7 +318,16 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 # Our built-in unwinder only supports DWARF version up to 4.
 set (DEBUG_INFO_FLAGS "-g -gdwarf-4")
 
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS}")
+# Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
+option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
+
+if (DISABLE_OMIT_FRAME_POINTER)
+    set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer")
+    set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer")
+    set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer")
+endif()
+
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 

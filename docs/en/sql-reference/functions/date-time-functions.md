@@ -134,8 +134,56 @@ Like [makeDateTime](#makedatetime) but produces a [DateTime64](../../sql-referen
 **Syntax**
 
 ``` sql
-makeDateTime32(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
+makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
 ```
+
+## timestamp
+
+Converts the first argument 'expr' to type [DateTime64(6)](../../sql-reference/data-types/datetime64.md).
+If a second argument 'expr_time' is provided, it adds the specified time to the converted value.
+
+**Syntax**
+
+``` sql
+timestamp(expr[, expr_time])
+```
+
+Alias: `TIMESTAMP`
+
+**Arguments**
+
+- `expr` - Date or date with time. Type: [String](../../sql-reference/data-types/string.md).
+- `expr_time` - Optional parameter. Time to add. [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+``` sql
+SELECT timestamp('2023-12-31') as ts;
+```
+
+Result:
+
+``` text
+┌─────────────────────────ts─┐
+│ 2023-12-31 00:00:00.000000 │
+└────────────────────────────┘
+```
+
+``` sql
+SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') as ts;
+```
+
+Result:
+
+``` text
+┌─────────────────────────ts─┐
+│ 2024-01-01 00:00:00.110000 │
+└────────────────────────────┘
+```
+
+**Returned value**
+
+- [DateTime64](../../sql-reference/data-types/datetime64.md)(6)
 
 ## timeZone
 
@@ -732,14 +780,15 @@ Returns for a given date, the number of days passed since [1 January 0000](https
 **Syntax**
 
 ``` sql
-toDaysSinceYearZero(date)
+toDaysSinceYearZero(date[, time_zone])
 ```
 
 Aliases: `TO_DAYS`
 
-**Arguments**
 
-- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md) or [Date32](../../sql-reference/data-types/date32.md).
+**Arguments**
+- `date` — The date to calculate the number of days passed since year zero from. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `time_zone` — A String type const value or a expression represent the time zone. [String types](../../sql-reference/data-types/string.md)
 
 **Returned value**
 
