@@ -15,10 +15,11 @@ echo "SELECT getHttpHeader('X-Clickhouse-User'), getHttpHeader('key1'), getHttpH
 echo "SELECT getHttpHeader('X-' || 'Clickhouse' || '-User'), getHttpHeader('key1'), getHttpHeader('key2')" | curl -s -H 'X-Clickhouse-User: default' \
     -H 'X-ClickHouse-Key: ' -H 'key1: value1' -H 'key2: value2' 'http://localhost:8123/' -d @-
 
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE IF NOT EXISTS test"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 02884_get_http_header"
 
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE IF NOT EXISTS 02884_get_http_header 
+    CREATE TABLE IF NOT EXISTS test.02884_get_http_header 
      (id UInt32, 
      http_user String DEFAULT getHttpHeader('X-Clickhouse-User'),
      http_key1 String DEFAULT getHttpHeader('http_header_key1'),
@@ -51,22 +52,21 @@ echo "INSERT INTO test.02884_get_http_header (id) values (2)" | curl -s -H 'X-Cl
  -H 'http_header_key6: row2_value6'\
  -H 'http_header_key7: row2_value7' 'http://localhost:8123/' -d @-
 
-$CLICKHOUSE_CLIENT -q "SELECT id, http_user, http_key1, http_key2, http_key3, http_key4, http_key5, http_key6, http_key7 FROM 02884_get_http_header ORDER BY id;"
+$CLICKHOUSE_CLIENT -q "SELECT id, http_user, http_key1, http_key2, http_key3, http_key4, http_key5, http_key6, http_key7 FROM test.02884_get_http_header ORDER BY id;"
 #Insert data via tcp client
-$CLICKHOUSE_CLIENT -q "INSERT INTO 02884_get_http_header (id) values (3)"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM 02884_get_http_header where id = 3"
+$CLICKHOUSE_CLIENT -q "INSERT INTO test.02884_get_http_header (id) values (3)"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM test.02884_get_http_header where id = 3"
 echo "SELECT getHttpHeader('key_from_query_1'), getHttpHeader('key_from_query_2'), getHttpHeader('key_from_query_3'), * FROM test.02884_get_http_header ORDER BY id" | curl -s -H 'X-Clickhouse-User: default' \
     -H 'X-ClickHouse-Key: ' -H 'key_from_query_1: value_from_query_1' -H 'key_from_query_2: value_from_query_2' -H 'key_from_query_3: value_from_query_3' 'http://localhost:8123/' -d @-
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 02884_get_http_header"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.02884_get_http_header"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE 02884_header_from_table (header_name String) Engine=Memory"
-$CLICKHOUSE_CLIENT -q "INSERT INTO 02884_header_from_table values ('X-Clickhouse-User'), ('http_key1'), ('http_key2')"
-$CLICKHOUSE_CLIENT -q "select * from 02884_header_from_table"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test.02884_header_from_table (header_name String) Engine=Memory"
+$CLICKHOUSE_CLIENT -q "INSERT INTO test.02884_header_from_table values ('X-Clickhouse-User'), ('http_key1'), ('http_key2')"
 
 echo "SELECT getHttpHeader(header_name) as value from  (select * FROM test.02884_header_from_table) order by value" | curl -s -H 'X-Clickhouse-User: default' \
     -H 'X-ClickHouse-Key: ' -H 'http_key1: http_value1' -H 'http_key2: http_value2' 'http://localhost:8123/' -d @-
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS 02884_header_from_table"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.02884_header_from_table"
 
 
