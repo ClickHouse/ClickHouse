@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import logging
@@ -55,9 +54,13 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
     assert node1.query("SELECT count() FROM test_local") == "2\n"
 
     objects_before = get_objects_in_data_path()
-    node1.query("ALTER TABLE test_s3 FETCH PARTITION '2023-10-04' FROM '/test/tables/shard/test_local'")
+    node1.query(
+        "ALTER TABLE test_s3 FETCH PARTITION '2023-10-04' FROM '/test/tables/shard/test_local'"
+    )
 
-    node1.query("ALTER TABLE test_s3 DROP DETACHED PARTITION '2023-10-04' SETTINGS allow_drop_detached = 1")
+    node1.query(
+        "ALTER TABLE test_s3 DROP DETACHED PARTITION '2023-10-04' SETTINGS allow_drop_detached = 1"
+    )
 
     objects_after = get_objects_in_data_path()
 
