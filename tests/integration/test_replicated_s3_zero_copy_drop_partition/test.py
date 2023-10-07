@@ -66,12 +66,13 @@ CREATE TABLE test_s3(c1 Int8, c2 Date) ENGINE = ReplicatedMergeTree('/test/table
 
     assert objects_before == objects_after
 
-def test_drop_complex_columns(started_cluster):
 
+def test_drop_complex_columns(started_cluster):
     start_objects = get_objects_in_data_path()
     print("Objects before", start_objects)
     node1 = cluster.instances["node1"]
-    node1.query("""
+    node1.query(
+        """
 CREATE TABLE test_s3_complex_types(
 c1	Int8,
 c2	Date,
@@ -83,11 +84,16 @@ c2	Date,
 order by (c1,c2) SETTINGS storage_policy = 's3',
 min_bytes_for_wide_part=1,
 vertical_merge_algorithm_min_rows_to_activate=1,
-vertical_merge_algorithm_min_columns_to_activate=1;""")
+vertical_merge_algorithm_min_columns_to_activate=1;"""
+    )
 
-    node1.query("insert into test_s3_complex_types values(1,toDate('2020-10-01'), ['a','b'], [1,2], [3,4], [5,6])")
+    node1.query(
+        "insert into test_s3_complex_types values(1,toDate('2020-10-01'), ['a','b'], [1,2], [3,4], [5,6])"
+    )
 
-    node1.query("insert into test_s3_complex_types values(1,toDate('2020-10-01'), ['a','b'], [7,8], [9,10], [11,12])")
+    node1.query(
+        "insert into test_s3_complex_types values(1,toDate('2020-10-01'), ['a','b'], [7,8], [9,10], [11,12])"
+    )
 
     print("Objects in insert", get_objects_in_data_path())
     node1.query("optimize table test_s3_complex_types final")
