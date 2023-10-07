@@ -144,18 +144,18 @@ def download_build_with_progress(url: str, path: Path) -> None:
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
             break
-        except Exception:
+        except Exception as e:
             if sys.stdout.isatty():
                 sys.stdout.write("\n")
-            if i + 1 < DOWNLOAD_RETRIES_COUNT:
-                time.sleep(3)
-
             if os.path.exists(path):
                 os.remove(path)
-    else:
-        raise DownloadException(
-            f"Cannot download dataset from {url}, all retries exceeded"
-        )
+
+            if i + 1 < DOWNLOAD_RETRIES_COUNT:
+                time.sleep(3)
+            else:
+                raise DownloadException(
+                    f"Cannot download dataset from {url}, all retries exceeded"
+                ) from e
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
