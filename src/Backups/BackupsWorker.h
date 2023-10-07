@@ -32,7 +32,7 @@ class BackupLog;
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -90,6 +90,9 @@ private:
 
     std::unique_ptr<ThreadPool> backups_thread_pool;
     std::unique_ptr<ThreadPool> restores_thread_pool;
+
+    std::unique_ptr<ThreadPool> backup_async_executor_pool;
+    std::unique_ptr<ThreadPool> restore_async_executor_pool;
 
     std::unordered_map<BackupOperationID, BackupOperationInfo> infos;
     std::shared_ptr<BackupLog> backup_log;

@@ -135,7 +135,10 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
                 assertChar(',', istr);
                 skipWhitespaceIfAny(istr);
             }
-            elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextQuotedImpl(extractElementColumn(column, i), istr, settings, elems[i]);
+            else
+                elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
         }
 
         // Special format for one element tuple (1,)
@@ -366,7 +369,10 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
                 assertChar(settings.csv.tuple_delimiter, istr);
                 skipWhitespaceIfAny(istr);
             }
-            elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextCSVImpl(extractElementColumn(column, i), istr, settings, elems[i]);
+            else
+                elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
         }
     });
 }

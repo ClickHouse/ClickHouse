@@ -105,9 +105,15 @@ private:
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;
 
-    /// A mutex for the sendCancel function to execute safely
-    /// in separate thread.
-    mutable std::mutex cancel_mutex;
+    /// A mutex for the sendCancel function to execute safely in separate thread.
+    mutable std::timed_mutex cancel_mutex;
+
+    /// Temporary instrumentation to debug a weird deadlock on cancel_mutex.
+    /// TODO: Once the investigation is done, get rid of these, and of INSTRUMENTED_LOCK_MUTEX, and
+    ///       change cancel_mutex to std::mutex.
+    mutable std::atomic<UInt64> mutex_last_locked_by{0};
+    mutable std::atomic<Int64> mutex_locked{0};
+    mutable std::array<UInt8, sizeof(std::timed_mutex)> mutex_memory_dump;
 
     friend struct RemoteQueryExecutorRoutine;
 };
