@@ -105,10 +105,10 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
     writeChar('\n', buf);
 
     /// Metadata version describes the format of the file
-    /// It determines the possibility to write and read particular set of the fields from the file no matter the fields values
-    /// It should not be depended on field values
-    /// We always write inline_data in file when we declare VERSION_INLINE_DATA as a file version
-    /// Unless it is impossible to introduce the next version of format
+    /// It determines the possibility of writing and reading a particular set of fields from the file, no matter the fields' values.
+    /// It should not be dependent on field values.
+    /// We always write inline_data in the file when we declare VERSION_INLINE_DATA as a file version,
+    /// unless it is impossible to introduce the next version of the format.
     writeEscapedString(inline_data, buf);
     writeChar('\n', buf);
 
