@@ -456,7 +456,8 @@ FileCache::getOrSet(
             if (!limit_reached)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of file segments");
 
-            range.left = std::min(offset, last_offset + 1);
+            range.left = last_offset + 1;
+            chassert(offset >= range.left);
             file_segments = getImpl(*locked_key, range, file_segments_limit);
         }
 
