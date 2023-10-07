@@ -11,31 +11,10 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 template <typename T>
-requires std::is_same_v<T, UInt8>
+requires std::is_integral_v<T>
 inline T byteSwap(T x)
 {
-    return x;
-}
-
-template <typename T>
-requires std::is_same_v<T, UInt16>
-inline T byteSwap(T x)
-{
-    return __builtin_bswap16(x);
-}
-
-template <typename T>
-requires std::is_same_v<T, UInt32>
-inline T byteSwap(T x)
-{
-    return __builtin_bswap32(x);
-}
-
-template <typename T>
-requires std::is_same_v<T, UInt64>
-inline T byteSwap(T x)
-{
-    return __builtin_bswap64(x);
+    return std::byteswap(x);
 }
 
 template <typename T>
@@ -76,9 +55,9 @@ REGISTER_FUNCTION(ByteSwap)
     factory.registerFunction<FunctionByteSwap>(
         FunctionDocumentation{
             .description = R"(
-Accepts an unsigned integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
+Accepts an integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
 
-Currently, this is implemented for UInt8, UInt16, UInt32 and UInt64.
+Currently, this is supported for up to 64-bit (signed and unsigned) integers.
 
 **Example**
 

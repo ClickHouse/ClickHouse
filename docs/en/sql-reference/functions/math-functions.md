@@ -716,7 +716,7 @@ Result:
 
 Accepts an unsigned integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
 
-Currently, this is implemented for UInt8, UInt16, UInt32 and UInt64.
+Currently, this is supported for up to 64-bit (signed and unsigned) integers.
 
 **Example**
 
