@@ -604,20 +604,26 @@ namespace
 
 }
 
-void KeeperStorage::applyUncommittedState(KeeperStorage & other, int64_t last_zxid)
+void KeeperStorage::applyUncommittedState(KeeperStorage & other, int64_t last_log_idx)
 {
+    std::unordered_set<int64_t> zxids_to_apply;
     for (const auto & transaction : uncommitted_transactions)
     {
-        if (transaction.zxid <= last_zxid)
+        if (transaction.log_idx == 0)
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Transaction has log idx equal to 0");
+
+        if (transaction.log_idx <= last_log_idx)
             continue;
+
         other.uncommitted_transactions.push_back(transaction);
+        zxids_to_apply.insert(transaction.zxid);
     }
 
     auto it = uncommitted_state.deltas.begin();
 
     for (; it != uncommitted_state.deltas.end(); ++it)
     {
-        if (it->zxid <= last_zxid)
+        if (!zxids_to_apply.contains(it->zxid))
             continue;
 
         other.uncommitted_state.addDelta(*it);
@@ -950,6 +956,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         std::string path_created = request.path;
         if (request.is_sequential)
         {
+            if (request.not_exists)
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+
             auto seq_num = parent_node->seq_num;
 
             std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -968,7 +977,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         }
 
         if (storage.uncommitted_state.getNode(path_created))
+        {
+            if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists)
+                return new_deltas;
+
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        }
 
         if (getBaseNodeName(path_created).size == 0)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
@@ -1024,6 +1038,13 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
+
+        if (storage.uncommitted_state.deltas.begin()->zxid != zxid)
+        {
+            response.path_created = zk_request->getPath();
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
+        }
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
@@ -1758,6 +1779,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                case Coordination::OpNum::CreateIfNotExists:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
                     break;
@@ -2024,6 +2046,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::CreateIfNotExists, KeeperStorageCreateRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor>(*this);
@@ -2097,7 +2120,8 @@ void KeeperStorage::preprocessRequest(
     int64_t time,
     int64_t new_last_zxid,
     bool check_acl,
-    std::optional<Digest> digest)
+    std::optional<Digest> digest,
+    int64_t log_idx)
 {
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
@@ -2116,8 +2140,15 @@ void KeeperStorage::preprocessRequest(
     else
     {
         if (last_zxid == new_last_zxid && digest && checkDigest(*digest, getNodesDigest(false)))
-            // we found the preprocessed request with the same ZXID, we can skip it
+        {
+            auto & last_transaction = uncommitted_transactions.back();
+            // we found the preprocessed request with the same ZXID, we can get log_idx and skip preprocessing it
+            chassert(last_transaction.zxid == new_last_zxid && log_idx != 0);
+            /// initially leader preprocessed without knowing the log idx
+            /// on the second call we have that information and can set the log idx for the correct transaction
+            last_transaction.log_idx = log_idx;
             return;
+        }
 
         if (new_last_zxid <= last_zxid)
             throw Exception(
@@ -2127,7 +2158,7 @@ void KeeperStorage::preprocessRequest(
     }
 
     std::vector<Delta> new_deltas;
-    TransactionInfo transaction{.zxid = new_last_zxid, .nodes_digest = {}};
+    TransactionInfo transaction{.zxid = new_last_zxid, .nodes_digest = {}, .log_idx = log_idx};
     uint64_t new_digest = getNodesDigest(false).value;
     SCOPE_EXIT({
         if (keeper_context->digestEnabled())
@@ -2199,7 +2230,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
         if (uncommitted_transactions.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
 
-        if (uncommitted_transactions.front().zxid != *new_last_zxid)
+        auto & front_transaction = uncommitted_transactions.front();
+        if (front_transaction.zxid != *new_last_zxid)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Trying to commit a ZXID {} while the next ZXID to commit is {}",

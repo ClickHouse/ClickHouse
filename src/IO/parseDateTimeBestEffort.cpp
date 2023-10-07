@@ -434,7 +434,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
                 {
-                    using FractionalType = typename std::decay<decltype(fractional->value)>::type;
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
                     // Reading more decimal digits than fits into FractionalType would case an
                     // overflow, so it is better to skip all digits from the right side that do not
                     // fit into result type. To provide less precise value rather than bogus one.

@@ -268,6 +268,16 @@ ReadSettings Context::getReadSettings() const
     return ReadSettings{};
 }
 
+ResourceManagerPtr Context::getResourceManager() const
+{
+    return nullptr;
+}
+
+ClassifierPtr Context::getWorkloadClassifier() const
+{
+    return nullptr;
+}
+
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
     const auto & config_ref = getConfigRef();

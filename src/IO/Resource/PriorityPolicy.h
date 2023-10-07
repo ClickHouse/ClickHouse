@@ -1,7 +1,6 @@
 #pragma once
 
-#include <IO/ISchedulerQueue.h>
-#include <IO/SchedulerRoot.h>
+#include <IO/ISchedulerNode.h>
 
 #include <algorithm>
 #include <unordered_map>
@@ -42,6 +41,8 @@ public:
 
     bool equals(ISchedulerNode * other) override
     {
+        if (!ISchedulerNode::equals(other))
+            return false;
         if (auto * o = dynamic_cast<PriorityPolicy *>(other))
             return true;
         return false;
@@ -113,14 +114,23 @@ public:
         {
             std::pop_heap(items.begin(), items.end());
             items.pop_back();
+            if (items.empty())
+                busy_periods++;
         }
 
+        dequeued_requests++;
+        dequeued_cost += request->cost;
         return {request, !items.empty()};
     }
 
     bool isActive() override
     {
         return !items.empty();
+    }
+
+    size_t activeChildren() override
+    {
+        return items.size();
     }
 
     void activateChild(ISchedulerNode * child) override

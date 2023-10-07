@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <re2/re2.h>
 
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -39,6 +38,14 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -471,7 +478,12 @@ StorageAzureBlob::StorageAzureBlob(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in File storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine AzureBlobStorage doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -687,7 +699,7 @@ Pipe StorageAzureBlob::read(
             query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -792,9 +804,9 @@ bool StorageAzureBlob::supportsPartitionBy() const
     return true;
 }
 
-bool StorageAzureBlob::supportsSubsetOfColumns() const
+bool StorageAzureBlob::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
 }
 
 bool StorageAzureBlob::prefersLargeBlocks() const
