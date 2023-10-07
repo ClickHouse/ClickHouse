@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/s3queue
-sidebar_position: 7
+sidebar_position: 181
 sidebar_label: S3Queue
 ---
 

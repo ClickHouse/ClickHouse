@@ -207,7 +207,6 @@ enum class AccessType
     M(REMOTE, "", GLOBAL, SOURCES) \
     M(MONGO, "", GLOBAL, SOURCES) \
     M(REDIS, "", GLOBAL, SOURCES) \
-    M(MEILISEARCH, "", GLOBAL, SOURCES) \
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(POSTGRES, "", GLOBAL, SOURCES) \
     M(SQLITE, "", GLOBAL, SOURCES) \
