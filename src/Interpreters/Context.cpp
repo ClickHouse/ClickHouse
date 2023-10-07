@@ -1209,14 +1209,14 @@ void Context::setCurrentRolesDefault()
     setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
 }
 
-boost::container::flat_set<UUID> Context::getCurrentRoles() const
+std::vector<UUID> Context::getCurrentRoles() const
 {
-    return getRolesInfo()->current_roles;
+    return getRolesInfo()->getCurrentRoles();
 }
 
-boost::container::flat_set<UUID> Context::getEnabledRoles() const
+std::vector<UUID> Context::getEnabledRoles() const
 {
-    return getRolesInfo()->enabled_roles;
+    return getRolesInfo()->getEnabledRoles();
 }
 
 std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
