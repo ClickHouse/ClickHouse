@@ -399,6 +399,7 @@ MergeTreeData::MergeTreeData(
                               settings->check_sample_column_is_correct && !attach);
     }
 
+    checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, !attach);
     checkTTLExpressions(metadata_, metadata_);
 
     String reason;
@@ -2627,97 +2628,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
-size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
-{
-    /**
-     * Remove old (configured by setting) broken detached parts.
-     * Only parts with certain prefixes are removed. These prefixes
-     * are such that it is guaranteed that they will never be needed
-     * and need to be cleared. ctime is used to check when file was
-     * moved to detached/ directory (see https://unix.stackexchange.com/a/211134)
-     */
-
-    DetachedPartsInfo detached_parts = getDetachedParts();
-    if (detached_parts.empty())
-        return 0;
-
-    auto get_last_touched_time = [&](const DetachedPartInfo & part_info) -> time_t
-    {
-        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
-        time_t last_change_time = part_info.disk->getLastChanged(path);
-        time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
-        return std::max(last_change_time, last_modification_time);
-    };
-
-    time_t ttl_seconds = getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
-
-    size_t unfinished_deleting_parts = 0;
-    time_t current_time = time(nullptr);
-    for (const auto & part_info : detached_parts)
-    {
-        if (!part_info.dir_name.starts_with("deleting_"))
-            continue;
-
-        time_t startup_time = current_time - static_cast<time_t>(Context::getGlobalContextInstance()->getUptimeSeconds());
-        time_t last_touch_time = get_last_touched_time(part_info);
-
-        /// Maybe it's being deleted right now (for example, in ALTER DROP DETACHED)
-        bool had_restart = last_touch_time < startup_time;
-        bool ttl_expired = last_touch_time + ttl_seconds <= current_time;
-        if (!had_restart && !ttl_expired)
-            continue;
-
-        /// We were trying to delete this detached part but did not finish deleting, probably because the server crashed
-        LOG_INFO(log, "Removing detached part {} that we failed to remove previously", part_info.dir_name);
-        try
-        {
-            removeDetachedPart(part_info.disk, fs::path(relative_data_path) / "detached" / part_info.dir_name / "", part_info.dir_name);
-            ++unfinished_deleting_parts;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-
-    if (!getSettings()->merge_tree_enable_clear_old_broken_detached)
-        return unfinished_deleting_parts;
-
-    const auto full_path = fs::path(relative_data_path) / "detached";
-    size_t removed_count = 0;
-    for (const auto & part_info : detached_parts)
-    {
-        if (!part_info.valid_name || part_info.prefix.empty())
-            continue;
-
-        const auto & removable_detached_parts_prefixes = DetachedPartInfo::DETACHED_REASONS_REMOVABLE_BY_TIMEOUT;
-        bool can_be_removed_by_timeout = std::find(
-            removable_detached_parts_prefixes.begin(),
-            removable_detached_parts_prefixes.end(),
-            part_info.prefix) != removable_detached_parts_prefixes.end();
-
-        if (!can_be_removed_by_timeout)
-            continue;
-
-        ssize_t threshold = current_time - ttl_seconds;
-        time_t last_touch_time = get_last_touched_time(part_info);
-
-        if (last_touch_time == 0 || last_touch_time >= threshold)
-            continue;
-
-        const String & old_name = part_info.dir_name;
-        String new_name = "deleting_" + part_info.dir_name;
-        part_info.disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
-
-        removeDetachedPart(part_info.disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name);
-        LOG_WARNING(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
-        ++removed_count;
-    }
-
-    LOG_INFO(log, "Cleaned up {} detached parts", removed_count);
-
-    return removed_count + unfinished_deleting_parts;
-}
 
 size_t MergeTreeData::clearOldWriteAheadLogs()
 {
@@ -3351,6 +3261,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -7445,6 +7356,73 @@ bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
     return decision;
 }
 
+void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
+{
+    auto settings = getDefaultSettings();
+    if (metadata.settings_changes)
+    {
+        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        settings->applyChanges(changes);
+    }
+
+    checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
+}
+
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+{
+    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
+    auto columns_list = Nested::collect(columns.getAllPhysical());
+
+    for (const auto & column : columns_list)
+    {
+        std::unordered_map<String, String> column_streams;
+
+        auto callback = [&](const auto & substream_path)
+        {
+            String stream_name;
+            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+
+            if (settings.replace_long_file_name_to_hash && full_stream_name.size() > settings.max_file_name_length)
+                stream_name = sipHash128String(full_stream_name);
+            else
+                stream_name = full_stream_name;
+
+            column_streams.emplace(stream_name, full_stream_name);
+        };
+
+        auto serialization = column.type->getDefaultSerialization();
+        serialization->enumerateStreams(callback);
+
+        if (column.type->supportsSparseSerialization() && settings.ratio_of_defaults_for_sparse_serialization < 1.0)
+        {
+            auto sparse_serialization = column.type->getSparseSerialization();
+            sparse_serialization->enumerateStreams(callback);
+        }
+
+        for (const auto & [stream_name, full_stream_name] : column_streams)
+        {
+            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
+            if (!inserted)
+            {
+                const auto & [other_full_name, other_column_name] = it->second;
+                auto other_type = columns.getPhysical(other_column_name).type;
+
+                auto message = fmt::format(
+                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
+
+                if (settings.replace_long_file_name_to_hash)
+                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
+
+                if (throw_on_error)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                return;
+            }
+        }
+    }
+}
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
@@ -7473,6 +7451,28 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+
+    const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
+    {
+        if (my_descriptions.size() != src_descriptions.size())
+            return false;
+
+        std::unordered_set<std::string> my_query_strings;
+        for (const auto & description : my_descriptions)
+            my_query_strings.insert(queryToString(description.definition_ast));
+
+        for (const auto & src_description : src_descriptions)
+            if (!my_query_strings.contains(queryToString(src_description.definition_ast)))
+                return false;
+
+        return true;
+    };
+
+    if (!check_definitions(my_snapshot->getSecondaryIndices(), src_snapshot->getSecondaryIndices()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different secondary indices");
+
+    if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
     return *src_data;
 }
@@ -8189,14 +8189,29 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
     return result;
 }
 
-bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right)
+bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason)
 {
     if (left->getProjectionParts().size() != right->getProjectionParts().size())
+    {
+        out_reason = fmt::format(
+            "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
+            left->getProjectionParts().size(),
+            left->name,
+            right->getProjectionParts().size(),
+            right->name
+        );
         return false;
+    }
+
     for (const auto & [name, _] : left->getProjectionParts())
     {
         if (!right->hasProjection(name))
+        {
+            out_reason = fmt::format(
+                "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
+            );
             return false;
+        }
     }
     return true;
 }

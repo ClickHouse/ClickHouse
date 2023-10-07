@@ -26,6 +26,7 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
     return {};
 }
+
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
     if (type && *type == AuthenticationType::SHA256_PASSWORD && children.size() == 2)
@@ -115,6 +116,12 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 
                 prefix = "BY";
                 password = true;
+                break;
+            }
+            case AuthenticationType::SSH_KEY:
+            {
+                prefix = "BY";
+                parameters = true;
                 break;
             }
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
