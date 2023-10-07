@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include <limits>
 
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+
 
 namespace DB {
 namespace ErrorCodes
@@ -14,9 +17,9 @@ namespace ErrorCodes
 
 class KeyMapping {
 public:
-    KeyMapping(Float64 rel_acc, Float64 off = 0.0)
-        : relative_accuracy(rel_acc), offset(off) {
-        
+    KeyMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
+        : relative_accuracy(relative_accuracy_), offset(offset_) {
+
         if (relative_accuracy <= 0 || relative_accuracy >= 1) {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative accuracy must be between 0 and 1.");
         }
@@ -49,6 +52,20 @@ public:
         return min_possible;
     }
 
+    Float64 getMaxPossible() const {
+        return max_possible;
+    }
+
+    void serialize(WriteBuffer& buf) const {
+        writeBinary(gamma, buf);
+        writeBinary(offset, buf);
+    }
+
+    void deserialize(ReadBuffer& buf) {
+        readBinary(gamma, buf);
+        readBinary(offset, buf);
+    }
+
 protected:
     Float64 relative_accuracy;
     Float64 gamma;
@@ -60,8 +77,8 @@ protected:
 
 class LogarithmicMapping : public KeyMapping {
 public:
-    LogarithmicMapping(Float64 rel_acc, Float64 off = 0.0)
-        : KeyMapping(rel_acc, off) {
+    LogarithmicMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
+        : KeyMapping(relative_accuracy_, offset_) {
         multiplier *= std::log(2);
     }
 

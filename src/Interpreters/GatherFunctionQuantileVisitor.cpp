@@ -18,7 +18,6 @@ static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
     {NameQuantile::name, NameQuantiles::name},
     {NameQuantileBFloat16::name, NameQuantilesBFloat16::name},
     {NameQuantileBFloat16Weighted::name, NameQuantilesBFloat16Weighted::name},
-    {NameQuantileSketch::name, NameQuantilesSketch::name},
     {NameQuantileDeterministic::name, NameQuantilesDeterministic::name},
     {NameQuantileExact::name, NameQuantilesExact::name},
     {NameQuantileExactExclusive::name, NameQuantilesExactExclusive::name},

@@ -11,11 +11,14 @@
 namespace DB
 {
 template <typename Value>
-struct QuantileSketch
+class QuantileSketch
 {
+public:
     using Weight = UInt64;
 
-    Sketch data;
+    QuantileSketch() = default;
+
+    explicit QuantileSketch(Float64 relative_accuracy) : data(relative_accuracy) { }
 
     void add(const Value & x)
     {
@@ -28,20 +31,19 @@ struct QuantileSketch
             data.add(x, w);
     }
 
-    void merge(const QuantileSketch &)
+    void merge(const QuantileSketch &other)
     {
-        // TODO
+        data.merge(other.data);
     }
 
     void serialize(WriteBuffer & buf) const
     {
-        writeVarUInt(data.count, buf);
+        data.serialize(buf);
     }
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t size = 0;
-        readVarUInt(size, buf);
+        data.deserialize(buf);
     }
 
     Value get(Float64 level) const
@@ -65,6 +67,7 @@ struct QuantileSketch
     }
 
 private:
+    Sketch data;
 
     template <typename T>
     T getImpl(Float64 level) const

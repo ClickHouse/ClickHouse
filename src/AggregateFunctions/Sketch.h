@@ -7,8 +7,11 @@
 #include <iostream>
 #include <base/types.h>
 
-#include "Mapping.h"
-#include "Store.h"
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+
+#include <AggregateFunctions/Mapping.h>
+#include <AggregateFunctions/Store.h>
 
 namespace DB {
 
@@ -18,8 +21,7 @@ public:
                        std::unique_ptr<DenseStore> negative_store_, Float64 zero_count_)
         : mapping(std::move(mapping_)), store(std::move(store_)), negative_store(std::move(negative_store_)),
           zero_count(zero_count_),
-          count(static_cast<Float64>(negative_store->count + zero_count_ + store->count)),
-          min(std::numeric_limits<Float64>::infinity()), max(-std::numeric_limits<Float64>::infinity()), sum(0.0) {}
+          count(static_cast<Float64>(negative_store->count + zero_count_ + store->count)) {}
 
     void add(Float64 val, Float64 weight = 1.0) {
         if (weight <= 0.0) {
@@ -35,9 +37,6 @@ public:
         }
 
         count += weight;
-        sum += val * weight;
-        min = std::min(min, val);
-        max = std::max(max, val);
     }
 
     Float64 get(Float64 quantile) const {
@@ -60,42 +59,62 @@ public:
         return quantile_value;
     }
 
-    void merge(BaseQuantileSketch& sketch) {
-        if (!mergeable(sketch)) {
-            throw std::invalid_argument("Cannot merge two QuantileSketches with different parameters");
+    void copy(const BaseQuantileSketch& other) {
+        Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
+        mapping = std::make_unique<LogarithmicMapping>(rel_acc);
+        store = std::make_unique<DenseStore>();
+        negative_store = std::make_unique<DenseStore>();
+        store->copy(other.store.get());
+        negative_store->copy(other.negative_store.get());
+        zero_count = other.zero_count;
+        count = other.count;
+    }
+
+    void merge(const BaseQuantileSketch& other) {
+        if (mapping->getGamma() != other.mapping->getGamma()) {
+            // modify the one with higher precision to match the one with lower precision
+            if (mapping->getGamma() > other.mapping->getGamma()) {
+                // other = other.changeMapping(mapping->getGamma());
+                BaseQuantileSketch new_sketch = other.changeMapping(mapping->getGamma());
+                this->merge(new_sketch);
+                return;
+            } else {
+                *this = changeMapping(other.mapping->getGamma());
+            }
         }
 
-        if (sketch.count == 0) {
+        // If the other sketch is empty, do nothing
+        if (other.count == 0) {
             return;
         }
 
+        // If this sketch is empty, copy the other sketch
         if (count == 0) {
-            copy(sketch);
+            copy(other);
             return;
         }
 
-        store->merge(sketch.store.get());
-        negative_store->merge(sketch.negative_store.get());
-        zero_count += sketch.zero_count;
+        count += other.count;
+        zero_count += other.zero_count;
 
-        count += sketch.count;
-        sum += sketch.sum;
-        min = std::min(min, sketch.min);
-        max = std::max(max, sketch.max);
+        store->merge(other.store.get());
+        negative_store->merge(other.negative_store.get());
     }
 
-    bool mergeable(const BaseQuantileSketch& other) {
-        return mapping->getGamma() == other.mapping->getGamma();
+    void serialize(WriteBuffer& buf) const {
+        mapping->serialize(buf);
+        store->serialize(buf);
+        negative_store->serialize(buf);
+        writeBinary(zero_count, buf);
+        writeBinary(count, buf);
     }
 
-    void copy(const BaseQuantileSketch& sketch) {
-        store->copy(sketch.store.get());
-        negative_store->copy(sketch.negative_store.get());
-        zero_count = sketch.zero_count;
-        min = sketch.min;
-        max = sketch.max;
-        count = sketch.count;
-        sum = sketch.sum;
+    void deserialize(ReadBuffer& buf) {
+        mapping->deserialize(buf);
+        store->deserialize(buf);
+        negative_store->deserialize(buf);
+        readBinary(zero_count, buf);
+        readBinary(count, buf);
     }
 
 private:
@@ -104,9 +123,34 @@ private:
     std::unique_ptr<DenseStore> negative_store;
     Float64 zero_count;
     Float64 count;
-    Float64 min;
-    Float64 max;
-    Float64 sum;
+
+    BaseQuantileSketch changeMapping(Float64 new_gamma) const {
+        Float64 old_gamma = mapping->getGamma();
+
+        // Create new Stores to hold the remapped bins
+        auto new_store = std::make_unique<DenseStore>();
+        auto new_negative_store = std::make_unique<DenseStore>();
+
+        // Change mapping for the positive store
+        for (int i = 0; i < store->length(); ++i) {
+            int old_key = i + store->offset;
+            int new_key = static_cast<int>(std::round(old_key * std::log(new_gamma) / std::log(old_gamma)));
+            new_store->add(new_key, store->bins[i]);
+        }
+
+        // Change mapping for the negative store
+        for (int i = 0; i < negative_store->length(); ++i) {
+            int old_key = i + negative_store->offset;
+            int new_key = static_cast<int>(std::round(old_key * std::log(new_gamma) / std::log(old_gamma)));
+            new_negative_store->add(new_key, negative_store->bins[i]);
+        }
+
+        auto new_mapping = std::make_unique<LogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
+
+        // Construct a new BaseQuantileSketch object with the new components
+        return BaseQuantileSketch(std::move(new_mapping), std::move(new_store), std::move(new_negative_store), zero_count);
+    }
+
 };
 
 class Sketch : public BaseQuantileSketch {

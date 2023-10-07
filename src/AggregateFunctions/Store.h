@@ -5,6 +5,12 @@
 #include <cmath>
 #include <limits>
 
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+
+
+// We start with 128 bins and grow the number of bins by 128 each time we need to extend the range
+// of the bins. This is done to avoid reallocating the bins vector too often.
 constexpr int CHUNK_SIZE = 128;
 
 namespace DB {
@@ -27,7 +33,7 @@ public:
 
 class DenseStore : public Store {
 public:
-    DenseStore(int chunkSize = CHUNK_SIZE) : chunk_size(chunkSize) {}
+    DenseStore(int chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
 
     void copy(Store* other) override {
         bins = other->bins;
@@ -77,6 +83,22 @@ public:
         count += other->count;
     }
 
+    void serialize(WriteBuffer& buf) const {
+        writeBinary(min_key, buf);
+        writeBinary(max_key, buf);
+        writeBinary(offset, buf);
+        writeBinary(count, buf);
+        writeBinary(bins, buf);
+    }
+
+    void deserialize(ReadBuffer& buf) {
+        readBinary(min_key, buf);
+        readBinary(max_key, buf);
+        readBinary(offset, buf);
+        readBinary(count, buf);
+        readBinary(bins, buf);
+    }
+
 private:
     int chunk_size;
 
@@ -100,7 +122,7 @@ private:
             bins = std::vector<Float64>(getNewLength(new_min_key, new_max_key), 0.0);
             offset = new_min_key;
             adjust(new_min_key, new_max_key);
-        } else if (new_min_key >= min_key && new_max_key < offset + length()) {
+        } else if (new_min_key >= offset && new_max_key < offset + length()) {
             min_key = new_min_key;
             max_key = new_max_key;
         } else {
