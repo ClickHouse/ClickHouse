@@ -216,11 +216,13 @@ run_multi_row_scalar_k_test() {
 
         # Check if the array contains exactly 2 unique elements
         if [[ ${#nums[@]} -ne 2 ]] || [[ ${nums[0]} -eq ${nums[1]} ]]; then
+            # shellcheck disable=SC2030
             is_test_passed=0
         fi
     done
 
     # Print test result
+    # shellcheck disable=SC2031
     if [[ $is_test_passed -eq 1 ]]; then
         echo "Multi-row Test with scalar k: Passed"
         ((passed_tests++))
