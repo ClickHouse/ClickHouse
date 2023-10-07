@@ -217,6 +217,10 @@ add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
+# proton: porting start. TODO: remove comments
+add_object_library(clickhouse_interpreters_streaming AggregateFunctions/Streaming)
+add_object_library(clickhouse_interpreters_streaming Interpreters/Streaming)
+# proton: porting ends. TODO: remove comments
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)

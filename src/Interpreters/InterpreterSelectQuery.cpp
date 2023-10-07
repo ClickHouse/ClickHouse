@@ -41,7 +41,9 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/Streaming/EmitInterpreter.h>
+#include <Interpreters/Streaming/SubstituteStreamingFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -345,6 +347,29 @@ bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
     return false;
 }
 
+bool supportStreamingQuery(const StoragePtr & storage, ContextPtr context)
+{
+    const auto & name = storage->getName();
+
+    if (name == "Kafka")
+        return true;
+
+    if (name == "View")
+    {
+        assert(storage->as<StorageView>());
+
+        auto select = storage->getInMemoryMetadataPtr()->getSelectQuery().inner_query;
+        auto ctx = Context::createCopy(context);
+
+        /// proton: porting starts. TODO: need revisit. What does this property in context do? Do we need it?
+        // ctx->setCollectRequiredColumns(false);
+        /// proton: porting ends. TODO: remove comments
+        return InterpreterSelectWithUnionQuery(select, ctx, SelectQueryOptions().noModify().subquery().analyze()).isStreaming();
+    }
+
+    return false;
+}
+
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -429,6 +454,21 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
         RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
     }
+    /// proton: porting starts. TODO: remove comments, FIXME: seems a simple function can checking Emit AST (Or a Visitor)
+    /// proton: starts. Try to process the streaming query extension grammar.
+    /// we need to process before table storage generation (maybe has table function)
+    if (auto emit = getSelectQuery().emit())
+    {
+        Streaming::EmitInterpreter::handleRules(
+                    /* streaming query */ query_ptr,
+                    /* rules */ Streaming::EmitInterpreter::checkEmitAST);
+
+        /// After handling, update setting for context.
+        /// proton: porting. TODO: remove comments. Need revisit: Do we still need apply settings to context since there is only checkEmitAST rule remains
+        if (getSelectQuery().settings())
+            InterpreterSetQuery(getSelectQuery().settings(), context).executeForCurrentContext();
+    }
+    /// proton: porting ends. TODO: remove comments
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
@@ -613,13 +653,18 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
+        /// proton: porting starts. TODO: remove comments
+        TreeRewriterResult tree_rewriter_result(source_header.getNamesAndTypesList(), storage, storage_snapshot);
+        tree_rewriter_result.streaming = isStreaming();
+
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
-            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
+            std::move(tree_rewriter_result),
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
             table_join);
+        /// proton: porting ends. TODO: remove comments
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -779,6 +824,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
     };
+
+    /// proton: porting starts. TODO: remove comments
+    checkAndPrepareStreamingFunctions();
+    /// proton: porting ends. TODO: remove comments
 
     analyze(shouldMoveToPrewhere());
 
@@ -3283,5 +3332,48 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
+
+bool InterpreterSelectQuery::isStreaming() const
+{
+    if (is_streaming.has_value())
+        return *is_streaming;
+
+    /// We can simple determine the query type (stream or not) by the type of storage or subquery.
+    /// Although `TreeRewriter` optimization may rewrite the subquery, it does not affect whether it is streaming
+    /// And for now, we only look at the left stream even in a join case since we don't support
+    /// `table join stream` case yet. When the left stream is streaming, then the whole query will be streaming.
+    bool streaming = false;
+    if (context->getSettingsRef().query_mode.value == "streaming")
+    {
+        if (storage && supportStreamingQuery(storage, context))
+            streaming = true;
+        else if (interpreter_subquery)
+            streaming = interpreter_subquery->isStreaming();
+    }
+
+    is_streaming = streaming;
+
+    return streaming;
+}
+
+void InterpreterSelectQuery::checkAndPrepareStreamingFunctions()
+{
+    /// Prepare streaming version of the functions
+    bool streaming = isStreaming();
+    Streaming::SubstituteStreamingFunctionVisitor::Data func_data(streaming);
+    Streaming::SubstituteStreamingFunctionVisitor(func_data).visit(query_ptr);
+    emit_version = func_data.emit_version;
+
+    if (!streaming)
+        return;
+
+    /// Prepare streaming window functions
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(query_ptr);
+
+    if (!data.aggregates.empty() && !data.window_functions.empty())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Window over aggregation is not compatible with non-window over aggregation in the same query");
+}
 
 }

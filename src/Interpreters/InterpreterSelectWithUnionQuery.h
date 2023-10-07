@@ -50,6 +50,10 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
+    /// proton: porting starts. TODO: remove comments
+    bool isStreaming() const override;
+    /// proton: porting ends. TODO: remove comments
+
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 

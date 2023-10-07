@@ -63,6 +63,13 @@ struct TreeRewriterResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
+    /// proton: porting starts. TODO: remove comments
+    bool streaming = true;
+    // proton: porting notes: TODO: need revisit. Which part need hasAggregation method?
+    bool has_group_by = false;
+    bool hasAggregation() const noexcept { return has_group_by || !aggregates.empty(); }
+    /// proton: porting ends. TODO: remove comments
+
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 

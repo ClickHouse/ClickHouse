@@ -410,4 +410,14 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
     }
 }
 
+bool InterpreterSelectWithUnionQuery::isStreaming() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->isStreaming())
+            return true;
+    }
+    return false;
+}
+
 }

@@ -1396,6 +1396,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
+    /// proton: porting starts. TODO: remove comments
+    result.has_group_by = select_query->groupBy() != nullptr;
+    /// proton: porting ends. TODO: remove comments
+
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
     if (settings.optimize_respect_aliases && result.storage_snapshot && is_initiator)

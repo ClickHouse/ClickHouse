@@ -37,6 +37,8 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
+    bool isStreaming() const override;
+
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }
 

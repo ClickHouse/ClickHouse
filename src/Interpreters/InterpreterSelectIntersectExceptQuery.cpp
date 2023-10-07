@@ -210,4 +210,14 @@ void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogEleme
     }
 }
 
+bool InterpreterSelectIntersectExceptQuery::isStreaming() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->isStreaming())
+            return true;
+    }
+    return false;
+}
+
 }
