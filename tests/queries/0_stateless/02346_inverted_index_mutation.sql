@@ -21,3 +21,5 @@ ALTER TABLE t UPDATE s='I am not inverted' WHERE 1 SETTINGS mutations_sync=1;
 SELECT data_version FROM system.parts WHERE database=currentDatabase() AND table='t' AND active=1;
 
 SELECT s FROM t WHERE s LIKE '%inverted%' SETTINGS force_data_skipping_indices='idx';
+
+DROP TABLE t;
