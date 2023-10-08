@@ -158,7 +158,7 @@ private:
     const size_t max_file_segment_size;
     const size_t bypass_cache_threshold = 0;
     const size_t boundary_alignment;
-    const size_t background_download_threads;
+    const size_t background_download_threads; /// 0 means background download is disabled.
     const size_t metadata_download_threads;
 
     Poco::Logger * log;
