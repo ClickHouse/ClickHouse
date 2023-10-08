@@ -234,7 +234,7 @@ private:
     }
 
     template <typename TimeDataType, typename ToDataType, IntervalKind::Kind unit, typename ColumnType>
-    ColumnPtr execute(const TimeDataType &, const ColumnType & time_column_type, UInt64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
+    ColumnPtr execute(const TimeDataType &, const ColumnType & time_column_type, Int64 num_units, const DataTypePtr & result_type, const DateLUTImpl & time_zone, const UInt16 scale) const
     {
         using ToColumnType = typename ToDataType::ColumnType;
         using ToFieldType = typename ToDataType::FieldType;
