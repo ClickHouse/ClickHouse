@@ -1123,6 +1123,32 @@ Result:
 └─────────────────────────────┘
 ```
 
+## arrayFold
+
+Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
+
+**Syntax**
+
+``` sql
+arrayFold(lambda_function, arr1, arr2, ..., accumulator)
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT arrayFold( x,acc -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
+```
+
+Result:
+
+``` text
+┌─arrayFold(lambda(tuple(x, acc), plus(acc, multiply(x, 2))), [1, 2, 3, 4], toInt64(3))─┐
+│                                                                                     3 │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## arrayReverse(arr)
 
 Returns an array of the same size as the original array containing the elements in reverse order.
