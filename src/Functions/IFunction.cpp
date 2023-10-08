@@ -312,8 +312,8 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
-    /// DataTypeFunction does not supports obtaining default (isDefaultAt())
-    /// ColumnFunction does not uspport getting specific values
+    /// DataTypeFunction does not support obtaining default (isDefaultAt())
+    /// ColumnFunction does not support getting specific values
     if (result_type->getTypeId() != TypeIndex::Function && use_default_implementation_for_sparse_columns)
     {
         size_t num_sparse_columns = 0;
