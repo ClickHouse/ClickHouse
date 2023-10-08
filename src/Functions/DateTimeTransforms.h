@@ -25,9 +25,10 @@ static constexpr auto millisecond_multiplier = 1000;
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /** Transformations.

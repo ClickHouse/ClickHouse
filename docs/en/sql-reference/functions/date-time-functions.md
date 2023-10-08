@@ -615,7 +615,7 @@ The calculation is performed relative to specific points in time:
 | nanosecond  | 1970-01-01 00:00:00    |
 
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
-    hour values between 1 and 23 are useful
+    hour values between 1 and 23 are useful.
 
 **See Also**
 
