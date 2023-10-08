@@ -1,27 +1,30 @@
--- { echoOn }
-
--- If the untuple() function has an alias, and the tuple element has an explicit name,
--- we want to use it to generate the resulting column name. Check all permutations of
--- aliases. Also use different tuple types to check that we don't generate different
--- columns with the same name (see #26179).
-
-select untuple(tuple(1)::Tuple(a Int)), untuple(tuple('s')::Tuple(a String)) format TSVWithNames;
+-- tuple element alias
 tupleElement(CAST(tuple(1), \'Tuple(a Int)\'), 1)	tupleElement(CAST(tuple(\'s\'), \'Tuple(a String)\'), 1)
 1	s
-select untuple(tuple(1)::Tuple(a Int)) x, untuple(tuple('s')::Tuple(a String)) y format TSVWithNames;
+tupleElement(CAST(tuple(1), \'Tuple(a Int)\'), \'a\')	tupleElement(CAST(tuple(\'s\'), \'Tuple(a String)\'), \'a\')
+1	s
+-- tuple element alias, untuple() alias
 x.a	y.a
 1	s
-select untuple(tuple(1)::Tuple(Int)) x, untuple(tuple('s')::Tuple(String)) y format TSVWithNames;
+x.a	y.a
+1	s
+-- untuple() alias
 x.1	y.1
 1	s
-select untuple(tuple(1)::Tuple(Int)), untuple(tuple('s')::Tuple(String)) format TSVWithNames;
+x.1	y.1
+1	s
+-- no aliases
 tupleElement(CAST(tuple(1), \'Tuple(Int)\'), 1)	tupleElement(CAST(tuple(\'s\'), \'Tuple(String)\'), 1)
 1	s
+tupleElement(CAST(tuple(1), \'Tuple(Int)\'), \'1\')	tupleElement(CAST(tuple(\'s\'), \'Tuple(String)\'), \'1\')
+1	s
 -- tuple() loses the column names (would be good to fix, see #36773)
-select untuple(tuple(1 as a)) as t format TSVWithNames;
+t.1
+1
 t.1
 1
 -- thankfully JSONExtract() keeps them
-select untuple(JSONExtract('{"key": "value"}', 'Tuple(key String)')) x format TSVWithNames;
+x.key
+value
 x.key
 value
