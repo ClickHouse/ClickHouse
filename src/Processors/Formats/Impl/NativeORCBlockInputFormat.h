@@ -54,9 +54,7 @@ public:
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
-    void setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context) override;
-
-    void setKeyCondition(const KeyCondition & key_condition_);
+    void setKeyCondition(const KeyCondition & key_condition_) override;
 
     void resetParser() override;
 
@@ -78,7 +76,7 @@ private:
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
     std::unique_ptr<orc::ColumnVectorBatch> batch;
 
-    /// Pushed-down filter that we'll use to skip stripes/rowgroups
+    /// Pushed-down filter that we'll use to skip ORC file/stripes/rowgroups
     std::optional<KeyCondition> key_condition;
     std::shared_ptr<orc::SearchArgument> sarg;
 

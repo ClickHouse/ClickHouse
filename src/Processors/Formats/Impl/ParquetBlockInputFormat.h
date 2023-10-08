@@ -56,7 +56,7 @@ public:
 
     ~ParquetBlockInputFormat() override;
 
-    void setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context) override;
+    void setKeyCondition(const KeyCondition & key_condition_) override;
 
     void resetParser() override;
 

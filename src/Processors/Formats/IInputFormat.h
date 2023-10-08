@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Processors/ISource.h>
+#include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Formats/ColumnMapping.h>
+#include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Processors/ISource.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 
 namespace DB
@@ -28,7 +29,7 @@ public:
 
     /// If the format is used by a SELECT query, this method may be called.
     /// The format may use it for filter pushdown.
-    virtual void setQueryInfo(const SelectQueryInfo &, ContextPtr) {}
+    virtual void setKeyCondition(const KeyCondition &) { }
 
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method

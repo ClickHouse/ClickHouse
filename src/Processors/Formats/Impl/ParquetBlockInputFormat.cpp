@@ -387,14 +387,10 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         pool->wait();
 }
 
-void ParquetBlockInputFormat::setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context)
+void ParquetBlockInputFormat::setKeyCondition(const KeyCondition & key_condition_)
 {
-    /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
-    /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
-    if (format_settings.parquet.filter_push_down && !context->getSettingsRef().allow_experimental_analyzer)
-        key_condition.emplace(query_info, context, getPort().getHeader().getNames(),
-            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(
-                getPort().getHeader().getColumnsWithTypeAndName())));
+    if (format_settings.parquet.filter_push_down)
+        key_condition.emplace(key_condition_);
 }
 
 void ParquetBlockInputFormat::initializeIfNeeded()

@@ -357,7 +357,7 @@ StorageURLSource::StorageURLSource(
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
                 compression_method);
-            input_format->setQueryInfo(query_info, getContext());
+            // input_format->setQueryInfo(query_info, getContext());
 
             if (need_only_count)
                 input_format->needOnlyCount();

@@ -631,21 +631,10 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
     skip_stripes = format_settings.orc.skip_stripes;
 }
 
-
-void NativeORCBlockInputFormat::setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context)
-{
-    /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
-    /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
-    if (format_settings.orc.filter_push_down && !context->getSettingsRef().allow_experimental_analyzer)
-        key_condition.emplace(query_info, context, getPort().getHeader().getNames(),
-            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(
-                getPort().getHeader().getColumnsWithTypeAndName())));
-}
-
 void NativeORCBlockInputFormat::setKeyCondition(const KeyCondition & key_condition_)
 {
-    std::cout << "set key condition:" << std::endl;
-    key_condition.emplace(key_condition_);
+    if (format_settings.orc.filter_push_down)
+        key_condition.emplace(key_condition_);
 }
 
 void NativeORCBlockInputFormat::prepareFileReader()
@@ -674,17 +663,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
             include_indices.push_back(static_cast<int>(i));
     }
 
-    if (key_condition.has_value() && !sarg && format_settings.orc.allow_missing_columns)
+    if (format_settings.orc.filter_push_down && key_condition.has_value() && !sarg)
     {
         std::cout << "key_condition:" << key_condition->toString() << std::endl;
         sarg = buildORCSearchArgument(*key_condition, file_reader->getType());
-        /*
-        sarg = orc::SearchArgumentFactory::newBuilder()
-                   ->startNot()
-                   .equals("l_quantity", orc::PredicateDataType::FLOAT, orc::Literal(24.0))
-                   .end()
-                   .build();
-        */
         std::cout << "sarg:" << sarg->toString() << std::endl;
     }
 }

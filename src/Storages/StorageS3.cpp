@@ -609,8 +609,8 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
             /* is_remote_fs */ true,
             compression_method);
 
-        if (query_info.has_value())
-            input_format->setQueryInfo(query_info.value(), getContext());
+        // if (query_info.has_value())
+            // input_format->setQueryInfo(query_info.value(), getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();
