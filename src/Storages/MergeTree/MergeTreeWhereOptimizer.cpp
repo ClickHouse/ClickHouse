@@ -275,7 +275,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.selectivity = estimator.estimateSelectivity(node);
 
             if (node.getASTNode() != nullptr)
-                LOG_TRACE(log, "Condition {} has selectivity {}", node.getASTNode()->dumpTree(), cond.selectivity);
+                LOG_TEST(log, "Condition {} has selectivity {}", node.getASTNode()->dumpTree(), cond.selectivity);
         }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)

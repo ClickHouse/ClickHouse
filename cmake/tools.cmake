@@ -49,14 +49,14 @@ endif ()
 
 if (NOT LINKER_NAME)
     if (COMPILER_CLANG)
-        if (OS_LINUX)
-            if (NOT ARCH_S390X) # s390x doesnt support lld
-                find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
-            endif ()
+        if (OS_LINUX AND NOT ARCH_S390X)
+            find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+        elseif (OS_DARWIN)
+            find_program (LLD_PATH NAMES "ld")
         endif ()
     endif ()
-    if (OS_LINUX)
-        if (LLD_PATH)
+    if (LLD_PATH)
+        if (OS_LINUX OR OS_DARWIN)
             if (COMPILER_CLANG)
                 # Clang driver simply allows full linker path.
                 set (LINKER_NAME ${LLD_PATH})
@@ -75,9 +75,11 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-else()
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
+    message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
+else ()
     message(STATUS "Using linker: <default>")
-endif()
+endif ()
 
 # Archiver
 

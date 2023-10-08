@@ -323,10 +323,11 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
     {
-        String field;
-        readJSONObjectPossiblyInvalid(field, istr);
-        ReadBufferFromString buf(field);
-        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+        read(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
+    }
+    else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
+    {
+        read(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
     }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {

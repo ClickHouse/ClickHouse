@@ -104,7 +104,6 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
-add_headers_and_sources(dbms Storages/MeiliSearch)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)

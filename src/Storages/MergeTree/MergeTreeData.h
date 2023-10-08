@@ -425,7 +425,7 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -693,8 +693,6 @@ public:
 
     /// Delete WAL files containing parts, that all already stored on disk.
     size_t clearOldWriteAheadLogs();
-
-    size_t clearOldBrokenPartsFromDetachedDirectory();
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.

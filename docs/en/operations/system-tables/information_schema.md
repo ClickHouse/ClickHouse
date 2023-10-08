@@ -69,6 +69,7 @@ Columns:
 - `domain_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `domain_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+- `extra` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `STORED GENERATED` for `MATERIALIZED`-type columns, `VIRTUAL GENERATED` for `ALIAS`-type columns, `DEFAULT_GENERATED` for `DEFAULT`-type columns, or `NULL`.
 
 **Example**
 
@@ -198,8 +199,12 @@ Columns:
     - `FOREIGN TABLE`
     - `LOCAL TEMPORARY`
     - `SYSTEM VIEW`
+- `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total
+  number of rows. NULL if it could not be determined.
+- `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of
+  the data on-disk. NULL if it could not be determined.
+- `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
 - `table_comment` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The comment used when creating the table.
-- `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4`.
 
 **Example**
 
@@ -291,7 +296,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-## KEY_COLUMN_USAGE (#key_column_usage)
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 Contains columns from the [system.tables](../../operations/system-tables/tables.md) system table which are restricted by constraints.
 
@@ -350,7 +355,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-## REFERENTIAL_CONSTRAINTS (#referential_constraints)
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 Contains information about foreign keys. Currently returns an empty result (no rows) which is just enough to provide compatibility with 3rd party tools like Tableau Online.
 

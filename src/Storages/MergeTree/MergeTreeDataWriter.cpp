@@ -365,7 +365,7 @@ Block MergeTreeDataWriter::mergeBlock(
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
 
     status = merging_algorithm->merge();
 
