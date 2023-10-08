@@ -69,7 +69,7 @@ public:
             if (!interval_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
                     "Should be an interval of time", arguments[1].type->getName(), getName());
-            switch (interval_type->getKind())
+            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case IntervalKind::Nanosecond:
                 case IntervalKind::Microsecond:
@@ -204,7 +204,7 @@ private:
         if (num_units <= 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());
 
-        switch (interval_type->getKind())
+        switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
         {
             case IntervalKind::Nanosecond:
                 return execute<TimeDataType, DataTypeDateTime64, IntervalKind::Nanosecond>(time_data_type, time_column, num_units, result_type, time_zone, scale);
