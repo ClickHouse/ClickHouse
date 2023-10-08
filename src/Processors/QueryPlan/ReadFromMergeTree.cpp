@@ -1792,15 +1792,17 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     const auto & input_order_info = query_info.getInputOrderInfo();
 
     Names column_names_to_read = result.column_names_to_read;
+    NameSet names(column_names_to_read.begin(), column_names_to_read.end());
 
     if (!final && result.sampling.use_sampling)
     {
         /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
         /// Skip this if final was used, because such columns were already added from PK.
-        std::vector<String> add_columns = result.sampling.filter_expression->getRequiredColumns().getNames();
-        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-        ::sort(column_names_to_read.begin(), column_names_to_read.end());
-        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+        for (const auto & column : result.sampling.filter_expression->getRequiredColumns().getNames())
+        {
+            if (!names.contains(column))
+                column_names_to_read.push_back(column);
+        }
     }
 
     if (final)
@@ -1811,18 +1813,21 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
 
         /// Add columns needed to calculate the sorting expression and the sign.
-        std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
-        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+        for (const auto & column : metadata_for_reading->getColumnsRequiredForSortingKey())
+        {
+            if (!names.contains(column))
+            {
+                column_names_to_read.push_back(column);
+                names.insert(column);
+            }
+        }
 
-        if (!data.merging_params.is_deleted_column.empty())
+        if (!data.merging_params.is_deleted_column.empty() && !names.contains(data.merging_params.is_deleted_column))
             column_names_to_read.push_back(data.merging_params.is_deleted_column);
-        if (!data.merging_params.sign_column.empty())
+        if (!data.merging_params.sign_column.empty() && !names.contains(data.merging_params.sign_column))
             column_names_to_read.push_back(data.merging_params.sign_column);
-        if (!data.merging_params.version_column.empty())
+        if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
             column_names_to_read.push_back(data.merging_params.version_column);
-
-        ::sort(column_names_to_read.begin(), column_names_to_read.end());
-        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
     }
