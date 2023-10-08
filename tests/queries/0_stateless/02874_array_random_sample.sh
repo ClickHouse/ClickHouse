@@ -191,18 +191,20 @@ run_non_unsigned_integer_k_test() {
 
 # Function to run a multi-row test with scalar 'k'
 run_multi_row_scalar_k_test() {
-    # Create a table
-    clickhouse-client -q "DROP TABLE IF EXISTS array_test;"
-    clickhouse-client -q "CREATE TABLE array_test (arr Array(Int32)) ENGINE = Memory;"
+    # Create a table. Use a random database name as tests potentially run in parallel.
+    db=`tr -dc A-Za-z0-9 </dev/urandom | head -c 13`
+    clickhouse-client -q "DROP DATABASE IF EXISTS ${db}"
+    clickhouse-client -q "CREATE DATABASE ${db}"
+    clickhouse-client -q "CREATE TABLE ${db}.array_test (arr Array(Int32)) ENGINE = Memory"
 
     # Insert multi-row data into the table
-    clickhouse-client -q "INSERT INTO array_test VALUES ([1, 2, 3]), ([4, 5, 6]), ([7, 8, 9]);"
+    clickhouse-client -q "INSERT INTO ${db}.array_test VALUES ([1, 2, 3]), ([4, 5, 6]), ([7, 8, 9])"
 
     # Query using arrayRandomSample function and store the result, k is scalar here (for example, 2)
-    query_result=$(clickhouse-client -q "SELECT arrayRandomSample(arr, 2) FROM array_test")
+    query_result=$(clickhouse-client -q "SELECT arrayRandomSample(arr, 2) FROM ${db}.array_test")
 
     # Drop the table
-    clickhouse-client -q "DROP TABLE array_test;"
+    clickhouse-client -q "DROP DATABASE ${db}"
 
     # Validate the output here
     is_test_passed=1  # flag to indicate if the test passed; 1 means passed, 0 means failed
