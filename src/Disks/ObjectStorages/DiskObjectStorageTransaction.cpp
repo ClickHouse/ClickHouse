@@ -687,9 +687,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         {
             if (mode == WriteMode::Rewrite)
             {
-                /// Otherwise we will produce lost blobs which nobody points to
-                if (tx->metadata_storage.exists(path))
+                // Otherwise we will produce lost blobs which nobody points to
+                /// WriteOnce storages are not affected by the issue
+                if (!tx->object_storage.isWriteOnce() && tx->metadata_storage.exists(path))
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
+
                 tx->metadata_transaction->createMetadataFile(path, blob_name, count);
             }
             else
@@ -717,7 +719,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 if (mode == WriteMode::Rewrite)
                 {
                     /// Otherwise we will produce lost blobs which nobody points to
-                    if (object_storage_tx->metadata_storage.exists(path))
+                    /// WriteOnce storages are not affected by the issue
+                    if (!object_storage_tx->object_storage.isWriteOnce() && object_storage_tx->metadata_storage.exists(path))
                     {
                         object_storage_tx->object_storage.removeObjectsIfExist(
                             object_storage_tx->metadata_storage.getStorageObjects(path));
