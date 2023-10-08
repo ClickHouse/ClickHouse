@@ -1209,14 +1209,14 @@ void Context::setCurrentRolesDefault()
     setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
 }
 
-boost::container::flat_set<UUID> Context::getCurrentRoles() const
+std::vector<UUID> Context::getCurrentRoles() const
 {
-    return getRolesInfo()->current_roles;
+    return getRolesInfo()->getCurrentRoles();
 }
 
-boost::container::flat_set<UUID> Context::getEnabledRoles() const
+std::vector<UUID> Context::getEnabledRoles() const
 {
-    return getRolesInfo()->enabled_roles;
+    return getRolesInfo()->getEnabledRoles();
 }
 
 std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
@@ -3418,7 +3418,9 @@ void Context::initializeSystemLogs()
     /// for example, system.filesystem_cache_log will be triggered by parts loading
     /// of any other table if it is stored on a disk with cache.
     callOnce(shared->system_logs_initializer, [&] {
-        shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
+        auto system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
+        auto lock = getGlobalLock();
+        shared->system_logs = std::move(system_logs);
     });
 }
 
