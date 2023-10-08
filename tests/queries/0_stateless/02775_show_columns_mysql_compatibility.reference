@@ -1,366 +1,148 @@
-Drop tables if they exist
-Create tab table 
-Create pseudo-random database name
-Create tab duplicate table
-Run MySQL test
-field	type	null	key	default	extra
-aggregate_function	AggregateFunction(sum, Int32)	NO		NULL	
-array_value	Array(Int32)	NO		NULL	
-boolean_value	UInt8	NO		NULL	
-date32_value	Date32	NO		NULL	
-date_value	Date	NO		NULL	
-datetime64_value	DateTime64(3)	NO		NULL	
-datetime_value	DateTime	NO		NULL	
-decimal_value	Decimal(10, 2)	NO		NULL	
-enum_value	Enum8('apple' = 1, 'banana' = 2, 'orange' = 3)	NO		NULL	
-fixed_string_value	FixedString(10)	NO		NULL	
-float32	Float32	NO		NULL	
-float64	Float64	NO		NULL	
-int128	Int128	NO		NULL	
-int16	Int16	NO		NULL	
-int256	Int256	NO		NULL	
-int32	Int32	NO		NULL	
-int64	Int64	NO		NULL	
-int8	Int8	NO		NULL	
-ipv4_value	IPv4	NO		NULL	
-ipv6_value	IPv6	NO		NULL	
-json_value	Object('json')	NO		NULL	
-low_cardinality	LowCardinality(String)	NO		NULL	
-low_cardinality_date	LowCardinality(DateTime)	NO		NULL	
-map_value	Map(String, Int32)	NO		NULL	
-nested.nested_int	Array(Int32)	NO		NULL	
-nested.nested_string	Array(String)	NO		NULL	
-nint32	Nullable(Int32)	YES		NULL	
-nullable_value	Nullable(Int32)	YES		NULL	
-string_value	String	NO		NULL	
-tuple_value	Tuple(Int32, String)	NO		NULL	
-uint128	UInt128	NO		NULL	
-uint16	UInt16	NO		NULL	
-uint256	UInt256	NO		NULL	
-uint32	UInt32	NO		NULL	
-uint64	UInt64	NO	PRI SOR	NULL	
-uint8	UInt8	NO		NULL	
-uuid_value	UUID	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra	collation	comment	privileges
-aggregate_function	TEXT	NO		NULL		NULL		
-array_value	TEXT	NO		NULL		NULL		
-boolean_value	TINYINT UNSIGNED	NO		NULL		NULL		
-date32_value	DATE	NO		NULL		NULL		
-date_value	DATE	NO		NULL		NULL		
-datetime64_value	DATETIME	NO		NULL		NULL		
-datetime_value	DATETIME	NO		NULL		NULL		
-decimal_value	DECIMAL(10, 2)	NO		NULL		NULL		
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL		NULL		
-fixed_string_value	TEXT	NO		NULL		NULL		
-float32	FLOAT	NO		NULL		NULL		
-float64	DOUBLE	NO		NULL		NULL		
-int128	TEXT	NO		NULL		NULL		
-int16	SMALLINT	NO		NULL		NULL		
-int256	TEXT	NO		NULL		NULL		
-int32	INTEGER	NO		NULL		NULL		
-int64	BIGINT	NO		NULL		NULL		
-int8	TINYINT	NO		NULL		NULL		
-ipv4_value	TEXT	NO		NULL		NULL		
-ipv6_value	TEXT	NO		NULL		NULL		
-json_value	JSON	NO		NULL		NULL		
-low_cardinality	BLOB	NO		NULL		NULL		
-low_cardinality_date	DATETIME	NO		NULL		NULL		
-map_value	JSON	NO		NULL		NULL		
-nested.nested_int	TEXT	NO		NULL		NULL		
-nested.nested_string	TEXT	NO		NULL		NULL		
-nint32	INTEGER	NO		NULL		NULL		
-nullable_value	INTEGER	NO		NULL		NULL		
-string_value	BLOB	NO		NULL		NULL		
-tuple_value	JSON	NO		NULL		NULL		
-uint128	TEXT	NO		NULL		NULL		
-uint16	SMALLINT UNSIGNED	NO		NULL		NULL		
-uint256	TEXT	NO		NULL		NULL		
-uint32	INTEGER UNSIGNED	NO		NULL		NULL		
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL		NULL		
-uint8	TINYINT UNSIGNED	NO		NULL		NULL		
-uuid_value	CHAR	NO		NULL		NULL		
-field	type	null	key	default	extra
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
-field	type	null	key	default	extra
-aggregate_function	TEXT	NO		NULL	
-array_value	TEXT	NO		NULL	
-boolean_value	TINYINT UNSIGNED	NO		NULL	
-date32_value	DATE	NO		NULL	
-date_value	DATE	NO		NULL	
-datetime64_value	DATETIME	NO		NULL	
-datetime_value	DATETIME	NO		NULL	
-decimal_value	DECIMAL(10, 2)	NO		NULL	
-enum_value	ENUM('apple', 'banana', 'orange')	NO		NULL	
-fixed_string_value	TEXT	NO		NULL	
-float32	FLOAT	NO		NULL	
-float64	DOUBLE	NO		NULL	
-int128	TEXT	NO		NULL	
-int16	SMALLINT	NO		NULL	
-int256	TEXT	NO		NULL	
-int32	INTEGER	NO		NULL	
-int64	BIGINT	NO		NULL	
-int8	TINYINT	NO		NULL	
-ipv4_value	TEXT	NO		NULL	
-ipv6_value	TEXT	NO		NULL	
-json_value	JSON	NO		NULL	
-low_cardinality	BLOB	NO		NULL	
-low_cardinality_date	DATETIME	NO		NULL	
-map_value	JSON	NO		NULL	
-nested.nested_int	TEXT	NO		NULL	
-nested.nested_string	TEXT	NO		NULL	
-nint32	INTEGER	NO		NULL	
-nullable_value	INTEGER	NO		NULL	
-string_value	BLOB	NO		NULL	
-tuple_value	JSON	NO		NULL	
-uint128	TEXT	NO		NULL	
-uint16	SMALLINT UNSIGNED	NO		NULL	
-uint256	TEXT	NO		NULL	
-uint32	INTEGER UNSIGNED	NO		NULL	
-uint64	BIGINT UNSIGNED	NO	PRI SOR	NULL	
-uint8	TINYINT UNSIGNED	NO		NULL	
-uuid_value	CHAR	NO		NULL	
+aggregate_function	AggregateFunction(sum, Int32)	NO		\N	
+array_value	Array(Int32)	NO		\N	
+boolean_value	UInt8	NO		\N	
+date32_value	Date32	NO		\N	
+date_value	Date	NO		\N	
+datetime64_value	DateTime64(3)	NO		\N	
+datetime_value	DateTime	NO		\N	
+decimal_value	Decimal(10, 2)	NO		\N	
+enum_value	Enum8(\'apple\' = 1, \'banana\' = 2, \'orange\' = 3)	NO		\N	
+fixed_string_value	FixedString(10)	NO		\N	
+float32	Float32	NO		\N	
+float64	Float64	NO		\N	
+int128	Int128	NO		\N	
+int16	Int16	NO		\N	
+int256	Int256	NO		\N	
+int32	Int32	NO		\N	
+int64	Int64	NO		\N	
+int8	Int8	NO		\N	
+ipv4_value	IPv4	NO		\N	
+ipv6_value	IPv6	NO		\N	
+json_value	Object(\'json\')	NO		\N	
+low_cardinality	LowCardinality(String)	NO		\N	
+low_cardinality_date	LowCardinality(DateTime)	NO		\N	
+map_value	Map(String, Int32)	NO		\N	
+nested.nested_int	Array(Int32)	NO		\N	
+nested.nested_string	Array(String)	NO		\N	
+nint32	Nullable(Int32)	YES		\N	
+nullable_value	Nullable(Int32)	YES		\N	
+string_value	String	NO		\N	
+tuple_value	Tuple(Int32, String)	NO		\N	
+uint128	UInt128	NO		\N	
+uint16	UInt16	NO		\N	
+uint256	UInt256	NO		\N	
+uint32	UInt32	NO		\N	
+uint64	UInt64	NO	PRI SOR	\N	
+uint8	UInt8	NO		\N	
+uuid_value	UUID	NO		\N	
+aggregate_function	TEXT	NO		\N	
+array_value	TEXT	NO		\N	
+boolean_value	TINYINT UNSIGNED	NO		\N	
+date32_value	DATE	NO		\N	
+date_value	DATE	NO		\N	
+datetime64_value	DATETIME	NO		\N	
+datetime_value	DATETIME	NO		\N	
+decimal_value	DECIMAL(10, 2)	NO		\N	
+enum_value	ENUM(\'apple\', \'banana\', \'orange\')	NO		\N	
+fixed_string_value	TEXT	NO		\N	
+float32	FLOAT	NO		\N	
+float64	DOUBLE	NO		\N	
+int128	TEXT	NO		\N	
+int16	SMALLINT	NO		\N	
+int256	TEXT	NO		\N	
+int32	INTEGER	NO		\N	
+int64	BIGINT	NO		\N	
+int8	TINYINT	NO		\N	
+ipv4_value	TEXT	NO		\N	
+ipv6_value	TEXT	NO		\N	
+json_value	JSON	NO		\N	
+low_cardinality	BLOB	NO		\N	
+low_cardinality_date	DATETIME	NO		\N	
+map_value	JSON	NO		\N	
+nested.nested_int	TEXT	NO		\N	
+nested.nested_string	TEXT	NO		\N	
+nint32	INTEGER	NO		\N	
+nullable_value	INTEGER	NO		\N	
+string_value	BLOB	NO		\N	
+tuple_value	JSON	NO		\N	
+uint128	TEXT	NO		\N	
+uint16	SMALLINT UNSIGNED	NO		\N	
+uint256	TEXT	NO		\N	
+uint32	INTEGER UNSIGNED	NO		\N	
+uint64	BIGINT UNSIGNED	NO	PRI SOR	\N	
+uint8	TINYINT UNSIGNED	NO		\N	
+uuid_value	CHAR	NO		\N	
+uint8	UInt8
+uint16	UInt16
+uint32	UInt32
+uint64	UInt64
+uint128	UInt128
+uint256	UInt256
+int8	Int8
+int16	Int16
+int32	Int32
+int64	Int64
+int128	Int128
+int256	Int256
+nint32	Nullable(Int32)
+float32	Float32
+float64	Float64
+decimal_value	Decimal(10, 2)
+boolean_value	UInt8
+string_value	String
+fixed_string_value	FixedString(10)
+date_value	Date
+date32_value	Date32
+datetime_value	DateTime
+datetime64_value	DateTime64(3)
+json_value	Object(\'json\')
+uuid_value	UUID
+enum_value	Enum8(\'apple\' = 1, \'banana\' = 2, \'orange\' = 3)
+low_cardinality	LowCardinality(String)
+low_cardinality_date	LowCardinality(DateTime)
+aggregate_function	AggregateFunction(sum, Int32)
+array_value	Array(Int32)
+map_value	Map(String, Int32)
+tuple_value	Tuple(Int32, String)
+nullable_value	Nullable(Int32)
+ipv4_value	IPv4
+ipv6_value	IPv6
+nested.nested_int	Array(Int32)
+nested.nested_string	Array(String)
+uint8	TINYINT UNSIGNED
+uint16	SMALLINT UNSIGNED
+uint32	INTEGER UNSIGNED
+uint64	BIGINT UNSIGNED
+uint128	TEXT
+uint256	TEXT
+int8	TINYINT
+int16	SMALLINT
+int32	INTEGER
+int64	BIGINT
+int128	TEXT
+int256	TEXT
+nint32	INTEGER
+float32	FLOAT
+float64	DOUBLE
+decimal_value	DECIMAL(10, 2)
+boolean_value	TINYINT UNSIGNED
+string_value	BLOB
+fixed_string_value	TEXT
+date_value	DATE
+date32_value	DATE
+datetime_value	DATETIME
+datetime64_value	DATETIME
+json_value	JSON
+uuid_value	CHAR
+enum_value	ENUM(\'apple\', \'banana\', \'orange\')
+low_cardinality	BLOB
+low_cardinality_date	DATETIME
+aggregate_function	TEXT
+array_value	TEXT
+map_value	JSON
+tuple_value	JSON
+nullable_value	INTEGER
+ipv4_value	TEXT
+ipv6_value	TEXT
+nested.nested_int	TEXT
+nested.nested_string	TEXT
