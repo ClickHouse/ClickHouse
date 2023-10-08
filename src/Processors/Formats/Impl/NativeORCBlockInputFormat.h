@@ -6,6 +6,8 @@
 #    include <IO/ReadBufferFromString.h>
 #    include <Processors/Formats/IInputFormat.h>
 #    include <Processors/Formats/ISchemaReader.h>
+#    include <Storages/MergeTree/KeyCondition.h>
+#    include <boost/algorithm/string.hpp>
 #    include <orc/OrcFile.hh>
 
 namespace DB
@@ -42,6 +44,7 @@ std::unique_ptr<orc::InputStream> asORCInputStream(ReadBuffer & in, const Format
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
+std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(const KeyCondition & key_condition, const orc::Type & schema);
 
 class ORCColumnToCHColumn;
 class NativeORCBlockInputFormat : public IInputFormat
@@ -50,6 +53,10 @@ public:
     NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
+
+    void setQueryInfo(const SelectQueryInfo & query_info, ContextPtr context) override;
+
+    void setKeyCondition(const KeyCondition & key_condition_);
 
     void resetParser() override;
 
@@ -71,14 +78,18 @@ private:
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
     std::unique_ptr<orc::ColumnVectorBatch> batch;
 
+    /// Pushed-down filter that we'll use to skip stripes/rowgroups
+    std::optional<KeyCondition> key_condition;
+    std::shared_ptr<orc::SearchArgument> sarg;
+
     // indices of columns to read from ORC file
     std::list<UInt64> include_indices;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
 
-    const FormatSettings format_settings;
-    const std::unordered_set<int> & skip_stripes;
+    FormatSettings format_settings;
+    std::unordered_set<int> & skip_stripes;
 
     int total_stripes = 0;
     int current_stripe = -1;
