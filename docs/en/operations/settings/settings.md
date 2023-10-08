@@ -3279,6 +3279,17 @@ Possible values:
 
 Default value: `0`.
 
+## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
+
+Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns) and SELECTs on [system.columns](../system-tables/columns.md).
+
+Possible values:
+
+- 0 - Show names of native ClickHouse data types.
+- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
+
+Default value: `0`.
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.
