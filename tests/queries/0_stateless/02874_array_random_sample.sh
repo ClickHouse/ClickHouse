@@ -192,6 +192,7 @@ run_non_unsigned_integer_k_test() {
 # Function to run a multi-row test with scalar 'k'
 run_multi_row_scalar_k_test() {
     # Create a table
+    clickhouse-client -q "DROP TABLE IF EXISTS array_test;"
     clickhouse-client -q "CREATE TABLE array_test (arr Array(Int32)) ENGINE = Memory;"
 
     # Insert multi-row data into the table
