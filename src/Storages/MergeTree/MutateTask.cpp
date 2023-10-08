@@ -553,13 +553,14 @@ static NameSet collectFilesToSkip(
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
 
-        // skip all inverted index files, for they will be re-built
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index) != nullptr)
+        // Skip all inverted index files, for they will be rebuilt
+        if (dynamic_cast<const MergeTreeIndexInverted *>(index.get()))
         {
-            files_to_skip.insert(index->getFileName() + ".gin_dict");
-            files_to_skip.insert(index->getFileName() + ".gin_post");
-            files_to_skip.insert(index->getFileName() + ".gin_sed");
-            files_to_skip.insert(index->getFileName() + ".gin_sid");
+            auto index_filename = index->getFileName();
+            files_to_skip.insert(index_filename + ".gin_dict");
+            files_to_skip.insert(index_filename + ".gin_post");
+            files_to_skip.insert(index_filename + ".gin_sed");
+            files_to_skip.insert(index_filename + ".gin_sid");
         }
     }
 
