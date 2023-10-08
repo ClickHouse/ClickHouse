@@ -53,6 +53,7 @@ void registerStorageHive(StorageFactory & factory);
 
 #endif
 
+void registerStorageSFTP(StorageFactory & factory);
 void registerStorageODBC(StorageFactory & factory);
 void registerStorageJDBC(StorageFactory & factory);
 
@@ -156,6 +157,7 @@ void registerStorages()
 
     #endif
 
+    registerStorageSFTP(factory)
     registerStorageODBC(factory);
     registerStorageJDBC(factory);
 
