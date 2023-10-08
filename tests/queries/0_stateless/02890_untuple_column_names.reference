@@ -1,0 +1,30 @@
+-- tuple element alias
+tupleElement(CAST(tuple(1), \'Tuple(a Int)\'), 1)	tupleElement(CAST(tuple(\'s\'), \'Tuple(a String)\'), 1)
+1	s
+tupleElement(CAST(tuple(1), \'Tuple(a Int)\'), \'a\')	tupleElement(CAST(tuple(\'s\'), \'Tuple(a String)\'), \'a\')
+1	s
+-- tuple element alias, untuple() alias
+x.a	y.a
+1	s
+x.a	y.a
+1	s
+-- untuple() alias
+x.1	y.1
+1	s
+x.1	y.1
+1	s
+-- no aliases
+tupleElement(CAST(tuple(1), \'Tuple(Int)\'), 1)	tupleElement(CAST(tuple(\'s\'), \'Tuple(String)\'), 1)
+1	s
+tupleElement(CAST(tuple(1), \'Tuple(Int)\'), \'1\')	tupleElement(CAST(tuple(\'s\'), \'Tuple(String)\'), \'1\')
+1	s
+-- tuple() loses the column names (would be good to fix, see #36773)
+t.1
+1
+t.1
+1
+-- thankfully JSONExtract() keeps them
+x.key
+value
+x.key
+value
