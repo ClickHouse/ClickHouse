@@ -7,13 +7,15 @@
 #include <unordered_set>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/logger_useful.h>
 
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ZooKeeper/Types.h>
-#include <Common/setThreadName.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/Types.h>
 
 #include <Core/ServerUUID.h>
 
@@ -31,7 +33,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int KEEPER_EXCEPTION;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char cluster_discovery_faults[];
 }
 
 namespace
@@ -125,10 +133,12 @@ ClusterDiscovery::ClusterDiscovery(
             ClusterInfo(
                 /* name_= */ key,
                 /* zk_root_= */ config.getString(prefix + ".path"),
+                /* host_name= */ config.getString(prefix + ".my_hostname", getFQDNOrHostName()),
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(prefix + ".shard", 0),
-                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer")
+                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer"),
+                /* invisible= */ ConfigHelper::getBool(config, prefix + ".invisible")
             )
         );
     }
@@ -149,7 +159,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        int * version,
                                        bool set_callback)
 {
-    auto watch_callback = [cluster_name, clusters_to_update=clusters_to_update](auto) { clusters_to_update->set(cluster_name); };
+    auto watch_callback = [cluster_name, my_clusters_to_update = clusters_to_update](auto) { my_clusters_to_update->set(cluster_name); };
 
     Coordination::Stat stat;
     Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
@@ -244,7 +254,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
-        /* priority= */ 1,
+        /* priority= */ Priority{1},
         /* cluster_name= */ "",
         /* password= */ ""};
     auto cluster = std::make_shared<Cluster>(
@@ -294,6 +304,12 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         return false;
     }
 
+    if (cluster_info.current_cluster_is_invisible)
+    {
+        LOG_DEBUG(log, "cluster '{}' is invisible!", cluster_info.name);
+        return true;
+    }
+
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
@@ -339,6 +355,19 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
 void ClusterDiscovery::initialUpdate()
 {
+    LOG_DEBUG(log, "Initializing");
+
+    fiu_do_on(FailPoints::cluster_discovery_faults,
+    {
+        constexpr UInt8 success_chance = 4;
+        static size_t fail_count = 0;
+        fail_count++;
+        /// strict limit on fail count to avoid flaky tests
+        auto is_failed = fail_count < success_chance && std::uniform_int_distribution<>(0, success_chance)(thread_local_rng) != 0;
+        if (is_failed)
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
+    });
+
     auto zk = context->getZooKeeper();
     for (auto & [_, info] : clusters_info)
     {
@@ -349,6 +378,8 @@ void ClusterDiscovery::initialUpdate()
             clusters_to_update->set(info.name);
         }
     }
+    LOG_DEBUG(log, "Initialized");
+    is_initialized = true;
 }
 
 void ClusterDiscovery::start()
@@ -406,6 +437,10 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
+
+    if (!is_initialized)
+        initialUpdate();
+
     bool finished = false;
     while (!finished)
     {

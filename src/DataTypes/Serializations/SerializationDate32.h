@@ -1,12 +1,15 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationNumber.h>
+#include <Common/DateLUT.h>
 
 namespace DB
 {
 class SerializationDate32 final : public SerializationNumber<Int32>
 {
 public:
+    explicit SerializationDate32(const DateLUTImpl & time_zone_ = DateLUT::instance());
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -17,5 +20,8 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+protected:
+    const DateLUTImpl & time_zone;
 };
 }

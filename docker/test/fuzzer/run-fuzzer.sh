@@ -1,6 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010,SC2015
 
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 set -x
 
 # core.COMM.PID-TID
@@ -15,7 +17,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-16_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-17_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -122,6 +124,8 @@ EOL
     <core_path>$PWD</core_path>
 </clickhouse>
 EOL
+
+    config_logs_export_cluster db/config.d/system_logs_export.yaml
 }
 
 function filter_exists_and_template
@@ -223,7 +227,9 @@ quit
     done
     clickhouse-client --query "select 1" # This checks that the server is responding
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
-    echo Server started and responded
+    echo 'Server started and responded'
+
+    setup_logs_replication
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
@@ -291,7 +297,7 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi

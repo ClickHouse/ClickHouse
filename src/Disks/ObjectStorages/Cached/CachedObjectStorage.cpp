@@ -16,11 +16,6 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
     FileCachePtr cache_,
@@ -57,7 +52,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (!canUseReadThroughCache())
+    if (!canUseReadThroughCache(read_settings))
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     return object_storage->patchSettings(modified_settings);
@@ -79,8 +74,6 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    if (objects.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
     return object_storage->readObjects(objects, patchSettings(read_settings), read_hint, file_size);
 }
 
@@ -97,13 +90,12 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     const StoredObject & object,
     WriteMode mode, // Cached doesn't support append, only rewrite
     std::optional<ObjectAttributes> attributes,
-    FinalizeCallback && finalize_callback,
     size_t buf_size,
     const WriteSettings & write_settings)
 {
     /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
-    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
+    auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
         && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
@@ -120,9 +112,9 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             implementation_buffer->getFileName(),
             key,
-            modified_write_settings.is_file_cache_persistent,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
-            modified_write_settings);
+            modified_write_settings,
+            Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 
     return implementation_buffer;
@@ -139,6 +131,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
 
 void CachedObjectStorage::removeObject(const StoredObject & object)
 {
+    removeCacheIfExists(object.remote_path);
     object_storage->removeObject(object);
 }
 
@@ -164,33 +157,25 @@ void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     object_storage->removeObjectsIfExist(objects);
 }
 
-ReadSettings CachedObjectStorage::getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const
-{
-    ReadSettings new_settings{settings};
-    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path) && cache_settings.do_not_evict_index_and_mark_files;
-    return new_settings;
-}
-
-WriteSettings CachedObjectStorage::getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const
-{
-    WriteSettings new_settings{settings};
-    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path) && cache_settings.do_not_evict_index_and_mark_files;
-    return new_settings;
-}
-
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     IObjectStorage & object_storage_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
+    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
 void CachedObjectStorage::copyObject( // NOLINT
-    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::optional<ObjectAttributes> object_to_attributes)
 {
-    object_storage->copyObject(object_from, object_to, object_to_attributes);
+    object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
 std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
@@ -202,9 +187,9 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
+void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
 {
-    object_storage->findAllFiles(path, children, max_keys);
+    object_storage->listObjects(path, children, max_keys);
 }
 
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
@@ -228,8 +213,11 @@ String CachedObjectStorage::getObjectsNamespace() const
     return object_storage->getObjectsNamespace();
 }
 
-bool CachedObjectStorage::canUseReadThroughCache()
+bool CachedObjectStorage::canUseReadThroughCache(const ReadSettings & settings)
 {
+    if (!settings.avoid_readthrough_cache_outside_query_context)
+        return true;
+
     return CurrentThread::isInitialized()
         && CurrentThread::get().getQueryContext()
         && !CurrentThread::getQueryId().empty();

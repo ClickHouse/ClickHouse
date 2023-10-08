@@ -34,7 +34,14 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
+#include <Common/ProfileEvents.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event InsertQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
+}
 
 namespace DB
 {
@@ -131,8 +138,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    Names names;
     const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, query.columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
     {
         std::string current_name = identifier->getColumnName();
@@ -140,6 +148,25 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return getSampleBlock(names, table, metadata_snapshot);
+}
+
+std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
+{
+    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
+    if (!insert_query || !insert_query->columns)
+        return std::nullopt;
+
+    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
+    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
+    for (const auto & identifier : columns_ast->children)
+    {
+        std::string current_name = identifier->getColumnName();
+        names.emplace_back(std::move(current_name));
+    }
+
+    return names;
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -234,6 +261,9 @@ Chain InterpreterInsertQuery::buildChain(
     ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms)
 {
+    ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
+    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
+
     ThreadGroupPtr running_group;
     if (current_thread)
         running_group = current_thread->getThreadGroup();
@@ -272,7 +302,7 @@ Chain InterpreterInsertQuery::buildSink(
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
     {
-        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr);
+        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         out.addSource(std::move(sink));
     }
@@ -280,7 +310,7 @@ Chain InterpreterInsertQuery::buildSink(
     {
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
             query_ptr, no_destination,
-            thread_status_holder, running_group, elapsed_counter_ms);
+            thread_status_holder, running_group, elapsed_counter_ms, async_insert);
     }
 
     return out;
@@ -446,7 +476,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
-                new_context->setInsertionTable(getContext()->getInsertionTable());
+                new_context->setInsertionTable(getContext()->getInsertionTable(), getContext()->getInsertionTableColumnNames());
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
@@ -606,6 +636,7 @@ BlockIO InterpreterInsertQuery::execute()
         presink_chains.at(0).appendChain(std::move(sink_chains.at(0)));
         res.pipeline = QueryPipeline(std::move(presink_chains[0]));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
+        res.pipeline.setConcurrencyControl(settings.use_concurrency_control);
 
         if (query.hasInlinedData() && !async_insert)
         {

@@ -3,9 +3,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <numeric>
@@ -21,6 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -43,6 +47,7 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -55,13 +60,18 @@ private:
                 getName(), arguments.size());
         }
 
+        if (std::find_if (arguments.cbegin(), arguments.cend(), [](const auto & arg) { return arg->onlyNull(); }) != arguments.cend())
+            return makeNullable(std::make_shared<DataTypeNothing>());
+
         DataTypes arg_types;
         for (size_t i = 0, size = arguments.size(); i < size; ++i)
         {
-            if (i < 2 && WhichDataType(arguments[i]).isIPv4())
+            DataTypePtr type_no_nullable = removeNullable(arguments[i]);
+
+            if (i < 2 && WhichDataType(type_no_nullable).isIPv4())
                 arg_types.emplace_back(std::make_shared<DataTypeUInt32>());
-            else if (isInteger(arguments[i]))
-                arg_types.push_back(arguments[i]);
+            else if (isInteger(type_no_nullable))
+                arg_types.push_back(type_no_nullable);
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
                     arguments[i]->getName(), getName());
@@ -376,6 +386,10 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        NullPresence null_presence = getNullPresense(arguments);
+        if (null_presence.has_null_constant)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
         DataTypePtr elem_type = checkAndGetDataType<DataTypeArray>(result_type.get())->getNestedType();
         WhichDataType which(elem_type);
 
@@ -386,10 +400,31 @@ private:
                             "for unsigned/signed integers up to 64 bit", getName());
         }
 
+        auto throwIfNullValue = [&](const ColumnWithTypeAndName & col)
+        {
+            if (!col.type->isNullable())
+                return;
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            if (!nullable_col)
+                nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
+            if (!nullable_col)
+                return;
+            const auto & null_map = nullable_col->getNullMapData();
+            if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal (null) value column {} of argument of function {}", col.column->getName(), getName());
+        };
+
         ColumnPtr res;
         if (arguments.size() == 1)
         {
+            throwIfNullValue(arguments[0]);
             const auto * col = arguments[0].column.get();
+            if (arguments[0].type->isNullable())
+            {
+                const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
+                col = nullable->getNestedColumnPtr().get();
+            }
+
             if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))
                   || (res = executeInternal<UInt64>(col)) || (res = executeInternal<Int8>(col)) || (res = executeInternal<Int16>(col))
                   || (res = executeInternal<Int32>(col)) || (res = executeInternal<Int64>(col))))
@@ -404,6 +439,7 @@ private:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
+            throwIfNullValue(arguments[i]);
             if (i == 1)
                 columns_holder[i] = castColumn(arguments[i], elem_type)->convertToFullColumnIfConst();
             else

@@ -9,7 +9,6 @@
 #cmakedefine01 USE_AWS_S3
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
 #cmakedefine01 USE_BROTLI
-#cmakedefine01 USE_UNWIND
 #cmakedefine01 USE_CASSANDRA
 #cmakedefine01 USE_SENTRY
 #cmakedefine01 USE_GRPC
@@ -55,7 +54,13 @@
 #cmakedefine01 USE_BORINGSSL
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_SKIM
+#cmakedefine01 USE_PRQL
 #cmakedefine01 USE_OPENSSL_INTREE
 #cmakedefine01 USE_ULID
 #cmakedefine01 FIU_ENABLE
 #cmakedefine01 USE_BCRYPT
+#cmakedefine01 USE_LIBARCHIVE
+
+/// This is needed for .incbin in assembly. For some reason, include paths don't work there in presence of LTO.
+/// That's why we use absolute paths.
+#cmakedefine SOURCE_DIR "@SOURCE_DIR@"

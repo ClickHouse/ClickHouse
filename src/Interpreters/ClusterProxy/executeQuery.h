@@ -20,6 +20,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct StorageID;
 
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>;
+
 namespace ClusterProxy
 {
 
@@ -34,8 +37,12 @@ class SelectStreamFactory;
 ///   - optimize_skip_unused_shards_nesting
 ///
 /// @return new Context with adjusted settings
-ContextMutablePtr updateSettingsForCluster(
-    const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table, const SelectQueryInfo * query_info = nullptr, Poco::Logger * log = nullptr);
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
+    ContextPtr context,
+    const Settings & settings,
+    const StorageID & main_table,
+    ASTPtr additional_filter_ast = nullptr,
+    Poco::Logger * log = nullptr);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
@@ -58,11 +65,10 @@ void executeQuery(
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    const SelectQueryInfo & query_info,
+    std::shared_ptr<const StorageLimitsList> storage_limits,
     const ClusterPtr & not_optimized_cluster);
 }
 

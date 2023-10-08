@@ -16,12 +16,12 @@ void registerTableFunctions()
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
+    registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
     registerTableFunctionMongoDB(factory);
-
-    registerTableFunctionMeiliSearch(factory);
+    registerTableFunctionRedis(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
@@ -70,6 +70,13 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+
+#if USE_AZURE_BLOB_STORAGE
+    registerTableFunctionAzureBlobStorage(factory);
+    registerTableFunctionAzureBlobStorageCluster(factory);
+#endif
+
+
 }
 
 }

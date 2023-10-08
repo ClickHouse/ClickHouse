@@ -255,7 +255,7 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertData(pos, length));
 }
 
-StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
@@ -313,6 +313,11 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 {
     auto res = cloneFinalized();
+    /* Compact required not to share dictionary.
+     * If `shared` flag is not set `cloneFinalized` will return shallow copy
+     * and `nestedToNullable` will mutate source column.
+     */
+    assert_cast<ColumnLowCardinality &>(*res).compactInplace();
     assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
     return res;
 }

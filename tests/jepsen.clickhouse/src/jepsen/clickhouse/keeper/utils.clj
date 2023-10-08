@@ -146,6 +146,8 @@
     :--
     :--logger.log (str logs-dir "/clickhouse-keeper.log")
     :--logger.errorlog (str logs-dir "/clickhouse-keeper.err.log")
-    :--keeper_server.snapshot_storage_path coordination-snapshots-dir
-    :--keeper_server.log_storage_path coordination-logs-dir
+    :--keeper_server.snapshot_storage_disk "snapshot_local"
+    :--keeper_server.latest_snapshot_storage_disk "latest_snapshot_local"
+    :--keeper_server.log_storage_disk "log_local"
+    :--keeper_server.latest_log_storage_disk "latest_log_local"
     :--path coordination-data-dir))

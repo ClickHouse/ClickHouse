@@ -1,7 +1,7 @@
 -- Tags: use-vectorscan
 
-DROP TABLE IF EXISTS regexp_dictionary_source_table;
 DROP DICTIONARY IF EXISTS regexp_dict1;
+DROP TABLE IF EXISTS regexp_dictionary_source_table;
 
 CREATE TABLE regexp_dictionary_source_table
 (
@@ -15,7 +15,7 @@ CREATE TABLE regexp_dictionary_source_table
 -- test back reference.
 
 INSERT INTO regexp_dictionary_source_table VALUES (1, 0, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1'])
-INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Andriod', '$1', 'test $1 and $2'])
+INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
 INSERT INTO regexp_dictionary_source_table VALUES (3, 2, '33/tclwebkit', ['version'], ['13'])
 INSERT INTO regexp_dictionary_source_table VALUES (4, 2, '3[12]/tclwebkit', ['version'], ['12'])
 INSERT INTO regexp_dictionary_source_table VALUES (5, 2, '3[12]/tclwebkit', ['version'], ['11'])
@@ -65,14 +65,14 @@ SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
 truncate table regexp_dictionary_source_table;
 
 INSERT INTO regexp_dictionary_source_table VALUES (1, 2, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1'])
-INSERT INTO regexp_dictionary_source_table VALUES (2, 3, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Andriod', '$1', 'test $1 and $2'])
-INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Andriod', '$1', 'test $1 and $2'])
+INSERT INTO regexp_dictionary_source_table VALUES (2, 3, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
+INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
 SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489  }
 
 -- test priority
 truncate table regexp_dictionary_source_table;
-INSERT INTO regexp_dictionary_source_table VALUES (1, 0, '(\d+)/tclwebkit', ['name', 'version'], ['Andriod', '$1']);
-INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '33/tclwebkit', ['name'], ['Andriod1']); -- child has more priority than parents.
+INSERT INTO regexp_dictionary_source_table VALUES (1, 0, '(\d+)/tclwebkit', ['name', 'version'], ['Android', '$1']);
+INSERT INTO regexp_dictionary_source_table VALUES (3, 1, '33/tclwebkit', ['name'], ['Android1']); -- child has more priority than parents.
 INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '33/tclwebkit', ['version', 'comment'], ['13', 'matched 3']); -- larger id has lower priority than small id.
 SYSTEM RELOAD dictionary regexp_dict1;
 select dictGet(regexp_dict1, ('name', 'version', 'comment'), '33/tclwebkit');
@@ -82,6 +82,6 @@ SYSTEM RELOAD dictionary regexp_dict1; -- { serverError 489 }
 
 select * from dictionary(regexp_dict1);
 
+DROP DICTIONARY IF EXISTS regexp_dict1;
 DROP TABLE IF EXISTS regexp_dictionary_source_table;
 DROP TABLE IF EXISTS needle_table;
-DROP DICTIONARY IF EXISTS regexp_dict1;

@@ -10,7 +10,9 @@ There are at least\* two types of functions - regular functions (they are just c
 
 In this section we discuss regular functions. For aggregate functions, see the section “Aggregate functions”.
 
-\* - There is a third type of function that the ‘arrayJoin’ function belongs to; table functions can also be mentioned separately.\*
+:::note 
+There is a third type of function that the [‘arrayJoin’ function](/docs/en/sql-reference/functions/array-join.md) belongs to. And [table functions](/docs/en/sql-reference/table-functions/index.md) can also be mentioned separately.
+:::
 
 ## Strong Typing
 

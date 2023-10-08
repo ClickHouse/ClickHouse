@@ -2,7 +2,7 @@ execute: --allow_experimental_analyzer=1
 "foo"
 1
 execute: --allow_experimental_analyzer=1 --stage fetch_columns
-"system.one.dummy_0"
+"dummy_0"
 0
 execute: --allow_experimental_analyzer=1 --stage with_mergeable_state
 "1_UInt8"

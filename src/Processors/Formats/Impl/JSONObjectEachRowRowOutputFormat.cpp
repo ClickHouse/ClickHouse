@@ -26,9 +26,10 @@ void JSONObjectEachRowRowOutputFormat::write(const Columns & columns, size_t row
     if (field_index_for_object_name)
         object_name = columns[*field_index_for_object_name]->getDataAt(row).toString();
     else
-        object_name = "row_" + std::to_string(row + 1);
+        object_name = "row_" + std::to_string(getRowsReadBefore() + rows + 1);
 
-    IRowOutputFormat::write(columns, row);
+    ++rows;
+    RowOutputFormatWithExceptionHandlerAdaptor::write(columns, row);
 }
 
 void JSONObjectEachRowRowOutputFormat::writeFieldDelimiter()
@@ -62,6 +63,13 @@ void JSONObjectEachRowRowOutputFormat::writeRowBetweenDelimiter()
 
 void JSONObjectEachRowRowOutputFormat::writeSuffix()
 {
+    if (!exception_message.empty())
+    {
+        if (haveWrittenData())
+            writeRowBetweenDelimiter();
+        JSONUtils::writeException(exception_message, *ostr, settings, 1);
+    }
+
     JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
 }

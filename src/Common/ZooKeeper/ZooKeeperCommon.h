@@ -28,7 +28,6 @@ using LogElements = std::vector<ZooKeeperLogElement>;
 struct ZooKeeperResponse : virtual Response
 {
     XID xid = 0;
-    int64_t zxid = 0;
 
     UInt64 response_created_time_ns = 0;
 
@@ -117,6 +116,35 @@ struct ZooKeeperSyncResponse final : SyncResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Sync; }
 };
 
+struct ZooKeeperReconfigRequest final : ZooKeeperRequest
+{
+    String joining;
+    String leaving;
+    String new_members;
+    int64_t version; // kazoo sends a 64bit integer in this request
+
+    String getPath() const override { return keeper_config_path; }
+    OpNum getOpNum() const override { return OpNum::Reconfig; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl() const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
+
+    size_t bytesSize() const override
+    {
+        return ZooKeeperRequest::bytesSize() + joining.size() + leaving.size() + new_members.size()
+            + sizeof(version);
+    }
+};
+
+struct ZooKeeperReconfigResponse final : ReconfigResponse, ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    OpNum getOpNum() const override { return OpNum::Reconfig; }
+};
+
 struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override {}
@@ -135,7 +163,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
     OpNum getOpNum() const override
     {
         chassert(false);
-        throw Exception("OpNum for watch response doesn't exist", Error::ZRUNTIMEINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
     }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
@@ -186,7 +214,7 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 {
     void readImpl(ReadBuffer &) override
     {
-        throw Exception("Received response for close request", Error::ZRUNTIMEINCONSISTENCY);
+        throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
     }
 
     void writeImpl(WriteBuffer &) const override {}
@@ -202,7 +230,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override { return OpNum::Create; }
+    OpNum getOpNum() const override { return not_exists ? OpNum::CreateIfNotExists : OpNum::Create; }
     void writeImpl(WriteBuffer & out) const override;
     void readImpl(ReadBuffer & in) override;
     std::string toStringImpl() const override;
@@ -215,7 +243,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     void createLogElements(LogElements & elems) const override;
 };
 
-struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
+struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
 {
     void readImpl(ReadBuffer & in) override;
 
@@ -226,6 +254,12 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
+};
+
+struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
+{
+    OpNum getOpNum() const override { return OpNum::CreateIfNotExists; }
+    using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest

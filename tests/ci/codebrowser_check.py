@@ -59,6 +59,9 @@ def main():
         os.makedirs(temp_path)
 
     docker_image = get_image_with_version(IMAGES_PATH, "clickhouse/codebrowser")
+    # FIXME: the codebrowser is broken with clang-16, workaround with clang-15
+    # See https://github.com/ClickHouse/ClickHouse/issues/50077
+    docker_image.version = "49701-4dcdcf4c11b5604f1c5d3121c9c6fea3e957b605"
     s3_helper = S3Helper()
 
     result_path = temp_path / "result_path"
@@ -84,25 +87,37 @@ def main():
 
     report_path = result_path / "html_report"
     logging.info("Report path %s", report_path)
+
     s3_path_prefix = "codebrowser"
+    index_template = (
+        f'<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/{s3_path_prefix}/index.html">'
+        "{}</a>"
+    )
+    additional_logs = [path.absolute() for path in result_path.glob("*.log")]
+    test_results = [
+        TestResult(
+            index_template.format("Generate codebrowser site"),
+            state,
+            stopwatch.duration_seconds,
+            additional_logs,
+        )
+    ]
+
     if state == "success":
+        stopwatch.reset()
         _ = s3_helper.fast_parallel_upload_dir(
             report_path, s3_path_prefix, S3_TEST_REPORTS_BUCKET
         )
-
-    index_html = (
-        f'<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
-        "Generate codebrowser site</a>"
-    )
-
-    additional_logs = [path.absolute() for path in result_path.glob("*.log")]
-
-    test_results = [
-        TestResult(index_html, state, stopwatch.duration_seconds, additional_logs)
-    ]
+        test_results.append(
+            TestResult(
+                index_template.format("Upload codebrowser site"),
+                state,
+                stopwatch.duration_seconds,
+            )
+        )
 
     # Check if the run log contains `FATAL Error:`, that means the code problem
-    stopwatch = Stopwatch()
+    stopwatch.reset()
     fatal_error = "FATAL Error:"
     logging.info("Search for '%s' in %s", fatal_error, run_log_path)
     with open(run_log_path, "r", encoding="utf-8") as rlfd:

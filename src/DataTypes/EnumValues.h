@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class EnumValues : public IHints<1, EnumValues<T>>
+class EnumValues : public IHints<>
 {
 public:
     using Value = std::pair<std::string, T>;

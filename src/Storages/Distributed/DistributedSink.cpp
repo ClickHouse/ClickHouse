@@ -132,7 +132,7 @@ DistributedSink::DistributedSink(
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
-    context->getClientInfo().distributed_depth += 1;
+    context->increaseDistributedDepth();
     random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
 }
 
@@ -733,7 +733,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     if (compression_method == "ZSTD")
         compression_level = settings.network_zstd_compression_level;
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs);
+    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions

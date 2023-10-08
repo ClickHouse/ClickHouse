@@ -1,7 +1,5 @@
 DROP TABLE IF EXISTS unicode;
 
-SET output_format_pretty_squash_ms = 0;
-
 CREATE TABLE unicode(c1 String, c2 String) ENGINE = Memory;
 INSERT INTO unicode VALUES ('Здравствуйте', 'Этот код можно отредактировать и запустить!');
 INSERT INTO unicode VALUES ('你好', '这段代码是可以编辑并且能够运行的！');

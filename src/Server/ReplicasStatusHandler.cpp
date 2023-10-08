@@ -79,7 +79,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
 
         const auto & config = getContext()->getConfigRef();
-        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
+        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT));
 
         if (!ok)
         {
