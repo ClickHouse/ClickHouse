@@ -521,7 +521,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
         result_state = state;
     }
 
-    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, this, locked_key.getKeyMetadata());
+    auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, background_download_threads > 0, this, locked_key.getKeyMetadata());
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
     auto [file_segment_metadata_it, inserted] = locked_key.getKeyMetadata()->emplace(offset, file_segment_metadata);
@@ -1018,6 +1018,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     auto file_segment = std::make_shared<FileSegment>(key, offset, size,
                                                                       FileSegment::State::DOWNLOADED,
                                                                       CreateFileSegmentSettings(segment_kind),
+                                                                      false,
                                                                       this,
                                                                       key_metadata,
                                                                       cache_it);
