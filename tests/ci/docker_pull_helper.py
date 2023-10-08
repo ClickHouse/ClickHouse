@@ -6,7 +6,8 @@ import time
 import subprocess
 import logging
 
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 
 class DockerImage:
@@ -22,7 +23,7 @@ class DockerImage:
 
 
 def get_images_with_versions(
-    reports_path: str,
+    reports_path: Union[Path, str],
     required_images: List[str],
     pull: bool = True,
     version: Optional[str] = None,
@@ -80,7 +81,10 @@ def get_images_with_versions(
 
 
 def get_image_with_version(
-    reports_path: str, image: str, pull: bool = True, version: Optional[str] = None
+    reports_path: Union[Path, str],
+    image: str,
+    pull: bool = True,
+    version: Optional[str] = None,
 ) -> DockerImage:
     logging.info("Looking for images file in %s", reports_path)
     return get_images_with_versions(reports_path, [image], pull, version=version)[0]

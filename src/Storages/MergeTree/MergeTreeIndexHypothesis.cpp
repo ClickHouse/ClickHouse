@@ -73,7 +73,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexHypothesis::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleHypothesis>(index.name);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorHypothesis>(index.name, index.sample_block.getNames().front());
 }

@@ -2,6 +2,7 @@
 
 #include <type_traits>
 #include <Common/formatIPv6.h>
+#include <Common/IPv6ToBinary.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -16,6 +17,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int ILLEGAL_COLUMN;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 enum class IPStringToNumExceptionMode : uint8_t
@@ -288,6 +290,89 @@ ColumnPtr convertToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
         }
 
         prev_offset = offsets_src[i];
+    }
+
+    if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+        return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
+
+    return col_res;
+}
+
+template <IPStringToNumExceptionMode exception_mode, typename ToColumn = ColumnIPv4>
+ColumnPtr convertIPv6ToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map = nullptr)
+{
+    const ColumnIPv6 * column_ipv6 = checkAndGetColumn<ColumnIPv6>(column.get());
+
+    if (!column_ipv6)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected IPv6.", column->getName());
+
+    size_t column_size = column_ipv6->size();
+
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+    if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+    {
+        col_null_map_to = ColumnUInt8::create(column_size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
+    const uint8_t ip4_cidr[] {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00};
+
+    auto col_res = ToColumn::create();
+    auto & vec_res = col_res->getData();
+    vec_res.resize(column_size);
+    const auto & vec_src = column_ipv6->getData();
+
+    for (size_t i = 0; i < vec_res.size(); ++i)
+    {
+        const uint8_t * src = reinterpret_cast<const uint8_t *>(&vec_src[i]);
+        uint8_t * dst = reinterpret_cast<uint8_t *>(&vec_res[i]);
+
+        if (null_map && (*null_map)[i])
+        {
+            std::memset(dst, '\0', IPV4_BINARY_LENGTH);
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+                (*vec_null_map_to)[i] = true;
+            continue;
+        }
+
+        if (!matchIPv6Subnet(src, ip4_cidr, 96))
+        {
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+            {
+                char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+                char * paddr = addr;
+                formatIPv6(src, paddr);
+
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "IPv6 {} in column {} is not in IPv4 mapping block", addr, column->getName());
+            }
+            else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
+            {
+                std::memset(dst, '\0', IPV4_BINARY_LENGTH);
+            }
+            else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
+            {
+                (*vec_null_map_to)[i] = true;
+                std::memset(dst, '\0', IPV4_BINARY_LENGTH);
+            }
+            continue;
+        }
+
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            dst[0] = src[15];
+            dst[1] = src[14];
+            dst[2] = src[13];
+            dst[3] = src[12];
+        }
+        else
+        {
+            dst[0] = src[12];
+            dst[1] = src[13];
+            dst[2] = src[14];
+            dst[3] = src[15];
+        }
     }
 
     if constexpr (exception_mode == IPStringToNumExceptionMode::Null)

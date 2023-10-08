@@ -56,7 +56,7 @@ void loadDiskLocalConfig(const String & name,
             tmp_path = context->getPath();
 
         // Create tmp disk for getting total disk space.
-        keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
+        keep_free_space_bytes = static_cast<UInt64>(*DiskLocal("tmp", tmp_path, 0, config, config_prefix).getTotalSpace() * ratio);
     }
 }
 

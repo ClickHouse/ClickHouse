@@ -36,6 +36,11 @@ line1	1
 line2	2
 line3	3
 line4	4
+test schema inference
+col1	Nullable(String)					
+col2	Nullable(Int32)					
+col1	Nullable(String)					
+col2	Nullable(Int32)					
 test path in clickhouse-local
 line1	1
 line2	2

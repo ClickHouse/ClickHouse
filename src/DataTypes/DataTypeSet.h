@@ -15,12 +15,14 @@ class DataTypeSet final : public IDataTypeDummy
 public:
     static constexpr bool is_parametric = true;
     const char * getFamilyName() const override { return "Set"; }
+    String getSQLCompatibleName() const override { return "TEXT"; }
+
     TypeIndex getTypeId() const override { return TypeIndex::Set; }
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
     bool isParametric() const override { return true; }
 
     // Used for expressions analysis.
-    MutableColumnPtr createColumn() const override { return ColumnSet::create(0, FutureSet{}); }
+    MutableColumnPtr createColumn() const override { return ColumnSet::create(0, nullptr); }
 
     // Used only for debugging, making it DUMPABLE
     Field getDefault() const override { return Tuple(); }

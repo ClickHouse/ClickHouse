@@ -132,7 +132,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         if (index < 0 || index >= capture + 1)
             throw Exception(
@@ -172,7 +172,7 @@ private:
         res_data.reserve(data.size() / 5);
         res_offsets.reserve(offsets.size());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
 
         OptimizedRegularExpression::MatchVec matches;
@@ -217,7 +217,7 @@ private:
         ColumnString::Chars padded_str;
         padded_str.insert(str.begin(), str.end());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(capture + 1);

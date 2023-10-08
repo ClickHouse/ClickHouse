@@ -1,0 +1,16 @@
+set mutations_sync=1;
+
+{% for id, settings in [
+    ("wide",    "min_bytes_for_wide_part=0, min_rows_for_wide_part=0"),
+    ("compact", "min_bytes_for_wide_part=1000, min_rows_for_wide_part=100"),
+]
+%}
+
+drop table if exists data_{{ id }};
+create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
+insert into data_{{ id }} values (1);
+select 'before detach', now()-modification_time < 10 from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
+alter table data_{{ id }} detach partition all;
+select 'after detach', now()-modification_time < 10 from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
+
+{% endfor %}

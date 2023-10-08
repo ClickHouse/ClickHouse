@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/assert_cast.h>
+#include <Common/Arena.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -239,7 +240,7 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const AggregateFunctionForEachData & state = data(place);
-        writeBinary(state.dynamic_array_size, buf);
+        writeBinaryLittleEndian(state.dynamic_array_size, buf);
 
         const char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
@@ -254,7 +255,7 @@ public:
         AggregateFunctionForEachData & state = data(place);
 
         size_t new_size = 0;
-        readBinary(new_size, buf);
+        readBinaryLittleEndian(new_size, buf);
 
         ensureAggregateData(place, new_size, *arena);
 

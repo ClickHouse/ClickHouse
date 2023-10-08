@@ -3,7 +3,6 @@
                   'PrettySpaceNoEscapesMonoBlock'] -%}
 
 select '{{ format }}';
-SET output_format_pretty_squash_ms = 0;
 select number as x, number + 1 as y from numbers(4) settings max_block_size=2 format {{ format }};
 
 {% endfor -%}

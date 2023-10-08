@@ -33,15 +33,12 @@ public:
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset, ssize_t length = -1)
     {
-        UInt128 key;
-
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
         hash.update(offset);
         hash.update(length);
 
-        hash.get128(key);
-        return key;
+        return hash.get128();
     }
 
     template <typename LoadFunc>

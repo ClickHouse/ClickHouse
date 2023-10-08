@@ -1,6 +1,12 @@
 SET send_logs_level = 'fatal';
 SET optimize_on_insert = 0;
 
+DROP TABLE IF EXISTS no_order;
+CREATE TABLE no_order(a UInt32, b UInt32) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE no_order MODIFY ORDER BY (a); -- { serverError 36}
+
+DROP TABLE no_order;
+
 DROP TABLE IF EXISTS old_style;
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE old_style(d Date, x UInt32) ENGINE MergeTree(d, x, 8192);

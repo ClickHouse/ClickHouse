@@ -1,19 +1,27 @@
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/formatAST.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/RowPolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+}
+
 namespace
 {
     void updateRowPolicyFromQueryImpl(
@@ -45,7 +53,8 @@ namespace
 
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
-    auto & query = query_ptr->as<ASTCreateRowPolicyQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto required_access = getRequiredAccess();
 
     if (!query.cluster.empty())
@@ -53,7 +62,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         query.replaceCurrentUserTag(getContext()->getUserName());
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
     }
 
     assert(query.names->cluster.empty());
@@ -66,6 +75,16 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
 
+    IAccessStorage * storage = &access_control;
+    MultipleAccessStorage::StoragePtr storage_ptr;
+
+    if (!query.storage_name.empty())
+    {
+        storage_ptr = access_control.getStorageByName(query.storage_name);
+        storage = storage_ptr.get();
+    }
+
+    Strings names = query.names->toStrings();
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
@@ -74,14 +93,13 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
             updateRowPolicyFromQueryImpl(*updated_policy, query, {}, roles_from_query);
             return updated_policy;
         };
-        Strings names = query.names->toStrings();
         if (query.if_exists)
         {
-            auto ids = access_control.find<RowPolicy>(names);
-            access_control.tryUpdate(ids, update_func);
+            auto ids = storage->find<RowPolicy>(names);
+            storage->tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getIDs<RowPolicy>(names), update_func);
+            storage->update(storage->getIDs<RowPolicy>(names), update_func);
     }
     else
     {
@@ -93,12 +111,21 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
             new_policies.emplace_back(std::move(new_policy));
         }
 
+        if (!query.storage_name.empty())
+        {
+            for (const auto & name : names)
+            {
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::ROW_POLICY, name, storage_ptr))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Row policy {} already exists in storage {}", name, another_storage_ptr->getStorageName());
+            }
+        }
+
         if (query.if_not_exists)
-            access_control.tryInsert(new_policies);
+            storage->tryInsert(new_policies);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_policies);
+            storage->insertOrReplace(new_policies);
         else
-            access_control.insert(new_policies);
+            storage->insert(new_policies);
     }
 
     return {};

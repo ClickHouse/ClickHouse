@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <Interpreters/Context.h>
+
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
 #include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 #include <Functions/keyvaluepair/ArgumentExtractor.h>
@@ -41,6 +43,13 @@ class ExtractKeyValuePairs : public IFunction
             builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
         }
 
+        bool is_number_of_pairs_unlimited = context->getSettingsRef().extract_kvp_max_pairs_per_row == 0;
+
+        if (!is_number_of_pairs_unlimited)
+        {
+            builder.withMaxNumberOfPairs(context->getSettingsRef().extract_kvp_max_pairs_per_row);
+        }
+
         return builder.build();
     }
 
@@ -73,7 +82,7 @@ class ExtractKeyValuePairs : public IFunction
     }
 
 public:
-    ExtractKeyValuePairs() = default;
+    explicit ExtractKeyValuePairs(ContextPtr context_) : context(context_) {}
 
     static constexpr auto name = Name::name;
 
@@ -82,9 +91,9 @@ public:
         return name;
     }
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<ExtractKeyValuePairs>();
+        return std::make_shared<ExtractKeyValuePairs>(context);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
@@ -120,6 +129,9 @@ public:
     {
         return {1, 2, 3, 4};
     }
+
+private:
+    ContextPtr context;
 };
 
 struct NameExtractKeyValuePairs

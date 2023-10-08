@@ -113,6 +113,7 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 
 ## REPLACE PARTITION
@@ -132,6 +133,7 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 
 ## MOVE PARTITION TO TABLE
@@ -146,6 +148,7 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 - Both tables must be the same engine family (replicated or non-replicated).
 
@@ -284,13 +287,17 @@ Manipulates data in the specifies partition matching the specified filtering exp
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
+-- using partition name
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also
@@ -304,13 +311,17 @@ Deletes data in the specifies partition matching the specified filtering express
 Syntax:
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
 ### Example
 
 ``` sql
+-- using partition name
 ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
 ### See Also

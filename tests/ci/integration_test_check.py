@@ -8,14 +8,13 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from github import Github
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
-    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -25,7 +24,7 @@ from commit_status_helper import (
     post_commit_status,
     post_commit_status_to_file,
 )
-from docker_pull_helper import get_images_with_versions
+from docker_pull_helper import get_images_with_versions, DockerImage
 from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
@@ -38,31 +37,36 @@ from upload_result_helper import upload_results
 
 
 # When update, update
-# integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
+# tests/integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
 IMAGES = [
+    "clickhouse/dotnet-client",
+    "clickhouse/integration-helper",
+    "clickhouse/integration-test",
     "clickhouse/integration-tests-runner",
+    "clickhouse/kerberized-hadoop",
+    "clickhouse/kerberos-kdc",
     "clickhouse/mysql-golang-client",
     "clickhouse/mysql-java-client",
     "clickhouse/mysql-js-client",
     "clickhouse/mysql-php-client",
+    "clickhouse/nginx-dav",
     "clickhouse/postgresql-java-client",
-    "clickhouse/integration-test",
-    "clickhouse/kerberos-kdc",
-    "clickhouse/kerberized-hadoop",
-    "clickhouse/integration-helper",
-    "clickhouse/dotnet-client",
 ]
 
 
 def get_json_params_dict(
-    check_name, pr_info, docker_images, run_by_hash_total, run_by_hash_num
-):
+    check_name: str,
+    pr_info: PRInfo,
+    docker_images: List[DockerImage],
+    run_by_hash_total: int,
+    run_by_hash_num: int,
+) -> dict:
     return {
         "context_name": check_name,
         "commit": pr_info.sha,
         "pull_request": pr_info.number,
         "pr_info": {"changed_files": list(pr_info.changed_files)},
-        "docker_images_with_versions": docker_images,
+        "docker_images_with_versions": {d.name: d.version for d in docker_images},
         "shuffle_test_groups": False,
         "use_tmpfs": False,
         "disable_net_host": True,
@@ -71,55 +75,60 @@ def get_json_params_dict(
     }
 
 
-def get_env_for_runner(build_path, repo_path, result_path, work_path):
-    binary_path = os.path.join(build_path, "clickhouse")
-    odbc_bridge_path = os.path.join(build_path, "clickhouse-odbc-bridge")
-    library_bridge_path = os.path.join(build_path, "clickhouse-library-bridge")
+def get_env_for_runner(
+    check_name: str,
+    build_path: Path,
+    repo_path: Path,
+    result_path: Path,
+    work_path: Path,
+) -> Dict[str, str]:
+    binary_path = build_path / "clickhouse"
+    odbc_bridge_path = build_path / "clickhouse-odbc-bridge"
+    library_bridge_path = build_path / "clickhouse-library-bridge"
 
     my_env = os.environ.copy()
-    my_env["CLICKHOUSE_TESTS_BUILD_PATH"] = build_path
-    my_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = binary_path
-    my_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = binary_path
-    my_env["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = odbc_bridge_path
-    my_env["CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"] = library_bridge_path
-    my_env["CLICKHOUSE_TESTS_REPO_PATH"] = repo_path
-    my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path
+    my_env["CLICKHOUSE_TESTS_BUILD_PATH"] = build_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = binary_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = binary_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = odbc_bridge_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"] = library_bridge_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_REPO_PATH"] = repo_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path.as_posix()
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
-    my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = os.path.join(work_path, "params.json")
+    my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = f"{work_path}/params.json"
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
+
+    if "analyzer" in check_name.lower():
+        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
 
     return my_env
 
 
 def process_results(
-    result_folder: str,
-) -> Tuple[str, str, TestResults, List[str]]:
+    result_directory: Path,
+) -> Tuple[str, str, TestResults, List[Path]]:
     test_results = []  # type: TestResults
     additional_files = []
-    # Just upload all files from result_folder.
-    # If task provides processed results, then it's responsible for content of result_folder.
-    if os.path.exists(result_folder):
-        test_files = [
-            f
-            for f in os.listdir(result_folder)
-            if os.path.isfile(os.path.join(result_folder, f))
-        ]
-        additional_files = [os.path.join(result_folder, f) for f in test_files]
+    # Just upload all files from result_directory.
+    # If task provides processed results, then it's responsible for content of
+    # result_directory.
+    if result_directory.exists():
+        additional_files = [p for p in result_directory.iterdir() if p.is_file()]
 
     status = []
-    status_path = os.path.join(result_folder, "check_status.tsv")
-    if os.path.exists(status_path):
+    status_path = result_directory / "check_status.tsv"
+    if status_path.exists():
         logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
     if len(status) != 1 or len(status[0]) != 2:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
+        logging.info("Files in result folder %s", os.listdir(result_directory))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = Path(result_folder) / "test_results.tsv"
+        results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path, False)
         if len(test_results) == 0:
             return "error", "Empty test_results.tsv", test_results, additional_files
@@ -156,10 +165,12 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    post_commit_path = os.path.join(temp_path, "integration_commit_status.tsv")
-    repo_path = REPO_COPY
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+
+    post_commit_path = temp_path / "integration_commit_status.tsv"
+    repo_path = Path(REPO_COPY)
+    reports_path = Path(REPORTS_PATH)
 
     args = parse_args()
     check_name = args.check_name
@@ -176,12 +187,10 @@ def main():
         run_by_hash_total = 0
         check_name_with_group = check_name
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
-
     is_flaky_check = "flaky" in check_name
 
-    # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
+    # For validate_bugfix_check we need up to date information about labels, so
+    # pr_event_from_api is used
     pr_info = PRInfo(
         need_changed_files=is_flaky_check or validate_bugfix_check,
         pr_event_from_api=validate_bugfix_check,
@@ -207,33 +216,31 @@ def main():
         sys.exit(0)
 
     images = get_images_with_versions(reports_path, IMAGES)
-    images_with_versions = {i.name: i.version for i in images}
-    result_path = os.path.join(temp_path, "output_dir")
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "output_dir"
+    result_path.mkdir(parents=True, exist_ok=True)
 
-    work_path = os.path.join(temp_path, "workdir")
-    if not os.path.exists(work_path):
-        os.makedirs(work_path)
+    work_path = temp_path / "workdir"
+    work_path.mkdir(parents=True, exist_ok=True)
 
-    build_path = os.path.join(temp_path, "build")
-    if not os.path.exists(build_path):
-        os.makedirs(build_path)
+    build_path = temp_path / "build"
+    build_path.mkdir(parents=True, exist_ok=True)
 
     if validate_bugfix_check:
         download_last_release(build_path)
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
-    my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
+    my_env = get_env_for_runner(
+        check_name, build_path, repo_path, result_path, work_path
+    )
 
-    json_path = os.path.join(work_path, "params.json")
+    json_path = work_path / "params.json"
     with open(json_path, "w", encoding="utf-8") as json_params:
         params_text = json.dumps(
             get_json_params_dict(
                 check_name,
                 pr_info,
-                images_with_versions,
+                images,
                 run_by_hash_total,
                 run_by_hash_num,
             )
@@ -241,9 +248,9 @@ def main():
         json_params.write(params_text)
         logging.info("Parameters file %s is written: %s", json_path, params_text)
 
-    output_path_log = os.path.join(result_path, "main_script_log.txt")
+    output_path_log = result_path / "main_script_log.txt"
 
-    runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
+    runner_path = repo_path / "tests" / "integration" / "ci-runner.py"
     run_command = f"sudo -E {runner_path}"
     logging.info("Going to run command: `%s`", run_command)
     logging.info(
@@ -271,7 +278,6 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, check_name, test_results)
 
     s3_helper = S3Helper()
     report_url = upload_results(

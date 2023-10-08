@@ -48,6 +48,8 @@ services:
       - kafka_kerberos
     security_opt:
       - label:disable
+    sysctls:
+      net.ipv4.ip_local_port_range: '55000 65535'
 
   kafka_kerberos:
     image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
