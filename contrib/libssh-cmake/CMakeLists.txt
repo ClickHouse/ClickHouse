@@ -1,5 +1,6 @@
 set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
 set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
+add_compile_definitions(WITH_SFTP)
 # Specify search path for CMake modules to be loaded by include()
 # and find_package()
 list(APPEND CMAKE_MODULE_PATH "${LIB_SOURCE_DIR}/cmake/Modules")
