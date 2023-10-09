@@ -28,17 +28,39 @@ void ReadFromStorageStep::applyFilters()
 {
     /// When analyzer is enabled, query_info.filter_asts is missing sets and maybe some type casts,
     /// so don't use it. I'm not sure how to support analyzer here: https://github.com/ClickHouse/ClickHouse/issues/53536
+    std::optional<KeyCondition> key_condition;
     if (!context->getSettingsRef().allow_experimental_analyzer)
     {
-        KeyCondition key_condition(
+        key_condition.emplace(
             query_info,
             context,
             pipe.getHeader().getNames(),
             std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(pipe.getHeader().getColumnsWithTypeAndName())));
 
+    }
+    else if (query_info.planner_context)
+    {
+        std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
+        const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
+        for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
+        {
+            const auto & column = table_expression_data.getColumnOrThrow(column_name);
+            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
+        }
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column, context);
+        key_condition.emplace(
+            filter_actions_dag,
+            context,
+            pipe.getHeader().getNames(),
+            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(pipe.getHeader().getColumnsWithTypeAndName())),
+            NameSet{});
+    }
+
+    if (key_condition.has_value())
+    {
         for (const auto & processor : pipe.getProcessors())
             if (auto * input_format = dynamic_cast<IInputFormat *>(processor.get()))
-                input_format->setKeyCondition(key_condition);
+                input_format->setKeyCondition(*key_condition);
     }
 }
 
