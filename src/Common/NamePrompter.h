@@ -95,7 +95,7 @@ String getHintsErrorMessageSuffix(const std::vector<String> & hints);
 
 void appendHintsMessage(String & error_message, const std::vector<String> & hints);
 
-template <size_t MaxNumHints, typename Self>
+template <size_t MaxNumHints = 1>
 class IHints
 {
 public:

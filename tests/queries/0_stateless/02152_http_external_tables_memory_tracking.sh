@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-cpu-aarch64
+# Tags: no-tsan, no-cpu-aarch64, no-parallel
 # TSan does not supports tracing.
 # trace_log doesn't work on aarch64
 

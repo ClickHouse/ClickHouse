@@ -203,10 +203,15 @@ Parameter `NumTrees` is the number of trees which the algorithm creates (default
 more accurate search results but slower index creation / query times (approximately linearly) as well as larger index sizes.
 
 :::note
-Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays **must** have same length. Use
-[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints) to avoid errors. For example, `CONSTRAINT constraint_name_1
-CHECK length(vectors) = 256`.
+Indexes over columns of type `Array` will generally work faster than indexes on `Tuple` columns. All arrays must have same length. To avoid
+errors, you can use a [CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT
+constraint_name_1 CHECK length(vectors) = 256`. Also, empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default
+values) are not supported.
 :::
+
+The creation of Annoy indexes (whenever a new part is build, e.g. at the end of a merge) is a relatively slow process. You can increase
+setting `max_threads_for_annoy_index_creation` (default: 4) which controls how many threads are used to create an Annoy index. Please be
+careful with this setting, it is possible that multiple indexes are created in parallel in which case there can be overparallelization.
 
 Setting `annoy_index_search_k_nodes` (default: `NumTrees * LIMIT`) determines how many tree nodes are inspected during SELECTs. Larger
 values mean more accurate results at the cost of longer query runtime:
@@ -223,6 +228,7 @@ SETTINGS annoy_index_search_k_nodes=100;
 The Annoy index currently does not work with per-table, non-default `index_granularity` settings (see
 [here](https://github.com/ClickHouse/ClickHouse/pull/51325#issuecomment-1605920475)). If necessary, the value must be changed in config.xml.
 :::
+
 ## USearch {#usearch}
 
 This type of ANN index is based on the [the USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
@@ -252,7 +258,7 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Array(Float32),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -265,7 +271,7 @@ CREATE TABLE table_with_usearch_index
 (
   id Int64,
   vectors Tuple(Float32[, Float32[, ...]]),
-  INDEX [ann_index_name] vectors TYPE usearch([Distance]) [GRANULARITY N]
+  INDEX [ann_index_name] vectors TYPE usearch([Distance[, ScalarKind]]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -276,6 +282,9 @@ USearch currently supports two distance functions:
   ([Wikipedia](https://en.wikipedia.org/wiki/Euclidean_distance)).
 - `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
+
+USearch allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`. If no scalar kind
+was specified during index creation, `f16` is used as default.
 
 For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
 distance function was specified during index creation, `L2Distance` is used as default.
