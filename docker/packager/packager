@@ -298,7 +298,6 @@ def parse_env_variables(
 
     if additional_pkgs:
         # NOTE: This are the env for packages/build script
-        result.append("MAKE_APK=true")
         result.append("MAKE_RPM=true")
         result.append("MAKE_TGZ=true")
 

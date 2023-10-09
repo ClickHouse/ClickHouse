@@ -1,6 +1,7 @@
 #include <limits>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
 #define MIN_LENGTH_FOR_STRSTR 3
@@ -50,6 +51,8 @@ const char * analyzeImpl(
     bool & is_trivial,
     Literals & global_alternatives)
 {
+    checkStackSize();
+
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
       *  a string outside parentheses,

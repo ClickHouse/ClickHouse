@@ -309,6 +309,11 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
+ColumnPtr materializeColumn(const ColumnPtr & column)
+{
+    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+}
+
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
 {
     ColumnRawPtrs ptrs;
@@ -317,7 +322,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+        column = materializeColumn(column);
         ptrs.push_back(column.get());
     }
 
@@ -332,12 +337,7 @@ ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & nam
     for (const auto & column_name : names)
     {
         ColumnPtr column = block.getByName(column_name).column;
-
-        column = column->convertToFullColumnIfConst();
-        column = recursiveRemoveLowCardinality(column);
-        column = recursiveRemoveSparse(column);
-
-        ptrs[column_name] = column;
+        ptrs[column_name] = materializeColumn(column);
     }
 
     return ptrs;
@@ -346,8 +346,7 @@ ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & nam
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
-    return recursiveRemoveLowCardinality(
-        recursiveRemoveSparse(src_column->convertToFullColumnIfConst()));
+    return materializeColumn(src_column);
 }
 
 Columns materializeColumns(const Block & block, const Names & names)
@@ -545,7 +544,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         return JoinMask(const_cond->getBool(0), block.rows());
     }
 
-    ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
+    ColumnPtr join_condition_col = materializeColumn(src_col.column);
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))

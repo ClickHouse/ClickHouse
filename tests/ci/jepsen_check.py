@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
-import time
+import argparse
 import logging
 import os
 import sys
+import time
 
-import argparse
+from pathlib import Path
+from typing import Any, List
 
 import boto3  # type: ignore
 import requests  # type: ignore
@@ -44,7 +46,7 @@ CRASHED_TESTS_ANCHOR = "# Crashed tests"
 FAILED_TESTS_ANCHOR = "# Failed tests"
 
 
-def _parse_jepsen_output(path: str) -> TestResults:
+def _parse_jepsen_output(path: Path) -> TestResults:
     test_results = []  # type: TestResults
     current_type = ""
     with open(path, "r") as f:
@@ -123,8 +125,8 @@ def clear_autoscaling_group():
             raise Exception("Cannot wait autoscaling group")
 
 
-def save_nodes_to_file(instances, temp_path):
-    nodes_path = os.path.join(temp_path, "nodes.txt")
+def save_nodes_to_file(instances: List[Any], temp_path: Path) -> Path:
+    nodes_path = temp_path / "nodes.txt"
     with open(nodes_path, "w") as f:
         f.write("\n".join(instances))
         f.flush()
@@ -149,7 +151,7 @@ def get_run_command(
     )
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         prog="Jepsen Check",
@@ -165,6 +167,8 @@ if __name__ == "__main__":
         sys.exit(0)
 
     stopwatch = Stopwatch()
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -192,9 +196,8 @@ if __name__ == "__main__":
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
 
-    result_path = os.path.join(TEMP_PATH, "result_path")
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "result_path"
+    result_path.mkdir(parents=True, exist_ok=True)
 
     instances = prepare_autoscaling_group_and_get_hostnames(
         KEEPER_DESIRED_INSTANCE_COUNT
@@ -202,7 +205,7 @@ if __name__ == "__main__":
         else SERVER_DESIRED_INSTANCE_COUNT
     )
     nodes_path = save_nodes_to_file(
-        instances[:KEEPER_DESIRED_INSTANCE_COUNT], TEMP_PATH
+        instances[:KEEPER_DESIRED_INSTANCE_COUNT], temp_path
     )
 
     # always use latest
@@ -221,7 +224,10 @@ if __name__ == "__main__":
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
     # dependency on a build job and using busy loop on it's results. For the
     # same reason we are using latest docker image.
-    build_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/{build_name}/clickhouse"
+    build_url = (
+        f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}/"
+        f"{build_name}/clickhouse"
+    )
     head = requests.head(build_url)
     counter = 0
     while head.status_code != 200:
@@ -252,7 +258,7 @@ if __name__ == "__main__":
         )
         logging.info("Going to run jepsen: %s", cmd)
 
-        run_log_path = os.path.join(TEMP_PATH, "run.log")
+        run_log_path = temp_path / "run.log"
 
         with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
@@ -263,7 +269,7 @@ if __name__ == "__main__":
 
     status = "success"
     description = "No invalid analysis found ヽ(‘ー`)ノ"
-    jepsen_log_path = os.path.join(result_path, "jepsen_run_all_tests.log")
+    jepsen_log_path = result_path / "jepsen_run_all_tests.log"
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
@@ -271,11 +277,8 @@ if __name__ == "__main__":
             status = "failure"
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
-        compress_fast(
-            os.path.join(result_path, "store"),
-            os.path.join(result_path, "jepsen_store.tar.zst"),
-        )
-        additional_data.append(os.path.join(result_path, "jepsen_store.tar.zst"))
+        compress_fast(result_path / "store", result_path / "jepsen_store.tar.zst")
+        additional_data.append(result_path / "jepsen_store.tar.zst")
     except Exception as ex:
         print("Exception", ex)
         status = "failure"
@@ -307,3 +310,7 @@ if __name__ == "__main__":
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
     clear_autoscaling_group()
+
+
+if __name__ == "__main__":
+    main()

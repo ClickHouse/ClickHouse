@@ -159,7 +159,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
             {
                 MutableColumnPtr sort_description_threshold_column_updated = raw_block_columns[i]->cloneEmpty();
                 sort_description_threshold_column_updated->insertFrom(*raw_block_columns[i], min_row_to_compare);
-                sort_description_threshold_columns_updated[i] = std::move(sort_description_threshold_column_updated);
+                sort_description_threshold_columns_updated[i] = sort_description_threshold_column_updated->convertToFullColumnIfSparse();
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);

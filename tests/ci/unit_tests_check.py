@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import atexit
+from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
@@ -44,8 +45,8 @@ def get_test_name(line):
 
 
 def process_results(
-    result_folder: str,
-) -> Tuple[str, str, TestResults, List[str]]:
+    result_folder: Path,
+) -> Tuple[str, str, TestResults, List[Path]]:
     OK_SIGN = "OK ]"
     FAILED_SIGN = "FAILED  ]"
     SEGFAULT = "Segmentation fault"
@@ -55,8 +56,8 @@ def process_results(
     test_results = []  # type: TestResults
     total_counter = 0
     failed_counter = 0
-    result_log_path = f"{result_folder}/test_result.txt"
-    if not os.path.exists(result_log_path):
+    result_log_path = result_folder / "test_result.txt"
+    if not result_log_path.exists():
         logging.info("No output log on path %s", result_log_path)
         return "error", "No output log", test_results, []
 
@@ -114,8 +115,8 @@ def main():
 
     check_name = sys.argv[1]
 
-    if not os.path.exists(TEMP_PATH):
-        os.makedirs(TEMP_PATH)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -133,16 +134,18 @@ def main():
 
     download_unit_tests(check_name, REPORTS_PATH, TEMP_PATH)
 
-    tests_binary_path = os.path.join(TEMP_PATH, "unit_tests_dbms")
-    os.chmod(tests_binary_path, 0o777)
+    tests_binary = temp_path / "unit_tests_dbms"
+    os.chmod(tests_binary, 0o777)
 
-    test_output = os.path.join(TEMP_PATH, "test_output")
-    if not os.path.exists(test_output):
-        os.makedirs(test_output)
+    test_output = temp_path / "test_output"
+    test_output.mkdir(parents=True, exist_ok=True)
 
-    run_command = f"docker run --cap-add=SYS_PTRACE --volume={tests_binary_path}:/unit_tests_dbms --volume={test_output}:/test_output {docker_image}"
+    run_command = (
+        f"docker run --cap-add=SYS_PTRACE --volume={tests_binary}:/unit_tests_dbms "
+        f"--volume={test_output}:/test_output {docker_image}"
+    )
 
-    run_log_path = os.path.join(test_output, "run.log")
+    run_log_path = test_output / "run.log"
 
     logging.info("Going to run func tests: %s", run_command)
 
