@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -2426,6 +2427,20 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             compound_expression_from_error_message += compound_expression_source;
         }
 
+        if (auto * column = compound_expression->as<ColumnNode>())
+        {
+            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
+            if (column_type->getTypeId() == TypeIndex::Object)
+            {
+                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
+                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                {
+                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
+                    return constant_node_null;
+                }
+            }
+        }
+
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
             expression_identifier,
@@ -3035,6 +3050,31 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     JoinKind join_kind = from_join_node.getKind();
     bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
+
+    /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
+    /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
+    if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
+        && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+        if (left_resolved_column.getValueStringRepresentation() == "NULL" && right_resolved_column.getValueStringRepresentation() == "NULL")
+            return left_resolved_identifier;
+    }
+    else if (left_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        resolved_side = JoinTableSide::Left;
+        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+        if (left_resolved_column.getValueStringRepresentation() == "NULL")
+            return left_resolved_identifier;
+    }
+    else if (right_resolved_identifier && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        resolved_side = JoinTableSide::Right;
+        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+        if (right_resolved_column.getValueStringRepresentation() == "NULL")
+            return right_resolved_identifier;
+    }
 
     if (left_resolved_identifier && right_resolved_identifier)
     {

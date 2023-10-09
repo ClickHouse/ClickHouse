@@ -15,7 +15,7 @@ from s3_helper import S3Helper
 
 def process_logs(
     s3_client: S3Helper,
-    additional_logs: List[str],
+    additional_logs: List[Path],
     s3_path_prefix: str,
     test_results: TestResults,
 ) -> List[str]:
@@ -41,10 +41,10 @@ def process_logs(
 
     additional_urls = []
     for log_path in additional_logs:
-        if log_path:
+        if log_path.is_file():
             additional_urls.append(
                 s3_client.upload_test_report_to_s3(
-                    Path(log_path), s3_path_prefix + "/" + os.path.basename(log_path)
+                    log_path, s3_path_prefix + "/" + os.path.basename(log_path)
                 )
             )
 
@@ -56,7 +56,7 @@ def upload_results(
     pr_number: int,
     commit_sha: str,
     test_results: TestResults,
-    additional_files: List[str],
+    additional_files: List[Path],
     check_name: str,
     additional_urls: Optional[List[str]] = None,
 ) -> str:
