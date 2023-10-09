@@ -104,16 +104,25 @@ void CreatingSetsTransform::startSubquery()
             {
                 LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
                 SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
-                const SetPtr & ready_set = set_built_by_another_thread.get();
-                if (!ready_set)
+                try
                 {
-                    LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
-                    continue;
-                }
+                    const SetPtr & ready_set = set_built_by_another_thread.get();
+                    if (!ready_set)
+                    {
+                        LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
+                        continue;
+                    }
 
-                set_and_key->set = ready_set;
-                done_with_set = true;
-                set_from_cache = true;
+                    set_and_key->set = ready_set;
+                    done_with_set = true;
+                    set_from_cache = true;
+                }
+                catch (const Exception & e)
+                {
+                    /// Exception that is thrown by the future::get() is shared across all waiters and cannot be modified from multiple threads.
+                    /// Re-create exception to allow later multiple modify (i.e. addMessage() during pipeline execution)
+                    throw Exception(e);
+                }
             }
             break;
         }
