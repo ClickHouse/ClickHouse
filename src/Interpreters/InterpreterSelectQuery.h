@@ -117,6 +117,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
     /// proton: porting starts. TODO: remove comments
     bool isStreaming() const override;
+    bool hasGlobalAggregation() const override;
     /// proton: porting ends. TODO: remove comments
 
     static void addEmptySourceToQueryPlan(
@@ -206,6 +207,8 @@ private:
     /// proton: porting starts. TODO: remove comments
     void executeStreamingOrder(QueryPlan & query_plan);
     void checkAndPrepareStreamingFunctions();
+    void buildWatermarkQueryPlan(QueryPlan & query_plan) const;
+    void buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan);
     /// proton: porting ends. TODO: remove comments
 
     enum class Modificator

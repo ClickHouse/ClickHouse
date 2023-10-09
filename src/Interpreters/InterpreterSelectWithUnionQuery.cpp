@@ -410,6 +410,7 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
     }
 }
 
+/// proton: porting starts. TODO: remove comments.
 bool InterpreterSelectWithUnionQuery::isStreaming() const
 {
     for (const auto & interpreter : nested_interpreters)
@@ -419,5 +420,16 @@ bool InterpreterSelectWithUnionQuery::isStreaming() const
     }
     return false;
 }
+
+bool InterpreterSelectWithUnionQuery::hasGlobalAggregation() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->hasGlobalAggregation())
+            return true;
+    }
+    return false;
+}
+/// proton: porting ends. TODO: remove comments.
 
 }

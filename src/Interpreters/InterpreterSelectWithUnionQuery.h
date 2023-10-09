@@ -52,6 +52,7 @@ public:
 
     /// proton: porting starts. TODO: remove comments
     bool isStreaming() const override;
+    bool hasGlobalAggregation() const override;
     /// proton: porting ends. TODO: remove comments
 
 private:

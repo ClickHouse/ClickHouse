@@ -47,6 +47,7 @@ public:
 
     /// proton: starts. TODO: remove comments
     virtual bool isStreaming() const = 0;
+    virtual bool hasGlobalAggregation() const = 0;
     /// proton: ends. TODO: remove comments
 
     /// Returns whether the query uses the view source from the Context

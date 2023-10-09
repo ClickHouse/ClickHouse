@@ -210,6 +210,7 @@ void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogEleme
     }
 }
 
+/// proton: porting starts. TODO: remove comments
 bool InterpreterSelectIntersectExceptQuery::isStreaming() const
 {
     for (const auto & interpreter : nested_interpreters)
@@ -219,5 +220,16 @@ bool InterpreterSelectIntersectExceptQuery::isStreaming() const
     }
     return false;
 }
+
+bool InterpreterSelectIntersectExceptQuery::hasGlobalAggregation() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->hasGlobalAggregation())
+            return true;
+    }
+    return false;
+}
+/// proton: porting ends. TODO: remove comments.
 
 }

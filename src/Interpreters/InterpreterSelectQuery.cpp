@@ -68,6 +68,8 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Streaming/WatermarkStep.h>
+#include <Processors/Transforms/Streaming/WatermarkStamper.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -1810,6 +1812,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 }
             }
 
+            /// proton: porting starts. TODO: remove comments
+            /// Build some streaming processing steps after joined multiples streams
+            buildStreamingProcessingQueryPlanAfterJoin(query_plan);
+            /// proton: porting ends. TODO: remove comments
+
             if (!query_info.projection && expressions.hasWhere())
                 executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
 
@@ -3364,7 +3371,6 @@ void InterpreterSelectQuery::executeStreamingOrder(QueryPlan & query_plan)
     sorting_step->setStepDescription("Streaming Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
 }
-/// proton: porting ends. TODO: remove comments
 
 bool InterpreterSelectQuery::isStreaming() const
 {
@@ -3389,6 +3395,52 @@ bool InterpreterSelectQuery::isStreaming() const
     return streaming;
 }
 
+bool InterpreterSelectQuery::hasGlobalAggregation() const
+{
+    return isStreaming() && hasAggregation();
+}
+
+void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const
+{
+    assert(isStreaming());
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(
+                query_info.query, query_info.syntax_analyzer_result);
+
+    query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), log));
+}
+
+void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan)
+{
+    if (!isStreaming())
+        return;
+
+    if (!hasGlobalAggregation())
+        return;
+
+    /// An optimizing path, skip duplicate periodic watermark.
+    /// But if there is join query, we must establish new periodic watermark for joined data
+    if (!analysis_result.hasJoin())
+    {
+        /// proton: porting note. TODO: remove
+        // /// CTE subquery
+        // if (storage)
+        // {
+        //     if (auto * proxy = storage->as<Streaming::ProxyStream>())
+        //     {
+        //         if (proxy->hasGlobalAggregation())
+        //             return;
+        //     }
+        // }
+
+        /// nested global aggregation
+        if (interpreter_subquery && interpreter_subquery->hasGlobalAggregation())
+            return;
+    }
+
+    /// Build global periodic watermark
+    buildWatermarkQueryPlan(query_plan);
+}
+
 void InterpreterSelectQuery::checkAndPrepareStreamingFunctions()
 {
     /// Prepare streaming version of the functions
@@ -3408,5 +3460,5 @@ void InterpreterSelectQuery::checkAndPrepareStreamingFunctions()
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED, "Window over aggregation is not compatible with non-window over aggregation in the same query");
 }
-
+/// proton: porting ends. TODO: remove comments
 }
