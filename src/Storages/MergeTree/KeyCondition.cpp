@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -421,7 +422,12 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
+            const String & expression = value.get<const String &>();
+            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
+            if (expression.contains('|'))
+                return false;
+
+            String prefix = extractFixedPrefixFromRegularExpression(expression);
             if (prefix.empty())
                 return false;
 
@@ -564,7 +570,17 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         }
         case (ActionsDAG::ActionType::COLUMN):
         {
-            res = &inverted_dag.addColumn({node.column, node.result_type, node.result_name});
+            String name;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+                /// Re-generate column name for constant.
+                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+                /// DAG from PK does not use it. This is breakig match by column name sometimes.
+                /// Ideally, we should not compare manes, but DAG subtrees instead.
+                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
+            else
+                name = node.result_name;
+
+            res = &inverted_dag.addColumn({node.column, node.result_type, name});
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -754,7 +770,9 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    auto filter_node = buildFilterNode(query, additional_filter_asts);
+    ASTPtr filter_node;
+    if (query)
+        filter_node = buildFilterNode(query, additional_filter_asts);
 
     if (!filter_node)
     {
@@ -1241,7 +1259,23 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto prepared_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
+    auto future_set = right_arg.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    const auto set_types = future_set->getTypes();
+    size_t set_types_size = set_types.size();
+    size_t indexes_mapping_size = indexes_mapping.size();
+
+    /// When doing strict matches, we have to check all elements in set.
+    if (strict && indexes_mapping_size < set_types_size)
+        return false;
+
+    for (auto & index_mapping : indexes_mapping)
+        if (index_mapping.tuple_index >= set_types_size)
+            return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
         return false;
 
@@ -1249,12 +1283,72 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!prepared_set->hasExplicitSetElements())
         return false;
 
-    prepared_set->checkColumnsNumber(left_args_count);
-    for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
+    /** Try to convert set columns to primary key columns.
+      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
+      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
+      * we need to convert set column to primary key column.
+      */
+    auto set_columns = prepared_set->getSetElements();
+    assert(set_types_size == set_columns.size());
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+    for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
+    {
+        const auto & key_column_type = data_types[indexes_mapping_index];
+        size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
+        auto set_element_type = set_types[set_element_index];
+        auto set_column = set_columns[set_element_index];
 
+        if (canBeSafelyCasted(set_element_type, key_column_type))
+        {
+            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            continue;
+        }
+
+        if (!key_column_type->canBeInsideNullable())
+            return false;
+
+        const NullMap * set_column_null_map = nullptr;
+
+        if (isNullableOrLowCardinalityNullable(set_element_type))
+        {
+            if (WhichDataType(set_element_type).isLowCardinality())
+            {
+                set_element_type = removeLowCardinality(set_element_type);
+                set_column = set_column->convertToFullColumnIfLowCardinality();
+            }
+
+            set_element_type = removeNullable(set_element_type);
+            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
+            set_column_null_map = &set_column_nullable.getNullMapData();
+            set_column = set_column_nullable.getNestedColumnPtr();
+        }
+
+        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
+        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
+        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
+
+        IColumn::Filter filter(nullable_set_column_null_map_size);
+
+        if (set_column_null_map)
+        {
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed.filter(filter, 0);
+        }
+        else
+        {
+            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                filter[i] = !nullable_set_column_null_map[i];
+
+            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
+        }
+
+        set_columns[set_element_index] = std::move(set_column);
+    }
+
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
     return true;
 }
 

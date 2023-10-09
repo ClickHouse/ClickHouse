@@ -11,8 +11,17 @@ namespace Poco::Util
 namespace zkutil
 {
 
+constexpr UInt32 ZK_MIN_FALLBACK_SESSION_DEADLINE_SEC = 3 * 60 * 60;
+constexpr UInt32 ZK_MAX_FALLBACK_SESSION_DEADLINE_SEC = 6 * 60 * 60;
+
 struct ZooKeeperArgs
 {
+    struct SessionLifetimeConfiguration
+    {
+        UInt32 min_sec = ZK_MIN_FALLBACK_SESSION_DEADLINE_SEC;
+        UInt32 max_sec = ZK_MAX_FALLBACK_SESSION_DEADLINE_SEC;
+        bool operator == (const SessionLifetimeConfiguration &) const = default;
+    };
     ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, const String & config_name);
 
     /// hosts_string -- comma separated [secure://]host:port list
@@ -36,6 +45,7 @@ struct ZooKeeperArgs
     UInt64 send_sleep_ms = 0;
     UInt64 recv_sleep_ms = 0;
 
+    SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
 
 private:

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-upgrade-check
 
 set -eu
 

@@ -145,7 +145,7 @@ public:
     ~MergeTreeIndexSet() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, ContextPtr context) const override;

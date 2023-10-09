@@ -131,7 +131,8 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             if (prewhere_info->prewhere_actions)
             {
                 appendExpression(prewhere_info->prewhere_actions);
-                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                if (const auto * filter_expression
+                    = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
                     filter_nodes.push_back(filter_expression);
                 else
                     return false;

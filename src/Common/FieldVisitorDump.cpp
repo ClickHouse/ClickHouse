@@ -20,7 +20,7 @@ template <typename T>
 static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf, {});
+    writeText(x.getValue(), x.getScale(), buf, /* trailing_zeros */ true);
     writeChar('\'', buf);
 }
 

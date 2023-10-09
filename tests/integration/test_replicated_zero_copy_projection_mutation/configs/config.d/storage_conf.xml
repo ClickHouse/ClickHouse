@@ -1,0 +1,28 @@
+<clickhouse>
+
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
+    </merge_tree>
+
+</clickhouse>

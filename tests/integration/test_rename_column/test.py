@@ -159,7 +159,7 @@ def insert(
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -198,7 +198,7 @@ def select(
             try:
                 if slow:
                     r = node.query(
-                        "SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0)".format(
+                        "SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
                             table_name, col_name
                         )
                     )

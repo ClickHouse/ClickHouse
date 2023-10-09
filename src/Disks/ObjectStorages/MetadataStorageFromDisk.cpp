@@ -340,9 +340,12 @@ void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & p
     addOperation(std::make_unique<AddBlobOperation>(path, blob_name, metadata_storage.object_storage_root_path, size_in_bytes, *metadata_storage.disk, metadata_storage));
 }
 
-void MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & path)
 {
-    addOperation(std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.disk, metadata_storage));
+    auto operation = std::make_unique<UnlinkMetadataFileOperation>(path, *metadata_storage.getDisk(), metadata_storage);
+    auto result = operation->outcome;
+    addOperation(std::move(operation));
+    return result;
 }
 
 }
