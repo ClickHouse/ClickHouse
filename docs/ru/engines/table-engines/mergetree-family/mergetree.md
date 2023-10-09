@@ -20,9 +20,9 @@ sidebar_label: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-    :::info
-    Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-    :::
+:::info Примечание
+Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
+:::
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -115,7 +115,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 
@@ -805,8 +805,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
     </disks>
@@ -832,8 +830,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `single_read_retries` — число попыток выполнения запроса в случае возникновения ошибки в процессе чтения. Значение по умолчанию: `4`.
 -   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт.
 -   `metadata_path` — путь к локальному файловому хранилищу для хранения файлов с метаданными для S3. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/`.
--   `cache_enabled` — признак, разрешено ли хранение кэша засечек и файлов индекса в локальной файловой системе. Значение по умолчанию: `true`.
--   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
 
 Диск S3 может быть сконфигурирован как `main` или `cold`:

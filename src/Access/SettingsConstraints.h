@@ -113,7 +113,7 @@ private:
         using NameResolver = std::function<std::string_view(std::string_view)>;
         NameResolver setting_name_resolver;
 
-        String explain;
+        PreformattedMessage explain;
         int code = 0;
 
         // Allows everything
@@ -122,7 +122,7 @@ private:
         {}
 
         // Forbidden with explanation
-        Checker(const String & explain_, int code_)
+        Checker(const PreformattedMessage & explain_, int code_)
             : constraint{.writability = SettingConstraintWritability::CONST}
             , explain(explain_)
             , code(code_)

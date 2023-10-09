@@ -186,6 +186,8 @@ public:
 
     bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
 
+    bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
+
 private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
@@ -283,7 +285,7 @@ private:
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
-    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
+    void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.

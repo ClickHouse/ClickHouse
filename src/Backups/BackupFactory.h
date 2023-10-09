@@ -39,6 +39,7 @@ public:
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;
         bool allow_s3_native_copy = true;
+        bool use_same_s3_credentials_for_base_backup = false;
         ReadSettings read_settings;
         WriteSettings write_settings;
     };

@@ -119,7 +119,7 @@ public:
         return true;
     }
 
-    template <typename TValue = Value, bool = true, typename... Args>
+    template <typename TValue = Value, typename... Args>
     requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {

@@ -110,6 +110,13 @@ struct RestoreSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether base backup from S3 should inherit credentials from the RESTORE query.
+    bool use_same_s3_credentials_for_base_backup = false;
+
+    /// If it's true RESTORE won't stop on broken parts while restoring, instead they will be restored as detached parts
+    /// to the `detached` folder with names starting with `broken-from-backup'.
+    bool restore_broken_parts_as_detached = false;
+
     /// Internal, should not be specified by user.
     bool internal = false;
 

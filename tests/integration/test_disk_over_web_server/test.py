@@ -13,6 +13,7 @@ def cluster():
             "node1",
             main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
+            allow_analyzer=False,
         )
         cluster.add_instance(
             "node2",
@@ -20,12 +21,14 @@ def cluster():
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
+            allow_analyzer=False,
         )
         cluster.add_instance(
             "node3",
             main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             with_zookeeper=True,
+            allow_analyzer=False,
         )
 
         cluster.add_instance(
@@ -144,7 +147,6 @@ def test_usage(cluster, node_name):
 
 
 def test_incorrect_usage(cluster):
-    node1 = cluster.instances["node1"]
     node2 = cluster.instances["node3"]
     global uuids
     node2.query(
@@ -186,7 +188,7 @@ def test_cache(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'cached_web';
         """.format(
-                i, uuids[i], i, i
+                i, uuids[i]
             )
         )
 
