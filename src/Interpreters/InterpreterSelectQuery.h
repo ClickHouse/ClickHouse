@@ -204,6 +204,7 @@ private:
     UInt64 maxBlockSizeByLimit() const;
 
     /// proton: porting starts. TODO: remove comments
+    void executeStreamingOrder(QueryPlan & query_plan);
     void checkAndPrepareStreamingFunctions();
     /// proton: porting ends. TODO: remove comments
 
