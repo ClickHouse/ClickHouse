@@ -34,7 +34,11 @@ def test_reload_fdbkeeper(start_cluster):
     def replace_fdbkeeper_cluster(new_fdb_cluster):
         logging.debug(f"Use new fdb cluster: {new_fdb_cluster}")
         node.replace_config("/tmp/fdb.cluster", new_fdb_cluster)
-        node.replace_in_config("/etc/clickhouse-server/conf.d/fdb_config.xml", "\\/etc\\/foundationdb\\/fdb.cluster", "\\/tmp\\/fdb.cluster")
+        node.replace_in_config(
+            "/etc/clickhouse-server/conf.d/fdb_config.xml",
+            "\\/etc\\/foundationdb\\/fdb.cluster",
+            "\\/tmp\\/fdb.cluster",
+        )
         node.query("SYSTEM RELOAD CONFIG")
 
     node.query(

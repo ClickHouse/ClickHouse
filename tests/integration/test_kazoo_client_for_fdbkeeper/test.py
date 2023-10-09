@@ -23,7 +23,8 @@ def started_cluster():
 
 
 def test_four_letter_word_commands(started_cluster):
-    assert cluster.get_kazoo_client("zoo1").command('ruok') == "imok\n"
+    assert cluster.get_kazoo_client("zoo1").command("ruok") == "imok\n"
+
 
 def test_basic_ops(started_cluster):
     zk = cluster.get_kazoo_client("zoo1")
@@ -47,6 +48,5 @@ def test_basic_ops(started_cluster):
     with pytest.raises(Exception):
         zk.set("/test/a", "aaa")
     zk.set("/test", "ccc")
-    zk.set("/test", b'1234')
+    zk.set("/test", b"1234")
     assert zk.get("/test") == "1234"
-

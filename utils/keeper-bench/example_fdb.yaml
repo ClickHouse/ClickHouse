@@ -5,8 +5,8 @@ timelimit: 300
 continue_on_errors: true
 
 connections:
-  #Unlike the zookeeper, here only need to fill in one connection item 
-  #And if there are more than one, it will throw an exception.
+  # Unlike the zookeeper, here only need to fill in one connection item.
+  # And if there are more than one, it will throw an exception.
   connection:
     secure: false
     operation_timeout_ms: 2000

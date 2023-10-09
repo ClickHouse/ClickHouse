@@ -17,6 +17,8 @@ class BackgroundSchedulePool;
 namespace ErrorCodes
 {
     extern const int OK;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }

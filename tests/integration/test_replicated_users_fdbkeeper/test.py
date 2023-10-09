@@ -106,7 +106,11 @@ def test_reload_fdbkeeper(started_cluster):
         logging.debug(f"Use new fdb cluster: {new_fdb_cluster}")
         for node in [node1, node2]:
             node.replace_config("/tmp/fdb.cluster", new_fdb_cluster)
-            node.replace_in_config("/etc/clickhouse-server/conf.d/fdb_config.xml", "\\/etc\\/foundationdb\\/fdb.cluster", "\\/tmp\\/fdb.cluster")
+            node.replace_in_config(
+                "/etc/clickhouse-server/conf.d/fdb_config.xml",
+                "\\/etc\\/foundationdb\\/fdb.cluster",
+                "\\/tmp\\/fdb.cluster",
+            )
             node.query("SYSTEM RELOAD CONFIG")
 
     node1.query("CREATE USER u1")
@@ -117,6 +121,7 @@ def test_reload_fdbkeeper(started_cluster):
     node1.query("CREATE USER u2")
     ## stop fdb, users will be readonly
     import logging
+
     cluster.stop_fdb()
     assert node2.query(
         "SELECT name FROM system.users WHERE name IN ['u1', 'u2'] ORDER BY name"

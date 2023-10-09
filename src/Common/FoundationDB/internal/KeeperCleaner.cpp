@@ -6,7 +6,8 @@
 
 namespace DB::ErrorCodes
 {
-extern const int INCORRECT_DATA;
+    extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::FoundationDB
@@ -32,10 +33,13 @@ struct LittleEndianTimestamp
 KeeperCleaner::KeeperCleaner(BackgroundSchedulePool & pool, const KeeperKeys & keys_, FDBTransaction * tr)
     : log(&Poco::Logger::get("FDBKeeperCleaner")), keys(keys_)
 {
-    clear_task = pool.createTask("FDBKeeperCleaner", [this]() {
-        clear_trx->ctx.reset();
-        AsyncTrx::startInBackground(clear_trx);
-    });
+    clear_task = pool.createTask(
+        "FDBKeeperCleaner",
+        [this]()
+        {
+            clear_trx->ctx.reset();
+            AsyncTrx::startInBackground(clear_trx);
+        });
 
     clear_trx = buildClearTrx(tr);
 
@@ -61,7 +65,8 @@ AsyncTrx::Ptr KeeperCleaner::buildClearTrx(FDBTransaction * tr)
     auto var_session_key_end = trxb.var<String>();
 
     /// Fetch all expired session keys
-    trxb.then(TRX_STEP(keys = keys, var_expire_before_ts, var_session_keys, var_session_key_begin, var_session_key_end) {
+    trxb.then(TRX_STEP(keys = keys, var_expire_before_ts, var_session_keys, var_session_key_begin, var_session_key_end)
+    {
         auto & session_key_begin = *ctx.getVar(var_session_key_begin);
         auto & session_key_end = *ctx.getVar(var_session_key_end);
 
@@ -106,29 +111,33 @@ AsyncTrx::Ptr KeeperCleaner::buildClearTrx(FDBTransaction * tr)
 
     clearSessions(trxb, var_session_keys);
 
-    return trxb.build(tr, [clear_task = clear_task->shared_from_this(), log = log](AsyncTrxContext &, std::exception_ptr eptr) {
-        if (eptr)
+    return trxb.build(
+        tr,
+        [clear_task = clear_task->shared_from_this(), log = log](AsyncTrxContext &, std::exception_ptr eptr)
         {
-            try
+            if (eptr)
             {
-                std::rethrow_exception(eptr);
+                try
+                {
+                    std::rethrow_exception(eptr);
+                }
+                catch (OtherCleanerRunningException &)
+                {
+                    LOG_TRACE(log, "Other cleaner is running");
+                }
+                catch (...)
+                {
+                    tryLogException(eptr, log, "Unexpected error in cleaner trx");
+                }
             }
-            catch (OtherCleanerRunningException &)
+            else
             {
-                LOG_TRACE(log, "Other cleaner is running");
+                LOG_TRACE(log, "Current clean round done");
             }
-            catch (...)
-            {
-                tryLogException(eptr, log, "Unexpect error in cleaner trx");
-            }
-        }
-        else
-        {
-            LOG_TRACE(log, "Current clean round done");
-        }
 
-        clear_task->scheduleAfter(KEEPER_CLEANER_ROUND_DURATION_MS);
-    }, clear_trx_cancel.getToken());
+            clear_task->scheduleAfter(KEEPER_CLEANER_ROUND_DURATION_MS);
+        },
+        clear_trx_cancel.getToken());
 }
 
 void KeeperCleaner::tryGetRound(AsyncTrxBuilder & trxb, AsyncTrxVar<BigEndianTimestamp> var_round_start_ts)
@@ -136,7 +145,8 @@ void KeeperCleaner::tryGetRound(AsyncTrxBuilder & trxb, AsyncTrxVar<BigEndianTim
     auto cleaner_key = keys.getCleaner();
 
     trxb.then(TRX_STEP(cleaner_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(cleaner_key), false); })
-        .then(TRX_STEP(var_round_start_ts, cleaner_key) {
+        .then(TRX_STEP(var_round_start_ts, cleaner_key)
+        {
             fdb_bool_t exists_cleaner;
             const uint8_t * cleaner_bytes;
             int cleaner_bytes_len;
@@ -157,7 +167,8 @@ void KeeperCleaner::tryGetRound(AsyncTrxBuilder & trxb, AsyncTrxVar<BigEndianTim
 
             return fdb_transaction_commit(ctx.getTrx());
         })
-        .then(TRX_STEP(log = log) {
+        .then(TRX_STEP(log = log)
+        {
             auto error = fdb_future_get_error(f);
             if (error == FDBErrorCode::not_committed)
                 throw OtherCleanerRunningException();
@@ -177,7 +188,8 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
     auto var_ephe_iterator = trxb.var<int>();
 
     auto init_step_tick = trxb.nextStepTick();
-    trxb.then(TRX_STEP(keys = keys, var_session_keys, var_ephe_iterator, var_paths) {
+    trxb.then(TRX_STEP(keys = keys, var_session_keys, var_ephe_iterator, var_paths)
+        {
             auto & session_keys = *ctx.getVar(var_session_keys);
             if (session_keys.empty())
             {
@@ -195,7 +207,8 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
             return nullptr;
         })
         /// Get all paths, then clear ephemeral keys, session key and nodes keys
-        .then(TRX_STEP(keys = keys, var_session_keys, var_ephe_iterator, var_ephe_range_begin, var_ephe_range_end, var_paths) {
+        .then(TRX_STEP(keys = keys, var_session_keys, var_ephe_iterator, var_ephe_range_begin, var_ephe_range_end, var_paths)
+        {
             auto & session_keys = *ctx.getVar(var_session_keys);
             if (session_keys.empty())
                 return nullptr;
@@ -260,7 +273,8 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
             }
         })
         /// Check error
-        .then(TRX_STEP(var_session_keys, var_paths, log = log, init_step_tick) {
+        .then(TRX_STEP(var_session_keys, var_paths, log = log, init_step_tick)
+        {
             auto error = fdb_future_get_error(f);
             if (error != 0)
                 throwIfFDBError(error);
@@ -296,54 +310,56 @@ std::future<void> KeeperCleaner::clean(SessionID session, FDBTransaction * tr)
 
     // Find session key of session
     trxb.then(
-            TRX_STEP(session_key_prefix = keys.getSessionPrefix(), var_session_keys, var_session_key_begin, var_session_key_end, session) {
-                auto & session_keys = *ctx.getVar(var_session_keys);
-                auto & session_key_begin = *ctx.getVar(var_session_key_begin);
-                auto & session_key_end = *ctx.getVar(var_session_key_end);
+        TRX_STEP(session_key_prefix = keys.getSessionPrefix(), var_session_keys, var_session_key_begin, var_session_key_end, session)
+        {
+            auto & session_keys = *ctx.getVar(var_session_keys);
+            auto & session_key_begin = *ctx.getVar(var_session_key_begin);
+            auto & session_key_end = *ctx.getVar(var_session_key_end);
 
-                // First loop
-                if (!f)
-                {
-                    session_key_begin = session_key_prefix;
-                    session_key_end = session_key_prefix + '\xff';
-                }
-                else
-                {
-                    const FDBKeyValue * kvs;
-                    int kvs_len;
-                    fdb_bool_t more;
-                    throwIfFDBError(fdb_future_get_keyvalue_array(f, &kvs, &kvs_len, &more));
+            // First loop
+            if (!f)
+            {
+                session_key_begin = session_key_prefix;
+                session_key_end = session_key_prefix + '\xff';
+            }
+            else
+            {
+                const FDBKeyValue * kvs;
+                int kvs_len;
+                fdb_bool_t more;
+                throwIfFDBError(fdb_future_get_keyvalue_array(f, &kvs, &kvs_len, &more));
 
-                    for (int i = 0; i < kvs_len; i++)
+                for (int i = 0; i < kvs_len; i++)
+                {
+                    std::string session_key(reinterpret_cast<const char *>(kvs[i].key), kvs[i].key_length);
+                    if (KeeperKeys::extractSessionFromSessionKey(session_key, false) == session)
                     {
-                        std::string session_key(reinterpret_cast<const char *>(kvs[i].key), kvs[i].key_length);
-                        if (KeeperKeys::extractSessionFromSessionKey(session_key, false) == session)
-                        {
-                            session_keys.emplace_back(session_key);
-                            return nullptr;
-                        }
-                    }
-
-                    if (!more)
+                        session_keys.emplace_back(session_key);
                         return nullptr;
-
-                    if (kvs_len > 0)
-                        session_key_begin.assign(reinterpret_cast<const char *>(kvs[kvs_len - 1].key), kvs[kvs_len - 1].key_length);
+                    }
                 }
 
-                ctx.gotoCur(0);
-                return fdb_transaction_get_range(
-                    ctx.getTrx(),
-                    FDB_KEYSEL_FIRST_GREATER_THAN_STRING(session_key_begin),
-                    FDB_KEYSEL_FIRST_GREATER_OR_EQUAL_STRING(session_key_end),
-                    0,
-                    0,
-                    FDB_STREAMING_MODE_WANT_ALL,
-                    0,
-                    true,
-                    false);
-            })
-        .then(TRX_STEP(var_session_keys, session) {
+                if (!more)
+                    return nullptr;
+
+                if (kvs_len > 0)
+                    session_key_begin.assign(reinterpret_cast<const char *>(kvs[kvs_len - 1].key), kvs[kvs_len - 1].key_length);
+            }
+
+            ctx.gotoCur(0);
+            return fdb_transaction_get_range(
+                ctx.getTrx(),
+                FDB_KEYSEL_FIRST_GREATER_THAN_STRING(session_key_begin),
+                FDB_KEYSEL_FIRST_GREATER_OR_EQUAL_STRING(session_key_end),
+                0,
+                0,
+                FDB_STREAMING_MODE_WANT_ALL,
+                0,
+                true,
+                false);
+        })
+        .then(TRX_STEP(var_session_keys, session)
+        {
             auto & session_keys = *ctx.getVar(var_session_keys);
             if (session_keys.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such session {}", session);

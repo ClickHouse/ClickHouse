@@ -1493,9 +1493,21 @@ class ClickHouseCluster:
     def setup_foundationdb_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_foundationdb = True
         env_variables["FDB_PORT"] = str(self.foundationdb_port)
-        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_foundationdb.yml')])
-        self.base_foundationdb_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
-                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_foundationdb.yml')]
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_foundationdb.yml"),
+            ]
+        )
+        self.base_foundationdb_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_foundationdb.yml"),
+        ]
         return self.base_foundationdb_cmd
 
     def add_instance(
@@ -1560,7 +1572,6 @@ class ClickHouseCluster:
         config_root_name="clickhouse",
         extra_configs=[],
     ) -> "ClickHouseInstance":
-
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -1877,39 +1888,60 @@ class ClickHouseCluster:
             )
 
         if with_hive:
-            cmds.append(self.setup_hive(instance, env_variables, docker_compose_yml_dir))
+            cmds.append(
+                self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
 
         if with_foundationdb and not self.with_foundationdb:
-            cmds.append(self.setup_foundationdb_cmd(instance, env_variables, docker_compose_yml_dir))
+            cmds.append(
+                self.setup_foundationdb_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
 
-        logging.debug("Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
-            self.name, self.project_name, name, tag, self.base_cmd, docker_compose_yml_dir))
+        logging.debug(
+            "Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
+                self.name,
+                self.project_name,
+                name,
+                tag,
+                self.base_cmd,
+                docker_compose_yml_dir,
+            )
+        )
 
         return instance
 
     def wait_foundationdb_to_start(self):
-        self.exec_in_container(self.get_instance_docker_id(self.foundationdb_host), [
-            "sh", "-c", textwrap.dedent(""" \
+        self.exec_in_container(
+            self.get_instance_docker_id(self.foundationdb_host),
+            [
+                "sh",
+                "-c",
+                textwrap.dedent(
+                    """ \
                 if ! fdbcli --exec status --timeout 1 ; then
                     if ! fdbcli --exec "configure new single memory; status" --timeout 10; then 
                         echo "Unable to configure new FDB cluster."
                         exit 1
                     fi
                 fi
-            """)
-        ])
+            """
+                ),
+            ],
+        )
 
         # Write fdb.cluster file
         foundationdb_conn_string = f"docker:docker@{self.get_instance_ip(self.foundationdb_host)}:{self.foundationdb_port}"
-        with open(self.foundationdb_cluster, 'w') as f:
-            f.write(foundationdb_conn_string + '\n')
+        with open(self.foundationdb_cluster, "w") as f:
+            f.write(foundationdb_conn_string + "\n")
         instance: ClickHouseInstance
         for instance in self.instances.values():
             if not instance.fdb_cluster_path:
                 continue
 
-            with open(instance.fdb_cluster_path, 'w') as f:
-                f.write(foundationdb_conn_string + '\n')
+            with open(instance.fdb_cluster_path, "w") as f:
+                f.write(foundationdb_conn_string + "\n")
 
     def get_instance_docker_id(self, instance_name):
         # According to how docker-compose names containers.
@@ -2929,11 +2961,16 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ["up", "-d"])
                 self.up_called = True
                 self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
-                self.wait_for_url(f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping")
+                self.wait_for_url(
+                    f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
+                )
 
             if self.with_foundationdb and self.base_foundationdb_cmd:
                 foundationdb_start_cmd = self.base_foundationdb_cmd + common_opts
-                logging.info("Trying to create FoundationDB instance by command %s", ' '.join(map(str, foundationdb_start_cmd)))
+                logging.info(
+                    "Trying to create FoundationDB instance by command %s",
+                    " ".join(map(str, foundationdb_start_cmd)),
+                )
                 run_and_check(foundationdb_start_cmd)
                 self.up_called = True
                 logging.info("Trying to setup FoundationDB")
@@ -2941,8 +2978,13 @@ class ClickHouseCluster:
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
 
-            clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
-            logging.debug(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
+            clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
+            logging.debug(
+                (
+                    "Trying to create ClickHouse instance by command %s",
+                    " ".join(map(str, clickhouse_start_cmd)),
+                )
+            )
             self.up_called = True
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
@@ -3075,6 +3117,7 @@ class ClickHouseCluster:
             port = self.zookeeper_port
         elif self.with_foundationdb:
             from helpers.keeper_client import KeeperClient
+
             return KeeperClient(self, zoo_instance_name)
         else:
             raise Exception("Cluster has no ZooKeeper")
@@ -3134,7 +3177,9 @@ class ClickHouseCluster:
     def switch_to_fdb2(self):
         self.stop_fdb()
         logging.info("Abort fdbdr")
-        subprocess_check_call(self.base_foundationdb_cmd + ["exec", "-T", "foundationdb-dr", "stop-dr"])
+        subprocess_check_call(
+            self.base_foundationdb_cmd + ["exec", "-T", "foundationdb-dr", "stop-dr"]
+        )
 
     def get_fdb2_cluster(self):
         ip = self.get_instance_ip("foundationdb2")
@@ -4482,7 +4527,9 @@ class ClickHouseInstance:
 
         fdb_cluster_path = ""
         if self.fdb_cluster_path:
-            fdb_cluster_path = '- ' + self.fdb_cluster_path + ":/etc/foundationdb/fdb.cluster"
+            fdb_cluster_path = (
+                "- " + self.fdb_cluster_path + ":/etc/foundationdb/fdb.cluster"
+            )
 
         entrypoint_cmd = self.clickhouse_start_command
 
@@ -4541,42 +4588,47 @@ class ClickHouseInstance:
         external_dirs_volumes = ""
         if self.external_dirs:
             for external_dir in self.external_dirs:
-                external_dir_abs_path = p.abspath(p.join(self.path, external_dir.lstrip('/')))
-                logging.info(f'external_dir_abs_path={external_dir_abs_path}')
+                external_dir_abs_path = p.abspath(
+                    p.join(self.path, external_dir.lstrip("/"))
+                )
+                logging.info(f"external_dir_abs_path={external_dir_abs_path}")
                 os.mkdir(external_dir_abs_path)
-                external_dirs_volumes += "- " + external_dir_abs_path + ":"  + external_dir + "\n"
+                external_dirs_volumes += (
+                    "- " + external_dir_abs_path + ":" + external_dir + "\n"
+                )
 
-
-        with open(self.docker_compose_path, 'w') as docker_compose:
-            docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
-                image=self.image,
-                tag=self.tag,
-                name=self.name,
-                hostname=self.hostname,
-                binary_volume=binary_volume,
-                odbc_bridge_volume=odbc_bridge_volume,
-                library_bridge_volume=library_bridge_volume,
-                instance_config_dir=instance_config_dir,
-                config_d_dir=self.config_d_dir,
-                db_dir=db_dir,
-                external_dirs_volumes=external_dirs_volumes,
-                tmpfs=str(self.tmpfs),
-                logs_dir=logs_dir,
-                depends_on=str(depends_on),
-                user=os.getuid(),
-                env_file=self.env_file,
-                odbc_ini_path=odbc_ini_path,
-                keytab_path=self.keytab_path,
-                krb5_conf=self.krb5_conf,
-                fdb_cluster_path=fdb_cluster_path,
-                entrypoint_cmd=entrypoint_cmd,
-                networks=networks,
-                app_net=app_net,
-                ipv4_address=ipv4_address,
-                ipv6_address=ipv6_address,
-                net_aliases=net_aliases,
-                net_alias1=net_alias1,
-            ))
+        with open(self.docker_compose_path, "w") as docker_compose:
+            docker_compose.write(
+                DOCKER_COMPOSE_TEMPLATE.format(
+                    image=self.image,
+                    tag=self.tag,
+                    name=self.name,
+                    hostname=self.hostname,
+                    binary_volume=binary_volume,
+                    odbc_bridge_volume=odbc_bridge_volume,
+                    library_bridge_volume=library_bridge_volume,
+                    instance_config_dir=instance_config_dir,
+                    config_d_dir=self.config_d_dir,
+                    db_dir=db_dir,
+                    external_dirs_volumes=external_dirs_volumes,
+                    tmpfs=str(self.tmpfs),
+                    logs_dir=logs_dir,
+                    depends_on=str(depends_on),
+                    user=os.getuid(),
+                    env_file=self.env_file,
+                    odbc_ini_path=odbc_ini_path,
+                    keytab_path=self.keytab_path,
+                    krb5_conf=self.krb5_conf,
+                    fdb_cluster_path=fdb_cluster_path,
+                    entrypoint_cmd=entrypoint_cmd,
+                    networks=networks,
+                    app_net=app_net,
+                    ipv4_address=ipv4_address,
+                    ipv6_address=ipv6_address,
+                    net_aliases=net_aliases,
+                    net_alias1=net_alias1,
+                )
+            )
 
     def destroy_dir(self):
         if p.exists(self.path):

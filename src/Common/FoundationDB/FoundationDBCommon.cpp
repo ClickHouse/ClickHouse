@@ -71,7 +71,7 @@ void FoundationDBNetwork::ensureStarted(int64_t thread)
     if (thread > 1)
     {
 #ifdef FDB_C_EMBED
-        LOG_WARNING(log, "thread={} is ignored due to fdb_c is embeded", thread);
+        LOG_WARNING(log, "thread={} is ignored due to fdb_c is embedded", thread);
 #else
         void * sym_ptr = dlsym(RTLD_DEFAULT, "fdb_setup_network");
         Dl_info info;

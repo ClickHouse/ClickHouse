@@ -12,6 +12,13 @@
 #include <Common/FoundationDB/FoundationDBHelpers.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 /// ZNode stat <=> Meta key in fdb
 ///
@@ -39,7 +46,8 @@
     APPLY_FOR_ZNODE_STATS_WITHOUT_HIDDEN(M) \
     APPLY_FOR_ZNODE_STATS_HIDDEN(M)
 
-constexpr int znode_stats_total_size = []() {
+constexpr int znode_stats_total_size = []()
+{
     int i = 0;
 #define M(k, v) ++i;
     APPLY_FOR_ZNODE_STATS(M)
@@ -278,7 +286,7 @@ inline Coordination::Error getKeeperErrorFromFDBError(fdb_error_t fdb_error, con
             return Coordination::Error::ZOPERATIONTIMEOUT;
         default: {
             auto * log = &Poco::Logger::get(__PRETTY_FUNCTION__);
-            LOG_WARNING(log, "Unexpect fdb error {} ({}).{}", fdb_error, fdb_get_error(fdb_error), message);
+            LOG_WARNING(log, "Unexpected fdb error {} ({}).{}", fdb_error, fdb_get_error(fdb_error), message);
             return Coordination::Error::ZSYSTEMERROR;
         }
     }
@@ -303,7 +311,7 @@ inline Coordination::Error getKeeperErrorFromException(std::exception_ptr eptr, 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "Unexpect exception" + message);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Unexpected exception" + message);
         return Coordination::Error::ZSYSTEMERROR;
     }
 }

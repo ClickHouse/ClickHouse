@@ -211,7 +211,7 @@ static void execRequest(std::shared_ptr<Coordination::IKeeper> keeper, Coordinat
         keeper->list(concrete_request_list->path, ListRequestType::ALL, callback, {});
     }
     else
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupport request");
+        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported request");
 }
 
 void Runner::thread(std::vector<std::shared_ptr<Coordination::IKeeper>> zookeepers)

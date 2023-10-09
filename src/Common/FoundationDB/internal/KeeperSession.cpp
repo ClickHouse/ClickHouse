@@ -36,7 +36,8 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
     AsyncTrxBuilder trxb;
 
     auto var_new_vs = trxb.var<bool>();
-    trxb.then(TRX_STEP(this, var_new_vs) {
+    trxb.then(TRX_STEP(this, var_new_vs)
+        {
             auto & new_vs = *ctx.getVar(var_new_vs);
 
             if (cur_session_key.empty())
@@ -47,7 +48,8 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
 
             return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(cur_session_key), false);
         })
-        .then(TRX_STEP(this, var_new_vs) {
+        .then(TRX_STEP(this, var_new_vs)
+        {
             fdb_bool_t exists;
             const uint8_t * data;
             int data_len;
@@ -62,7 +64,8 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
                 throw KeeperException(Coordination::Error::ZSESSIONEXPIRED);
             return nullptr;
         })
-        .then(TRX_STEP(this, var_new_vs) {
+        .then(TRX_STEP(this, var_new_vs)
+        {
             newTimestamp() = BigEndianTimestamp::fromNow(KEEPER_SESSION_EXPIRE_AT_MS);
             auto & new_vs = *ctx.getVar(var_new_vs);
 
@@ -84,7 +87,7 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
             if (eptr)
             {
                 expired.store(true);
-                tryLogException(eptr, log, "Unexpect error during heartbeat");
+                tryLogException(eptr, log, "Unexpected error during heartbeat");
                 onExpired();
             }
             else
@@ -103,7 +106,8 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
 
 void KeeperSession::currentSession(AsyncTrxBuilder & trxb, AsyncTrxVar<SessionID> var_session)
 {
-    trxb.then(TRX_STEP(this, log = log) {
+    trxb.then(TRX_STEP(this, log = log)
+        {
             if (expired)
                 throw KeeperException(Coordination::Error::ZSESSIONEXPIRED);
 
@@ -116,7 +120,8 @@ void KeeperSession::currentSession(AsyncTrxBuilder & trxb, AsyncTrxVar<SessionID
 
             return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(cur_session_key), false);
         })
-        .then(TRX_STEP(this, log = log, var_session) {
+        .then(TRX_STEP(this, log = log, var_session)
+        {
             fdb_bool_t exists;
             const uint8_t * data;
             int data_len;

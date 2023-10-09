@@ -26,7 +26,7 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         initFromKeeperSection(config, config_name);
 
     if (implementation == "fdbkeeper" && fdb_cluster.empty())
-        throw KeeperException(Coordination::Error::ZBADARGUMENTS, "fdb_cluster is requested by fdbkeeper implementaion");
+        throw KeeperException(Coordination::Error::ZBADARGUMENTS, "fdb_cluster is requested by fdbkeeper implementation");
 
     if (!chroot.empty())
     {
@@ -209,7 +209,8 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         }
         else if (key == "fallback_session_lifetime")
         {
-            fallback_session_lifetime = SessionLifetimeConfiguration{
+            fallback_session_lifetime = SessionLifetimeConfiguration
+            {
                 .min_sec = config.getUInt(config_name + "." + key + ".min"),
                 .max_sec = config.getUInt(config_name + "." + key + ".max"),
             };

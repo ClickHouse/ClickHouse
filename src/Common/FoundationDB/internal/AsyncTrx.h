@@ -18,6 +18,14 @@
 // #define FDB_ASYNC_TRX_ENABLE_THREAD_POOL
 // #define ASYNC_TRX_DEBUG_LOG
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
+
 namespace DB::FoundationDB
 {
 
@@ -297,7 +305,7 @@ public:
     ~AsyncTrx()
     {
 #ifdef ASYNC_TRX_DEBUG_LOG
-        LOG_DEBUG(log, "Destory trx: {}", static_cast<void *>(this));
+        LOG_DEBUG(log, "Destroy trx: {}", static_cast<void *>(this));
 #endif
     }
 
@@ -364,7 +372,8 @@ private:
 #ifdef FDB_ASYNC_TRX_ENABLE_THREAD_POOL
         try
         {
-            GlobalThreadPool::instance().scheduleOrThrow([trx, f]() {
+            GlobalThreadPool::instance().scheduleOrThrow([trx, f]()
+            {
 #endif
                 try
                 {
@@ -486,26 +495,30 @@ public:
         using FDBFuturePtr = std::unique_ptr<FDBFuture, void (*)(FDBFuture *)>;
         auto var_future = var<FDBFuturePtr>(nullptr, fdb_future_destroy);
 
-        steps.emplace_back([var_future](Context & ctx, FDBFuture *) {
-            auto & future = *ctx.getVar(var_future);
+        steps.emplace_back(
+            [var_future](Context & ctx, FDBFuture *)
+            {
+                auto & future = *ctx.getVar(var_future);
 
-            future = FDBFuturePtr(fdb_transaction_get_versionstamp(ctx.getTrx()), fdb_future_destroy);
-            return nullptr;
-        });
+                future = FDBFuturePtr(fdb_transaction_get_versionstamp(ctx.getTrx()), fdb_future_destroy);
+                return nullptr;
+            });
         commit();
         steps.emplace_back([var_future](Context & ctx, FDBFuture *) { return ctx.getVar(var_future)->release(); });
-        steps.emplace_back([var_versionstamp](Context & ctx, FDBFuture * f) {
-            auto & vs = *ctx.getVar(var_versionstamp);
+        steps.emplace_back(
+            [var_versionstamp](Context & ctx, FDBFuture * f)
+            {
+                auto & vs = *ctx.getVar(var_versionstamp);
 
-            const uint8_t * vs_bytes;
-            int vs_len;
+                const uint8_t * vs_bytes;
+                int vs_len;
 
-            throwIfFDBError(fdb_future_get_key(f, &vs_bytes, &vs_len));
-            assert(vs_len == 10);
+                throwIfFDBError(fdb_future_get_key(f, &vs_bytes, &vs_len));
+                assert(vs_len == 10);
 
-            memcpy(&vs.bytes, vs_bytes, 10);
-            return nullptr;
-        });
+                memcpy(&vs.bytes, vs_bytes, 10);
+                return nullptr;
+            });
 
         return *this;
     }

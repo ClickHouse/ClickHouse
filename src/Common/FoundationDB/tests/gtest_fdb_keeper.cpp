@@ -1170,7 +1170,7 @@ TEST_P(FDBKeeperChrootSuite, LinearizableSetShouldWork)
         keeper.reset();
         clear();
         initRoot();
-        /// Recreate keeper is required beacause old keeper may be expired
+        /// Recreate keeper is required because old keeper may be expired
         /// by clear() or tmp root keeper in initRoot()
         keeper = createKeeper();
 
@@ -1311,7 +1311,7 @@ TEST_P(FDBKeeperChrootSuite, ManualCleanerShouldFaildedIfSessionIDInvalid)
     try
     {
         keeper->cleanSession(0).get();
-        FAIL() << "no exception occured";
+        FAIL() << "no exception occurred";
     }
     catch (DB::Exception & e)
     {

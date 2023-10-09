@@ -11,11 +11,6 @@
 
 #include "AsyncTrxTracker.h"
 
-namespace DB::ErrorCodes
-{
-extern const int FDB_EXCEPTION;
-}
-
 namespace DB::FoundationDB
 {
 

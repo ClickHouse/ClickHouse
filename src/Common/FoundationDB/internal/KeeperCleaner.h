@@ -18,7 +18,7 @@ public:
     // Create a cleaner without cleaner thread. Useful for testing.
     explicit KeeperCleaner(const KeeperKeys & keys_);
 
-    // clean specfic session. clean() will take the ownership of tr.
+    // clean specific session. clean() will take the ownership of tr.
     // clean() is inefficient. You should only use it in test.
     std::future<void> clean(SessionID session, FDBTransaction * tr);
 

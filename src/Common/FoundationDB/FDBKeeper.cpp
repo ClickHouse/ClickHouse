@@ -42,9 +42,6 @@ extern const Event ZooKeeperCheck;
 extern const Event ZooKeeperSync;
 extern const Event ZooKeeperClose;
 extern const Event ZooKeeperWaitMicroseconds;
-extern const Event ZooKeeperBytesSent;
-extern const Event ZooKeeperBytesReceived;
-extern const Event ZooKeeperWatchResponse;
 }
 
 namespace Coordination
@@ -216,7 +213,8 @@ void FDBKeeper::create(
 #endif
 
     if (!chroot.empty())
-        trxb.then(TRX_STEP(resp, chroot = chroot) {
+        trxb.then(TRX_STEP(resp, chroot = chroot)
+        {
             removeRootPath(ctx.getVar(resp)->path_created, chroot);
             return nullptr;
         });
@@ -307,7 +305,8 @@ void FDBKeeper::set(const String & path, const String & data, int32_t version, S
     ZNodeLayer znode(trxb, chrooted_path, *keys);
     auto var_resp = trxb.var<SetResponse>();
     znode.stat(var_resp);
-    trxb.then(TRX_STEP(var_resp, version, data_length = data.size()) {
+    trxb.then(TRX_STEP(var_resp, version, data_length = data.size())
+    {
         auto & resp = *ctx.getVar(var_resp);
         if (version >= 0 && resp.stat.version != version)
             throw DB::FoundationDB::KeeperException(Error::ZBADVERSION);
@@ -320,7 +319,8 @@ void FDBKeeper::set(const String & path, const String & data, int32_t version, S
 
     auto var_vs = trxb.var<FDBVersionstamp>();
     trxb.commit(var_vs);
-    trxb.then(TRX_STEP(var_vs, var_resp) {
+    trxb.then(TRX_STEP(var_vs, var_resp)
+    {
         auto & resp = *ctx.getVar(var_resp);
         auto & vs = *ctx.getVar(var_vs);
 
@@ -417,7 +417,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
     /// CreateRequest set <path><meta><*zxid> = versionstamp.
     /// SetRequest require <path><meta><{c,p}zxid> to build stat in response.
-    /// But versionstamp is not avaiable unitl commit.
+    /// But versionstamp is not available until commit.
 
     /// New ZNodes
     std::unordered_set<std::string> pathset_create;
@@ -463,7 +463,8 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
             if (!chroot.empty())
             {
-                trxb.then(TRX_STEP(resp, chroot = chroot) {
+                trxb.then(TRX_STEP(resp, chroot = chroot)
+                {
                     removeRootPath(ctx.getVar(resp)->path_created, chroot);
                     return nullptr;
                 });
@@ -614,7 +615,8 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         {
             auto var_vs = trxb.var<FDBVersionstamp>();
             trxb.commit(var_vs);
-            trxb.then(TRX_STEP(var_vs, resps_need_cpmzxid, resps_need_pmzxid, resps_need_mzxid) {
+            trxb.then(TRX_STEP(var_vs, resps_need_cpmzxid, resps_need_pmzxid, resps_need_mzxid)
+            {
                 auto & zxid = *ctx.getVar(var_vs.as<int64_t>());
                 for (const auto & var_resp : resps_need_cpmzxid)
                 {

@@ -40,7 +40,7 @@ public:
     /// Create znode if not exists
     void create(const String & data, bool is_sequential, AsyncTrxVar<Coordination::CreateResponse> var_resp);
 
-    /// Register ephemeral node without assert exsist.
+    /// Register ephemeral node without assert exist.
     /// registerEphemeralUnsafe should be called after create().
     void registerEphemeralUnsafe(AsyncTrxVar<int64_t> var_session, AsyncTrxVar<Coordination::CreateResponse> var_resp);
 

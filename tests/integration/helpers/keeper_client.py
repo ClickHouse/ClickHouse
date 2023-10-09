@@ -2,12 +2,13 @@ from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster
 from kazoo.exceptions import NodeExistsError
 
-        
+
 def quote_string(s):
     if type(s) == bytes:
-        s = s.decode('unicode_escape')
+        s = s.decode("unicode_escape")
     escaped = s.replace("'", "\\'")
     return f"'{escaped}'"
+
 
 class KeeperClient:
     def __init__(self, cluster: ClickHouseCluster, instance):
@@ -23,11 +24,7 @@ class KeeperClient:
         ]
 
         if self.cluster.with_foundationdb:
-            args += [
-                "--fdb",
-                "--fdb-cluster",
-                self.cluster.foundationdb_cluster
-            ]
+            args += ["--fdb", "--fdb-cluster", self.cluster.foundationdb_cluster]
         elif self.cluster.with_zookeeper:
             args += [
                 "--host",
@@ -53,33 +50,32 @@ class KeeperClient:
         return self.query(cmd)
 
     def exists(self, path):
-        stat_resp = self.query(f'exists {path}')
+        stat_resp = self.query(f"exists {path}")
         if not stat_resp:
             return None
         return stat_resp
-    
+
     def sync(self, path):
-        return self.query(f'sync {path}')
+        return self.query(f"sync {path}")
 
     def create(self, path, value="", makepath=False):
-        opt_parent = 'PARENT' if makepath else ''
-        return self.query(f'create {path} {quote_string(value)} {opt_parent}')
+        opt_parent = "PARENT" if makepath else ""
+        return self.query(f"create {path} {quote_string(value)} {opt_parent}")
 
     def get_children(self, path):
-        return self.query(f'ls {path}').strip().split(' ')
+        return self.query(f"ls {path}").strip().split(" ")
 
     def delete(self, path, recursive=False):
         if recursive:
-            self.query(f'rmr {path} force')
+            self.query(f"rmr {path} force")
         else:
-            self.query(f'rm {path}')
+            self.query(f"rm {path}")
 
     def set(self, path, value):
-        return self.query(f'set {path} {quote_string(value)}')
+        return self.query(f"set {path} {quote_string(value)}")
 
     def get(self, path):
-        return self.query(f'get {path}')[:-1]
+        return self.query(f"get {path}")[:-1]
 
     def stop(self):
         return
-
