@@ -171,7 +171,7 @@ namespace
                 }
             }
 
-            /// We're going to replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
+            /// We're going to replace 'aws_secret_access_key' with '[HIDDEN]' for the following signatures:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
             markSecretArgument(url_arg_idx + 2);
