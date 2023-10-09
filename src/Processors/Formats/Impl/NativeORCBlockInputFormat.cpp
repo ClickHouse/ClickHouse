@@ -151,105 +151,109 @@ static String getColumnNameFromKeyCondition(const KeyCondition & key_condition, 
 static std::optional<orc::Literal>
 convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTypePtr type_hint = nullptr)
 {
-    std::cout << "convert field:" << toString(field) << " to orc_type:" << orc_type.toString() << std::endl;
-    /// We always fallback to return null if possible CH type hint not consistent with ORC type
-    switch (orc_type.getKind())
+    try
     {
-        case orc::BOOLEAN: {
-            UInt64 val;
-            if (field.tryGet(val))
+        /// We always fallback to return null if possible CH type hint not consistent with ORC type
+        switch (orc_type.getKind())
+        {
+            case orc::BOOLEAN: {
+                /// May throw exception
+                auto val = field.get<UInt64>();
                 return orc::Literal(val != 0);
-            break;
-        }
-        case orc::BYTE:
-        case orc::SHORT:
-        case orc::INT:
-        case orc::LONG: {
-            Int64 val;
-            if (field.tryGet(val))
+            }
+            case orc::BYTE:
+            case orc::SHORT:
+            case orc::INT:
+            case orc::LONG: {
+                /// May throw exception
+                auto val = field.get<Int64>();
                 return orc::Literal(val);
-            break;
-        }
-        case orc::FLOAT:
-        case orc::DOUBLE: {
-            Float64 val;
-            if (field.tryGet(val))
-                return orc::Literal(val);
-            break;
-        }
-        case orc::VARCHAR:
-        case orc::CHAR:
-        case orc::STRING: {
-            String str;
-            if (field.tryGet(str))
-                return orc::Literal(str.data(), str.size());
-            break;
-        }
-        case orc::DATE: {
-            Int64 val;
-            if (field.tryGet(val))
-                return orc::Literal(orc::PredicateDataType::DATE, val);
-            break;
-        }
-        case orc::TIMESTAMP: {
-            if (type_hint && isDateTime64(type_hint))
-            {
-                const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(type_hint.get());
-                if (datetime64_type->getScale() != 9)
-                    return std::nullopt;
             }
-
-            DecimalField<Decimal64> ts;
-            if (field.tryGet(ts))
-            {
-                Int64 secs = (ts.getValue() / ts.getScaleMultiplier()).convertTo<Int64>();
-                Int32 nanos = (ts.getValue() - (ts.getValue() / ts.getScaleMultiplier()) * ts.getScaleMultiplier()).convertTo<Int32>();
-                return orc::Literal(secs, nanos);
-            }
-            break;
-        }
-        case orc::DECIMAL: {
-            auto precision = orc_type.getPrecision();
-            if (precision == 0)
-                precision = 38;
-
-            if (precision <= DecimalUtils::max_precision<Decimal32>)
-            {
-                DecimalField<Decimal32> val;
+            case orc::FLOAT:
+            case orc::DOUBLE: {
+                Float64 val;
                 if (field.tryGet(val))
-                {
-                    Int64 right = val.getValue().convertTo<Int64>();
-                    return orc::Literal(
-                        orc::Int128(right), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
-                }
-            }
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
-            {
-                DecimalField<Decimal64> val;
-                if (field.tryGet(val))
-                {
-                    Int64 right = val.getValue().convertTo<Int64>();
-                    return orc::Literal(
-                        orc::Int128(right), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
-                }
-            }
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
-            {
-                DecimalField<Decimal128> val;
-                if (field.tryGet(val))
-                {
-                    Int64 high = val.getValue().value.items[1];
-                    UInt64 low = static_cast<UInt64>(val.getValue().value.items[0]);
-                    return orc::Literal(
-                        orc::Int128(high, low), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
-                }
-            }
-            break;
-        }
-        default:
+                    return orc::Literal(val);
                 break;
+            }
+            case orc::VARCHAR:
+            case orc::CHAR:
+            case orc::STRING: {
+                String str;
+                if (field.tryGet(str))
+                    return orc::Literal(str.data(), str.size());
+                break;
+            }
+            case orc::DATE: {
+                Int64 val;
+                if (field.tryGet(val))
+                    return orc::Literal(orc::PredicateDataType::DATE, val);
+                break;
+            }
+            case orc::TIMESTAMP: {
+                if (type_hint && isDateTime64(type_hint))
+                {
+                    const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(type_hint.get());
+                    if (datetime64_type->getScale() != 9)
+                        return std::nullopt;
+                }
+
+                DecimalField<Decimal64> ts;
+                if (field.tryGet(ts))
+                {
+                    Int64 secs = (ts.getValue() / ts.getScaleMultiplier()).convertTo<Int64>();
+                    Int32 nanos = (ts.getValue() - (ts.getValue() / ts.getScaleMultiplier()) * ts.getScaleMultiplier()).convertTo<Int32>();
+                    return orc::Literal(secs, nanos);
+                }
+                break;
+            }
+            case orc::DECIMAL: {
+                auto precision = orc_type.getPrecision();
+                if (precision == 0)
+                    precision = 38;
+
+                if (precision <= DecimalUtils::max_precision<Decimal32>)
+                {
+                    DecimalField<Decimal32> val;
+                    if (field.tryGet(val))
+                    {
+                        Int64 right = val.getValue().convertTo<Int64>();
+                        return orc::Literal(
+                            orc::Int128(right), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
+                    }
+                }
+                else if (precision <= DecimalUtils::max_precision<Decimal64>)
+                {
+                    DecimalField<Decimal64> val;
+                    if (field.tryGet(val))
+                    {
+                        Int64 right = val.getValue().convertTo<Int64>();
+                        return orc::Literal(
+                            orc::Int128(right), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
+                    }
+                }
+                else if (precision <= DecimalUtils::max_precision<Decimal128>)
+                {
+                    DecimalField<Decimal128> val;
+                    if (field.tryGet(val))
+                    {
+                        Int64 high = val.getValue().value.items[1];
+                        UInt64 low = static_cast<UInt64>(val.getValue().value.items[0]);
+                        return orc::Literal(
+                            orc::Int128(high, low), static_cast<Int32>(orc_type.getPrecision()), static_cast<Int32>(orc_type.getScale()));
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return std::nullopt;
     }
-    return std::nullopt;
+    catch (Exception &)
+    {
+        return std::nullopt;
+    }
 }
 
 static std::optional<orc::Literal>
@@ -258,12 +262,8 @@ convertFieldRefToORCLiteral(const orc::Type & orc_type, const FieldRef & field, 
     if (!field.isExplicit())
         return std::nullopt;
 
-    auto res = convertFieldToORCLiteral(orc_type, field, type_hint);
-    if (!res.has_value())
-        std::cout << "convert field to orc literal failed" << std::endl;
-    return res;
+    return convertFieldToORCLiteral(orc_type, field, type_hint);
 }
-
 
 static void buildORCSearchArgumentImpl(
     const KeyCondition & key_condition, const orc::Type & schema, KeyCondition::RPN & rpn_stack, orc::SearchArgumentBuilder & builder)
@@ -272,7 +272,6 @@ static void buildORCSearchArgumentImpl(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
 
     const auto & curr = rpn_stack.back();
-    std::cout << "curr:" << curr.toString() << std::endl;
     switch (curr.function)
     {
         case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
@@ -298,10 +297,8 @@ static void buildORCSearchArgumentImpl(
             if (!curr.monotonic_functions_chain.empty())
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
-                std::cout << "wrap by function" << std::endl;
                 break;
             }
-            std::cout << "xxx1" << std::endl;
 
             /// key filter expressions like "(a, b, c) in " or "(func(a), b) in " are not supported for ORC filter push down
             /// Only expressions like "a in " are supported currently, maybe we can improve it later.
@@ -311,11 +308,9 @@ static void buildORCSearchArgumentImpl(
                 if (!set_index || set_index->size() != 1 || set_index->hasMonotonicFunctionsChain())
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);
-                    std::cout << "wrap by function(set)" << std::endl;
                     break;
                 }
             }
-            std::cout << "xxx2" << std::endl;
 
             const auto * type = getORCTypeByName(schema, getColumnNameFromKeyCondition(key_condition, curr.key_column));
             if (!type)
@@ -323,7 +318,6 @@ static void buildORCSearchArgumentImpl(
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
-            std::cout << "xxx3" << std::endl;
 
             auto predicate_type = convertORCTypeToPredicateType(*type);
             if (!predicate_type.has_value())
@@ -331,20 +325,16 @@ static void buildORCSearchArgumentImpl(
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
-            std::cout << "xxx4" << std::endl;
 
             if (need_wrap_not)
                 builder.startNot();
 
-            std::cout << "xxx4" << std::endl;
             if (contains_is_null)
             {
-                std::cout << "contains is null" << std::endl;
                 builder.isNull(type->getColumnId(), *predicate_type);
             }
             else if (contains_in_range)
             {
-                std::cout << "contains in range" << std::endl;
                 const auto & range = curr.range;
                 bool has_left_bound = !range.left.isNegativeInfinity();
                 bool has_right_bound = !range.right.isPositiveInfinity();
@@ -355,14 +345,10 @@ static void buildORCSearchArgumentImpl(
                 }
                 else if (has_left_bound && has_right_bound && range.left_included && range.right_included && range.left == range.right)
                 {
-                    std::cout << "contains equal" << std::endl;
                     /// Transform range with the same left bound and right bound to equal, which could utilize bloom filters in ORC
                     auto literal = convertFieldRefToORCLiteral(*type, range.left);
                     if (literal.has_value())
-                    {
-                        std::cout << "equal literal:" << literal->toString() << std::endl;
                         builder.equals(type->getColumnId(), *predicate_type, *literal);
-                    }
                     else
                         builder.literal(orc::TruthValue::YES_NO_NULL);
                 }
@@ -627,8 +613,6 @@ static void getFileReaderAndSchema(
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
 {
-    format_settings.orc.skip_stripes = {0, 1, 2, 3, 4, 5, 9, 10, 11};
-    skip_stripes = format_settings.orc.skip_stripes;
 }
 
 void NativeORCBlockInputFormat::prepareFileReader()
@@ -659,9 +643,9 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     if (format_settings.orc.filter_push_down && key_condition && !sarg)
     {
-        std::cout << "key_condition:" << key_condition->toString() << std::endl;
+        // std::cout << "key_condition:" << key_condition->toString() << std::endl;
         sarg = buildORCSearchArgument(*key_condition, file_reader->getType());
-        std::cout << "sarg:" << sarg->toString() << std::endl;
+        // std::cout << "sarg:" << sarg->toString() << std::endl;
     }
 }
 
@@ -677,7 +661,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     if (current_stripe >= total_stripes)
         return false;
 
-    std::cout << "current_stripe:" << current_stripe << std::endl;
+    // std::cout << "current_stripe:" << current_stripe << std::endl;
     current_stripe_info = file_reader->getStripe(current_stripe);
     if (!current_stripe_info->getNumberOfRows())
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
@@ -686,7 +670,10 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     row_reader_options.include(include_indices);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
     if (format_settings.orc.filter_push_down)
+    {
+        // std::cout << "orc filter push down applied" << std::endl;
         row_reader_options.searchArgument(sarg);
+    }
 
     stripe_reader = file_reader->createRowReader(row_reader_options);
 

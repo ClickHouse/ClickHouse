@@ -27,37 +27,21 @@ void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline,
 
 void ReadFromStorageStep::applyFilters()
 {
-    std::cout << "xxx1" << std::endl;
     if (!context)
-    {
-        std::cout << "xxx2" << std::endl;
         return;
-    }
 
     std::shared_ptr<const KeyCondition> key_condition;
     if (!context->getSettingsRef().allow_experimental_analyzer)
     {
         for (const auto & processor : pipe.getProcessors())
-        {
-            std::cout << "processor:" << processor->getName() << std::endl;
             if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
-            {
-                std::cout << "xxx4" << std::endl;
                 source->setKeyCondition(query_info, context);
-            }
-        }
     }
     else
     {
         for (const auto & processor : pipe.getProcessors())
-        {
-            std::cout << "processor:" << processor->getName() << std::endl;
             if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
-            {
-                std::cout << "xxx4" << std::endl;
                 source->setKeyCondition(filter_nodes.nodes, context);
-            }
-        }
     }
 }
 
