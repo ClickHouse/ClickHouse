@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/Utils.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -422,12 +421,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.get<const String &>();
-            // This optimization can't process alternation - this would require a comprehensive parsing of regular expression.
-            if (expression.contains('|'))
-                return false;
-
-            String prefix = extractFixedPrefixFromRegularExpression(expression);
+            String prefix = extractFixedPrefixFromRegularExpression(value.get<const String &>());
             if (prefix.empty())
                 return false;
 
@@ -570,17 +564,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         }
         case (ActionsDAG::ActionType::COLUMN):
         {
-            String name;
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
-                /// Re-generate column name for constant.
-                /// DAG form query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
-                /// DAG from PK does not use it. This is breakig match by column name sometimes.
-                /// Ideally, we should not compare manes, but DAG subtrees instead.
-                name = ASTLiteral(column_const->getDataColumn()[0]).getColumnName();
-            else
-                name = node.result_name;
-
-            res = &inverted_dag.addColumn({node.column, node.result_type, name});
+            res = &inverted_dag.addColumn({node.column, node.result_type, node.result_name});
             break;
         }
         case (ActionsDAG::ActionType::ALIAS):
@@ -759,20 +743,11 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    size_t key_index = 0;
     for (const auto & name : key_column_names)
-    {
         if (!key_columns.contains(name))
-        {
             key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
 
-    ASTPtr filter_node;
-    if (query)
-        filter_node = buildFilterNode(query, additional_filter_asts);
+    auto filter_node = buildFilterNode(query, additional_filter_asts);
 
     if (!filter_node)
     {
@@ -833,16 +808,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    size_t key_index = 0;
     for (const auto & name : key_column_names)
-    {
         if (!key_columns.contains(name))
-        {
             key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
 
     if (!filter_dag)
     {
@@ -961,26 +929,6 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-/** When table's key has expression with these functions from a column,
-  * and when a column in a query is compared with a constant, such as:
-  * CREATE TABLE (x String) ORDER BY toDate(x)
-  * SELECT ... WHERE x LIKE 'Hello%'
-  * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparsable values.
-  */
-static std::set<std::string_view> date_time_parsing_functions = {
-    "toDate",
-    "toDate32",
-    "toDateTime",
-    "toDateTime64",
-    "ParseDateTimeBestEffort",
-    "ParseDateTimeBestEffortUS",
-    "ParseDateTime32BestEffort",
-    "ParseDateTime64BestEffort",
-    "parseDateTime",
-    "parseDateTimeInJodaSyntax",
-};
-
 /** The key functional expression constraint may be inferred from a plain column in the expression.
   * For example, if the key contains `toStartOfHour(Timestamp)` and query contains `WHERE Timestamp >= now()`,
   * it can be assumed that if `toStartOfHour()` is monotonic on [now(), inf), the `toStartOfHour(Timestamp) >= toStartOfHour(now())`
@@ -1064,24 +1012,10 @@ bool KeyCondition::transformConstantWithValidFunctions(
                     if (func->type != ActionsDAG::ActionType::FUNCTION)
                         continue;
 
-                    const auto & func_name = func->function_base->getName();
-                    auto func_base = func->function_base;
-                    const auto & arg_types = func_base->getArgumentTypes();
-                    if (date_time_parsing_functions.contains(func_name) && !arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                    {
-                        auto func_or_null = FunctionFactory::instance().get(func_name + "OrNull", context);
-                        ColumnsWithTypeAndName arguments;
-                        int i = 0;
-                        for (const auto & type : func->function_base->getArgumentTypes())
-                            arguments.push_back({nullptr, type, fmt::format("_{}", i++)});
-
-                        func_base = func_or_null->build(arguments);
-                    }
-
                     if (func->children.size() == 1)
                     {
                         std::tie(const_value, const_type)
-                            = applyFunctionForFieldOfUnknownType(func_base, const_type, const_value);
+                            = applyFunctionForFieldOfUnknownType(func->function_base, const_type, const_value);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -1092,7 +1026,7 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto left_arg_type = left->result_type;
                             auto left_arg_value = (*left->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
+                                FunctionFactory::instance().get(func->function_base->getName(), context),
                                 left_arg_type, left_arg_value, const_type, const_value);
                         }
                         else
@@ -1100,13 +1034,10 @@ bool KeyCondition::transformConstantWithValidFunctions(
                             auto right_arg_type = right->result_type;
                             auto right_arg_value = (*right->column)[0];
                             std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                FunctionFactory::instance().get(func_base->getName(), context),
+                                FunctionFactory::instance().get(func->function_base->getName(), context),
                                 const_type, const_value, right_arg_type, right_arg_value);
                         }
                     }
-
-                    if (const_value.isNull())
-                        return false;
                 }
 
                 out_key_column_num = it->second;
@@ -1259,23 +1190,7 @@ bool KeyCondition::tryPrepareSetIndex(
 
     const auto right_arg = func.getArgumentAt(1);
 
-    auto future_set = right_arg.tryGetPreparedSet();
-    if (!future_set)
-        return false;
-
-    const auto set_types = future_set->getTypes();
-    size_t set_types_size = set_types.size();
-    size_t indexes_mapping_size = indexes_mapping.size();
-
-    /// When doing strict matches, we have to check all elements in set.
-    if (strict && indexes_mapping_size < set_types_size)
-        return false;
-
-    for (auto & index_mapping : indexes_mapping)
-        if (index_mapping.tuple_index >= set_types_size)
-            return false;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    auto prepared_set = right_arg.tryGetPreparedSet(indexes_mapping, data_types);
     if (!prepared_set)
         return false;
 
@@ -1283,72 +1198,12 @@ bool KeyCondition::tryPrepareSetIndex(
     if (!prepared_set->hasExplicitSetElements())
         return false;
 
-    /** Try to convert set columns to primary key columns.
-      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
-      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
-      * we need to convert set column to primary key column.
-      */
-    auto set_columns = prepared_set->getSetElements();
-    assert(set_types_size == set_columns.size());
+    prepared_set->checkColumnsNumber(left_args_count);
+    for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
-    for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping_size; ++indexes_mapping_index)
-    {
-        const auto & key_column_type = data_types[indexes_mapping_index];
-        size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
-        auto set_element_type = set_types[set_element_index];
-        auto set_column = set_columns[set_element_index];
+    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
-        if (canBeSafelyCasted(set_element_type, key_column_type))
-        {
-            set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
-            continue;
-        }
-
-        if (!key_column_type->canBeInsideNullable())
-            return false;
-
-        const NullMap * set_column_null_map = nullptr;
-
-        if (isNullableOrLowCardinalityNullable(set_element_type))
-        {
-            if (WhichDataType(set_element_type).isLowCardinality())
-            {
-                set_element_type = removeLowCardinality(set_element_type);
-                set_column = set_column->convertToFullColumnIfLowCardinality();
-            }
-
-            set_element_type = removeNullable(set_element_type);
-            const auto & set_column_nullable = assert_cast<const ColumnNullable &>(*set_column);
-            set_column_null_map = &set_column_nullable.getNullMapData();
-            set_column = set_column_nullable.getNestedColumnPtr();
-        }
-
-        auto nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto & nullable_set_column_typed = assert_cast<const ColumnNullable &>(*nullable_set_column);
-        const auto & nullable_set_column_null_map = nullable_set_column_typed.getNullMapData();
-        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
-
-        IColumn::Filter filter(nullable_set_column_null_map_size);
-
-        if (set_column_null_map)
-        {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
-
-            set_column = nullable_set_column_typed.filter(filter, 0);
-        }
-        else
-        {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = !nullable_set_column_null_map[i];
-
-            set_column = nullable_set_column_typed.getNestedColumn().filter(filter, 0);
-        }
-
-        set_columns[set_element_index] = std::move(set_column);
-    }
-
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
     return true;
 }
 
@@ -2134,9 +1989,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true);
         else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, data_types[prefix_size]->isNullable());
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true);
 
         return callback(hyperrectangle);
     }
@@ -2708,6 +2563,25 @@ bool KeyCondition::alwaysFalse() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::alwaysFalse");
 
     return rpn_stack[0] == 0;
+}
+
+size_t KeyCondition::getMaxKeyColumn() const
+{
+    size_t res = 0;
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL
+            || element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (element.key_column > res)
+                res = element.key_column;
+        }
+    }
+    return res;
 }
 
 bool KeyCondition::hasMonotonicFunctionsChain() const

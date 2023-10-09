@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterCreateNamedCollectionQuery.h>
+
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>

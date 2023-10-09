@@ -23,9 +23,9 @@ struct SettingsProfileElement
     std::optional<UUID> parent_profile;
 
     String setting_name;
-    std::optional<Field> value;
-    std::optional<Field> min_value;
-    std::optional<Field> max_value;
+    Field value;
+    Field min_value;
+    Field max_value;
     std::optional<SettingConstraintWritability> writability;
 
     auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, writability); }

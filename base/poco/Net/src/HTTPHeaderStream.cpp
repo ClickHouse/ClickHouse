@@ -26,7 +26,7 @@ namespace Net {
 
 
 HTTPHeaderStreamBuf::HTTPHeaderStreamBuf(HTTPSession& session, openmode mode):
-	HTTPBasicStreamBuf(HTTP_DEFAULT_BUFFER_SIZE, mode),
+	HTTPBasicStreamBuf(HTTPBufferAllocator::BUFFER_SIZE, mode),
 	_session(session),
 	_end(false)
 {
@@ -101,6 +101,10 @@ HTTPHeaderStreamBuf* HTTPHeaderIOS::rdbuf()
 // HTTPHeaderInputStream
 //
 
+
+Poco::MemoryPool HTTPHeaderInputStream::_pool(sizeof(HTTPHeaderInputStream));
+
+
 HTTPHeaderInputStream::HTTPHeaderInputStream(HTTPSession& session):
 	HTTPHeaderIOS(session, std::ios::in),
 	std::istream(&_buf)
@@ -112,9 +116,33 @@ HTTPHeaderInputStream::~HTTPHeaderInputStream()
 {
 }
 
+
+void* HTTPHeaderInputStream::operator new(std::size_t size)
+{
+	return _pool.get();
+}
+
+
+void HTTPHeaderInputStream::operator delete(void* ptr)
+{
+	try
+	{
+		_pool.release(ptr);
+	}
+	catch (...)
+	{
+		poco_unexpected();
+	}
+}
+
+
 //
 // HTTPHeaderOutputStream
 //
+
+
+Poco::MemoryPool HTTPHeaderOutputStream::_pool(sizeof(HTTPHeaderOutputStream));
+
 
 HTTPHeaderOutputStream::HTTPHeaderOutputStream(HTTPSession& session):
 	HTTPHeaderIOS(session, std::ios::out),
@@ -126,5 +154,25 @@ HTTPHeaderOutputStream::HTTPHeaderOutputStream(HTTPSession& session):
 HTTPHeaderOutputStream::~HTTPHeaderOutputStream()
 {
 }
+
+
+void* HTTPHeaderOutputStream::operator new(std::size_t size)
+{
+	return _pool.get();
+}
+
+
+void HTTPHeaderOutputStream::operator delete(void* ptr)
+{
+	try
+	{
+		_pool.release(ptr);
+	}
+	catch (...)
+	{
+		poco_unexpected();
+	}
+}
+
 
 } } // namespace Poco::Net

@@ -19,13 +19,13 @@ public:
     /// Attribute expression
     ASTPtr expression;
     /// Is attribute mirrored to the parent identifier
-    bool hierarchical = false;
+    bool hierarchical;
     /// Is hierarchical attribute bidirectional
-    bool bidirectional = false;
+    bool bidirectional;
     /// Flag that shows whether the id->attribute image is injective
-    bool injective = false;
+    bool injective;
     /// MongoDB object ID
-    bool is_object_id = false;
+    bool is_object_id;
 
     String getID(char delim) const override { return "DictionaryAttributeDeclaration" + (delim + name); }
 

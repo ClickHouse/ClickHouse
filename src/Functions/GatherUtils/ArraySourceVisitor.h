@@ -4,6 +4,7 @@
 
 namespace DB::GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySource;
@@ -32,4 +33,5 @@ protected:
     ~ArraySourceVisitorImpl() = default;
 };
 
+#pragma GCC visibility pop
 }

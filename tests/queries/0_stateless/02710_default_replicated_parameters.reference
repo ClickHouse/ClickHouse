@@ -1,2 +1,0 @@
-CREATE DATABASE replicated_database_params\nENGINE = Replicated(\'some/path/default/replicated_database_params\', \'{shard}\', \'{replica}\')
-CREATE DATABASE replicated_database_params\nENGINE = Replicated(\'some/path/default/replicated_database_params\', \'shard_1\', \'{replica}\')

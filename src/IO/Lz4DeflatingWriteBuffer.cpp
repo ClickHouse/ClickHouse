@@ -40,7 +40,10 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
             LZ4F_VERSION);
 }
 
-Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer() = default;
+Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
+{
+    finalize();
+}
 
 void Lz4DeflatingWriteBuffer::nextImpl()
 {

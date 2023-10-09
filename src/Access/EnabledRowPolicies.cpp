@@ -35,13 +35,7 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
     auto loaded = mixed_filters.load();
     auto it = loaded->find({database, table_name, filter_type});
     if (it == loaded->end())
-    {   /// Look for a policy for database if a table policy not found
-        it = loaded->find({database, RowPolicyName::ANY_TABLE_MARK, filter_type});
-        if (it == loaded->end())
-        {
-            return {};
-        }
-    }
+        return {};
 
     return it->second;
 }

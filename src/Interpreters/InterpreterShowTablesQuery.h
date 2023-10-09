@@ -20,7 +20,8 @@ public:
 
     BlockIO execute() override;
 
-    /// Ignore quota and limits here because execute() produces a SELECT query which checks quotas/limits by itself.
+    /// We ignore the quota and limits here because execute() will rewrite a show query as a SELECT query and then
+    /// the SELECT query will checks the quota and limits.
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 

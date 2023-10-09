@@ -5,7 +5,6 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
-#include <memory>
 #include <base/find_symbols.h>
 
 
@@ -73,15 +72,13 @@ try
 
             //event.set();
         },
-        std::make_shared<Coordination::WatchCallback>(
-            [](const WatchResponse & response)
-            {
-                if (response.error != Coordination::Error::ZOK)
-                    std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
-                else
-                    std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
-            })
-        );
+        [](const WatchResponse & response)
+        {
+            if (response.error != Coordination::Error::ZOK)
+                std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
+            else
+                std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
+        });
 
     //event.wait();
 
@@ -117,15 +114,13 @@ try
 
             //event.set();
         },
-        std::make_shared<Coordination::WatchCallback>(
-            [](const WatchResponse & response)
-            {
-                if (response.error != Coordination::Error::ZOK)
-                    std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
-                else
-                    std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
-            })
-        );
+        [](const WatchResponse & response)
+        {
+            if (response.error != Coordination::Error::ZOK)
+                std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
+            else
+                std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
+        });
 
     //event.wait();
 
@@ -141,15 +136,13 @@ try
 
             //event.set();
         },
-        std::make_shared<Coordination::WatchCallback>(
-            [](const WatchResponse & response)
-            {
-                if (response.error != Coordination::Error::ZOK)
-                    std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
-                else
-                    std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
-            })
-        );
+        [](const WatchResponse & response)
+        {
+            if (response.error != Coordination::Error::ZOK)
+                std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
+            else
+                std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
+        });
 
     //event.wait();
 
