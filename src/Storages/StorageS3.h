@@ -11,7 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/URI.h>
@@ -36,7 +36,7 @@ namespace DB
 class PullingPipelineExecutor;
 class NamedCollection;
 
-class StorageS3Source : public ISource, WithContext
+class StorageS3Source : public SourceWithKeyCondition, WithContext
 {
 public:
 
@@ -151,6 +151,16 @@ public:
     ~StorageS3Source() override;
 
     String getName() const override;
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, sample_block);
+    }
+
+    void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
+    {
+        setKeyConditionImpl(nodes, context_, sample_block);
+    }
 
     Chunk generate() override;
 

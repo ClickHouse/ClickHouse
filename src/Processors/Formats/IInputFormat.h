@@ -4,7 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
-#include <Processors/ISource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
 
@@ -17,7 +17,7 @@ using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
-class IInputFormat : public ISource
+class IInputFormat : public SourceWithKeyCondition
 {
 protected:
 
@@ -26,10 +26,6 @@ protected:
 public:
     /// ReadBuffer can be nullptr for random-access formats.
     IInputFormat(Block header, ReadBuffer * in_);
-
-    /// If the format is used by a SELECT query, this method may be called.
-    /// The format may use it for filter pushdown.
-    virtual void setKeyCondition(const KeyCondition &) { }
 
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method

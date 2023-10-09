@@ -29,8 +29,8 @@ protected:
 class ReadFromStorageStep : public ReadFromPreparedSource
 {
 public:
-    ReadFromStorageStep(Pipe pipe_, String storage_name, const SelectQueryInfo & query_info_)
-        : ReadFromPreparedSource(std::move(pipe_)), query_info(query_info_)
+    ReadFromStorageStep(Pipe pipe_, String storage_name, const SelectQueryInfo & query_info_, ContextPtr context_)
+        : ReadFromPreparedSource(std::move(pipe_), std::move(context_)), query_info(query_info_)
     {
         setStepDescription(storage_name);
 

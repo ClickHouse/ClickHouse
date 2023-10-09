@@ -480,7 +480,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
-        query_info);
+        query_info,
+        context);
     plan->addStep(std::move(step));
     plan->addInterpreterContext(query_info.projection->context);
     return plan;

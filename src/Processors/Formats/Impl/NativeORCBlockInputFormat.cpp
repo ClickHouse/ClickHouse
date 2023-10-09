@@ -631,12 +631,6 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
     skip_stripes = format_settings.orc.skip_stripes;
 }
 
-void NativeORCBlockInputFormat::setKeyCondition(const KeyCondition & key_condition_)
-{
-    if (format_settings.orc.filter_push_down)
-        key_condition.emplace(key_condition_);
-}
-
 void NativeORCBlockInputFormat::prepareFileReader()
 {
     Block schema;
@@ -663,7 +657,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
             include_indices.push_back(static_cast<int>(i));
     }
 
-    if (format_settings.orc.filter_push_down && key_condition.has_value() && !sarg)
+    if (format_settings.orc.filter_push_down && key_condition && !sarg)
     {
         std::cout << "key_condition:" << key_condition->toString() << std::endl;
         sarg = buildORCSearchArgument(*key_condition, file_reader->getType());
@@ -691,7 +685,8 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     orc::RowReaderOptions row_reader_options;
     row_reader_options.include(include_indices);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
-    row_reader_options.searchArgument(sarg);
+    if (format_settings.orc.filter_push_down)
+        row_reader_options.searchArgument(sarg);
 
     stripe_reader = file_reader->createRowReader(row_reader_options);
 

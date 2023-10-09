@@ -536,7 +536,7 @@ StorageS3Source::StorageS3Source(
     const size_t max_parsing_threads_,
     bool need_only_count_,
     std::optional<SelectQueryInfo> query_info_)
-    : ISource(info.source_header, false)
+    : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
@@ -609,8 +609,8 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
             /* is_remote_fs */ true,
             compression_method);
 
-        // if (query_info.has_value())
-            // input_format->setQueryInfo(query_info.value(), getContext());
+        if (key_condition)
+            input_format->setKeyCondition(key_condition);
 
         if (need_only_count)
             input_format->needOnlyCount();
