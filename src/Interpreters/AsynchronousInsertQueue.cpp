@@ -61,9 +61,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
 static const NameSet settings_to_skip
 {
     /// We don't consider this setting because it is only for deduplication,
@@ -71,8 +68,6 @@ static const NameSet settings_to_skip
     "insert_deduplication_token",
     "log_comment",
 };
-
-}
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
@@ -309,6 +304,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
 
+    auto data_kind = chunk.getDataKind();
     auto entry = std::make_shared<InsertData::Entry>(
         std::move(chunk), query_context->getCurrentQueryId(),
         settings.insert_deduplication_token, insert_query.format,
@@ -316,10 +312,10 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
-    if (chunk.getDataKind() == DataKind::Preprocessed)
+    if (data_kind == DataKind::Preprocessed)
         insert_query.format = "Native";
 
-    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, chunk.getDataKind()};
+    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
 
@@ -682,13 +678,16 @@ try
 
     try
     {
+        size_t num_rows = chunk.getNumRows();
+        size_t num_bytes = chunk.bytes();
+
         auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
         pipeline.complete(Pipe(std::move(source)));
 
         CompletedPipelineExecutor completed_executor(pipeline);
         completed_executor.execute();
 
-        LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'", chunk.getNumRows(), chunk.bytes(), key.query_str);
+        LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
 
         bool pulling_pipeline = false;
         logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
