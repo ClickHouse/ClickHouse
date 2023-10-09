@@ -239,7 +239,7 @@ bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
     const NameSet & updated_columns,
     bool include_ttl_target,
-    const std::function<bool(const String & file_name)> & has_indice_or_projection) const
+    const HasDependencyCallback & has_dependency) const
 {
     if (updated_columns.empty())
         return {};
@@ -268,13 +268,13 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
 
     for (const auto & index : getSecondaryIndices())
     {
-        if (has_indice_or_projection("skp_idx_" + index.name + ".idx") || has_indice_or_projection("skp_idx_" + index.name + ".idx2"))
+        if (has_dependency(index.name, ColumnDependency::SKIP_INDEX))
             add_dependent_columns(index.expression, indices_columns);
     }
 
     for (const auto & projection : getProjections())
     {
-        if (has_indice_or_projection(projection.getDirectoryName()))
+        if (has_dependency(projection.name, ColumnDependency::PROJECTION))
             add_dependent_columns(&projection, projections_columns);
     }
 

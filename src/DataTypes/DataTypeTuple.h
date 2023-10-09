@@ -32,6 +32,7 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
+    std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
     String getSQLCompatibleName() const override { return "JSON"; }
 

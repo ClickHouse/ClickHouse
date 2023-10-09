@@ -142,12 +142,16 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
+    NameSet checksums_to_remove;
 
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
     /// Finish columns serialization.
-    writer->fillChecksums(checksums);
+    writer->fillChecksums(checksums, checksums_to_remove);
+
+    for (const auto & name : checksums_to_remove)
+        checksums.files.erase(name);
 
     LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 

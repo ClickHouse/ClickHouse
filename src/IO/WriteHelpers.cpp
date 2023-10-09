@@ -23,30 +23,23 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
     std::array<char, 36> dst;
-    const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
     auto * dst_ptr = dst.data();
+
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator src_it(src_ptr + 16);
-    formatHex(src_it + 8, dst_ptr, 4);
-    dst[8] = '-';
-    formatHex(src_it + 12, dst_ptr + 9, 2);
-    dst[13] = '-';
-    formatHex(src_it + 14, dst_ptr + 14, 2);
-    dst[18] = '-';
-    formatHex(src_it, dst_ptr + 19, 2);
-    dst[23] = '-';
-    formatHex(src_it + 2, dst_ptr + 24, 6);
+    const auto * src_ptr = reinterpret_cast<const UInt8 *>(&uuid);
+    const std::reverse_iterator src(src_ptr + 16);
 #else
-    formatHex(src_ptr, dst_ptr, 4);
-    dst[8] = '-';
-    formatHex(src_ptr + 4, dst_ptr + 9, 2);
-    dst[13] = '-';
-    formatHex(src_ptr + 6, dst_ptr + 14, 2);
-    dst[18] = '-';
-    formatHex(src_ptr + 8, dst_ptr + 19, 2);
-    dst[23] = '-';
-    formatHex(src_ptr + 10, dst_ptr + 24, 6);
+    const auto * src = reinterpret_cast<const UInt8 *>(&uuid);
 #endif
+    formatHex(src + 8, dst_ptr, 4);
+    dst[8] = '-';
+    formatHex(src + 12, dst_ptr + 9, 2);
+    dst[13] = '-';
+    formatHex(src + 14, dst_ptr + 14, 2);
+    dst[18] = '-';
+    formatHex(src, dst_ptr + 19, 2);
+    dst[23] = '-';
+    formatHex(src + 2, dst_ptr + 24, 6);
 
     return dst;
 }
@@ -77,7 +70,7 @@ void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {
-    writeBinary(e.code(), buf);
+    writeBinaryLittleEndian(e.code(), buf);
     writeBinary(String(e.name()), buf);
     writeBinary(e.displayText() + getExtraExceptionInfo(e), buf);
 
@@ -129,4 +122,8 @@ void writePointerHex(const void * ptr, WriteBuffer & buf)
     buf.write(hex_str, 2 * sizeof(ptr));
 }
 
+String fourSpaceIndent(size_t indent)
+{
+    return std::string(indent * 4, ' ');
+}
 }

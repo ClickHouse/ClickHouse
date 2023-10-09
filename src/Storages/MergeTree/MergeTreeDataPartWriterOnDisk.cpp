@@ -232,7 +232,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store));
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -308,18 +308,18 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store);
+                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store, settings);
 
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
 
-                writeIntBinary(stream.plain_hashing.count(), marks_out);
-                writeIntBinary(stream.compressed_hashing.offset(), marks_out);
+                writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
+                writeBinaryLittleEndian(stream.compressed_hashing.offset(), marks_out);
 
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with the normal .mrk2 file format
                 if (settings.can_use_adaptive_granularity)
-                    writeIntBinary(1UL, marks_out);
+                    writeBinaryLittleEndian(1UL, marks_out);
             }
 
             size_t pos = granule.start_row;

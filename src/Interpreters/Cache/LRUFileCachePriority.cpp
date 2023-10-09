@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
+#include <pcg-random/pcg_random.hpp>
 
 namespace CurrentMetrics
 {
@@ -211,6 +212,18 @@ void LRUFileCachePriority::LRUFileCacheIterator::checkUsable() const
 {
     if (queue_iter == LRUQueueIterator{})
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
+}
+
+void LRUFileCachePriority::shuffle(const CacheGuard::Lock &)
+{
+    std::vector<LRUQueueIterator> its;
+    its.reserve(queue.size());
+    for (auto it = queue.begin(); it != queue.end(); ++it)
+        its.push_back(it);
+    pcg64 generator(randomSeed());
+    std::shuffle(its.begin(), its.end(), generator);
+    for (auto & it : its)
+        queue.splice(queue.end(), queue, it);
 }
 
 }

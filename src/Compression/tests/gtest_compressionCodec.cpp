@@ -36,9 +36,7 @@ using namespace DB;
 namespace
 {
 
-template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
-template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
-
+template <class T> inline constexpr bool is_pod_v = std::is_trivial_v<std::is_standard_layout<T>>;
 
 template <typename T>
 struct AsHexStringHelper

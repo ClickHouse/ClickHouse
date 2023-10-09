@@ -240,4 +240,19 @@ size_t NamesAndTypesList::getPosByName(const std::string &name) const noexcept
     return pos;
 }
 
+String NamesAndTypesList::toNamesAndTypesDescription() const
+{
+    WriteBufferFromOwnString buf;
+    bool first = true;
+    for (const auto & name_and_type : *this)
+    {
+        if (!std::exchange(first, false))
+            writeCString(", ", buf);
+        writeBackQuotedString(name_and_type.name, buf);
+        writeChar(' ', buf);
+        writeString(name_and_type.type->getName(), buf);
+    }
+    return buf.str();
+}
+
 }

@@ -97,13 +97,14 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
         size_t total_bytes_to_read = 0;
 
         Strings paths;
-        Strings paths_to_archives;
+        std::optional<StorageFile::ArchiveInfo> archive_info;
         if (path_to_archive.empty())
             paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         else
-            paths_to_archives = StorageFile::getPathsList(path_to_archive, context->getUserFilesPath(), context, total_bytes_to_read);
+            archive_info
+                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, paths_to_archives);
+        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
 
 

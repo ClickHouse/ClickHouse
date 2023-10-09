@@ -24,6 +24,11 @@ namespace
         auth_data.format(settings);
     }
 
+    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(settings);
+    }
 
     void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
     {
@@ -208,6 +213,11 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     format.ostr << " ";
     names->format(format);
 
+    if (!storage_name.empty())
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "")
+                    << " IN " << (format.hilite ? IAST::hilite_none : "")
+                    << backQuoteIfNeed(storage_name);
+
     formatOnCluster(format);
 
     if (new_name)
@@ -215,6 +225,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (auth_data)
         formatAuthenticationData(*auth_data, format);
+
+    if (valid_until)
+        formatValidUntil(*valid_until, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);

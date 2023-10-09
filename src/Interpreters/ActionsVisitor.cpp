@@ -94,38 +94,6 @@ static size_t getTypeDepth(const DataTypePtr & type)
     return 0;
 }
 
-template <typename T>
-static bool decimalEqualsFloat(Field field, Float64 float_value)
-{
-    auto decimal_field = field.get<DecimalField<T>>();
-    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
-    return decimal_to_float == float_value;
-}
-
-/// Applies stricter rules than convertFieldToType:
-/// Doesn't allow :
-/// - loss of precision converting to Decimal
-static bool convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type, Field & result_value)
-{
-    result_value = convertFieldToType(from_value, to_type);
-    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
-        return applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
-    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
-    {
-        /// Convert back to Float64 and compare
-        if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>());
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
-    }
-    return true;
-}
-
 /// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
 /// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
@@ -146,11 +114,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     {
         if (columns_num == 1)
         {
-            Field field;
-            bool is_conversion_ok = convertFieldToTypeStrict(value, *types[0], field);
+            auto field = convertFieldToTypeStrict(value, *types[0]);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
-            if (is_conversion_ok && (!field.isNull() || need_insert_null))
-                columns[0]->insert(field);
+            if (field && (!field->isNull() || need_insert_null))
+                columns[0]->insert(*field);
         }
         else
         {
@@ -171,9 +138,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                bool is_conversion_ok = convertFieldToTypeStrict(tuple[i], *types[i], tuple_values[i]);
-                if (!is_conversion_ok)
+                auto converted_field = convertFieldToTypeStrict(tuple[i], *types[i]);
+                if (!converted_field)
                     break;
+                tuple_values[i] = std::move(*converted_field);
 
                 bool need_insert_null = transform_null_in && types[i]->isNullable();
                 if (tuple_values[i].isNull() && !need_insert_null)
@@ -377,7 +345,7 @@ Block createBlockForSet(
 {
     auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
     {
-        if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
+        if ((func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
             auto element = func->arguments->children.at(0);
@@ -388,6 +356,7 @@ Block createBlockForSet(
         return evaluateConstantExpression(func, context).second;
     };
 
+    assert(right_arg);
     const DataTypePtr & right_arg_type = get_tuple_type_from_ast(right_arg);
 
     size_t left_tuple_depth = getTypeDepth(left_arg_type);
@@ -789,8 +758,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    auto func_alias = function->tryGetAlias();
-    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
+    auto untuple_alias = function->tryGetAlias();
+    for (const auto & element_name : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
 
@@ -804,8 +773,12 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-        if (!func_alias.empty())
-            func->setAlias(func_alias + "." + toString(tid));
+        if (!untuple_alias.empty())
+        {
+            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
+            func->setAlias(untuple_alias + "." + element_alias);
+        }
+
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 

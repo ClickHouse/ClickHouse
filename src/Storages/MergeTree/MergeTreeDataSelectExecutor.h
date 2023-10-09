@@ -93,7 +93,6 @@ private:
         const MarkRanges & ranges,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        size_t & granules_dropped,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
@@ -105,8 +104,6 @@ private:
         const MarkRanges & ranges,
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings,
-        size_t & total_granules,
-        size_t & granules_dropped,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
@@ -171,6 +168,12 @@ public:
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
         const ASTPtr & query,
+        ContextPtr context);
+
+    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const MergeTreeData & data,
+        const MergeTreeData::DataPartsVector & parts,
+        const ActionsDAGPtr & filter_dag,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
