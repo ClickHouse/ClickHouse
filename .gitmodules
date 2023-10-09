@@ -100,9 +100,6 @@
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
-[submodule "contrib/cpr"]
-	path = contrib/cpr
-	url = https://github.com/libcpr/cpr.git
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl
@@ -354,6 +351,3 @@
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
-[submodule "contrib/curlcpp"]
-	path = contrib/curlcpp
-	url = https://github.com/JosephP91/curlcpp

@@ -12,14 +12,14 @@ namespace DB {
     class TableFunctionSFTP : public ITableFunctionFileLike {
     public:
         static constexpr auto name = "sftp";
-        static constexpr auto signature = " - host, user, password | DAEMON_AUTH\n"
-                                          " - host, user, password | DAEMON_AUTH, format\n"
-                                          " - host, user, password | DAEMON_AUTH, format, structure\n"
-                                          " - host, user, password | DAEMON_AUTH, format, structure, compression_method\n"
-                                          " - host, user, password | DAEMON_AUTH, port\n"
-                                          " - host, user, password | DAEMON_AUTH, port, format\n"
-                                          " - host, user, password | DAEMON_AUTH, port, format, structure\n"
-                                          " - host, user, password | DAEMON_AUTH, port, format, structure, compression_method\n";
+        static constexpr auto signature = " - host, user, path, password | DAEMON_AUTH\n"
+                                          " - host, user, path, password | DAEMON_AUTH, format\n"
+                                          " - host, user, path, password | DAEMON_AUTH, format, structure\n"
+                                          " - host, user, path, password | DAEMON_AUTH, format, structure, compression_method\n"
+                                          " - host, user, path, password | DAEMON_AUTH, port\n"
+                                          " - host, user, path, password | DAEMON_AUTH, port, format\n"
+                                          " - host, user, path, password | DAEMON_AUTH, port, format, structure\n"
+                                          " - host, user, path, password | DAEMON_AUTH, port, format, structure, compression_method\n";
 
         String getName() const override {
             return name;
