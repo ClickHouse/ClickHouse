@@ -106,6 +106,7 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace
@@ -292,7 +293,7 @@ void TCPHandler::runImpl()
             /// We try to send error information to the client.
             sendException(e, send_exception_with_stack_trace);
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
 
         throw;
     }
@@ -964,7 +965,13 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
-        bool has_partial_result_setting = query_context->getSettingsRef().partial_result_update_duration_ms.totalMilliseconds() > 0;
+        const auto & settings = query_context->getSettingsRef();
+        bool has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
+        if (has_partial_result_setting && !settings.allow_experimental_partial_result)
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
+                "Partial results are not allowed by default, it's an experimental feature. "
+                "Setting 'allow_experimental_partial_result' must be enabled to use 'partial_result_update_duration_ms'");
+
         PullingAsyncPipelineExecutor executor(pipeline, has_partial_result_setting);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 

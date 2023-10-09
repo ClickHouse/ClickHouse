@@ -74,9 +74,16 @@ static const NameSet settings_to_skip
 
 }
 
-AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_, DataKind data_kind_)
+AsynchronousInsertQueue::InsertQuery::InsertQuery(
+    const ASTPtr & query_,
+    const std::optional<UUID> & user_id_,
+    const std::vector<UUID> & current_roles_,
+    const Settings & settings_,
+    DataKind data_kind_)
     : query(query_->clone())
     , query_str(queryToString(query))
+    , user_id(user_id_)
+    , current_roles(current_roles_)
     , settings(settings_)
     , data_kind(data_kind_)
 {
@@ -84,6 +91,13 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const S
 
     siphash.update(data_kind);
     query->updateTreeHash(siphash);
+
+    if (user_id)
+    {
+        siphash.update(*user_id);
+        for (const auto & current_role : current_roles)
+            siphash.update(current_role);
+    }
 
     for (const auto & setting : settings.allChanged())
     {
@@ -105,6 +119,8 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
     {
         query = other.query->clone();
         query_str = other.query_str;
+        user_id = other.user_id;
+        current_roles = other.current_roles;
         settings = other.settings;
         data_kind = other.data_kind;
         hash = other.hash;
@@ -116,7 +132,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
-    return std::tie(data_kind, query_str, setting_changes) == std::tie(other.data_kind, other.query_str, other.setting_changes);
+    return toTupleCmp() == other.toTupleCmp();
 }
 
 AsynchronousInsertQueue::InsertData::Entry::Entry(
@@ -303,7 +319,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     if (chunk.getDataKind() == DataKind::Preprocessed)
         insert_query.format = "Native";
 
-    InsertQuery key{query, settings, chunk.getDataKind()};
+    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, chunk.getDataKind()};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
 
@@ -518,6 +534,11 @@ try
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings.set("input_format_parallel_parsing", false);
     insert_context->makeQueryContext();
+
+    /// Access rights must be checked for the user who executed the initial INSERT query.
+    if (key.user_id)
+        insert_context->setUser(*key.user_id, key.current_roles);
+
     insert_context->setSettings(key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.

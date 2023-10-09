@@ -67,16 +67,27 @@ private:
     public:
         ASTPtr query;
         String query_str;
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_roles;
         Settings settings;
+
         DataKind data_kind;
         UInt128 hash;
 
-        InsertQuery(const ASTPtr & query_, const Settings & settings_, DataKind data_kind_);
+        InsertQuery(
+            const ASTPtr & query_,
+            const std::optional<UUID> & user_id_,
+            const std::vector<UUID> & current_roles_,
+            const Settings & settings_,
+            DataKind data_kind_);
+
         InsertQuery(const InsertQuery & other) { *this = other; }
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
 
     private:
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
+
         std::vector<SettingChange> setting_changes;
     };
 

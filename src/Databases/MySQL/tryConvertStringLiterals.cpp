@@ -29,7 +29,7 @@ static bool tryReadLiteral(
             ret = true;
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Ignore parsing errors
     }
@@ -105,7 +105,7 @@ bool tryConvertStringLiterals(String & query)
                         ret = true;
                     }
                 }
-                catch (...)
+                catch (...) // NOLINT(bugprone-empty-catch)
                 {
                     /// Ignore unsupported charsets
                 }

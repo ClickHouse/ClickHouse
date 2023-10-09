@@ -234,7 +234,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
             dst_array_current_time[dst_row] = src_array_current_time[src_row];
 
-            switch (dst_array_type[dst_row])
+            switch (static_cast<ProfileEvents::Type>(dst_array_type[dst_row]))
             {
                 case ProfileEvents::Type::INCREMENT:
                     dst_array_value[dst_row] += src_array_value[src_row];

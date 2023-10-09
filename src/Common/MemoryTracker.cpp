@@ -140,7 +140,7 @@ MemoryTracker::~MemoryTracker()
         {
             logPeakMemoryUsage();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Exception in Logger, intentionally swallow.
         }
