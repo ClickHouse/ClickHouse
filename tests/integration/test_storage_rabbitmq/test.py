@@ -1582,7 +1582,9 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_ignore = 2
     for consumer_id in range(num_tables_to_ignore):
-        logging.debug(("Setting up table {}".format(consumer_id + num_tables_to_receive)))
+        logging.debug(
+            ("Setting up table {}".format(consumer_id + num_tables_to_receive))
+        )
         instance.query(
             """
             DROP TABLE IF EXISTS test.headers_exchange_{0};
@@ -1966,7 +1968,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(4)
-    revive_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
+    revive_rabbitmq(
+        rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
+    )
 
     while True:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
@@ -2041,7 +2045,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(8)
-    revive_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
+    revive_rabbitmq(
+        rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
+    )
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)
