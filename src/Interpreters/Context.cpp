@@ -235,31 +235,31 @@ struct ContextSharedPart : boost::noncopyable
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository = nullptr;
     scope_guard user_defined_executable_functions_xmls;
 
-    mutable OnceFlag user_defined_sql_objects_loader_initializer;
+    mutable OnceFlag user_defined_sql_objects_loader_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsLoader> user_defined_sql_objects_loader;
 
 #if USE_NLP
-    mutable OnceFlag synonyms_extensions_initializer;
+    mutable OnceFlag synonyms_extensions_initialized;
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
 
-    mutable OnceFlag lemmatizers_initializer;
+    mutable OnceFlag lemmatizers_initialized;
     mutable std::optional<Lemmatizers> lemmatizers;
 #endif
 
-    mutable OnceFlag backups_worker_initializer;
+    mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
 
     String default_profile_name;                                /// Default profile name used for default values.
     String system_profile_name;                                 /// Profile used by system processes
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control;
-    mutable OnceFlag resource_manager_initializer;
+    mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache;            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                            /// Cache of marks in compressed files.
-    mutable OnceFlag load_marks_threadpool_initializer;
+    mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
-    mutable OnceFlag prefetch_threadpool_initializer;
+    mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;      /// The cache of decompressed blocks for MergeTree indices.
     mutable QueryCachePtr query_cache;                          /// Cache of query results.
@@ -274,21 +274,21 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr users_config;                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
-    OnceFlag buffer_flush_schedule_pool_initializer;
+    OnceFlag buffer_flush_schedule_pool_initialized;
     mutable std::unique_ptr<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    OnceFlag schedule_pool_initializer;
+    OnceFlag schedule_pool_initialized;
     mutable std::unique_ptr<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
-    OnceFlag distributed_schedule_pool_initializer;
+    OnceFlag distributed_schedule_pool_initialized;
     mutable std::unique_ptr<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
-    OnceFlag message_broker_schedule_pool_initializer;
+    OnceFlag message_broker_schedule_pool_initialized;
     mutable std::unique_ptr<BackgroundSchedulePool> message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
 
-    mutable OnceFlag readers_initializer;
+    mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
 
-    mutable OnceFlag threadpool_writer_initializer;
+    mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
@@ -318,9 +318,9 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
-    mutable OnceFlag action_locks_manager_initializer;
+    mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    OnceFlag system_logs_initializer;
+    OnceFlag system_logs_initialized;
     std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
@@ -1372,7 +1372,7 @@ std::vector<UUID> Context::getEnabledProfiles() const
 
 ResourceManagerPtr Context::getResourceManager() const
 {
-    callOnce(shared->resource_manager_initializer, [&] {
+    callOnce(shared->resource_manager_initialized, [&] {
         shared->resource_manager = ResourceManagerFactory::instance().get(getConfigRef().getString("resource_manager", "dynamic"));
     });
 
@@ -2356,7 +2356,7 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
 
 const IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader() const
 {
-    callOnce(shared->user_defined_sql_objects_loader_initializer, [&] {
+    callOnce(shared->user_defined_sql_objects_loader_initialized, [&] {
         shared->user_defined_sql_objects_loader = createUserDefinedSQLObjectsLoader(getGlobalContext());
     });
 
@@ -2366,7 +2366,7 @@ const IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader() c
 
 IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader()
 {
-    callOnce(shared->user_defined_sql_objects_loader_initializer, [&] {
+    callOnce(shared->user_defined_sql_objects_loader_initialized, [&] {
         shared->user_defined_sql_objects_loader = createUserDefinedSQLObjectsLoader(getGlobalContext());
     });
 
@@ -2378,7 +2378,7 @@ IUserDefinedSQLObjectsLoader & Context::getUserDefinedSQLObjectsLoader()
 
 SynonymsExtensions & Context::getSynonymsExtensions() const
 {
-    callOnce(shared->synonyms_extensions_initializer, [&] {
+    callOnce(shared->synonyms_extensions_initialized, [&] {
         shared->synonyms_extensions.emplace(getConfigRef());
     });
 
@@ -2387,7 +2387,7 @@ SynonymsExtensions & Context::getSynonymsExtensions() const
 
 Lemmatizers & Context::getLemmatizers() const
 {
-    callOnce(shared->lemmatizers_initializer, [&] {
+    callOnce(shared->lemmatizers_initialized, [&] {
         shared->lemmatizers.emplace(getConfigRef());
     });
 
@@ -2397,7 +2397,7 @@ Lemmatizers & Context::getLemmatizers() const
 
 BackupsWorker & Context::getBackupsWorker() const
 {
-    callOnce(shared->backups_worker_initializer, [&] {
+    callOnce(shared->backups_worker_initialized, [&] {
         if (shared->backups_worker)
             return;
 
@@ -2526,7 +2526,7 @@ void Context::clearMarkCache() const
 
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
-    callOnce(shared->load_marks_threadpool_initializer, [&] {
+    callOnce(shared->load_marks_threadpool_initialized, [&] {
         const auto & config = getConfigRef();
 
         auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
@@ -2710,7 +2710,7 @@ void Context::clearCaches() const
 
 ThreadPool & Context::getPrefetchThreadpool() const
 {
-    callOnce(shared->prefetch_threadpool_initializer, [&] {
+    callOnce(shared->prefetch_threadpool_initialized, [&] {
         const auto & config = getConfigRef();
         auto pool_size = config.getUInt(".prefetch_threadpool_pool_size", 100);
         auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
@@ -2729,7 +2729,7 @@ size_t Context::getPrefetchThreadpoolSize() const
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
 {
-    callOnce(shared->buffer_flush_schedule_pool_initializer, [&] {
+    callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             shared->server_settings.background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
@@ -2773,7 +2773,7 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
 
 BackgroundSchedulePool & Context::getSchedulePool() const
 {
-    callOnce(shared->schedule_pool_initializer, [&] {
+    callOnce(shared->schedule_pool_initialized, [&] {
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
             shared->server_settings.background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
@@ -2786,7 +2786,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 
 BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 {
-    callOnce(shared->distributed_schedule_pool_initializer, [&] {
+    callOnce(shared->distributed_schedule_pool_initialized, [&] {
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             shared->server_settings.background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
@@ -2799,7 +2799,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
 
 BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
 {
-    callOnce(shared->message_broker_schedule_pool_initializer, [&] {
+    callOnce(shared->message_broker_schedule_pool_initialized, [&] {
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             shared->server_settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
@@ -3409,7 +3409,7 @@ void Context::initializeSystemLogs()
     /// triggered from another thread, that is launched while initializing the system logs,
     /// for example, system.filesystem_cache_log will be triggered by parts loading
     /// of any other table if it is stored on a disk with cache.
-    callOnce(shared->system_logs_initializer, [&] {
+    callOnce(shared->system_logs_initialized, [&] {
         auto system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
         auto lock = getGlobalLock();
         shared->system_logs = std::move(system_logs);
@@ -4090,7 +4090,7 @@ const IHostContextPtr & Context::getHostContext() const
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 {
-    callOnce(shared->action_locks_manager_initializer, [&] {
+    callOnce(shared->action_locks_manager_initialized, [&] {
         shared->action_locks_manager = std::make_shared<ActionLocksManager>(shared_from_this());
     });
 
@@ -4662,7 +4662,7 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
-    callOnce(shared->readers_initializer, [&] {
+    callOnce(shared->readers_initialized, [&] {
         const auto & config = getConfigRef();
         shared->asynchronous_remote_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, config);
         shared->asynchronous_local_fs_reader = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, config);
@@ -4682,7 +4682,7 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
 
 ThreadPool & Context::getThreadPoolWriter() const
 {
-    callOnce(shared->threadpool_writer_initializer, [&] {
+    callOnce(shared->threadpool_writer_initialized, [&] {
         const auto & config = getConfigRef();
         auto pool_size = config.getUInt(".threadpool_writer_pool_size", 100);
         auto queue_size = config.getUInt(".threadpool_writer_queue_size", 1000000);
