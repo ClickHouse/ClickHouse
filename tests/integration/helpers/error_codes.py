@@ -639,6 +639,7 @@ if __name__ == "__main__":
 
 else:
     code_to_name = {}
+
     def _populate_code_names():
         for k, v in globals().items():
             if re.fullmatch(r"[A-Z0-9_]+", k) and isinstance(v, int):

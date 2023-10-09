@@ -98,7 +98,9 @@ def assert_eq_with_retry(
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception("assert_eq_with_retry retry %d exception %s", i + 1, str(ex))
+            logging.exception(
+                "assert_eq_with_retry retry %d exception %s", i + 1, str(ex)
+            )
             time.sleep(sleep_time)
     else:
         val = TSV(
@@ -135,7 +137,9 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception("contains_in_log_with_retry retry %d exception %s", i + 1, str(ex))
+            logging.exception(
+                "contains_in_log_with_retry retry %d exception %s", i + 1, str(ex)
+            )
             time.sleep(sleep_time)
     else:
         raise AssertionError(f"'{substring}' not found in logs")
@@ -147,7 +151,9 @@ def exec_query_with_retry(
     exception = None
     for cnt in range(retry_count):
         try:
-            res = instance.query(query, timeout=30, settings=settings if settings is not None else {})
+            res = instance.query(
+                query, timeout=30, settings=settings if settings is not None else {}
+            )
             if not silent:
                 logging.debug("Result of %s on %d try is %s", query, cnt, res)
             break
@@ -155,7 +161,10 @@ def exec_query_with_retry(
             exception = ex
             if not silent:
                 logging.exception(
-                    "Failed to execute query '%s' on %d try on instance '%s' will retry", query, cnt, instance.name
+                    "Failed to execute query '%s' on %d try on instance '%s' will retry",
+                    query,
+                    cnt,
+                    instance.name,
                 )
             time.sleep(sleep_time)
     else:
@@ -185,7 +194,5 @@ def assert_query_fails(instance, sql, code=None, message=None):
     match = "" if code is None else f"\nCode: {code}\\."
     if message is not None:
         match += f".*{message}"
-    with pytest.raises(
-        Exception, match=re.compile(match, re.MULTILINE)
-    ):
+    with pytest.raises(Exception, match=re.compile(match, re.MULTILINE)):
         instance.query(f"/* expecting error: {match} */ {sql}")

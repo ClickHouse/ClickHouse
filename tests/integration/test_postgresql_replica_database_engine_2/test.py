@@ -4,14 +4,16 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers import error_codes
-from helpers.postgres_utility import (PostgresManager,
-                                      assert_nested_table_is_created,
-                                      check_several_tables_are_synchronized,
-                                      check_tables_are_synchronized,
-                                      create_postgres_schema,
-                                      create_postgres_table_with_schema,
-                                      postgres_table_template_5)
-from helpers.test_tools import (assert_eq_with_retry, assert_query_fails)
+from helpers.postgres_utility import (
+    PostgresManager,
+    assert_nested_table_is_created,
+    check_several_tables_are_synchronized,
+    check_tables_are_synchronized,
+    create_postgres_schema,
+    create_postgres_table_with_schema,
+    postgres_table_template_5,
+)
+from helpers.test_tools import assert_eq_with_retry, assert_query_fails
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -29,6 +31,7 @@ instance2 = cluster.add_instance(
     with_postgres=True,
     stay_alive=True,
 )
+
 
 def should_fail(sql, code=None, message=None):
     assert_query_fails(instance, sql, code, message)
@@ -92,13 +95,13 @@ def test_add_new_table_to_replication(started_cluster):
     should_fail(
         "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_tables_list='tabl1'",
         code=error_codes.QUERY_NOT_ALLOWED,
-        message="ALTER DATABASE MODIFY SETTING .* is not allowed"
+        message="ALTER DATABASE MODIFY SETTING .* is not allowed",
     )
 
     should_fail(
         "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_tables='tabl1'",
         code=error_codes.UNKNOWN_SETTING,
-        message="Unknown setting .*"
+        message="Unknown setting .*",
     )
 
     instance.query(f"ATTACH TABLE test_database.{table_name}")
@@ -118,13 +121,13 @@ def test_add_new_table_to_replication(started_cluster):
     should_fail(
         f"ATTACH TABLE test_database.{table_name}",
         code=error_codes.TABLE_ALREADY_EXISTS,
-        message="Table test_database.postgresql_replica_5 already exists"
+        message="Table test_database.postgresql_replica_5 already exists",
     )
 
     should_fail(
         "ATTACH TABLE test_database.unknown_table",
         code=error_codes.CANNOT_GET_CREATE_TABLE_QUERY,
-        message="PostgreSQL table unknown_table does not exist"
+        message="PostgreSQL table unknown_table does not exist",
     )
 
     result = instance.query("SHOW CREATE DATABASE test_database")
@@ -160,7 +163,9 @@ def test_add_new_table_to_replication(started_cluster):
     )
     assert (
         result[-222:]
-        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'" + ",".join([f"postgresql_replica_{i}" for i in range(8)]) + "\\'\n"
+        == ")\\nSETTINGS materialized_postgresql_tables_list = \\'"
+        + ",".join([f"postgresql_replica_{i}" for i in range(8)])
+        + "\\'\n"
     )
 
     instance.query(
@@ -199,8 +204,7 @@ def test_remove_table_from_replication(started_cluster):
     table_name = "postgresql_replica_4"
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
     should_fail(
-        f"SELECT * FROM test_database.{table_name}",
-        code=error_codes.UNKNOWN_TABLE
+        f"SELECT * FROM test_database.{table_name}", code=error_codes.UNKNOWN_TABLE
     )
 
     result = instance.query("SHOW TABLES FROM test_database")
@@ -258,7 +262,7 @@ def test_remove_table_from_replication(started_cluster):
     )
 
 
-def test_predefined_connection_configuration(started_cluster): #pylint: disable=W0613
+def test_predefined_connection_configuration(started_cluster):  # pylint: disable=W0613
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
         "CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
@@ -609,9 +613,11 @@ def test_table_override(started_cluster):
     assert_nested_table_is_created(instance, table_name, materialized_database)
     result = instance.query(f"show create table {materialized_database}.{table_name}")
     print(result)
-    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n" \
-            "    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\n" \
-            "ENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
+    expected = (
+        "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n"
+        "    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\n"
+        "ENGINE = ReplacingMergeTree(_version)\\nPARTITION BY key\\nORDER BY tuple(key)"
+    )
     assert result.strip() == expected
     time.sleep(5)
     query = f"select * from {materialized_database}.{table_name} order by key"
@@ -620,7 +626,7 @@ def test_table_override(started_cluster):
     assert_eq_with_retry(instance, query, expected)
 
 
-def test_materialized_view(started_cluster): #pylint: disable=W0613
+def test_materialized_view(started_cluster):  # pylint: disable=W0613
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
         "CREATE TABLE test_table (key integer PRIMARY KEY, value integer)"
