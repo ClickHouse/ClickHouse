@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS testing;
+
 CREATE TABLE testing
 (
     a String,
