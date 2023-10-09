@@ -55,7 +55,6 @@ class TeePopen:
             stderr=STDOUT,
             stdout=PIPE,
             bufsize=1,
-            errors="backslashreplace",
         )
         if self.timeout is not None and self.timeout > 0:
             t = Thread(target=self._check_timeout)

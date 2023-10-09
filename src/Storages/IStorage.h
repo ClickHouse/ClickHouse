@@ -91,7 +91,7 @@ using IndexSize = ColumnSize;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
 {
 public:
     IStorage() = delete;
@@ -254,8 +254,7 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Return true if the trivial count query could be optimized without reading the data at all
-    /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
+    /// Return true if the trivial count query could be optimized without reading the data at all.
     virtual bool supportsTrivialCountOptimization() const { return false; }
 
 private:
@@ -602,7 +601,7 @@ public:
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
-    virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
+    virtual void checkTableCanBeDropped() const {}
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 

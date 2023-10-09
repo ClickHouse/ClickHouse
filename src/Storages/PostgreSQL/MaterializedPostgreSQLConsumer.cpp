@@ -236,7 +236,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
 
     auto proccess_column_value = [&](Int8 identifier, Int16 column_idx)
     {
-        switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
+        switch (identifier)
         {
             case 'n': /// NULL
             {
@@ -246,14 +246,6 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             case 't': /// Text formatted value
             {
                 Int32 col_len = readInt32(message, pos, size);
-
-                /// Sanity check for protocol misuse.
-                /// PostgreSQL uses a fixed page size (commonly 8 kB), and does not allow tuples to span multiple pages.
-                static constexpr Int32 sanity_check_max_col_len = 1024 * 8 * 2; /// *2 -- just in case.
-                if (unlikely(col_len > sanity_check_max_col_len))
-                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
-                                    "Column length is suspiciously long: {}", col_len);
-
                 String value;
                 for (Int32 i = 0; i < col_len; ++i)
                     value += readInt8(message, pos, size);
@@ -399,7 +391,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             auto proccess_identifier = [&](Int8 identifier) -> bool
             {
                 bool read_next = true;
-                switch (identifier) // NOLINT(bugprone-switch-missing-default-case)
+                switch (identifier)
                 {
                     /// Only if changed column(s) are part of replica identity index (or primary keys if they are used instead).
                     /// In this case, first comes a tuple with old replica identity indexes and all other values will come as

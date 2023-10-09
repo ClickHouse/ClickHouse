@@ -25,7 +25,6 @@ public:
 template <typename Distance>
 using AnnoyIndexWithSerializationPtr = std::shared_ptr<AnnoyIndexWithSerialization<Distance>>;
 
-
 template <typename Distance>
 struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
 {
@@ -44,11 +43,10 @@ struct MergeTreeIndexGranuleAnnoy final : public IMergeTreeIndexGranule
     AnnoyIndexWithSerializationPtr<Distance> index;
 };
 
-
 template <typename Distance>
 struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
 {
-    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, UInt64 trees, size_t max_threads_for_creation);
+    MergeTreeIndexAggregatorAnnoy(const String & index_name_, const Block & index_sample_block, UInt64 trees);
     ~MergeTreeIndexAggregatorAnnoy() override = default;
 
     bool empty() const override { return !index || index->get_n_items() == 0; }
@@ -58,7 +56,6 @@ struct MergeTreeIndexAggregatorAnnoy final : IMergeTreeIndexAggregator
     const String index_name;
     const Block index_sample_block;
     const UInt64 trees;
-    const size_t max_threads_for_creation;
     AnnoyIndexWithSerializationPtr<Distance> index;
 };
 
@@ -97,7 +94,7 @@ public:
     ~MergeTreeIndexAnnoy() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
@@ -106,6 +103,7 @@ private:
     const UInt64 trees;
     const String distance_function;
 };
+
 
 }
 

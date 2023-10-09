@@ -12,8 +12,6 @@
 #include <cstdlib>
 #include <bit>
 
-#include <base/simd.h>
-
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -53,25 +51,36 @@ UUID parseUUID(std::span<const UInt8> src)
 {
     UUID uuid;
     const auto * src_ptr = src.data();
+    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
-#else
-    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
+    const std::reverse_iterator dst_it(dst + sizeof(UUID));
 #endif
     if (size == 36)
     {
-        parseHex<4>(src_ptr, dst + 8);
-        parseHex<2>(src_ptr + 9, dst + 12);
-        parseHex<2>(src_ptr + 14, dst + 14);
-        parseHex<2>(src_ptr + 19, dst);
-        parseHex<6>(src_ptr + 24, dst + 2);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        parseHex<4>(src_ptr, dst_it + 8);
+        parseHex<2>(src_ptr + 9, dst_it + 12);
+        parseHex<2>(src_ptr + 14, dst_it + 14);
+        parseHex<2>(src_ptr + 19, dst_it);
+        parseHex<6>(src_ptr + 24, dst_it + 2);
+#else
+        parseHex<4>(src_ptr, dst);
+        parseHex<2>(src_ptr + 9, dst + 4);
+        parseHex<2>(src_ptr + 14, dst + 6);
+        parseHex<2>(src_ptr + 19, dst + 8);
+        parseHex<6>(src_ptr + 24, dst + 10);
+#endif
     }
     else if (size == 32)
     {
-        parseHex<8>(src_ptr, dst + 8);
-        parseHex<8>(src_ptr + 16, dst);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        parseHex<8>(src_ptr, dst_it + 8);
+        parseHex<8>(src_ptr + 16, dst_it);
+#else
+        parseHex<16>(src_ptr, dst);
+#endif
     }
     else
         throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Unexpected length when trying to parse UUID ({})", size);
@@ -810,11 +819,14 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 auto rc = vdupq_n_u8('\r');
                 auto nc = vdupq_n_u8('\n');
                 auto dc = vdupq_n_u8(delimiter);
+                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
+                auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
+                { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
                 for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
                 {
                     uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(next_pos));
                     auto eq = vorrq_u8(vorrq_u8(vceqq_u8(bytes, rc), vceqq_u8(bytes, nc)), vceqq_u8(bytes, dc));
-                    uint64_t bit_mask = getNibbleMask(eq);
+                    uint64_t bit_mask = get_nibble_mask(eq);
                     if (bit_mask)
                     {
                         next_pos += std::countr_zero(bit_mask) >> 2;
@@ -989,8 +1001,8 @@ template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
 
-template <typename Vector, typename ReturnType, char opening_bracket, char closing_bracket>
-ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1001,8 +1013,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         return ReturnType(false);
     };
 
-    if (buf.eof() || *buf.position() != opening_bracket)
-        return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
+    if (buf.eof() || *buf.position() != '{')
+        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
 
     s.push_back(*buf.position());
     ++buf.position();
@@ -1012,7 +1024,7 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', opening_bracket, closing_bracket, '"'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -1035,37 +1047,22 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
         if (*buf.position() == '"')
             quotes = !quotes;
-        else if (!quotes) // can be only opening_bracket or closing_bracket
-            balance += *buf.position() == opening_bracket ? 1 : -1;
+        else if (!quotes) // can be only '{' or '}'
+            balance += *buf.position() == '{' ? 1 : -1;
 
         ++buf.position();
 
         if (balance == 0)
             return ReturnType(true);
 
-        if (balance < 0)
+        if (balance <    0)
             break;
     }
 
-    return error("JSON object/array should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
-}
-
-template <typename Vector, typename ReturnType>
-ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
-{
-    return readJSONObjectOrArrayPossiblyInvalid<Vector, ReturnType, '{', '}'>(s, buf);
+    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
 }
 
 template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
-template void readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-
-template <typename Vector>
-void readJSONArrayInto(Vector & s, ReadBuffer & buf)
-{
-    readJSONObjectOrArrayPossiblyInvalid<Vector, void, '[', ']'>(s, buf);
-}
-
-template void readJSONArrayInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
@@ -1357,7 +1354,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     String stack_trace;
     bool has_nested = false;    /// Obsolete
 
-    readBinaryLittleEndian(code, buf);
+    readBinary(code, buf);
     readBinary(name, buf);
     readBinary(message, buf);
     readBinary(stack_trace, buf);

@@ -201,7 +201,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
+    void checkTableCanBeDropped() const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -385,7 +385,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
-    friend class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
+    friend class AsyncBlockIDsCache;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -497,7 +497,6 @@ private:
     BackgroundSchedulePool::TaskHolder queue_updating_task;
 
     BackgroundSchedulePool::TaskHolder mutations_updating_task;
-    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
@@ -512,7 +511,7 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
+    AsyncBlockIDsCache async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;

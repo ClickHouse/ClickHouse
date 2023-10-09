@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -132,6 +131,18 @@ protected:
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+            auto get_type_name = [this](const IDataType& type) -> std::string
+            {
+                // Check if the use_mysql_types_in_show_columns setting is enabled and client is connected via MySQL protocol
+                if (use_mysql_types && client_info_interface == DB::ClientInfo::Interface::MYSQL)
+                {
+                    return type.getSQLCompatibleName();
+                }
+                else
+                {
+                    return type.getName();
+                }
+            };
             size_t position = 0;
             for (const auto & column : columns)
             {
@@ -149,7 +160,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(use_mysql_types ? (column.type->getSQLCompatibleName()) : (column.type->getName()));
+                    res_columns[res_index++]->insert(get_type_name(*column.type));
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(position);
 
@@ -304,9 +315,23 @@ Pipe StorageSystemColumns::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
-    auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    /// Create a mask of what columns are needed in the result.
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block header;
+
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.contains(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample_block.getByPosition(i));
+        }
+    }
 
     Block block_to_filter;
     Storages storages;

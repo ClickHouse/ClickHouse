@@ -11,7 +11,6 @@ enum class KeeperFeatureFlag : size_t
     FILTERED_LIST = 0,
     MULTI_READ,
     CHECK_NOT_EXISTS,
-    CREATE_IF_NOT_EXISTS,
 };
 
 class KeeperFeatureFlags

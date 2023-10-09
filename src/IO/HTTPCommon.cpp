@@ -137,12 +137,7 @@ namespace
             throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(
-        const std::string & host,
-        UInt16 port,
-        bool https,
-        bool keep_alive,
-        Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {})
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive)
     {
         HTTPSessionPtr session;
 
@@ -163,9 +158,6 @@ namespace
 
         /// doesn't work properly without patch
         session->setKeepAlive(keep_alive);
-
-        session->setProxyConfig(proxy_config);
-
         return session;
     }
 
@@ -321,7 +313,7 @@ namespace
             /// To avoid such a deadlock we unlock `lock` before entering `pool_ptr->second->get`.
             lock.unlock();
 
-            auto retry_timeout = timeouts.connection_timeout.totalMilliseconds();
+            auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
             setTimeouts(*session, timeouts);
@@ -341,17 +333,13 @@ void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-HTTPSessionPtr makeHTTPSession(
-    const Poco::URI & uri,
-    const ConnectionTimeouts & timeouts,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_config
-)
+HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
 {
     const std::string & host = uri.getHost();
     UInt16 port = uri.getPort();
     bool https = isHTTPS(uri);
 
-    auto session = makeHTTPSessionImpl(host, port, https, false, proxy_config);
+    auto session = makeHTTPSessionImpl(host, port, https, false);
     setTimeouts(*session, timeouts);
     return session;
 }

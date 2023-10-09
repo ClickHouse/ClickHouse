@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 
 DROP TABLE IF EXISTS table_01;
 

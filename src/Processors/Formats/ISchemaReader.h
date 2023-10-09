@@ -25,10 +25,6 @@ public:
 
     virtual NamesAndTypesList readSchema() = 0;
 
-    /// Some formats like Parquet contains number of rows in metadata
-    /// and we can read it once during schema inference and reuse it later for fast count;
-    virtual std::optional<size_t> readNumberOrRows() { return std::nullopt; }
-
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
     virtual bool hasStrictOrderOfColumns() const { return true; }
@@ -97,12 +93,10 @@ protected:
     /// Read one row and determine types of columns in it.
     /// Return types in the same order in which the values were in the row.
     /// If it's impossible to determine the type for some column, return nullptr for it.
-    /// Return std::nullopt if can't read more data.
-    virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
+    /// Return empty list if can't read more data.
+    virtual DataTypes readRowAndGetDataTypes() = 0;
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
-
-    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     size_t field_index;
 

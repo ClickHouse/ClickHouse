@@ -33,7 +33,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <cassert>
 #include <chrono>
@@ -45,8 +44,6 @@
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
 
 namespace ErrorCodes
 {
@@ -455,15 +452,10 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
             const auto & data_file = *data_file_it->second;
             const auto & columns = metadata_snapshot->getColumns();
 
-            CompressionCodecPtr compression;
-            if (name_and_type.name == BlockNumberColumn::name)
-                compression = BlockNumberColumn::compression_codec;
-            else
-                compression = columns.getCodecOrDefault(name_and_type.name);
-
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
-                                     compression, storage.max_compress_block_size).first;
+                                     columns.getCodecOrDefault(name_and_type.name),
+                                     storage.max_compress_block_size).first;
         }
 
         auto & stream = it->second;
@@ -511,15 +503,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
 void StorageLog::Mark::write(WriteBuffer & out) const
 {
-    writeBinaryLittleEndian(rows, out);
-    writeBinaryLittleEndian(offset, out);
+    writeIntBinary(rows, out);
+    writeIntBinary(offset, out);
 }
 
 
 void StorageLog::Mark::read(ReadBuffer & in)
 {
-    readBinaryLittleEndian(rows, in);
-    readBinaryLittleEndian(offset, in);
+    readIntBinary(rows, in);
+    readIntBinary(offset, in);
 }
 
 
@@ -785,7 +777,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     num_marks_saved = 0;
     total_rows = 0;
     total_bytes = 0;
-    getContext()->clearMMappedFileCache();
+    getContext()->dropMMappedFileCache();
 }
 
 
@@ -954,10 +946,9 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
-    fs::path temp_dir = temp_dir_owner->getRelativePath();
+    fs::path temp_dir = temp_dir_owner->getPath();
     disk->createDirectories(temp_dir);
 
-    const auto & read_settings = backup_entries_collector.getReadSettings();
     bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// *.bin
@@ -989,7 +980,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, copy_encrypted));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(

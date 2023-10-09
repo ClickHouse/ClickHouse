@@ -133,7 +133,8 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     SipHash sort_description_dump_hash;
     sort_description_dump_hash.update(description_dump);
 
-    const auto sort_description_hash_key = sort_description_dump_hash.get128();
+    UInt128 sort_description_hash_key;
+    sort_description_dump_hash.get128(sort_description_hash_key);
 
     {
         std::lock_guard lock(mutex);

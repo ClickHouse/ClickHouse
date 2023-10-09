@@ -90,6 +90,9 @@ private:
             const FormatSettings & settings)>;
 
     // Incompatible with FileSegmentationEngine.
+    //
+    // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
+    // and get some information about projections (min/max/count per column per row group).
     using RandomAccessInputCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
             const Block & header,
@@ -135,6 +138,7 @@ private:
         FileSegmentationEngine file_segmentation_engine;
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
+        bool supports_subcolumns{false};
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
@@ -228,6 +232,9 @@ public:
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
+    void markFormatSupportsSubcolumns(const String & name);
+
+    bool checkIfFormatSupportsSubcolumns(const String & name) const;
 
     void markFormatSupportsSubsetOfColumns(const String & name);
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);

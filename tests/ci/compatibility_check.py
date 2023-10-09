@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 from distutils.version import StrictVersion
-from pathlib import Path
 from typing import List, Tuple
 import argparse
 import logging
+import os
 import subprocess
 import sys
 
@@ -16,7 +16,7 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_pull_helper import get_images_with_versions, DockerImage
+from docker_pull_helper import get_images_with_versions
 from env_helper import TEMP_PATH, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -30,16 +30,17 @@ IMAGE_CENTOS = "clickhouse/test-old-centos"
 DOWNLOAD_RETRIES_COUNT = 5
 
 
-def process_os_check(log_path: Path) -> TestResult:
-    name = log_path.name
+def process_os_check(log_path: str) -> TestResult:
+    name = os.path.basename(log_path)
     with open(log_path, "r") as log:
         line = log.read().split("\n")[0].strip()
         if line != "OK":
             return TestResult(name, "FAIL")
-        return TestResult(name, "OK")
+        else:
+            return TestResult(name, "OK")
 
 
-def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
+def process_glibc_check(log_path: str, max_glibc_version: str) -> TestResults:
     test_results = []  # type: TestResults
     with open(log_path, "r") as log:
         for line in log:
@@ -57,13 +58,13 @@ def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
 
 
 def process_result(
-    result_directory: Path,
-    server_log_directory: Path,
+    result_folder: str,
+    server_log_folder: str,
     check_glibc: bool,
     check_distributions: bool,
     max_glibc_version: str,
-) -> Tuple[str, str, TestResults, List[Path]]:
-    glibc_log_path = result_directory / "glibc.log"
+) -> Tuple[str, str, TestResults, List[str]]:
+    glibc_log_path = os.path.join(result_folder, "glibc.log")
     test_results = process_glibc_check(glibc_log_path, max_glibc_version)
 
     status = "success"
@@ -76,7 +77,9 @@ def process_result(
 
     if status == "success" and check_distributions:
         for operating_system in ("ubuntu:12.04", "centos:5"):
-            test_result = process_os_check(result_directory / operating_system)
+            test_result = process_os_check(
+                os.path.join(result_folder, operating_system)
+            )
             if test_result.status != "OK":
                 status = "failure"
                 description = f"Old {operating_system} failed"
@@ -84,46 +87,41 @@ def process_result(
                 break
             test_results += [test_result]
 
-    result_logs = [
-        p
-        for p in [
-            server_log_directory / name
-            for name in ("clickhouse-server.log", "stderr.log", "clientstderr.log")
-        ]
-        + [glibc_log_path]
-        if p.exists()
-    ]
+    server_log_path = os.path.join(server_log_folder, "clickhouse-server.log")
+    stderr_log_path = os.path.join(server_log_folder, "stderr.log")
+    client_stderr_log_path = os.path.join(server_log_folder, "clientstderr.log")
+
+    result_logs = []
+    if os.path.exists(server_log_path):
+        result_logs.append(server_log_path)
+    if os.path.exists(stderr_log_path):
+        result_logs.append(stderr_log_path)
+    if os.path.exists(client_stderr_log_path):
+        result_logs.append(client_stderr_log_path)
+    if os.path.exists(glibc_log_path):
+        result_logs.append(glibc_log_path)
 
     return status, description, test_results, result_logs
 
 
-def get_run_commands_glibc(build_path: Path, result_directory: Path) -> List[str]:
+def get_run_commands_glibc(build_path, result_folder):
     return [
-        f"readelf -s --wide {build_path}/usr/bin/clickhouse | "
-        f"grep '@GLIBC_' > {result_directory}/glibc.log",
-        f"readelf -s --wide {build_path}/usr/bin/clickhouse-odbc-bridge | "
-        f"grep '@GLIBC_' >> {result_directory}/glibc.log",
-        f"readelf -s --wide {build_path}/usr/bin/clickhouse-library-bridge | "
-        f"grep '@GLIBC_' >> {result_directory}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse | grep '@GLIBC_' > {result_folder}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse-odbc-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
+        f"readelf -s --wide {build_path}/usr/bin/clickhouse-library-bridge | grep '@GLIBC_' >> {result_folder}/glibc.log",
     ]
 
 
 def get_run_commands_distributions(
-    build_path: Path,
-    result_directory: Path,
-    server_log_directory: Path,
-    image_centos: DockerImage,
-    image_ubuntu: DockerImage,
-) -> List[str]:
+    build_path, result_folder, server_log_folder, image_centos, image_ubuntu
+):
     return [
         f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
         f"--volume={build_path}/etc/clickhouse-server:/config "
-        f"--volume={server_log_directory}:/var/log/clickhouse-server {image_ubuntu} > "
-        f"{result_directory}/ubuntu:12.04",
+        f"--volume={server_log_folder}:/var/log/clickhouse-server {image_ubuntu} > {result_folder}/ubuntu:12.04",
         f"docker run --network=host --volume={build_path}/usr/bin/clickhouse:/clickhouse "
         f"--volume={build_path}/etc/clickhouse-server:/config "
-        f"--volume={server_log_directory}:/var/log/clickhouse-server {image_centos} > "
-        f"{result_directory}/centos:5",
+        f"--volume={server_log_folder}:/var/log/clickhouse-server {image_centos} > {result_folder}/centos:5",
     ]
 
 
@@ -144,9 +142,8 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = Path(TEMP_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
+    temp_path = TEMP_PATH
+    reports_path = REPORTS_PATH
 
     pr_info = PRInfo()
 
@@ -158,8 +155,9 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    packages_path = temp_path / "packages"
-    packages_path.mkdir(parents=True, exist_ok=True)
+    packages_path = os.path.join(temp_path, "packages")
+    if not os.path.exists(packages_path):
+        os.makedirs(packages_path)
 
     def url_filter(url):
         return url.endswith(".deb") and (
@@ -168,17 +166,20 @@ def main():
 
     download_builds_filter(args.check_name, reports_path, packages_path, url_filter)
 
-    for package in packages_path.iterdir():
-        if package.suffix == ".deb":
+    for f in os.listdir(packages_path):
+        if ".deb" in f:
+            full_path = os.path.join(packages_path, f)
             subprocess.check_call(
-                f"dpkg -x {package} {packages_path} && rm {package}", shell=True
+                f"dpkg -x {full_path} {packages_path} && rm {full_path}", shell=True
             )
 
-    server_log_path = temp_path / "server_log"
-    server_log_path.mkdir(parents=True, exist_ok=True)
+    server_log_path = os.path.join(temp_path, "server_log")
+    if not os.path.exists(server_log_path):
+        os.makedirs(server_log_path)
 
-    result_path = temp_path / "result_path"
-    result_path.mkdir(parents=True, exist_ok=True)
+    result_path = os.path.join(temp_path, "result_path")
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
 
     run_commands = []
 

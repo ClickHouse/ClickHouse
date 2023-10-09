@@ -40,10 +40,7 @@ RUN apt-get update -y \
             cargo \
             zstd \
             file \
-            jq \
             pv \
-            zip \
-            p7zip-full \
     && apt-get clean
 
 RUN pip3 install numpy scipy pandas Jinja2
@@ -55,7 +52,7 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Amsterdam
+ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
@@ -88,10 +85,4 @@ RUN npm install -g azurite \
 COPY run.sh /
 COPY setup_minio.sh /
 COPY setup_hdfs_minicluster.sh /
-COPY attach_gdb.lib /
-COPY utils.lib /
-
-# We store stress_tests.lib in stateless image to avoid duplication of this file in stress and upgrade tests
-COPY stress_tests.lib /
-
 CMD ["/bin/bash", "/run.sh"]

@@ -19,9 +19,11 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        const auto hash = getTreeHash();
+        Hash hash = getTreeHash();
         writeCString("__subquery_", ostr);
-        writeString(toString(hash), ostr);
+        writeText(hash.first, ostr);
+        ostr.write('_');
+        writeText(hash.second, ostr);
     }
 }
 

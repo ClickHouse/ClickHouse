@@ -4,8 +4,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Interpreters/Context.h>
-#include <Core/ServerSettings.h>
 
 
 namespace DB
@@ -45,13 +43,6 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
     return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, parameters, std::forward<TArgs>(args)...);
 }
 
-size_t getMaxArraySize()
-{
-    if (auto context = Context::getGlobalContextInstance())
-        return context->getServerSettings().aggregate_function_group_array_max_element_size;
-
-    return 0xFFFFFF;
-}
 
 template <bool Tlast>
 AggregateFunctionPtr createAggregateFunctionGroupArray(
@@ -60,7 +51,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     assertUnary(name, argument_types);
 
     bool limit_size = false;
-    UInt64 max_elems = getMaxArraySize();
+    UInt64 max_elems = std::numeric_limits<UInt64>::max();
 
     if (parameters.empty())
     {
@@ -87,7 +78,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     {
         if (Tlast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "groupArrayLast make sense only with max_elems (groupArrayLast(max_elems)())");
-        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ false, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters);
     }
     else
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait</* Thas_limit= */ true, Tlast, /* Tsampler= */ Sampler::NONE>>(argument_types[0], parameters, max_elems);

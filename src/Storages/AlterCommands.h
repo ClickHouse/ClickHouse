@@ -196,11 +196,8 @@ public:
     /// Commands have to be prepared before apply.
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
-    /// At least one command modify settings or comments.
-    bool hasNonReplicatedAlterCommand() const;
-
-    /// All commands modify settings or comments.
-    bool areNonReplicatedAlterCommands() const;
+    /// At least one command modify settings.
+    bool hasSettingsAlterCommand() const;
 
     /// All commands modify settings only.
     bool isSettingsAlter() const;

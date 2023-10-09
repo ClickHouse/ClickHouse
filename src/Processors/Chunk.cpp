@@ -2,7 +2,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -14,8 +13,7 @@ namespace ErrorCodes
     extern const int POSITION_OUT_OF_BOUND;
 }
 
-Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_)
-    : columns(std::move(columns_)), num_rows(num_rows_)
+Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns_)), num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
 }
@@ -221,18 +219,6 @@ void convertToFullIfSparse(Chunk & chunk)
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
     chunk.setColumns(std::move(columns), num_rows);
-}
-
-Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows)
-{
-    auto columns = chunk.cloneEmptyColumns();
-    for (auto & column : columns)
-    {
-        column->insertDefault();
-        column = ColumnConst::create(std::move(column), num_rows);
-    }
-
-    return Chunk(std::move(columns), num_rows);
 }
 
 }
