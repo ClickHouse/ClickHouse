@@ -714,7 +714,7 @@ Result:
 
 ## byteSwap
 
-Accepts an unsigned integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
+Accepts an integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
 
 Currently, this is supported for up to 64-bit (signed and unsigned) integers.
 
