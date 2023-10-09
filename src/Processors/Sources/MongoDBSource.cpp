@@ -385,7 +385,7 @@ bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_)
         return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
     }
 
-    return false;
+    return true;
 }
 
 
