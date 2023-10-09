@@ -143,16 +143,16 @@ void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer 
     if (limit == 0)
         return;
 
-    if constexpr (std::endian::native == std::endian::big)
-    {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
+    if constexpr (std::endian::native == std::endian::big)
+    {
         for (size_t i = offset; i < offset + limit; ++i)
             writeBinaryLittleEndian(x[i], ostr);
-#pragma clang diagnostic pop
     }
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(UUID) * limit);
+#pragma clang diagnostic pop
 }
 
 void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
