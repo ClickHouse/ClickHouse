@@ -2,7 +2,14 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -18,6 +25,9 @@ void HTTPHeaderFilter::checkHeaders(const HTTPHeaderEntries & entries) const
 
     for (const auto & entry : entries)
     {
+        if (entry.name.contains('\n') || entry.value.contains('\n'))
+           throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
+
         if (forbidden_headers.contains(entry.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
                                                     "see <http_forbid_headers>", entry.name);

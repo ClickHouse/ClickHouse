@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -30,7 +31,7 @@ MergeTreeDataPartCompact::MergeTreeDataPartCompact(
 
 IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const NamesAndTypesList & columns_to_read,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const MarkRanges & mark_ranges,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
@@ -43,7 +44,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     auto * load_marks_threadpool = reader_settings.read_settings.load_marks_asynchronously ? &read_info->getContext()->getLoadMarksThreadpool() : nullptr;
 
     return std::make_unique<MergeTreeReaderCompact>(
-        read_info, columns_to_read, metadata_snapshot, uncompressed_cache,
+        read_info, columns_to_read, storage_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings, load_marks_threadpool,
         avg_value_size_hints, profile_callback);
 }
@@ -63,6 +64,12 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     /// Order of writing is important in compact format
     ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
+
+    /// _block_number column is not added by user, but is persisted in a part after merge
+    /// If _block_number is not present in the parts to be merged, then it won't have a position
+    /// So check if its not present and add it at the end
+    if (columns_list.contains(BlockNumberColumn::name) && !ordered_columns_list.contains(BlockNumberColumn::name))
+        ordered_columns_list.emplace_back(NameAndTypePair{BlockNumberColumn::name, BlockNumberColumn::type});
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
@@ -115,7 +122,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     {
         marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
         size_t granularity;
-        readIntBinary(granularity, *marks_reader);
+        readBinaryLittleEndian(granularity, *marks_reader);
         index_granularity_.appendMark(granularity);
     }
 

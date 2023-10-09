@@ -21,6 +21,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
@@ -32,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
@@ -280,6 +282,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             /// Already in needed type.
             return src;
+        }
+        if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
+        {
+            /// convert to UInt32 which is the underlying type for native IPv4
+            return convertNumericType<UInt32>(src, type);
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
@@ -563,6 +570,41 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
             to_type.getName());
 
     return converted;
+}
+
+template <typename T>
+static bool decimalEqualsFloat(Field field, Float64 float_value)
+{
+    auto decimal_field = field.get<DecimalField<T>>();
+    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
+    return decimal_to_float == float_value;
+}
+
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
+{
+    Field result_value = convertFieldToType(from_value, to_type);
+
+    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
+    {
+        bool is_equal = applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
+        return is_equal ? result_value : std::optional<Field>{};
+    }
+
+    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
+    {
+        /// Convert back to Float64 and compare
+        if (result_value.getType() == Field::Types::Decimal32)
+            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
+        if (result_value.getType() == Field::Types::Decimal64)
+            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
+        if (result_value.getType() == Field::Types::Decimal128)
+            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
+        if (result_value.getType() == Field::Types::Decimal256)
+            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
+    }
+
+    return result_value;
 }
 
 }

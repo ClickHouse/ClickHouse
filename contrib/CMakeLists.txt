@@ -135,10 +135,8 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
-add_contrib (base64-cmake base64)
-if (NOT ARCH_S390X)
+add_contrib (aklomp-base64-cmake aklomp-base64)
 add_contrib (simdjson-cmake simdjson)
-endif()
 add_contrib (rapidjson-cmake rapidjson)
 add_contrib (fastops-cmake fastops)
 add_contrib (libuv-cmake libuv)
@@ -196,12 +194,25 @@ if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
 add_contrib (annoy-cmake annoy)
+
+option(ENABLE_USEARCH "Enable USearch (Approximate Neighborhood Search, HNSW) support" ${ENABLE_LIBRARIES})
+if (ENABLE_USEARCH)
+    add_contrib (FP16-cmake FP16)
+    add_contrib (robin-map-cmake robin-map)
+    add_contrib (SimSIMD-cmake SimSIMD)
+    add_contrib (usearch-cmake usearch) # requires: FP16, robin-map, SimdSIMD
+else ()
+    message(STATUS "Not using USearch")
+endif ()
+
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (libbcrypt-cmake libbcrypt)
 
 add_contrib (google-benchmark-cmake google-benchmark)
 add_contrib (ulid-c-cmake ulid-c)
+
+add_contrib (libssh-cmake libssh)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

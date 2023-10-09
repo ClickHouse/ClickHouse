@@ -43,9 +43,10 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Functions/IFunction.h>
 
 #include <IO/WriteBufferFromOStream.h>
-
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ApproximateNearestNeighborIndexesCommon.h>
 
 namespace CurrentMetrics
@@ -328,7 +329,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 settings.min_count_to_compile_aggregate_expression,
                 settings.max_block_size,
                 settings.enable_software_prefetch_in_aggregation,
-                only_merge);
+                only_merge,
+                settings.optimize_group_by_constant_keys);
 
             return std::make_pair(params, only_merge);
         };
@@ -627,7 +629,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
-        DataTypePtr sampling_column_type = sampling_key.data_types[0];
+        DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
         {
@@ -775,12 +777,46 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
+    const ActionsDAGPtr & filter_dag,
+    ContextPtr context)
+{
+    if (!filter_dag)
+        return {};
+
+    auto sample = data.getSampleBlockWithVirtualColumns();
+    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
+    for (const auto * input : filter_dag->getInputs())
+        if (sample.has(input->result_name))
+            allowed_inputs.insert(input);
+
+    if (allowed_inputs.empty())
+        return {};
+
+    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
+    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
+    if (atoms.empty())
+        return {};
+
+    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
+
+    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
+    VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
+    return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+}
+
+
+std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
+    const MergeTreeData & data,
+    const MergeTreeData::DataPartsVector & parts,
     const ASTPtr & query,
     ContextPtr context)
 {
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
+
+    if (virtual_columns_block.rows() == 0)
+        return {};
 
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
@@ -981,9 +1017,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 const auto & index_and_condition = skip_indexes.useful_indices[idx];
                 auto & stat = useful_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                stat.total_granules.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                size_t total_granules = ranges.ranges.getNumberOfMarks();
+                stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                size_t granules_dropped = 0;
                 ranges.ranges = filterMarksUsingIndex(
                     index_and_condition.index,
                     index_and_condition.condition,
@@ -991,12 +1027,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     ranges.ranges,
                     settings,
                     reader_settings,
-                    granules_dropped,
                     mark_cache.get(),
                     uncompressed_cache.get(),
                     log);
 
-                stat.granules_dropped.fetch_add(granules_dropped, std::memory_order_relaxed);
+                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
@@ -1010,17 +1045,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 auto & stat = merged_indices_stat[idx];
                 stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
-                size_t total_granules = 0;
-                size_t granules_dropped = 0;
+                size_t total_granules = ranges.ranges.getNumberOfMarks();
                 ranges.ranges = filterMarksUsingMergedIndex(
                     indices_and_condition.indices, indices_and_condition.condition,
                     part, ranges.ranges,
                     settings, reader_settings,
-                    total_granules, granules_dropped,
                     mark_cache.get(), uncompressed_cache.get(), log);
 
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-                stat.granules_dropped.fetch_add(granules_dropped, std::memory_order_relaxed);
+                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
 
                 if (ranges.ranges.empty())
                     stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -1031,6 +1064,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         };
 
         size_t num_threads = std::min<size_t>(num_streams, parts.size());
+        if (settings.max_threads_for_indexes)
+        {
+            num_threads = std::min<size_t>(num_streams, settings.max_threads_for_indexes);
+        }
 
         if (num_threads <= 1)
         {
@@ -1195,6 +1232,10 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
+        {
+            virt_column_names.push_back(name);
+        }
+        else if (name == BlockNumberColumn::name)
         {
             virt_column_names.push_back(name);
         }
@@ -1574,7 +1615,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MarkRanges & ranges,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    size_t & granules_dropped,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
@@ -1638,14 +1678,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            // Cast to Ann condition
+
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
             {
                 // vector of indexes of useful ranges
                 auto result = ann_condition->getUsefulRanges(granule);
-                if (result.empty())
-                    ++granules_dropped;
 
                 for (auto range : result)
                 {
@@ -1670,10 +1708,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
 
             if (!result)
-            {
-                ++granules_dropped;
                 continue;
-            }
 
             MarkRange data_range(
                     std::max(ranges[i].begin, index_mark * index_granularity),
@@ -1698,8 +1733,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     const MarkRanges & ranges,
     const Settings & settings,
     const MergeTreeReaderSettings & reader_settings,
-    size_t & total_granules,
-    size_t & granules_dropped,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
@@ -1756,8 +1789,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             for (auto & reader : readers)
                 reader->seek(index_range.begin);
 
-        total_granules += index_range.end - index_range.begin;
-
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granules_filled || last_index_mark != index_range.begin)
@@ -1770,10 +1801,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             }
 
             if (!condition->mayBeTrueOnGranule(granules))
-            {
-                ++granules_dropped;
                 continue;
-            }
 
             MarkRange data_range(
                 std::max(range.begin, index_mark * index_granularity),

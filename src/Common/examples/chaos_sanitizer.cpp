@@ -6,7 +6,6 @@
 
 #include <IO/ReadHelpers.h>
 
-#include <Common/Exception.h>
 #include <Common/ThreadFuzzer.h>
 
 

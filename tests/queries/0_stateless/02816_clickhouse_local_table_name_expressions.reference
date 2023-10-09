@@ -25,3 +25,37 @@ Test 3a: check literal no parsing overflow
 1
 Test 3b: check literal empty
 1
+Test 4: select using * wildcard
+30
+30
+30
+30
+30
+10
+30
+10
+Test 4b: select using ? wildcard
+20
+10
+20
+10
+20
+Test 4c: select using '{' + '}'  wildcards
+20
+20
+1
+Test 4d: select using ? and * wildcards
+30
+30
+30
+1
+30
+30
+Test 4e: select using ?, * and '{' + '}' wildcards
+10
+20
+20
+20
+Test 4f: recursive search
+2
+1
