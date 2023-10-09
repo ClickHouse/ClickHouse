@@ -20,6 +20,7 @@ namespace ProtocolText
 ResultSetRow::ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_)
     : columns(columns_), row_num(row_num_)
 {
+    static FormatSettings format_settings = {.bool_true_representation = "1", .bool_false_representation = "0"};
     for (size_t i = 0; i < columns.size(); ++i)
     {
         if (columns[i]->isNullAt(row_num))
@@ -30,7 +31,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations, const Columns 
         else
         {
             WriteBufferFromOwnString ostr;
-            serializations[i]->serializeText(*columns[i], row_num, ostr, FormatSettings());
+            serializations[i]->serializeText(*columns[i], row_num, ostr, format_settings);
             payload_size += getLengthEncodedStringSize(ostr.str());
             serialized.push_back(std::move(ostr.str()));
         }
@@ -45,12 +46,10 @@ size_t ResultSetRow::getPayloadSize() const
 void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
 {
     for (size_t i = 0; i < columns.size(); ++i)
-    {
         if (columns[i]->isNullAt(row_num))
             buffer.write(serialized[i].data(), 1);
         else
             writeLengthEncodedString(serialized[i], buffer);
-    }
 }
 
 void ComFieldList::readPayloadImpl(ReadBuffer & payload)
@@ -142,11 +141,12 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;
-    TypeIndex type_index = removeLowCardinality(removeNullable(data_type))->getTypeId();
+    DataTypePtr normalized_data_type = removeLowCardinality(removeNullable(data_type));
+    TypeIndex type_index = normalized_data_type->getTypeId();
     switch (type_index)
     {
         case TypeIndex::UInt8:
-            if (data_type->getName() == "Bool")
+            if (normalized_data_type->getName() == "Bool")
             {
                 column_type = ColumnType::MYSQL_TYPE_BIT;
             }
@@ -213,7 +213,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             // MySQL Decimal has max 65 precision and 30 scale
             // Decimal256 (min scale is 39) is higher than the MySQL supported range and handled in the default case
             // See https://dev.mysql.com/doc/refman/8.0/en/precision-math-decimal-characteristics.html
-            const auto & type = assert_cast<const DataTypeDecimal128 &>(*data_type);
+            const auto & type = assert_cast<const DataTypeDecimal128 &>(*normalized_data_type);
             if (type.getPrecision() > 65 || type.getScale() > 30)
             {
                 column_type = ColumnType::MYSQL_TYPE_STRING;
