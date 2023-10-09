@@ -127,10 +127,6 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
             return std::make_unique<FixedStringHashValueIdGenerator<8>>(col, state_, max_distinct_values_);
         return std::make_unique<FixedStringHashValueIdGenerator<0>>(col, state_, max_distinct_values_);
     }
-    else if (const auto * low_card_col = typeid_cast<const ColumnLowCardinality *>(col))
-    {
-        return std::make_unique<LowCardinalityHashValueIdGenerator>(col, state_, max_distinct_values_);
-    }
     APPLY_ON_NUMBER_COLUMN(UInt8, nested_col, col)
     APPLY_ON_NUMBER_COLUMN(UInt16, nested_col, col)
     APPLY_ON_NUMBER_COLUMN(UInt32, nested_col, col)

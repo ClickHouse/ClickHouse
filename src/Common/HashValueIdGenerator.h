@@ -9,13 +9,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/Exception.h>
-#include <Common/PODArray.h>
-#include <Common/PODArray_fwd.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
-#include "Exception.h"
+#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
 
 #if defined(__AVX512F__) && defined(__AVX512BW__)
 #include <immintrin.h>
@@ -926,69 +926,6 @@ private:
         const UInt8 * null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
         computeLocalValueIdsForOneBatch<sizeof(ElementType)>(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
         computeFinalValueIdsOneBatch(tmp_value_ids, value_ids_pos, n - i);
-    }
-};
-
-class LowCardinalityHashValueIdGenerator : public IHashValueIdGenerator
-{
-public:
-    explicit LowCardinalityHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
-        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
-    {
-        enable_range_mode = false;
-    }
-private:
-    void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
-    {
-        const auto * low_card_col = typeid_cast<const ColumnLowCardinality *>(col);
-        if (!low_card_col)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not LowCardinality", col->getName());
-        const auto & indexes_col = low_card_col->getIndexes();
-        size_t index_bytes = low_card_col->getSizeOfIndexType();
-        const UInt8 * data_pos = nullptr;
-        switch (index_bytes)
-        {
-            case sizeof(UInt8):
-            {
-                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt8 *>(&indexes_col)->getData().data());
-                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
-                break;
-            }
-            case sizeof(UInt16):
-            {
-                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt16 *>(&indexes_col)->getData().data());
-                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
-                break;
-            }
-            case sizeof(UInt32):
-            {
-                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt32 *>(&indexes_col)->getData().data());
-                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
-                break;
-            }
-            case sizeof(UInt64):
-            {
-                data_pos = reinterpret_cast<const UInt8 *>(assert_cast<const ColumnUInt64 *>(&indexes_col)->getData().data());
-                assignIndexToValueId<UInt8>(value_ids, data_pos, col->size());
-                break;
-            }
-            default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
-        }
-    }
-
-    template <typename IndexType>
-    void assignIndexToValueId(UInt64 * value_ids, const UInt8 * data_pos, size_t n)
-    {
-        const auto * typed_data_pos = reinterpret_cast<const IndexType *>(data_pos);
-        for (size_t i = 0; i < n; ++i)
-        {
-            UInt64 value_id = typed_data_pos[i];
-            value_ids[i] = value_ids[i] * max_distinct_values + value_id;
-            data_pos += sizeof(IndexType);
-            if (value_id > allocated_value_id)
-                allocated_value_id = value_id;
-        }
     }
 };
 

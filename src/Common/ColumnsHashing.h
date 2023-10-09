@@ -15,6 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <cassert>
 #include <memory>
@@ -753,6 +754,7 @@ struct HashMethodKeysAdaptive
     ColumnRawPtrs key_columns;
     size_t keys_size;
     HashMethodContextPtr ctx;
+    Columns full_key_columns;
     AdaptiveHashMethodContext::HashValueIdGeneratorState * value_id_generators_state = nullptr;
 
     mutable PaddedPODArray<UInt64> value_ids;
@@ -762,6 +764,12 @@ struct HashMethodKeysAdaptive
     {
         if (!variant_index)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "variant_index is zero");
+
+        /// Need to convert a low cardinality column into a full one.
+        for (const auto & col : key_columns_)
+        {
+            full_key_columns.emplace_back(col->convertToFullColumnIfLowCardinality());
+        }
 
         auto * adaptive_ctx = static_cast<DB::ColumnsHashing::AdaptiveHashMethodContext *>(ctx.get());
         {
@@ -786,7 +794,7 @@ struct HashMethodKeysAdaptive
             for (size_t i = 0, n = key_columns.size(); i < n; ++i)
             {
                 value_id_generators_state->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
-                    &(value_id_generators_state->shared_keys_holder_state), max_value_id_num_for_key, key_columns[i]));
+                    &(value_id_generators_state->shared_keys_holder_state), max_value_id_num_for_key, full_key_columns[i].get()));
             }
         }
 
@@ -803,7 +811,7 @@ struct HashMethodKeysAdaptive
             value_ids.clear();
             value_ids.resize_fill(key_columns[0]->size(), 0);
             for (size_t i = 0; i < keys_size; ++i)
-                value_id_generators_state->value_id_generators[i]->computeValueId(key_columns[i], &value_ids[0]);
+                value_id_generators_state->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
         }
     }
 
