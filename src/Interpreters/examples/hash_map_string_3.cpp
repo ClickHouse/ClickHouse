@@ -57,7 +57,7 @@ struct STRUCT : public StringRef {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } /* NOLINT */ \
+    inline bool check<STRUCT>(const STRUCT & x) { return nullptr == x.data; } /* NOLINT */ \
  \
     template <> \
     inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } /* NOLINT */ \

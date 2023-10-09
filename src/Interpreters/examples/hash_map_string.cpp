@@ -72,7 +72,7 @@ inline bool operator==(CompactStringRef lhs, CompactStringRef rhs)
 namespace ZeroTraits
 {
     template <>
-    inline bool check<CompactStringRef>(CompactStringRef x) { return nullptr == x.data_mixed; }
+    inline bool check<CompactStringRef>(const CompactStringRef & x) { return nullptr == x.data_mixed; }
 
     template <>
     inline void set<CompactStringRef>(CompactStringRef & x) { x.data_mixed = nullptr; }
