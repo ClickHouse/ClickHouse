@@ -51,6 +51,7 @@ set(libssh_SRCS
   ${LIB_SOURCE_DIR}/src/pki_container_openssh.c
   ${LIB_SOURCE_DIR}/src/poll.c
   ${LIB_SOURCE_DIR}/src/session.c
+  ${LIB_SOURCE_DIR}/src/sftp.c
   ${LIB_SOURCE_DIR}/src/scp.c
   ${LIB_SOURCE_DIR}/src/socket.c
   ${LIB_SOURCE_DIR}/src/string.c

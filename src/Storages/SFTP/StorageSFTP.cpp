@@ -1,10 +1,6 @@
-#include "config.h"
-
-
 #include <Common/parseGlobs.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -38,7 +34,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Poco/URI.h>
 #include <Storages/SFTP/SshWrapper.h>
 
 #include <filesystem>
@@ -243,10 +238,6 @@ namespace DB
             , distributed_processing(distributed_processing_)
             , partition_by(partition_by_)
     {
-        if (configuration.port == 0) {
-            configuration.port = 22;
-        }
-
         std::shared_ptr<SshWrapper> ssh_wrapper;
         if (configuration.port == 0) {
             configuration.port = 22;
@@ -477,7 +468,7 @@ namespace DB
                     continue;
                 }
             }
-            while (true);
+            while (!sftp_info);
 
             std::optional<StorageSFTP::PathInfo> info;
             if (sftp_info)

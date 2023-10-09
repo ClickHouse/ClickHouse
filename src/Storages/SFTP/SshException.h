@@ -1,9 +1,18 @@
 #pragma once
 
 #include <Common/Exception.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-macro-identifier"
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma GCC diagnostic ignored "-Wdocumentation"
+
 #include <libssh/sftp.h>
 #include <libssh/libssh.h>
 #include <libssh/auth.h>
+
+#pragma GCC diagnostic pop
+
 #include <string>
 
 namespace DB {

@@ -21,6 +21,7 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 
 void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
+void registerTableFunctionSFTP(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);

@@ -157,7 +157,7 @@ void registerStorages()
 
     #endif
 
-    registerStorageSFTP(factory)
+    registerStorageSFTP(factory);
     registerStorageODBC(factory);
     registerStorageJDBC(factory);
 

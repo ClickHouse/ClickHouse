@@ -65,18 +65,6 @@ namespace DB
                 size_t max_block_size,
                 size_t num_streams) override;
 
-        SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override {
-            throw Exception("Method write is not supported for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-        }
-
-        void truncate(
-                const ASTPtr & query,
-                const StorageMetadataPtr & metadata_snapshot,
-                ContextPtr local_context,
-                TableExclusiveLockHolder &) override {
-            throw Exception("Method truncate is not supported for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-        }
-
         NamesAndTypesList getVirtuals() const override;
 
         bool supportsPartitionBy() const override { return true; }

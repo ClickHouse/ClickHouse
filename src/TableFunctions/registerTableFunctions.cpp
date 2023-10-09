@@ -25,6 +25,8 @@ void registerTableFunctions()
 
     registerTableFunctionMeiliSearch(factory);
 
+    registerTableFunctionSFTP(factory);
+
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);

@@ -1,7 +1,15 @@
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-macro-identifier"
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma GCC diagnostic ignored "-Wdocumentation"
+
 #include <libssh/sftp.h>
-#include <libssh/libsshpp.hpp>
+#include <fcntl.h>
+
+#pragma GCC diagnostic pop
+
 #include <memory>
 #include "SshException.h"
 
@@ -123,7 +131,7 @@ namespace DB {
 
         SftpAttributes &operator=(const SftpAttributes &) = delete;
 
-        explicit SftpAttributes(SftpAttributes && other) : SftpAttributes() {
+        SftpAttributes(SftpAttributes && other) noexcept : SftpAttributes() {
             *this = std::move(other);
         }
 
@@ -304,62 +312,6 @@ namespace DB {
                 return SftpAttributes{sftp_fstat(file)};
             }
 
-            template<size_t bufferSize = 1024>
-            void Write(std::istream &in) {
-                char buffer[bufferSize];
-                do {
-                    in.read(buffer, bufferSize);
-                    if (in.bad()) {
-                        throw std::runtime_error("error reading input stream");
-                    }
-                    auto read = in.gcount();
-                    if (read > 0) {
-                        auto written = sftp_write(file, buffer, read);
-                        if (written != read) {
-                            throw std::runtime_error("error writing file");
-                        }
-                    }
-                } while (in);
-            }
-
-            template<size_t bufferSize = 1024>
-            std::future<std::shared_ptr<FileStream>> WriteAsync(std::istream &in) {
-                if (!file) {
-                    throw std::runtime_error("file not opened");
-                }
-
-                auto ptr = std::make_shared<FileStream>(std::move(*this));
-                return std::async([](std::shared_ptr<FileStream> const &ptr_, std::istream &in_) {
-                                      ptr_->Write<bufferSize>(in_);
-                                      return ptr_;
-                                  },
-                                  ptr,
-                                  std::reference_wrapper(in));
-            }
-
-            template<size_t bufferSize = 1024>
-            void Read(std::ostream &out) {
-                if (!file) {
-                    throw std::runtime_error("file not opened");
-                }
-
-                char buffer[bufferSize];
-
-                ssize_t readCount;
-                do {
-                    readCount = sftp_read(file, buffer, bufferSize);
-
-                    if (readCount < 0) {
-                        throw std::runtime_error("error reading file");
-                    }
-
-                    out.write(buffer, readCount);
-                    if (!out) {
-                        throw std::runtime_error("error writing the contents read via ssh to output stream");
-                    }
-                } while (readCount > 0);
-            }
-
             void seek(off_t seek) {
                 if (!file) {
                     throw std::runtime_error("file not opened");
@@ -383,21 +335,6 @@ namespace DB {
                 }
 
                 return readCount;
-            }
-
-            template<size_t bufferSize = 1024>
-            std::future<std::shared_ptr<FileStream>> ReadAsync(std::ostream &out) {
-                if (!file) {
-                    throw std::runtime_error("file not opened");
-                }
-
-                auto ptr = std::make_shared<FileStream>(std::move(*this));
-                return std::async([](std::shared_ptr<FileStream> const &ptr_, std::ostream &out_) {
-                                      ptr_->Read<bufferSize>(out_);
-                                      return ptr_;
-                                  },
-                                  ptr,
-                                  std::reference_wrapper(out));
             }
         };
 
