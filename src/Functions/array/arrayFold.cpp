@@ -174,7 +174,7 @@ public:
         IColumn::Permutation inverse_permutation(rows_count);
         size_t inverse_permutation_count = 0;
 
-        /// current_column after each iteration contains value of accumulator after aplying values under indexes of arrays.
+        /// current_column after each iteration contains value of accumulator after applying values under indexes of arrays.
         /// At each iteration only rows of current_column with arrays that still has unapplied elements are kept.
         /// Discarded rows which contain finished calculations are added to result_data column and as we insert them we save their original row_number in inverse_permutation vector
         for (size_t ind = 0; ind < max_array_size; ++ind)
