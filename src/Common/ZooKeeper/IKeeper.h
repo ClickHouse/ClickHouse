@@ -212,6 +212,9 @@ struct CreateRequest : virtual Request
     bool is_sequential = false;
     ACLs acls;
 
+    /// should it succeed if node already exists
+    bool not_exists = false;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
@@ -508,6 +511,18 @@ public:
     Exception * clone() const override { return new Exception(*this); }
 
     const Error code;
+};
+
+class SimpleFaultInjection
+{
+public:
+    SimpleFaultInjection(Float64 probability_before, Float64 probability_after_, const String & description_);
+    ~SimpleFaultInjection() noexcept(false);
+
+private:
+    Float64 probability_after = 0;
+    String description;
+    int exceptions_level = 0;
 };
 
 

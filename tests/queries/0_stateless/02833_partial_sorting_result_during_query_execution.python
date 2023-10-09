@@ -13,7 +13,7 @@ from tcp_client import TCPClient
 
 def run_query_without_errors(query, support_partial_result):
     with TCPClient() as client:
-        client.sendQuery(query)
+        client.sendQuery(query, settings={"allow_experimental_partial_result": True})
 
         # external tables
         client.sendEmptyBlock()

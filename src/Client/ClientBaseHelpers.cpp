@@ -130,6 +130,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             {TokenType::Greater, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::LessOrEquals, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::GreaterOrEquals, replxx::color::bold(Replxx::Color::DEFAULT)},
+            {TokenType::Spaceship, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::Concatenation, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::At, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::DoubleAt, Replxx::Color::MAGENTA},
