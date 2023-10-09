@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int PROJECTION_NOT_USED;
 }
 
 
