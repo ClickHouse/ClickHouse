@@ -16,7 +16,7 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"cluster", std::make_shared<DataTypeString>()},
         {"shard_num", std::make_shared<DataTypeUInt32>()},
         {"shard_weight", std::make_shared<DataTypeUInt32>()},
-        {"internal_replication.", std::make_shared<DataTypeUInt8>()},
+        {"internal_replication", std::make_shared<DataTypeUInt8>()},
         {"replica_num", std::make_shared<DataTypeUInt32>()},
         {"host_name", std::make_shared<DataTypeString>()},
         {"host_address", std::make_shared<DataTypeString>()},
