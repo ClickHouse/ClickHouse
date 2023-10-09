@@ -82,13 +82,9 @@ Note that, in step#1, one can also choose to convert the operand to bytes in lit
 
 One use-case of this function is reversing IPv4s:
 ```result
-┌─toIPv4(3351772109)─┐
-│ 199.199.251.205    │
-└────────────────────┘
-
-┌─toIPv4(byteSwap(3351772109))─┐
-│ 205.251.199.199              │
-└──────────────────────────────┘
+┌─toIPv4(byteSwap(toUInt32(toIPv4('205.251.199.199'))))─┐
+│ 199.199.251.205                                       │
+└───────────────────────────────────────────────────────┘
 ```
 )",
             .examples{
