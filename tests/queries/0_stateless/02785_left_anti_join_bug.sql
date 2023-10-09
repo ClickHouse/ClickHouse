@@ -1,6 +1,7 @@
-
-
 SET allow_suspicious_low_cardinality_types=1;
+
+DROP TABLE IF EXISTS test_table;
+DROP TABLE IF EXISTS test_table__fuzz_3;
 
 CREATE TABLE test_table (`id` Float32, `value` Float32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO test_table VALUES (-10.75, 95.57);
@@ -12,4 +13,3 @@ SELECT * FROM (SELECT CAST('104857.5', 'Float32'), corr(NULL, id, id) AS corr_va
 
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_table__fuzz_3;
-
