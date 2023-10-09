@@ -1,5 +1,6 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/SourceWithKeyCondition.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -39,7 +40,7 @@ void ReadFromStorageStep::applyFilters()
         for (const auto & processor : pipe.getProcessors())
         {
             std::cout << "processor:" << processor->getName() << std::endl;
-            if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
             {
                 std::cout << "xxx4" << std::endl;
                 source->setKeyCondition(query_info, context);
@@ -48,32 +49,13 @@ void ReadFromStorageStep::applyFilters()
     }
     else
     {
-        std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-        const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
-        for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
-        {
-            const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
-        }
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column, context);
-        key_condition = std::make_shared<const KeyCondition>(
-            filter_actions_dag,
-            context,
-            pipe.getHeader().getNames(),
-            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(pipe.getHeader().getColumnsWithTypeAndName())),
-            NameSet{});
-    }
-
-    std::cout << "xxx3" << std::endl;
-    if (key_condition)
-    {
         for (const auto & processor : pipe.getProcessors())
         {
             std::cout << "processor:" << processor->getName() << std::endl;
-            if (auto * source = dynamic_cast<ISource *>(processor.get()))
+            if (auto * source = dynamic_cast<SourceWithKeyCondition *>(processor.get()))
             {
                 std::cout << "xxx4" << std::endl;
-                source->setKeyCondition(key_condition);
+                source->setKeyCondition(filter_nodes.nodes, context);
             }
         }
     }
