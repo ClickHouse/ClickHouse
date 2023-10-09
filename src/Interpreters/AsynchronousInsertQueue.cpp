@@ -298,9 +298,6 @@ AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPt
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context)
 {
-    if (auto quota = query_context->getQuota())
-        quota->used(QuotaType::WRITTEN_BYTES, chunk.byteSize());
-
     const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
 
