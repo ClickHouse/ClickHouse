@@ -4479,7 +4479,7 @@ class ClickHouseInstance:
         # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
         # are shared with all nodes within the same cluster, even if it is specified for a single node.
         # In order not to break the existing tests, the `self.instance_env_variables` option was added as a workaround.
-        # IMHO, it would be better to make `self.env_variables` exclusive by defaultand remove the `self.instance_env_variables` option.
+        # IMHO, it would be better to make `self.env_variables` exclusive by default and remove the `self.instance_env_variables` option.
         if self.instance_env_variables:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
