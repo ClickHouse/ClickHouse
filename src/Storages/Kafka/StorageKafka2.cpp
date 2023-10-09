@@ -34,6 +34,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -84,19 +85,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-    extern const int QUERY_NOT_ALLOWED;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
+extern const int QUERY_NOT_ALLOWED;
 }
 
 namespace
 {
-    constexpr auto RESCHEDULE_MS = 500;
-    // const auto CLEANUP_TIMEOUT_MS = 3000;
-    constexpr auto MAX_THREAD_WORK_DURATION_MS = 60000; // once per minute leave do reschedule (we can't lock threads in pool forever)
+constexpr auto RESCHEDULE_MS = 500;
+// const auto CLEANUP_TIMEOUT_MS = 3000;
+constexpr auto MAX_THREAD_WORK_DURATION_MS = 60000; // once per minute leave do reschedule (we can't lock threads in pool forever)
 
-    constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
+constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
 }
+
+// TODO(antaljanosbenjamin): check performance
 
 StorageKafka2::StorageKafka2(
     const StorageID & table_id_,
@@ -162,14 +165,10 @@ SettingsChanges StorageKafka2::createSettingsAdjustments()
     }
 
     if (!kafka_settings->input_format_allow_errors_ratio.changed)
-    {
         kafka_settings->input_format_allow_errors_ratio = 0.;
-    }
 
     if (!kafka_settings->input_format_allow_errors_num.changed)
-    {
         kafka_settings->input_format_allow_errors_num = kafka_settings->kafka_skip_broken_messages.value;
-    }
 
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
@@ -188,9 +187,7 @@ Names StorageKafka2::parseTopics(String topic_list)
     Names result;
     boost::split(result, topic_list, [](char c) { return c == ','; });
     for (String & topic : result)
-    {
         boost::trim(topic);
-    }
     return result;
 }
 
@@ -254,7 +251,7 @@ void StorageKafka2::startup()
     {
         try
         {
-            consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i)});
+            consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = keeper});
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -263,12 +260,21 @@ void StorageKafka2::startup()
         }
     }
 
-    createKeeperNodes(consumers.front().consumer);
+    try
+    {
+        createKeeperNodes(consumers.front().consumer);
+    }
+    catch (const Exception & ex)
+    {
+        if (ex.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
+
     // Start the reader thread
     for (auto & task : tasks)
-    {
         task->holder->activateAndSchedule();
-    }
 }
 
 
@@ -290,7 +296,7 @@ void StorageKafka2::shutdown()
 
 void StorageKafka2::drop()
 {
-    getZooKeeper().removeRecursive(kafka_settings->kafka_keeper_path);
+    getZooKeeper()->removeRecursive(kafka_settings->kafka_keeper_path);
 }
 
 KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
@@ -300,13 +306,9 @@ KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     if (num_consumers > 1)
-    {
         conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));
-    }
     else
-    {
         conf.set("client.id", client_id);
-    }
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "earliest"); // If no offset stored for this group, read all messages from the start
@@ -505,33 +507,30 @@ bool StorageKafka2::checkDependencies(const StorageID & table_id)
 
 namespace
 {
-    const std::string lock_file_name{"lock"};
-    const std::string commit_file_name{"committed"};
-    const std::string intent_file_name{"intention"};
+const std::string lock_file_name{"lock"};
+const std::string commit_file_name{"committed"};
+const std::string intent_file_name{"intention"};
 
-    std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const std::string & path)
-    {
-        std::string result;
-        if (!keeper.tryGet(path, result))
-            return std::nullopt;
+std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const std::string & path)
+{
+    std::string result;
+    if (!keeper.tryGet(path, result))
+        return std::nullopt;
 
-        return DB::parse<int64_t>(result);
-    }
+    return DB::parse<int64_t>(result);
+}
 }
 
 void StorageKafka2::createKeeperNodes(const KafkaConsumer2Ptr & consumer)
 {
     // TODO(antaljanosbenjamin): check config with other StorageKafkas
+    // TODO(antaljanosbenjamin): maybe also create a node in `keeper_path/replicas/<uuid>` to note that this replica has the table?
     const auto & keeper_path = kafka_settings->kafka_keeper_path.value;
 
-    auto & keeper_ref = getZooKeeper();
-
-    if (keeper_ref.exists(keeper_path))
-    {
+    if (keeper->exists(keeper_path))
         return;
-    }
 
-    keeper_ref.createAncestors(keeper_path);
+    keeper->createAncestors(keeper_path);
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(keeper_path, "", zkutil::CreateMode::Persistent));
 
@@ -553,14 +552,13 @@ void StorageKafka2::createKeeperNodes(const KafkaConsumer2Ptr & consumer)
 
 
     Coordination::Responses responses;
-    const auto code = keeper_ref.tryMulti(ops, responses);
+    const auto code = keeper->tryMulti(ops, responses);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-    {
         zkutil::KeeperMultiException::check(code, ops, responses);
-    }
 }
 
-std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartitions(const TopicPartitions & topic_partitions)
+std::optional<StorageKafka2::TopicPartitionLocks>
+StorageKafka2::lockTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & topic_partitions)
 {
     // TODO(antaljanosbenjamin): Review this function with somebody who know keeper better than me
     const auto uuid_as_string = toString(uuid);
@@ -568,9 +566,7 @@ std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartit
     std::vector<std::string> topic_partition_paths;
     topic_partition_paths.reserve(topic_partitions.size());
     for (const auto & topic_partition : topic_partitions)
-    {
         topic_partition_paths.emplace_back(getTopicPartitionPath(topic_partition));
-    }
 
     Coordination::Requests ops;
 
@@ -584,21 +580,18 @@ std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartit
     for (auto try_count{0}; try_count < 10; ++try_count)
     {
         Coordination::Responses responses;
-        auto & keeper_ref = getZooKeeper();
 
-        if (const auto code = keeper_ref.tryMulti(ops, responses); code == Coordination::Error::ZOK)
+        if (const auto code = keeper_to_use.tryMulti(ops, responses); code == Coordination::Error::ZOK)
         {
             success = true;
             break;
         }
-        else
-        {
+        else if (code != Coordination::Error::ZNODEEXISTS)
             zkutil::KeeperMultiException::check(code, ops, responses);
-        }
 
-        // TODO(antaljanosbenjamin): Probably handle the most common errors
+        // TODO(antaljanosbenjamin): We shouldn't wait here, but let's give the other consumers to release the locks
         for (const auto & topic_partition_path : topic_partition_paths)
-            keeper_ref.waitForDisappear(topic_partition_path + lock_file_name);
+            keeper_to_use.waitForDisappear(topic_partition_path + lock_file_name);
     }
 
     if (!success)
@@ -608,16 +601,15 @@ std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartit
     // We have the locks
     TopicPartitionLocks locks;
     {
-        auto & keeper_ref = getZooKeeper();
         auto tp_it = topic_partitions.begin();
         auto path_it = topic_partition_paths.begin();
         for (; tp_it != topic_partitions.end(); ++tp_it, ++path_it)
         {
             using zkutil::EphemeralNodeHolder;
-            LockedTopicPartitionInfo lock_info{.lock = EphemeralNodeHolder::existing(*path_it + lock_file_name, keeper_ref)};
+            LockedTopicPartitionInfo lock_info{.lock = EphemeralNodeHolder::existing(*path_it + lock_file_name, keeper_to_use)};
 
-            lock_info.committed_offset = getNumber(keeper_ref, *path_it + commit_file_name);
-            lock_info.intent_size = getNumber(keeper_ref, *path_it + intent_file_name);
+            lock_info.committed_offset = getNumber(keeper_to_use, *path_it + commit_file_name);
+            lock_info.intent_size = getNumber(keeper_to_use, *path_it + intent_file_name);
 
             LOG_TRACE(
                 log,
@@ -634,18 +626,17 @@ std::optional<StorageKafka2::TopicPartitionLocks> StorageKafka2::lockTopicPartit
 }
 
 
-void StorageKafka2::saveCommittedOffset(const TopicPartition & topic_partition, int64_t committed_offset)
+void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t committed_offset)
 {
     const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    auto & keeper_ref = getZooKeeper();
-    keeper_ref.createOrUpdate(partition_prefix + commit_file_name, toString(committed_offset), zkutil::CreateMode::Persistent);
+    keeper_to_use.createOrUpdate(partition_prefix + commit_file_name, toString(committed_offset), zkutil::CreateMode::Persistent);
     // This is best effort, if it fails we will try to remove in the next round
-    keeper_ref.tryRemove(partition_prefix + intent_file_name, -1);
+    keeper_to_use.tryRemove(partition_prefix + intent_file_name, -1);
 }
 
-void StorageKafka2::saveIntent(const TopicPartition & topic_partition, int64_t intent)
+void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent)
 {
-    getZooKeeper().createOrUpdate(
+    keeper_to_use.createOrUpdate(
         getTopicPartitionPath(topic_partition) + intent_file_name, toString(intent), zkutil::CreateMode::Persistent);
 }
 
@@ -825,9 +816,7 @@ StorageKafka2::pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & to
     }
 
     if (total_rows == 0)
-    {
         return {};
-    }
 
     /// MATERIALIZED columns can be added here, but I think
     // they are not needed here:
@@ -922,20 +911,52 @@ bool StorageKafka2::streamToViews(size_t idx)
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
     auto & consumer_info = consumers[idx];
+    try
+    {
+        LOG_TRACE(log, "Trying to consume from consumer {}", idx);
+        const auto rows = streamFromConsumer(consumer_info);
+        if (rows.has_value())
+        {
+            const auto milliseconds = watch.elapsedMilliseconds();
+            LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*rows), table_id.getNameForLogs(), milliseconds);
+        }
+        else
+        {
+            LOG_DEBUG(log, "Couldn't push any rows");
+            return true;
+        }
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+        {
+            consumer_info.locks.clear();
+            consumer_info.keeper = getZooKeeper();
+        }
+        else
+            throw;
+
+        // TODO(antaljanosbenjamin): Should we reschedule in case of keeper error?
+    }
+    return false;
+}
+
+
+std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info)
+{
     auto & consumer = consumer_info.consumer;
+    auto & keeper_to_use = *consumer_info.keeper;
     // To keep the consumer alive
 
-    LOG_TRACE(log, "Polling consumer #{} for events", idx);
+    LOG_TRACE(log, "Polling consumer for events");
     consumer->pollEvents();
     if (nullptr == consumer->getKafkaAssignment())
-        return true;
+        return std::nullopt;
+    LOG_TRACE(log, "Consumer has assignment");
 
-
-    LOG_TRACE(log, "Consumer #{} has assignment", idx);
-
-    if (consumer->needsOffsetUpdate())
+    if (consumer->needsOffsetUpdate() || consumer_info.locks.empty())
     {
-        LOG_TRACE(log, "Consumer #{} needs update offset", idx);
+        LOG_TRACE(log, "Consumer needs update offset");
         consumer_info.consume_from_topic_partition_index = 0;
 
         consumer_info.locks.clear();
@@ -943,7 +964,7 @@ bool StorageKafka2::streamToViews(size_t idx)
 
         if (const auto * current_assignment = consumer->getKafkaAssignment(); nullptr != current_assignment)
         {
-            auto maybe_locks = lockTopicPartitions(*current_assignment);
+            auto maybe_locks = lockTopicPartitions(keeper_to_use, *current_assignment);
 
             if (!maybe_locks.has_value())
             {
@@ -962,15 +983,20 @@ bool StorageKafka2::streamToViews(size_t idx)
                     topic_partition_copy.offset = *maybe_committed_offset + 1;
                 else
                     topic_partition_copy.offset = KafkaConsumer2::BEGINNING_OFFSET;
+
                 consumer_info.topic_partitions.push_back(std::move(topic_partition_copy));
             }
+            consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
         }
-        consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
+        else
+        {
+            LOG_TRACE(log, "Consumer lost assignment while trying to lock partitions");
+        }
     }
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    insert->table_id = table_id;
+    insert->table_id = getStorageID();
 
     auto kafka_context = Context::createCopy(getContext());
     kafka_context->makeQueryContext();
@@ -984,15 +1010,14 @@ bool StorageKafka2::streamToViews(size_t idx)
     auto & topic_partition = consumer_info.topic_partitions[consumer_info.consume_from_topic_partition_index];
     LOG_TRACE(
         log,
-        "Consumer #{} will fetch {}:{} (consume_from_topic_partition_index is {})",
-        idx,
+        "Will fetch {}:{} (consume_from_topic_partition_index is {})",
         topic_partition.topic,
         topic_partition.partition_id,
         consumer_info.consume_from_topic_partition_index);
     consumer_info.consume_from_topic_partition_index
         = (consumer_info.consume_from_topic_partition_index + 1) % consumer_info.topic_partitions.size();
 
-    bool needs_offset_reset = false;
+    bool needs_offset_reset = true;
     SCOPE_EXIT({
         if (!needs_offset_reset)
             return;
@@ -1002,9 +1027,9 @@ bool StorageKafka2::streamToViews(size_t idx)
 
     if (blocks.empty())
     {
-        LOG_TRACE(log, "Consumer #{} didn't get any messages", idx);
+        LOG_TRACE(log, "Didn't get any messages");
         needs_offset_reset = false;
-        return true;
+        return std::nullopt;
     }
 
     auto converting_dag = ActionsDAG::makeConvertingActions(
@@ -1015,16 +1040,14 @@ bool StorageKafka2::streamToViews(size_t idx)
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
 
     for (auto & block : blocks)
-    {
         converting_actions->execute(block);
-    }
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
     auto & lock_info = consumer_info.locks.at(topic_partition);
     lock_info.intent_size = last_read_offset - lock_info.committed_offset.value_or(0);
-    saveIntent(topic_partition, *lock_info.intent_size);
+    saveIntent(keeper_to_use, topic_partition, *lock_info.intent_size);
     std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(Pipe{std::make_shared<BlocksListSource>(std::move(blocks))});
@@ -1034,28 +1057,24 @@ bool StorageKafka2::streamToViews(size_t idx)
         executor.execute();
     }
 
-    saveCommittedOffset(topic_partition, last_read_offset);
+    saveCommittedOffset(keeper_to_use, topic_partition, last_read_offset);
     lock_info.intent_size.reset();
     lock_info.committed_offset = last_read_offset;
     topic_partition.offset = last_read_offset + 1;
     needs_offset_reset = false;
-
-    UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
-
-    return false;
+    return rows;
 }
 
 
-zkutil::ZooKeeper & StorageKafka2::getZooKeeper()
-{
-    if (keeper->expired())
+    zkutil::ZooKeeperPtr StorageKafka2::getZooKeeper()
     {
-        // TODO(antaljanosbenjamin): this can go wrong if we start a new session simultaneously from multiple threads.
-        keeper = keeper->startNewSession();
-        //TODO(antaljanosbenjamin): handle ephemeral nodes
-    }
-    return *keeper;
+        if (keeper->expired())
+        {
+            // TODO(antaljanosbenjamin): this can go wrong if we start a new session simultaneously from multiple threads.
+            keeper = keeper->startNewSession();
+            //TODO(antaljanosbenjamin): handle ephemeral nodes
+        }
+        return keeper;
 }
 
 

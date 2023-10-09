@@ -81,6 +81,7 @@ public:
 
 private:
     // Configuration and state
+    std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -125,6 +126,7 @@ private:
         size_t consume_from_topic_partition_index{0};
         TopicPartitions topic_partitions;
         // TODO(antaljanosbenjamin): maybe recreate the ephemeral node
+        zkutil::ZooKeeperPtr keeper;
         TopicPartitionLocks locks;
     };
 
@@ -172,18 +174,21 @@ private:
     static String getDefaultClientId(const StorageID & table_id_);
 
     bool streamToViews(size_t idx);
+
+    std::optional<size_t> streamFromConsumer(ConsumerAndAssignmentInfo& consumer_info);
+
     bool checkDependencies(const StorageID & table_id);
 
     // Takes lock over topic partitions and set's the committed offset in topic_partitions
     void createKeeperNodes(const KafkaConsumer2Ptr & consumer);
 
-    std::optional<TopicPartitionLocks> lockTopicPartitions(const TopicPartitions & topic_partitions);
-    void saveCommittedOffset(const TopicPartition & topic_partition, int64_t committed_offset);
-    void saveIntent(const TopicPartition & topic_partition, int64_t intent);
+    std::optional<TopicPartitionLocks> lockTopicPartitions(zkutil::ZooKeeper& keeper_to_use, const TopicPartitions & topic_partitions);
+    void saveCommittedOffset(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t committed_offset);
+    void saveIntent(zkutil::ZooKeeper& keeper_to_use,const TopicPartition & topic_partition, int64_t intent);
 
     PolledBatchInfo pollConsumer(KafkaConsumer2 & consumer, const TopicPartition & topic_partition, const ContextPtr & context);
 
-    zkutil::ZooKeeper& getZooKeeper();
+    zkutil::ZooKeeperPtr getZooKeeper();
 
     std::string getTopicPartitionPath(const TopicPartition& topic_partition );
 };
