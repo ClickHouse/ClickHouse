@@ -10,6 +10,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Databases/AlterDatabaseCommands.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Storages/StoragePostgreSQL.h>
@@ -133,6 +134,34 @@ void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, Loa
 }
 
 
+void DatabaseMaterializedPostgreSQL::checkAlterIsPossible(const AlterDatabaseCommands & commands, ContextPtr query_context)
+{
+    auto existing_settings = *settings.get();
+    auto check_setting_change = [&existing_settings, &query_context](const SettingChange & change)
+    {
+        auto command = change.value.isNull() ? "RESET SETTING" : "MODIFY SETTING";
+        if (change.name == "materialized_postgresql_tables_list" && !query_context->isInternalQuery())
+        {
+            throw Exception(
+                    ErrorCodes::QUERY_NOT_ALLOWED,
+                    "ALTER DATABASE {} for setting `{}` is not allowed", command, change.name);
+        }
+        if (!change.value.isNull())
+            existing_settings.checkCanSet(change.name, change.value);
+    };
+    for (const auto & setting_command : commands.getSettingCommands())
+    {
+        for (const auto & change : setting_command->settings_changes)
+        {
+            check_setting_change(change);
+        }
+        for (const auto & reset : setting_command->settings_resets)
+        {
+            check_setting_change({reset, {}});
+        }
+    }
+}
+
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     std::lock_guard lock(handler_mutex);
@@ -143,11 +172,8 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
         if (!settings->has(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
-        if ((change.name == "materialized_postgresql_tables_list"))
+        if (change.name == "materialized_postgresql_tables_list" && query_context->isInternalQuery())
         {
-            if (!query_context->isInternalQuery())
-                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
-
             need_update_on_disk = true;
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
@@ -253,7 +279,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
 
     auto command = std::make_shared<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
-    command->settings_changes = std::move(set);
+    command->database_settings_changes = std::move(set);
 
     auto command_list = std::make_shared<ASTExpressionList>();
     command_list->children.push_back(command);

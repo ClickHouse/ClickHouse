@@ -80,7 +80,7 @@ public:
 
     void stopReplication() override;
 
-    void checkAlterIsPossible(const AlterDatabaseCommands & commands) override;
+    void checkAlterIsPossible(const AlterDatabaseCommands & commands, ContextPtr query_context) override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 };

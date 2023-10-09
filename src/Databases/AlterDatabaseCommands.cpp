@@ -104,7 +104,7 @@ namespace
             case ASTAlterCommand::DROP_TABLE_OVERRIDE:
                 return "DROP";
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid ASTAlterCommand::Type {} - this is a bug!", magic_enum::enum_name(type));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a table override ASTAlterCommand::Type: {} - this is a bug!", magic_enum::enum_name(type));
         }
     }
 }
@@ -153,6 +153,7 @@ void AlterDatabaseTableOverrideCommand::prepare(const DatabasePtr & database, Co
         {
             /// Here, we know existing_override->storage exists after the previous if. If storage parameters
             /// are different, the database needs to be recreated.
+            chassert(table_override->storage);
             if (serializeAST(*table_override->storage) != serializeAST(*existing_override->storage))
             {
                 apply_data.need_to_recreate_database = true;
@@ -160,10 +161,9 @@ void AlterDatabaseTableOverrideCommand::prepare(const DatabasePtr & database, Co
             }
         }
     }
-    /// TODO: check that no overrides touch internal columns like _version, _snapshot[12] and _sign
+    /// TODO: check that no overrides touch internal columns like _version and _sign
     ///       (but account for that these names could be _version2 etc.)
     /// TODO: check that no overrides touch internal indices like _version
-
     if (auto alter_table_query = tryGetAlterTableQuery(database, apply_data, context))
     {
         apply_data.reconciliation_queries.push_back(alter_table_query);
@@ -381,9 +381,9 @@ void AlterDatabaseCommands::addCommand(const ASTAlterCommand & command_ast)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unrecognized ALTER DATABASE command: {}", magic_enum::enum_name(command_ast.type));
 }
 
-void AlterDatabaseCommands::prepareAll(const DatabasePtr & database, ContextPtr context)
+void AlterDatabaseCommands::prepareAll(const DatabasePtr & database, ContextPtr query_context)
 {
-    auto prepare_context = createInternalContext(context);
+    // auto prepare_context = createInternalContext(query_context);
 
     const ASTCreateQuery * create = apply_data.setCreateQuery(database->getCreateDatabaseQuery());
     if (!create)
@@ -392,15 +392,9 @@ void AlterDatabaseCommands::prepareAll(const DatabasePtr & database, ContextPtr 
     }
 
     for (auto & setting_command : *this)
-        setting_command->prepare(database, prepare_context, apply_data);
+        setting_command->prepare(database, query_context, apply_data);
 
-    LOG_DEBUG(
-        &Poco::Logger::get("AlterDatabaseCommands"),
-        "need_to_recreate_database={}",
-        apply_data.need_to_recreate_database ? "true" : "false");
-
-
-    if (apply_data.need_to_recreate_database && !prepare_context->getSettingsRef().allow_alter_database_to_drop_and_recreate_if_needed)
+    if (apply_data.need_to_recreate_database && !query_context->getSettingsRef().allow_alter_database_to_drop_and_recreate_if_needed)
     {
         throw Exception(
             ErrorCodes::INVALID_ALTER_DATABASE_QUERY,
@@ -408,7 +402,7 @@ void AlterDatabaseCommands::prepareAll(const DatabasePtr & database, ContextPtr 
             "set 'allow_alter_database_to_drop_and_recreate_if_needed=1' if you really want to do this!",
             apply_data.need_to_recreate_database_reason);
     }
-    database->checkAlterIsPossible(*this);
+    database->checkAlterIsPossible(*this, query_context);
 }
 
 }

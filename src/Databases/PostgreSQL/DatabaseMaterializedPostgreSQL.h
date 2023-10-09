@@ -18,6 +18,7 @@
 namespace DB
 {
 
+class AlterDatabaseCommands;
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
@@ -62,6 +63,8 @@ public:
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
+
+    void checkAlterIsPossible(const AlterDatabaseCommands & commands, ContextPtr query_context) override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 

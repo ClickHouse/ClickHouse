@@ -756,7 +756,12 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
 void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 {
     if (setting.name == "materialized_postgresql_max_block_size")
-        max_block_size = setting.value.safeGet<UInt64>();
+    {
+        if (setting.value.getType() == Field::Types::Null) // RESET SETTING (to default)
+            max_block_size = MaterializedPostgreSQLSettings().materialized_postgresql_max_block_size;
+        else
+            max_block_size = setting.value.safeGet<UInt64>();
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported setting: {}", setting.name);
 }

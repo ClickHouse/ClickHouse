@@ -352,7 +352,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
-    virtual void checkAlterIsPossible(const AlterDatabaseCommands & /*commands*/)
+    virtual void checkAlterIsPossible(const AlterDatabaseCommands &, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} does not support ALTER DATABASE", getEngineName());
     }

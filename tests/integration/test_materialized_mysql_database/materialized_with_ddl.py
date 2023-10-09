@@ -1,21 +1,22 @@
+# pylint: disable=too-many-lines
+import logging
 import re
+import threading
 import time
 
 import pymysql.cursors
 import pytest
-from helpers.network import PartitionManager
-import logging
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseInstance
-
-import threading
+from helpers.error_codes import (
+    INVALID_ALTER_DATABASE_QUERY,
+    QUERY_NOT_ALLOWED,
+    TABLE_OVERRIDE_ALREADY_EXISTS,
+    TABLE_OVERRIDE_NOT_FOUND,
+)
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
-from .utils import ReplicationHelper
 
-NOT_IMPLEMENTED = 48
-INVALID_ALTER_DATABASE_QUERY = 707
-TABLE_OVERRIDE_ALREADY_EXISTS = 708
-TABLE_OVERRIDE_NOT_FOUND = 709
+from .utils import ReplicationHelper
 
 
 def check_query(
@@ -1885,7 +1886,7 @@ def default_values(clickhouse_node, mysql_node, service_name):
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"CREATE DATABASE {db}")
-    columns = f"""
+    columns = """
         id INT PRIMARY KEY,
         -- literal defaults
         i INT             DEFAULT 0,
@@ -2766,9 +2767,11 @@ def alter_database_settings_test(replication: ReplicationHelper):
 
     assert_no_setting("max_flush_data_time")
 
-    should_fail("MODIFY SETTING max_sync_threads=1", NOT_IMPLEMENTED)
+    should_fail(
+        "MODIFY SETTING materialized_mysql_tables_list='foo'", QUERY_NOT_ALLOWED
+    )
 
-    should_fail("RESET SETTING max_sync_threads", NOT_IMPLEMENTED)
+    should_fail("RESET SETTING materialized_mysql_tables_list", QUERY_NOT_ALLOWED)
     should_fail(
         "MODIFY SETTING max_flush_data_time=1000, max_flush_data_time=2000",
         INVALID_ALTER_DATABASE_QUERY,
@@ -2890,7 +2893,8 @@ def alter_database_table_overrides(replication: ReplicationHelper):
     # check_index("t1", "b_id_32", exists=False)
     # check_index("t1", "b_id_64", exists=False)
 
-    # Refer to a non-existing override:
+    # Referring to a non-existing override should fail:
+    logging.debug("%s", clickhouse_node.query(f"SHOW CREATE DATABASE {db}"))
     should_fail(
         f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 (PARTITION BY (id % 3))",
         code=TABLE_OVERRIDE_NOT_FOUND,
@@ -2899,13 +2903,13 @@ def alter_database_table_overrides(replication: ReplicationHelper):
         f"ALTER DATABASE {db} DROP TABLE OVERRIDE t2", code=TABLE_OVERRIDE_NOT_FOUND
     )
 
-    # Try to add an override that exists:
+    # Trying to ADD an override that already exists should fail.
     should_fail(
         f"ALTER DATABASE {db} ADD TABLE OVERRIDE t1 (COLUMNS (idmod3 Int8 ALIAS id % 3))",
         code=TABLE_OVERRIDE_ALREADY_EXISTS,
     )
 
-    # Should not be allowed to refer to the same override in two alter commands:
+    # Referring to the same override in two alter commands should fail:
     should_fail(
         f"ALTER DATABASE {db} DROP TABLE OVERRIDE t1, DROP TABLE OVERRIDE t1",
         code=INVALID_ALTER_DATABASE_QUERY,
@@ -2915,7 +2919,8 @@ def alter_database_table_overrides(replication: ReplicationHelper):
         code=INVALID_ALTER_DATABASE_QUERY,
     )
 
-    # For tables that do not exist, we can ADD/MODIFY/DROP overrides with storage parameters:
+    # We should be able to ADD/MODIFY/DROP overrides with storage paramaters for
+    # overrides where the table does not yet exist:
     clickhouse_node.query(
         f"ALTER DATABASE {db} ADD TABLE OVERRIDE t3 (PARTITION BY (id % 3))"
     )  # t3 does not exist
@@ -2924,14 +2929,14 @@ def alter_database_table_overrides(replication: ReplicationHelper):
     )
     clickhouse_node.query(f"ALTER DATABASE {db} DROP TABLE OVERRIDE t3")
 
-    # We can add a columns-only override for an existing table:
+    # We should be able to add a columns-only override for an existing table:
     clickhouse_node.query(
         f"ALTER DATABASE {db} ADD TABLE OVERRIDE t2 \
         (COLUMNS (idmod4 Int8 ALIAS id % 4))"
     )
     check_column("t2", "idmod4", "Int8", "ALIAS", "id % 4")
 
-    # We can modify column aliases:
+    # We should be able to modify alias columns:
     clickhouse_node.query(
         f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
         (COLUMNS (idmod2 Int8 ALIAS id % 2, idmod3 Int8 ALIAS id % 3))"
@@ -2940,31 +2945,32 @@ def alter_database_table_overrides(replication: ReplicationHelper):
     check_column("t2", "idmod3", "Int8", "ALIAS", "id % 3")
     check_column("t2", "idmod4", exists=False)
 
-    # We can drop overrides with only column aliases:
+    # We should be able to drop overrides with only alias columns:
     clickhouse_node.query(f"ALTER DATABASE {db} DROP TABLE OVERRIDE t2")
     check_column("t2", "idmod3", exists=False)
 
-    # We can add overrides that modify storage with the allow-recreate setting:
+    # We should be able to add overrides that modify storage when using the
+    # allow-recreate setting:
     clickhouse_node.query(
         f"ALTER DATABASE {db} ADD TABLE OVERRIDE t2 \
         (COLUMNS (idmod4 ALIAS id % 4) PARTITION BY id % 2)",
         settings=allow_recreate,
     )
 
-    # We can remove alias columns from an existing override with storage parameters, as long as we do not touch
-    # the storage parameters:
+    # We should be able to remove alias columns from an existing override with storage
+    # parameters, as long as we do not touch the storage parameters:
     clickhouse_node.query(
-        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
-        (PARTITION BY id % 2)"
+        f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 (PARTITION BY id % 2)"
     )
 
-    # We can add columns alongside storage parameters as long as the storage parameters are unchanged:
+    # We should be able to add columns alongside storage parameters, as long as
+    # the storage parameters are unchanged:
     clickhouse_node.query(
         f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
         (COLUMNS (idmod2 Int8 ALIAS id % 2) PARTITION BY id % 2)"
     )
 
-    # We can not drop storage parameters without allow-recreate setting:
+    # Dropping storage parameters should fail without the allow-recreate setting:
     should_fail(
         f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
         (COLUMNS (idmod2 Int8 ALIAS id % 2))",
@@ -2997,15 +3003,13 @@ def alter_database_table_overrides(replication: ReplicationHelper):
         (COLUMNS (idmod2 Int8 ALIAS id % 2))"
     )
 
-    # We can not add storage parameters back without allow-recreate setting:
+    # We should not be able to add storage parameters back without the allow-recreate setting:
     should_fail(
         f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
         (PARTITION BY id % 2)",
         code=INVALID_ALTER_DATABASE_QUERY,
         message="existing override does not modify storage, new override does",
     )
-
-    # But we can with the allow-create setting:
     clickhouse_node.query(
         f"ALTER DATABASE {db} MODIFY TABLE OVERRIDE t2 \
         (PARTITION BY id % 2)",

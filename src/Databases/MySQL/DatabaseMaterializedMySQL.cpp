@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
@@ -165,25 +166,30 @@ void DatabaseMaterializedMySQL::stopReplication()
     started_up = false;
 }
 
-void DatabaseMaterializedMySQL::checkAlterIsPossible(const AlterDatabaseCommands & commands)
+void DatabaseMaterializedMySQL::checkAlterIsPossible(const AlterDatabaseCommands & commands, ContextPtr)
 {
-    static std::set<String> not_changeable_settings{
-        "max_sync_threads",
-    };
     auto existing_settings = getSettings();
+    auto check_setting_change = [&existing_settings](const SettingChange & change)
+    {
+        auto command = change.value.isNull() ? "RESET SETTING" : "MODIFY SETTING";
+        if (change.name == "materialized_mysql_tables_list")
+        {
+            throw Exception(
+                    ErrorCodes::QUERY_NOT_ALLOWED,
+                    "ALTER DATABASE {} for setting `{}` is not allowed", command, change.name);
+        }
+        if (!change.value.isNull())
+            existing_settings->checkCanSet(change.name, change.value);
+    };
     for (const auto & setting_command : commands.getSettingCommands())
     {
         for (const auto & change : setting_command->settings_changes)
         {
-            if (not_changeable_settings.contains(change.name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED, "ALTER DATABASE MODIFY SETTING for setting '{}' is not implemented", change.name);
-            existing_settings->checkCanSet(change.name, change.value);
+            check_setting_change(change);
         }
         for (const auto & reset : setting_command->settings_resets)
         {
-            if (not_changeable_settings.contains(reset))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER DATABASE RESET SETTING for setting '{}' is not implemented", reset);
+            check_setting_change({reset, {}});
         }
     }
 }

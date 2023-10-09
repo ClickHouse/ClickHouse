@@ -1,7 +1,10 @@
 import difflib
-import time
 import logging
+import re
+import time
 from io import IOBase
+
+import pytest
 
 
 class TSV:
@@ -95,7 +98,7 @@ def assert_eq_with_retry(
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"assert_eq_with_retry retry {i+1} exception {ex}")
+            logging.exception("assert_eq_with_retry retry %d exception %s", i + 1, str(ex))
             time.sleep(sleep_time)
     else:
         val = TSV(
@@ -122,7 +125,7 @@ def assert_eq_with_retry(
 
 def assert_logs_contain(instance, substring):
     if not instance.contains_in_log(substring):
-        raise AssertionError("'{}' not found in logs".format(substring))
+        raise AssertionError(f"'{substring}' not found in logs")
 
 
 def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_time=0.5):
@@ -132,27 +135,27 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"contains_in_log_with_retry retry {i+1} exception {ex}")
+            logging.exception("contains_in_log_with_retry retry %d exception %s", i + 1, str(ex))
             time.sleep(sleep_time)
     else:
-        raise AssertionError("'{}' not found in logs".format(substring))
+        raise AssertionError(f"'{substring}' not found in logs")
 
 
 def exec_query_with_retry(
-    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}
+    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings=None
 ):
     exception = None
     for cnt in range(retry_count):
         try:
-            res = instance.query(query, timeout=30, settings=settings)
+            res = instance.query(query, timeout=30, settings=settings if settings is not None else {})
             if not silent:
-                logging.debug(f"Result of {query} on {cnt} try is {res}")
+                logging.debug("Result of %s on %d try is %s", query, cnt, res)
             break
         except Exception as ex:
             exception = ex
             if not silent:
                 logging.exception(
-                    f"Failed to execute query '{query}' on  {cnt} try on instance '{instance.name}' will retry"
+                    "Failed to execute query '%s' on %d try on instance '%s' will retry", query, cnt, instance.name
                 )
             time.sleep(sleep_time)
     else:
@@ -168,11 +171,21 @@ def csv_compare(result, expected):
     )
     for i in range(max_len):
         if i >= len(csv_result):
-            mismatch.append("-[%d]=%s" % (i, csv_expected.lines[i]))
+            mismatch.append(f"-[{i}]={csv_expected.lines[i]}")
         elif i >= len(csv_expected):
-            mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
+            mismatch.append(f"+[{i}]={csv_result.lines[i]}")
         elif csv_expected.lines[i] != csv_result.lines[i]:
-            mismatch.append("-[%d]=%s" % (i, csv_expected.lines[i]))
-            mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
+            mismatch.append(f"-[{i}]={csv_expected.lines[i]}")
+            mismatch.append(f"+[{i}]={csv_result.lines[i]}")
 
     return "\n".join(mismatch)
+
+
+def assert_query_fails(instance, sql, code=None, message=None):
+    match = "" if code is None else f"\nCode: {code}\\."
+    if message is not None:
+        match += f".*{message}"
+    with pytest.raises(
+        Exception, match=re.compile(match, re.MULTILINE)
+    ):
+        instance.query(f"/* expecting error: {match} */ {sql}")
