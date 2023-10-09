@@ -56,13 +56,20 @@ void ZNodeLayer::assertExists(const String & target_path, bool should_exists, Er
         });
 }
 
-void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<CreateResponse> var_resp)
+void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<CreateResponse> var_resp, bool ignore_exists)
 {
     trxb.lockExclusive(path);
 
     if (isRootPath(path))
     {
-        trxb.then(TRX_STEP() { throw KeeperException(Error::ZNODEEXISTS); });
+        if (!ignore_exists)
+            trxb.then(TRX_STEP() { throw KeeperException(Error::ZNODEEXISTS); });
+        else
+            trxb.then(TRX_STEP(var_resp) {
+                auto & resp = *ctx.getVar(var_resp);
+                resp.path_created = "/";
+                return nullptr;
+            });
         return;
     }
 
@@ -88,13 +95,13 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
             });
     }
 
-    auto var_actual_path = trxb.var<String>();
+    /// Find actual path to create
     if (is_sequential)
     {
         const auto parent_numcreate_key = keys.getMetaPrefix(parent_path) + static_cast<char>(KeeperKeys::numCreate);
         trxb.then(
                 TRX_STEP(parent_numcreate_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(parent_numcreate_key), 0); })
-            .then(TRX_STEP(parent_numcreate_key, var_actual_path, path = path)
+            .then(TRX_STEP(parent_numcreate_key, var_resp, path = path)
             {
                 fdb_bool_t exists_seq;
                 const uint8_t * seq_bytes;
@@ -107,28 +114,43 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
                 else
                     seq = *reinterpret_cast<const UInt32 *>(seq_bytes);
 
-                auto & actual_path = *ctx.getVar(var_actual_path);
-                actual_path = fmt::format("{}{:010}", path, seq);
+                auto & resp = *ctx.getVar(var_resp);
+                resp.path_created = fmt::format("{}{:010}", path, seq);
                 return nullptr;
             });
     }
     else
     {
-        assertExists(path, false, Error::ZNODEEXISTS);
-        trxb.then(TRX_STEP(var_actual_path, path = path)
-        {
-            auto & actual_path = *ctx.getVar(var_actual_path);
-            actual_path = path;
-            return nullptr;
-        });
+        auto child_key = keys.getChild(path);
+        trxb.then(TRX_STEP(child_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), 0); })
+            .then(TRX_STEP(var_resp, ignore_exists, path = path)
+            {
+                fdb_bool_t exists;
+                const uint8_t * value;
+                int len;
+
+                throwIfFDBError(fdb_future_get_value(f, &exists, &value, &len));
+
+                if (exists)
+                {
+                    if (!ignore_exists)
+                        throw KeeperException(Error::ZNODEEXISTS);
+                    else
+                        ctx.gotoCur(2);
+                }
+
+                auto & resp = *ctx.getVar(var_resp);
+                resp.path_created = path;
+                return nullptr;
+            });
     }
 
-    trxb.then(TRX_STEP(data, keys = keys, path = path, parent_path, var_actual_path, var_resp)
+    trxb.then(TRX_STEP(data, keys = keys, path = path, parent_path, var_resp)
     {
-        auto & actual_path = *ctx.getVar(var_actual_path);
-        auto data_key = keys.getData(actual_path);
-        auto child_key = keys.getChild(actual_path);
-        auto meta_key_prefix = keys.getMetaPrefix(actual_path);
+        auto & resp = *ctx.getVar(var_resp);
+        auto data_key = keys.getData(resp.path_created);
+        auto child_key = keys.getChild(resp.path_created);
+        auto meta_key_prefix = keys.getMetaPrefix(resp.path_created);
         auto parent_meta_key_prefix = keys.getMetaPrefix(parent_path);
 
         /// Set child key
@@ -183,9 +205,6 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
         SET_META_PARENT(cversion, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
         SET_META_PARENT(numCreate, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
 #undef SET_META_PARENT
-
-        auto & resp = *ctx.getVar(var_resp);
-        resp.path_created = actual_path;
 
         return nullptr;
     });

@@ -456,7 +456,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<CreateResponse>();
-            znode.create(concrete_request_create->data, concrete_request_create->is_sequential, resp);
+            znode.create(concrete_request_create->data, concrete_request_create->is_sequential, resp, concrete_request_create->not_exists);
 
             if (concrete_request_create->is_ephemeral)
                 znode.registerEphemeralUnsafe(var_session, resp);

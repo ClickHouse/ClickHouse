@@ -1536,3 +1536,23 @@ TEST_P(FDBKeeperChrootSuite, MultiRead)
         ASSERT_EQ(resp2.error, Error::ZRUNTIMEINCONSISTENCY);
     }
 }
+
+TEST_P(FDBKeeperChrootSuite, CreateIgnoreExists)
+{
+    ASSERT_TRUE(keeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS));
+
+    {
+        KEEPER_CREATE(create, "/a", "aaa", false, false, {});
+        ASSERT_EQ(wait(create_future).error, Error::ZOK);
+    }
+
+    using namespace zkutil;
+    KEEPER_MULTI(create_a, {makeCreateRequest("/a", "abc", zkutil::CreateMode::Persistent, true)});
+    auto resps = wait(create_a_future);
+
+    ASSERT_EQ(resps.responses.size(), 1);
+    const auto & create_resp = dynamic_cast<const CreateResponse &>(*resps.responses[0]);
+
+    ASSERT_EQ(create_resp.path_created, "/a");
+    ASSERT_EQ(create_resp.error, Error::ZOK);
+}

@@ -38,7 +38,7 @@ public:
     void checkNotExists(int32_t version);
 
     /// Create znode if not exists
-    void create(const String & data, bool is_sequential, AsyncTrxVar<Coordination::CreateResponse> var_resp);
+    void create(const String & data, bool is_sequential, AsyncTrxVar<Coordination::CreateResponse> var_resp, bool ignore_exists = false);
 
     /// Register ephemeral node without assert exist.
     /// registerEphemeralUnsafe should be called after create().

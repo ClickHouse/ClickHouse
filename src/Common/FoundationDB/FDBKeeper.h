@@ -103,9 +103,13 @@ public:
             case DB::KeeperFeatureFlag::CHECK_NOT_EXISTS:
             case DB::KeeperFeatureFlag::FILTERED_LIST:
             case DB::KeeperFeatureFlag::MULTI_READ:
+            case DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS:
                 return true;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcovered-switch-default"
             default:
                 return false;
+#pragma clang diagnostic pop
         }
     }
 
