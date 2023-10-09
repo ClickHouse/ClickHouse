@@ -629,7 +629,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
-        DataTypePtr sampling_column_type = sampling_key.data_types[0];
+        DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
         {
