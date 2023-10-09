@@ -146,15 +146,8 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
     switch (type_index)
     {
         case TypeIndex::UInt8:
-            if (normalized_data_type->getName() == "Bool")
-            {
-                column_type = ColumnType::MYSQL_TYPE_BIT;
-            }
-            else
-            {
-                column_type = ColumnType::MYSQL_TYPE_TINY;
-                flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
-            }
+            column_type = ColumnType::MYSQL_TYPE_TINY;
+            flags = ColumnDefinitionFlags::BINARY_FLAG | ColumnDefinitionFlags::UNSIGNED_FLAG;
             break;
         case TypeIndex::UInt16:
             column_type = ColumnType::MYSQL_TYPE_SHORT;
