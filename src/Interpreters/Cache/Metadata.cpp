@@ -520,65 +520,74 @@ void CacheMetadata::downloadThreadFunc()
 
         CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDownloadQueueElements);
 
-        FileSegmentsHolderPtr holder;
         try
         {
+            FileSegmentsHolderPtr holder;
+            try
             {
-                auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL);
-                if (!locked_key)
+                {
+                    auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL);
+                    if (!locked_key)
+                        continue;
+
+                    auto file_segment_metadata = locked_key->tryGetByOffset(offset);
+                    if (!file_segment_metadata || file_segment_metadata->evicting())
+                        continue;
+
+                    auto file_segment = file_segment_weak.lock();
+
+                    if (!file_segment
+                        || file_segment != file_segment_metadata->file_segment
+                        || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
+                        continue;
+
+                    holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
+                }
+
+                auto & file_segment = holder->front();
+
+                if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
                     continue;
 
-                auto file_segment_metadata = locked_key->tryGetByOffset(offset);
-                if (!file_segment_metadata || file_segment_metadata->evicting())
-                    continue;
+                chassert(file_segment.getDownloadedSize() != file_segment.range().size());
+                chassert(file_segment.assertCorrectness());
 
-                auto file_segment = file_segment_weak.lock();
-
-                if (!file_segment
-                    || file_segment != file_segment_metadata->file_segment
-                    || file_segment->state() != FileSegment::State::PARTIALLY_DOWNLOADED)
-                    continue;
-
-                holder = std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
+                downloadImpl(file_segment, memory);
             }
+            catch (...)
+            {
+                if (holder)
+                {
+                    auto & file_segment = holder->front();
+                    file_segment.setDownloadFailed();
 
-            downloadImpl(holder->front(), memory);
+                    LOG_ERROR(
+                        log, "Error during background download of {}:{} ({}): {}",
+                        file_segment.key(), file_segment.offset(),
+                        file_segment.getInfoForLog(), getCurrentExceptionMessage(true));
+                }
+                else
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
+                }
+            }
         }
         catch (...)
         {
-            if (holder)
-            {
-                const auto & file_segment = holder->front();
-                LOG_ERROR(
-                    log, "Error during background download of {}:{} ({}): {}",
-                    file_segment.key(), file_segment.offset(),
-                    file_segment.getInfoForLog(), getCurrentExceptionMessage(true));
-            }
-            else
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                chassert(false);
-            }
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
         }
     }
 }
 
 void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)
 {
-    chassert(file_segment.assertCorrectness());
-
-    if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
-        return;
-
-    if (file_segment.getDownloadedSize() == file_segment.range().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
-
     LOG_TEST(
         log, "Downloading {} bytes for file segment {}",
         file_segment.range().size() - file_segment.getDownloadedSize(), file_segment.getInfoForLog());
 
     auto reader = file_segment.getRemoteFileReader();
-
     if (!reader)
     {
         throw Exception(
@@ -808,7 +817,7 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
 
     metadata->file_segment = std::make_shared<FileSegment>(
         getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
-        CreateFileSegmentSettings(file_segment->getKind()),
+        CreateFileSegmentSettings(file_segment->getKind()), false,
         file_segment->cache, key_metadata, file_segment->queue_iterator);
 
     if (diff)
