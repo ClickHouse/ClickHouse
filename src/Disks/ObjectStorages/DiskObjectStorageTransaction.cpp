@@ -784,7 +784,12 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
 
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
+    {
+        if (!object_storage.isWriteOnce() && metadata_storage.exists(path))
+            object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
+
         metadata_transaction->createMetadataFile(path, blob_name, object_size);
+    }
     else
         metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
 }
