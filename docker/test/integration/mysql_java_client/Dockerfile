@@ -1,7 +1,7 @@
 # docker build -t clickhouse/mysql-java-client .
 # MySQL Java client docker container
 
-FROM openjdk:17-jdk-alpine
+FROM openjdk:8-jdk-alpine
 
 RUN apk --no-cache add curl
 
