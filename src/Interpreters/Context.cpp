@@ -204,6 +204,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
 
+    /// TODO: Guards
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_scheme;                              /// http or https
@@ -226,14 +227,12 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries TSA_GUARDED_BY(embedded_dictionaries_mutex);    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader TSA_GUARDED_BY(external_dictionaries_mutex);
 
-    scope_guard models_repository_guard;
-
     ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository TSA_GUARDED_BY(external_dictionaries_mutex) = nullptr;
     scope_guard dictionaries_xmls TSA_GUARDED_BY(external_dictionaries_mutex);
 
-    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader;
-    ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository = nullptr;
-    scope_guard user_defined_executable_functions_xmls;
+    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
+    ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
+    scope_guard user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
 
     mutable OnceFlag user_defined_sql_objects_loader_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsLoader> user_defined_sql_objects_loader;
@@ -249,29 +248,32 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
 
+    /// NO LOCK
     String default_profile_name;                                /// Default profile name used for default values.
+    /// NO LOCK
     String system_profile_name;                                 /// Profile used by system processes
+    /// NO LOCK
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
-    std::unique_ptr<AccessControl> access_control;
+    std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
-    mutable UncompressedCachePtr uncompressed_cache;            /// The cache of decompressed blocks.
-    mutable MarkCachePtr mark_cache;                            /// Cache of marks in compressed files.
+    mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
+    mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
-    mutable UncompressedCachePtr index_uncompressed_cache;      /// The cache of decompressed blocks for MergeTree indices.
-    mutable QueryCachePtr query_cache;                          /// Cache of query results.
-    mutable MarkCachePtr index_mark_cache;                      /// Cache of marks in compressed files of MergeTree indices.
-    mutable MMappedFileCachePtr mmap_cache;                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
+    mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
+    mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
+    mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                                   /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
-    ConfigurationPtr users_config;                              /// Config with the users, profiles and quotas sections.
+    ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
     OnceFlag buffer_flush_schedule_pool_initialized;
@@ -303,67 +305,77 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
+    std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex);                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
+    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
     /// Storage disk chooser for MergeTree engines
-    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
+    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
-    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
+    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector TSA_GUARDED_BY(storage_policies_mutex);
 
     ServerSettings server_settings;
 
-    std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
-    std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
+    std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
+    std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
+    /// NO LOCK INITIALIZATION
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     OnceFlag system_logs_initialized;
-    std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
-    std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
-    std::vector<String> warnings;                           /// Store warning messages about server configuration.
+    std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
+    std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
+    std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
-    MergeMutateBackgroundExecutorPtr merge_mutate_executor;
-    OrdinaryBackgroundExecutorPtr moves_executor;
-    OrdinaryBackgroundExecutorPtr fetch_executor;
-    OrdinaryBackgroundExecutorPtr common_executor;
+    /// Has background executors for MergeTree tables been initialized?
+    mutable ContextSharedMutex background_executors_mutex;
+    bool are_background_executors_initialized TSA_GUARDED_BY(background_executors_mutex) = false;
+    MergeMutateBackgroundExecutorPtr merge_mutate_executor TSA_GUARDED_BY(background_executors_mutex);
+    OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
+    OrdinaryBackgroundExecutorPtr fetch_executor TSA_GUARDED_BY(background_executors_mutex);
+    OrdinaryBackgroundExecutorPtr common_executor TSA_GUARDED_BY(background_executors_mutex);
 
-    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
-    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
+    RemoteHostFilter remote_host_filter TSA_GUARDED_BY(mutex);                    /// Allowed URL from config.xml
+    HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
 
+    /// NO LOCK INITIALIZATION
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
-    std::shared_ptr<Clusters> clusters;
-    ConfigurationPtr clusters_config;                        /// Stores updated configs
-    std::unique_ptr<ClusterDiscovery> cluster_discovery;
     mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
+    std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
+    ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
+    std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
 
+    /// NO LOCK INITIALIZATION
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
+
+    /// TODO: CHECK
     std::map<String, UInt16> server_ports;
 
+    /// TODO: CHECK
     bool shutdown_called = false;
 
-    /// Has background executors for MergeTree tables been initialized?
-    bool are_background_executors_initialized = false;
+    Stopwatch uptime_watch TSA_GUARDED_BY(mutex);
 
-    Stopwatch uptime_watch;
-
+    /// NO LOCK INITIALIZATION
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
-    std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
+    std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
 
+    /// NO LOCK INITIALIZATION
     Context::ConfigReloadCallback config_reload_callback;
 
+    /// NO LOCK INITIALIZATION
     Context::StartStopServersCallback start_servers_callback;
+    /// NO LOCK INITIALIZATION
     Context::StartStopServersCallback stop_servers_callback;
 
-    bool is_server_completely_started = false;
+    bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
@@ -597,7 +609,6 @@ struct ContextSharedPart : boost::noncopyable
             /// but at least they can be preserved for storage termination.
             dictionaries_xmls.reset();
             user_defined_executable_functions_xmls.reset();
-            models_repository_guard.reset();
 
             delete_system_logs = std::move(system_logs);
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
@@ -647,7 +658,7 @@ struct ContextSharedPart : boost::noncopyable
         trace_collector.emplace(std::move(trace_log));
     }
 
-    void addWarningMessage(const String & message)
+    void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
         log->warning(message);
@@ -1086,11 +1097,13 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 
 AccessControl & Context::getAccessControl()
 {
+    SharedLockGuard lock(shared->mutex);
     return *shared->access_control;
 }
 
 const AccessControl & Context::getAccessControl() const
 {
+    SharedLockGuard lock(shared->mutex);
     return *shared->access_control;
 }
 
@@ -2385,9 +2398,6 @@ Lemmatizers & Context::getLemmatizers() const
 BackupsWorker & Context::getBackupsWorker() const
 {
     callOnce(shared->backups_worker_initialized, [&] {
-        if (shared->backups_worker)
-            return;
-
         const auto & config = getConfigRef();
         const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
         const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
@@ -2399,7 +2409,6 @@ BackupsWorker & Context::getBackupsWorker() const
         shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
     });
 
-    SharedLockGuard lock(shared->mutex);
     return *shared->backups_worker;
 }
 
@@ -2515,7 +2524,6 @@ ThreadPool & Context::getLoadMarksThreadpool() const
 {
     callOnce(shared->load_marks_threadpool_initialized, [&] {
         const auto & config = getConfigRef();
-
         auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
         auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(
@@ -2572,7 +2580,7 @@ void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_si
 
 void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(shared->mutex);
 
     if (!shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
@@ -3004,19 +3012,30 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
     /// This method explicitly sets correct pointer to system log after its initialization.
     /// TODO get rid of this if possible
 
+    std::shared_ptr<ZooKeeperLog> zookeeper_log;
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (!shared->system_logs) {
+            return;
+        }
+
+        zookeeper_log = shared->system_logs->zookeeper_log;
+    }
+
+    if (!zookeeper_log) {
+        return;
+    }
+
     {
         std::lock_guard lock(shared->zookeeper_mutex);
-        if (!shared->system_logs || !shared->system_logs->zookeeper_log)
-            return;
-
         if (shared->zookeeper)
-            shared->zookeeper->setZooKeeperLog(shared->system_logs->zookeeper_log);
+            shared->zookeeper->setZooKeeperLog(zookeeper_log);
     }
 
     {
         std::lock_guard lockAuxiliary(shared->auxiliary_zookeepers_mutex);
         for (auto & zk : shared->auxiliary_zookeepers)
-            zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
+            zk.second->setZooKeeperLog(zookeeper_log);
     }
 }
 
@@ -3227,21 +3246,25 @@ String Context::getInterserverScheme() const
 
 void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
 {
+    std::lock_guard lock(shared->mutex);
     shared->remote_host_filter.setValuesFromConfig(config);
 }
 
 const RemoteHostFilter & Context::getRemoteHostFilter() const
 {
+    SharedLockGuard lock(shared->mutex);
     return shared->remote_host_filter;
 }
 
 void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
 {
+    std::lock_guard lock(shared->mutex);
     shared->http_header_filter.setValuesFromConfig(config);
 }
 
 const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 {
+    SharedLockGuard lock(shared->mutex);
     return shared->http_header_filter;
 }
 
@@ -3341,7 +3364,7 @@ std::map<String, ClusterPtr> Context::getClusters() const
     return clusters;
 }
 
-std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const
+std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const TSA_REQUIRES(shared->clusters_mutex)
 {
     if (!shared->clusters)
     {
@@ -3403,7 +3426,7 @@ void Context::initializeSystemLogs()
     /// of any other table if it is stored on a disk with cache.
     callOnce(shared->system_logs_initialized, [&] {
         auto system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
-        auto lock = getGlobalLock();
+        std::lock_guard lock(shared->mutex);
         shared->system_logs = std::move(system_logs);
     });
 }
@@ -3414,7 +3437,7 @@ void Context::initializeTraceCollector()
 }
 
 /// Call after unexpected crash happen.
-void Context::handleCrash() const
+void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     shared->system_logs->handleCrash();
 }
@@ -3475,7 +3498,7 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 
 std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
-    SharedLockGuard lock(mutex);
+    SharedLockGuard lock(shared->mutex);
 
     if (!shared->system_logs)
         return {};
@@ -3713,13 +3736,14 @@ StoragePoliciesMap Context::getPoliciesMap() const
     return getStoragePolicySelector(lock)->getPoliciesMap();
 }
 
-DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const
+DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const TSA_REQUIRES(shared->storage_policies_mutex)
 {
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
 
+        /// TODO: Fix possible deadlock
         auto disk_selector = std::make_shared<DiskSelector>();
         disk_selector->initialize(config, config_name, shared_from_this());
         shared->merge_tree_disk_selector = disk_selector;
@@ -3727,7 +3751,7 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
     return shared->merge_tree_disk_selector;
 }
 
-StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const
+StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const TSA_REQUIRES(shared->storage_policies_mutex)
 {
     if (!shared->merge_tree_storage_policy_selector)
     {
@@ -3742,29 +3766,34 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    if (shared->merge_tree_disk_selector)
-        shared->merge_tree_disk_selector
-            = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
-
-    if (shared->merge_tree_storage_policy_selector)
     {
-        try
+        std::lock_guard lock(shared->storage_policies_mutex);
+
+        /// TODO: Fix possible deadlock
+        if (shared->merge_tree_disk_selector)
+            shared->merge_tree_disk_selector
+                = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+
+        if (shared->merge_tree_storage_policy_selector)
         {
-            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                config, "storage_configuration.policies", shared->merge_tree_disk_selector);
-        }
-        catch (Exception & e)
-        {
-            LOG_ERROR(
-                shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+            try
+            {
+                shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
+                    config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+            }
+            catch (Exception & e)
+            {
+                LOG_ERROR(
+                    shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+            }
         }
     }
 
-    if (shared->storage_s3_settings)
     {
-        shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
+        std::lock_guard lock(shared->mutex);
+        /// TODO: Fix
+        if (shared->storage_s3_settings)
+            shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
     }
 }
 
@@ -4452,7 +4481,7 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
-    std::lock_guard lock(shared->mutex);
+    SharedLockGuard lock(shared->mutex);
     assert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
@@ -4573,7 +4602,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 
 void Context::initializeBackgroundExecutorsIfNeeded()
 {
-    std::lock_guard lock(shared->mutex);
+    std::lock_guard lock(shared->background_executors_mutex);
 
     if (shared->are_background_executors_initialized)
         return;
@@ -4635,27 +4664,31 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
 bool Context::areBackgroundExecutorsInitialized()
 {
-    std::lock_guard lock(shared->mutex);
+    SharedLockGuard lock(shared->background_executors_mutex);
     return shared->are_background_executors_initialized;
 }
 
 MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
+    SharedLockGuard lock(shared->background_executors_mutex);
     return shared->merge_mutate_executor;
 }
 
 OrdinaryBackgroundExecutorPtr Context::getMovesExecutor() const
 {
+    SharedLockGuard lock(shared->background_executors_mutex);
     return shared->moves_executor;
 }
 
 OrdinaryBackgroundExecutorPtr Context::getFetchesExecutor() const
 {
+    SharedLockGuard lock(shared->background_executors_mutex);
     return shared->fetch_executor;
 }
 
 OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
+    SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
 }
 
