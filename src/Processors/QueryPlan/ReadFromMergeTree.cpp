@@ -38,6 +38,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 
@@ -140,7 +141,7 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
 
 /// build sort description for output stream
 static void updateSortDescriptionForOutputStream(
-    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info)
+    DataStream & output_stream, const Names & sorting_key_columns, const int sort_direction, InputOrderInfoPtr input_order_info, PrewhereInfoPtr prewhere_info, bool use_skipping_final)
 {
     /// Updating sort description can be done after PREWHERE actions are applied to the header.
     /// Aftert PREWHERE actions are applied, column names in header can differ from storage column names due to aliases
@@ -187,7 +188,7 @@ static void updateSortDescriptionForOutputStream(
 
     if (!sort_description.empty())
     {
-        if (input_order_info)
+        if (input_order_info && !use_skipping_final)
         {
             output_stream.sort_scope = DataStream::SortScope::Stream;
             const size_t used_prefix_of_sorting_key_size = input_order_info->used_prefix_of_sorting_key_size;
@@ -314,13 +315,15 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
+    use_skipping_final = context->getSettingsRef().use_skipping_final && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
     updateSortDescriptionForOutputStream(
         *output_stream,
         storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
         getSortDirection(),
         query_info.getInputOrderInfo(),
-        prewhere_info);
+        prewhere_info,
+        use_skipping_final);
 }
 
 
@@ -1038,7 +1041,7 @@ static void addMergingFinal(
     };
 
     pipe.addTransform(get_merging_processor());
-    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    if (use_skipping_final && merging_params.mode == MergeTreeData::MergingParams::Replacing)
         pipe.addSimpleTransform([](const Block & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
 }
@@ -1685,7 +1688,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         if (sort_description.size() > used_prefix_of_sorting_key_size)
             sort_description.resize(used_prefix_of_sorting_key_size);
         output_stream->sort_description = std::move(sort_description);
-        output_stream->sort_scope = DataStream::SortScope::Stream;
+        output_stream->sort_scope = useSkippingFinal() ? DataStream::SortScope::Chunk : DataStream::SortScope::Stream;
     }
 
     return true;
@@ -1712,7 +1715,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
         getSortDirection(),
         query_info.getInputOrderInfo(),
-        prewhere_info);
+        prewhere_info,
+        use_skipping_final);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()

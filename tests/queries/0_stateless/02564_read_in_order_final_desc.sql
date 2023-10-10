@@ -18,6 +18,7 @@ FROM mytable FINAL
 WHERE key = 5
 ORDER BY timestamp DESC;
 
+SET use_skipping_final = 0;
 
 SELECT if(explain like '%ReadType: InOrder%', 'Ok', 'Error: ' || explain) FROM (
     EXPLAIN PLAN actions = 1

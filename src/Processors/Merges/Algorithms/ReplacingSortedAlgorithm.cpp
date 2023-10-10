@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -52,7 +53,7 @@ void ReplacingSortedAlgorithm::insertRow()
     {
         if (!selected_row.owned_chunk->replace_final_selection)
             selected_row.owned_chunk->replace_final_selection = ColumnUInt32::create();
-        // fmt::print(stderr, "Adding row {}\n", selected_row.row_num);
+        fmt::print(stderr, "Adding row {}\n", selected_row.row_num);
         selected_row.owned_chunk->replace_final_selection->insert(selected_row.row_num);
     }
     else
@@ -70,11 +71,49 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (current->isLast())
         {
             auto & chunk = sources[current.impl->order].chunk;
-            if (skipLastRowFor(current->order) && use_skipping_final && !chunk->empty() && chunk->replace_final_selection)
+            if (skipLastRowFor(current->order) && use_skipping_final && !chunk->empty())
             {
-                chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-                selected_row.clear();
-                return Status(std::move(*chunk));
+                if (selected_row.owned_chunk.get() == chunk.get())
+                {
+                    if (!chunk->replace_final_selection)
+                        chunk->replace_final_selection = ColumnUInt32::create();
+                    if (chunk->replace_final_selection->empty()
+                        || chunk->replace_final_selection->getUInt(chunk->replace_final_selection->size() - 1) != selected_row.row_num)
+                        chunk->replace_final_selection->insert(selected_row.row_num);
+                    auto columns = chunk->cloneEmptyColumns();
+                    ColumnRawPtrs columns_raws;
+                    ColumnRawPtrs sort_columns_raws;
+                    std::set<const IColumn *> all_previous_sorted_column(selected_row.sort_columns->begin(), selected_row.sort_columns->end());
+                    fmt::print(stderr, "There is {} sort columns\n", selected_row.sort_columns->size());
+                    for (size_t i = 0; i < columns.size(); ++i)
+                    {
+                        columns[i]->insertFrom(*(selected_row.all_columns->at(i)), selected_row.row_num);
+                        fmt::print(stderr, "Column: {}\n", static_cast<void *>(columns[i].get()));
+                        columns_raws.push_back(columns[i].get());
+                        if (all_previous_sorted_column.contains(selected_row.all_columns->at(i)))
+                        {
+                            fmt::print(stderr, "Sort column: {}\n", static_cast<void *>(columns[i].get()));
+                            sort_columns_raws.push_back(columns[i].get());
+                        }
+                    }
+                    auto single_chunk = Chunk(std::move(columns), 1);
+                    auto shared_single_chunk = chunk_allocator.alloc(single_chunk);
+                    shared_single_chunk->all_columns = std::move(columns_raws);
+                    shared_single_chunk->sort_columns = std::move(sort_columns_raws);
+                    fmt::print(stderr, "0: Create fake chunk {} to replace chunk {}\n", static_cast<void *>(shared_single_chunk.get()), static_cast<void *>(selected_row.owned_chunk.get()));
+                    selected_row.set(std::move(shared_single_chunk), 0);
+                }
+                if (chunk->replace_final_selection)
+                {
+                    fmt::print(stderr, "Emit chunk with {} rows\n", chunk->replace_final_selection->size());
+                    chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+                    return Status(std::move(*chunk));
+                }
+                else
+                {
+                    queue.removeTop();
+                    return Status(current.impl->order);
+                }
             }
             else if (skipLastRowFor(current->order) || chunk->empty())
             {
@@ -86,6 +125,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
 
         RowRef current_row;
         setRowRef(current_row, current);
+        fmt::print(stderr, "Current row owned chunk: {}, selected row owned chunk: {}\n", static_cast<void *>(current_row.owned_chunk.get()), static_cast<void *>(selected_row.owned_chunk.get()));
 
         bool key_differs = selected_row.empty() || !current_row.hasEqualSortColumnsWith(selected_row);
         if (key_differs)
@@ -145,11 +185,49 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         }
         else
         {
-            if (auto & chunk = sources[current.impl->order].chunk; use_skipping_final && !chunk->empty() && chunk->replace_final_selection)
+            if (auto & chunk = sources[current.impl->order].chunk; use_skipping_final && !chunk->empty())
             {
-                chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-                selected_row.clear();
-                return Status(std::move(*chunk));
+                if (selected_row.owned_chunk.get() == chunk.get())
+                {
+                    if (!chunk->replace_final_selection)
+                        chunk->replace_final_selection = ColumnUInt32::create();
+                    if (chunk->replace_final_selection->empty()
+                        || chunk->replace_final_selection->getUInt(chunk->replace_final_selection->size() - 1) != selected_row.row_num)
+                        chunk->replace_final_selection->insert(selected_row.row_num);
+                    auto columns = chunk->cloneEmptyColumns();
+                    ColumnRawPtrs columns_raws;
+                    ColumnRawPtrs sort_columns_raws;
+                    std::set<const IColumn *> all_previous_sorted_column(selected_row.sort_columns->begin(), selected_row.sort_columns->end());
+                    fmt::print(stderr, "There is {} sort columns\n", selected_row.sort_columns->size());
+                    for (size_t i = 0; i < columns.size(); ++i)
+                    {
+                        columns[i]->insertFrom(*(selected_row.all_columns->at(i)), selected_row.row_num);
+                        fmt::print(stderr, "Column: {}\n", static_cast<void *>(columns[i].get()));
+                        columns_raws.push_back(columns[i].get());
+                        if (all_previous_sorted_column.contains(selected_row.all_columns->at(i)))
+                        {
+                            fmt::print(stderr, "Sort column: {}\n", static_cast<void *>(columns[i].get()));
+                            sort_columns_raws.push_back(columns[i].get());
+                        }
+                    }
+                    auto single_chunk = Chunk(std::move(columns), 1);
+                    auto shared_single_chunk = chunk_allocator.alloc(single_chunk);
+                    shared_single_chunk->all_columns = std::move(columns_raws);
+                    shared_single_chunk->sort_columns = std::move(sort_columns_raws);
+                    fmt::print(stderr, "Create fake chunk {} to replace chunk {}\n", static_cast<void *>(shared_single_chunk.get()), static_cast<void *>(selected_row.owned_chunk.get()));
+                    selected_row.set(std::move(shared_single_chunk), 0);
+                }
+                if (chunk->replace_final_selection)
+                {
+                    fmt::print(stderr, "Emit chunk with {} rows\n", chunk->replace_final_selection->size());
+                    chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+                    return Status(std::move(*chunk));
+                }
+                else
+                {
+                    queue.removeTop();
+                    return Status(current.impl->order);
+                }
             }
             else
             {
@@ -182,11 +260,12 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         else
             insertRow();
 
-        if (use_skipping_final && chunk->replace_final_selection)
-        {
-            chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-            Status(std::move(*chunk), true);
-        }
+        // if (use_skipping_final && chunk->replace_final_selection)
+        // {
+        //     chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+        //     fmt::print(stderr, "Return final chunk...\n");
+        //     return Status(std::move(*chunk), true);
+        // }
     }
 
     return Status(merged_data.pull(), true);

@@ -199,6 +199,14 @@ struct RowRefWithOwnedChunk
         sort_columns = &owned_chunk->sort_columns;
     }
 
+    void set(SharedChunkPtr chunk, UInt64 row_num_)
+    {
+        owned_chunk = std::move(chunk);
+        row_num = row_num_;
+        all_columns = &owned_chunk->all_columns;
+        sort_columns = &owned_chunk->sort_columns;
+    }
+
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,

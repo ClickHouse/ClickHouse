@@ -18,13 +18,11 @@ public:
 private:
     Block header;
     SortDescription description;
-
-    /// Allocator must be destroyed after source_chunks.
-    detail::SharedChunkAllocator chunk_allocator;
-
     SortCursorImpls cursors;
 
 protected:
+    /// Allocator must be destroyed after source_chunks.
+    detail::SharedChunkAllocator chunk_allocator;
 
     struct Source
     {

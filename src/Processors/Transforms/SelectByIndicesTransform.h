@@ -20,19 +20,19 @@ public:
         size_t num_rows = chunk.getNumRows();
         auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo());
 
-        if (!select_final_indices_info || !select_final_indices_info->select_final_indices)
+        if (!select_final_indices_info)
             return;
 
         const auto & index_column = select_final_indices_info->select_final_indices;
 
-        if (index_column->size() == num_rows)
-            return;
+        if (index_column && index_column->size() != num_rows)
+        {
+            auto columns = chunk.detachColumns();
+            for (auto & column : columns)
+                column = column->index(*index_column, 0);
 
-        auto columns = chunk.detachColumns();
-        for (auto & column : columns)
-            column = column->index(*index_column, 0);
-
-        chunk.setColumns(std::move(columns), index_column->size());
+            chunk.setColumns(std::move(columns), index_column->size());
+        }
         chunk.setChunkInfo(nullptr);
     }
 
