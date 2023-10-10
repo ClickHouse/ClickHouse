@@ -719,66 +719,70 @@ static bool isOneOf(TokenType token)
 
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    using enum TokenType;
+
     /// Parse numbers (including decimals), strings, arrays and tuples of them.
 
     const char * data_begin = pos->begin;
     const char * data_end = pos->end;
-    bool is_string_literal = pos->type == TokenType::StringLiteral;
+    bool is_string_literal = pos->type == StringLiteral;
 
-    if (pos->type == TokenType::Minus)
+    if (pos->type == Minus)
     {
         ++pos;
-        if (pos->type != TokenType::Number)
+        if (pos->type != Number)
             return false;
 
         data_end = pos->end;
         ++pos;
     }
-    else if (pos->type == TokenType::Number || is_string_literal)
+    else if (pos->type == Number || is_string_literal)
     {
         ++pos;
     }
-    else if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
+    else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
     {
-        TokenType last_token = TokenType::OpeningSquareBracket;
+        TokenType last_token = OpeningSquareBracket;
         std::vector<TokenType> stack;
         while (pos.isValid())
         {
-            if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type))
+            if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
             {
                 stack.push_back(pos->type);
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
+                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                     return false;
             }
-            else if (pos->type == TokenType::ClosingSquareBracket)
+            else if (pos->type == ClosingSquareBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningRoundBracket, TokenType::Minus>(last_token))
+                if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
                     return false;
-                if (stack.empty() || stack.back() != TokenType::OpeningSquareBracket)
+                if (stack.empty() || stack.back() != OpeningSquareBracket)
                     return false;
                 stack.pop_back();
             }
-            else if (pos->type == TokenType::ClosingRoundBracket)
+            else if (pos->type == ClosingRoundBracket)
             {
-                if (isOneOf<TokenType::Comma, TokenType::OpeningSquareBracket, TokenType::Minus>(last_token))
+                if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
                     return false;
-                if (stack.empty() || stack.back() != TokenType::OpeningRoundBracket)
+                if (stack.empty() || stack.back() != OpeningRoundBracket)
                     return false;
                 stack.pop_back();
             }
-            else if (pos->type == TokenType::Comma)
+            else if (pos->type == Comma)
             {
-                if (isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
+                if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
+                    return false;
+                if (stack.empty())
+                    break;
+            }
+            else if (pos->type == Number)
+            {
+                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                     return false;
             }
-            else if (pos->type == TokenType::Number)
+            else if (isOneOf<StringLiteral, Minus>(pos->type))
             {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma, TokenType::Minus>(last_token))
-                    return false;
-            }
-            else if (isOneOf<TokenType::StringLiteral, TokenType::Minus>(pos->type))
-            {
-                if (!isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket, TokenType::Comma>(last_token))
+                if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                     return false;
             }
             else
@@ -800,7 +804,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
 
     ASTPtr type_ast;
-    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
+    if (ParserToken(DoubleColon).ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
         String s;
