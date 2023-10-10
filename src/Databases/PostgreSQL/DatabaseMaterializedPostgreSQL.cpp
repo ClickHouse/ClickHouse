@@ -139,7 +139,7 @@ void DatabaseMaterializedPostgreSQL::checkAlterIsPossible(const AlterDatabaseCom
     auto existing_settings = *settings.get();
     auto check_setting_change = [&existing_settings, &query_context](const SettingChange & change)
     {
-        auto command = change.value.isNull() ? "RESET SETTING" : "MODIFY SETTING";
+        const char * command = change.value.isNull() ? "RESET SETTING" : "MODIFY SETTING";
         if (change.name == "materialized_postgresql_tables_list" && !query_context->isInternalQuery())
         {
             throw Exception(
