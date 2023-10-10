@@ -2744,7 +2744,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
                 exchange="test_sharding",
                 routing_key="",
                 properties=pika.BasicProperties(message_id=mes_id),
-                body=message,
+                body=messages[-1],
             )
         connection.close()
 
