@@ -7,6 +7,7 @@ namespace DB
 {
 
 class GroupNode;
+using GroupNodePtr = std::shared_ptr<GroupNode>;
 
 class OptimizeInputs final : public OptimizeTask
 {
@@ -14,10 +15,10 @@ public:
     /// support recover task
     struct Frame
     {
-        Frame(GroupNode & node)
+        Frame(GroupNodePtr node)
         {
             DeriveRequiredChildProp visitor(node);
-            alternative_child_prop = node.accept(visitor);
+            alternative_child_prop = node->accept(visitor);
         }
 
         bool newAlternativeCalc() const
@@ -46,7 +47,7 @@ public:
         std::vector<PhysicalProperties> actual_children_prop;
     };
 
-    OptimizeInputs(GroupNode & group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_ = nullptr);
+    OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_ = nullptr);
 
     void execute() override;
 
@@ -61,7 +62,7 @@ private:
         const PhysicalProperties & required_prop,
         const PhysicalProperties & output_prop);
 
-    GroupNode & group_node;
+    GroupNodePtr group_node;
     std::unique_ptr<Frame> frame;
 };
 

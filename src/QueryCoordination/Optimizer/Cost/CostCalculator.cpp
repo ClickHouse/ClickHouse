@@ -60,13 +60,20 @@ Float64 CostCalculator::visit(ExchangeDataStep & step)
     return std::max(1.0, 2 * statistics.getOutputRowSize());
 }
 
-Float64 CostCalculator::visit(SortingStep & /*step*/)
+Float64 CostCalculator::visit(SortingStep & step)
 {
-    if (child_prop.front().distribution.type == PhysicalProperties::DistributionType::Singleton)
+    if (step.getPhase() == SortingStep::Phase::Preliminary)
+    {
+        return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
+    }
+    else if (step.getPhase() == SortingStep::Phase::Final)
     {
         return 3 * input_statistics.front().getOutputRowSize();
     }
-    return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
+    else
+    {
+        return 100 * input_statistics.front().getOutputRowSize();
+    }
 }
 
 Float64 CostCalculator::visit(JoinStep & /*step*/)
@@ -78,17 +85,33 @@ Float64 CostCalculator::visit(JoinStep & /*step*/)
 
 Float64 CostCalculator::visit(LimitStep & step)
 {
-    if (step.getType() == LimitStep::Type::Local)
+    if (step.getPhase() == LimitStep::Phase::Preliminary)
     {
         return 1 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
     }
-    else if (step.getType() == LimitStep::Type::Global)
+    else if (step.getPhase() == LimitStep::Phase::Final)
     {
         return 1 * input_statistics.front().getOutputRowSize();
     }
     else
     {
-        return 1 * input_statistics.front().getOutputRowSize();
+        return 100 * input_statistics.front().getOutputRowSize();
+    }
+}
+
+Float64 CostCalculator::visit(TopNStep & step)
+{
+    if (step.getPhase() == TopNStep::Phase::Preliminary)
+    {
+        return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
+    }
+    else if (step.getPhase() == TopNStep::Phase::Final)
+    {
+        return 3 * input_statistics.front().getOutputRowSize();
+    }
+    else
+    {
+        return 100 * input_statistics.front().getOutputRowSize();
     }
 }
 

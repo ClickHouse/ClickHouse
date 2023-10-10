@@ -12,7 +12,6 @@ class GroupStep final : public IQueryPlanStep
 {
 public:
     explicit GroupStep(DataStream output_stream_, Group & group_);
-    GroupStep();
 
     String getName() const override;
 

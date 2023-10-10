@@ -8,7 +8,7 @@
 namespace DB
 {
 
-DeriveStats::DeriveStats(GroupNode & group_node_, bool need_derive_child_, TaskContextPtr task_context_)
+DeriveStats::DeriveStats(GroupNodePtr group_node_, bool need_derive_child_, TaskContextPtr task_context_)
     : OptimizeTask(task_context_), group_node(group_node_), need_derive_child(need_derive_child_)
 {
 }
@@ -16,20 +16,20 @@ DeriveStats::DeriveStats(GroupNode & group_node_, bool need_derive_child_, TaskC
 
 void DeriveStats::execute()
 {
-    if (group_node.isDerivedStat())
+    if (group_node->isDerivedStat())
         return;
 
     if (need_derive_child)
     {
         pushTask(clone(false));
 
-        for (auto * child_group : group_node.getChildren())
+        for (auto * child_group : group_node->getChildren())
         {
             PhysicalProperties any_prop;
             TaskContextPtr child_task_context = std::make_shared<TaskContext>(*child_group, any_prop, task_context->getOptimizeContext());
             for (auto & child_node : child_group->getGroupNodes())
             {
-                if (child_node.isDerivedStat() || child_node.isEnforceNode())
+                if (child_node->isDerivedStat() || child_node->isEnforceNode())
                     continue;
 
                 pushTask(std::make_unique<DeriveStats>(child_node, true, child_task_context));
@@ -45,16 +45,16 @@ void DeriveStats::execute()
 void DeriveStats::deriveStats()
 {
     StatisticsList child_statistics;
-    for (auto * child_group : group_node.getChildren())
+    for (auto * child_group : group_node->getChildren())
     {
         Statistics stat = child_group->getStatistics();
         child_statistics.emplace_back(stat);
     }
 
     DeriveStatistics visitor(child_statistics);
-    Statistics stat = group_node.accept(visitor);
+    Statistics stat = group_node->accept(visitor);
 
-    group_node.setDerivedStat();
+    group_node->setDerivedStat();
 
     /// TODO update group statistics
     task_context->getCurrentGroup().setStatistics(stat);
@@ -67,7 +67,7 @@ OptimizeTaskPtr DeriveStats::clone(bool need_derive_child_)
 
 String DeriveStats::getDescription()
 {
-    return "DeriveStats (" + group_node.getStep()->getName() + (need_derive_child ? " with children)" : " without children)");
+    return "DeriveStats (" + group_node->getStep()->getName() + (need_derive_child ? " with children)" : " without children)");
 }
 
 }

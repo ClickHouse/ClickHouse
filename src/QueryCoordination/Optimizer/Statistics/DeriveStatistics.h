@@ -40,6 +40,8 @@ public:
 
     Statistics visit(ExchangeDataStep & step) override;
 
+    Statistics visit(TopNStep & step) override;
+
 private:
     const StatisticsList & input_statistics;
     Poco::Logger * log;

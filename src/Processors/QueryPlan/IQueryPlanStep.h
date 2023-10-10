@@ -59,6 +59,22 @@ public:
 
 using DataStreams = std::vector<DataStream>;
 
+enum StepType
+{
+    Scan,
+    Agg,
+    Join,
+    Sort,
+    Limit,
+    Exchange,
+    Filters,
+    Union,
+    TopN,
+
+    /// Pattern
+    PatternAny,
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -106,6 +122,11 @@ public:
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
+
+    virtual StepType stepType() const
+    {
+        return PatternAny;
+    }
 
 protected:
     DataStreams input_streams;

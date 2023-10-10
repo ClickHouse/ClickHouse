@@ -43,7 +43,7 @@ const DataStream & StepTree::getCurrentDataStream() const
     return root->step->getOutputStream();
 }
 
-void StepTree::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<StepTree>> plans)
+void StepTree::unitePlans(QueryPlanStepPtr step, std::vector<std::shared_ptr<StepTree>> & plans)
 {
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
@@ -70,9 +70,9 @@ void StepTree::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Ste
     }
 
     for (auto & plan : plans)
-        nodes.splice(nodes.end(), std::move(plan->nodes));
+        nodes.splice(nodes.end(), plan->nodes);
 
-    nodes.emplace_back(Node{.step = std::move(step)});
+    nodes.emplace_back(Node{.step = step});
     root = &nodes.back();
 
     for (auto & plan : plans)

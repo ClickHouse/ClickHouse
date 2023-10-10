@@ -87,6 +87,11 @@ public:
         return is_preliminary_agg;
     }
 
+    StepType stepType() const override
+    {
+        return Agg;
+    }
+
 private:
     void updateOutputStream() override;
 

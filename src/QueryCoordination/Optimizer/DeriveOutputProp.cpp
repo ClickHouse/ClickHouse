@@ -1,14 +1,15 @@
-#include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <QueryCoordination/Optimizer/CalculateSortProp.h>
+#include <QueryCoordination/Optimizer/DeriveOutputProp.h>
 
 
 namespace DB
 {
 
-DeriveOutputProp::DeriveOutputProp(const PhysicalProperties & required_prop_, const std::vector<PhysicalProperties> & children_prop_, ContextPtr context_)
-    : required_prop(required_prop_), children_prop(children_prop_), context(context_)
+DeriveOutputProp::DeriveOutputProp(GroupNodePtr group_node_, const PhysicalProperties & required_prop_, const std::vector<PhysicalProperties> & children_prop_, ContextPtr context_)
+    : group_node(group_node_), required_prop(required_prop_), children_prop(children_prop_), context(context_)
 {
 }
 
@@ -19,7 +20,16 @@ PhysicalProperties DeriveOutputProp::visit(QueryPlanStepPtr step)
 
 PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & /*step*/)
 {
-    return {.distribution = children_prop[0].distribution, .sort_description = children_prop[0].sort_description};
+    PhysicalProperties res;
+    res.distribution = children_prop[0].distribution;
+
+    auto * transforming_step = dynamic_cast<ITransformingStep *>(group_node->getStep().get());
+    if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
+    {
+        if (transforming_step->getOutputStream().sort_scope == DataStream::SortScope::Global)
+            res.sort_description = transforming_step->getOutputStream().sort_description;
+    }
+    return res;
 }
 
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
@@ -31,7 +41,6 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
 
 PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 {
-    //    TODO sort_description by pk ?
     if (!context->getSettings().optimize_query_coordination_sharding_key)
         return PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
 
@@ -76,41 +85,45 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
 PhysicalProperties DeriveOutputProp::visit(SortingStep & step)
 {
-    const auto & sort_description = step.getSortDescription();
-    PhysicalProperties properties{.distribution = children_prop[0].distribution, .sort_description = sort_description};
-    return properties;
+    return {.distribution = children_prop[0].distribution, .sort_description = step.getSortDescription()};
 }
 
 PhysicalProperties DeriveOutputProp::visit(ExchangeDataStep & step)
 {
-    return {.distribution = step.getDistribution(), .sort_description = step.getSortDescription()};
+    return {.distribution = step.getDistribution()};
 }
 
 PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
 {
-    if (children_prop[0].distribution.type != PhysicalProperties::DistributionType::Hashed)
-        return {.distribution = children_prop[0].distribution, .sort_description = children_prop[0].sort_description};
-
-    /// handle alias
-    const auto & input_keys = children_prop[0].distribution.keys;
-
     PhysicalProperties res;
-    res.distribution.type = PhysicalProperties::DistributionType::Hashed;
-    res.distribution.keys.resize(input_keys.size());
-
-    FindAliasForInputName alias_finder(step.getExpression());
-    for (size_t i = 0, s = input_keys.size(); i < s; ++i)
+    if (children_prop[0].distribution.type != PhysicalProperties::DistributionType::Hashed)
     {
-        String alias;
-        const auto & original_column = input_keys[i];
-        const auto * alias_node = alias_finder.find(original_column);
-        if (alias_node)
-            res.distribution.keys[i] = alias_node->result_name;
-        else
-            res.distribution.keys[i] = original_column;
+        res.distribution = children_prop[0].distribution;
+    }
+    else
+    {
+        const auto & input_keys = children_prop[0].distribution.keys;
+        res.distribution.type = PhysicalProperties::DistributionType::Hashed;
+        res.distribution.keys.resize(input_keys.size());
+
+        FindAliasForInputName alias_finder(step.getExpression());
+        for (size_t i = 0, s = input_keys.size(); i < s; ++i)
+        {
+            String alias;
+            const auto & original_column = input_keys[i];
+            const auto * alias_node = alias_finder.find(original_column);
+            if (alias_node)
+                res.distribution.keys[i] = alias_node->result_name;
+            else
+                return {.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+        }
     }
 
-    res.sort_description = children_prop[0].sort_description;
+    if (step.getOutputStream().sort_scope == DataStream::SortScope::Global)
+        res.sort_description = step.getOutputStream().sort_description;
+
+//    CalculateSortProp sort_prop_calculator(step.getExpression(), children_prop[0].sort_prop);
+//    res.sort_prop = sort_prop_calculator.calcSortProp();
     return res;
 }
 

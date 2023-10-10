@@ -4,7 +4,6 @@
 #include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
 #include <QueryCoordination/Optimizer/GroupStep.h>
 #include <QueryCoordination/Optimizer/Memo.h>
-#include <QueryCoordination/Optimizer/Transform/Transformation.h>
 #include <Common/typeid_cast.h>
 #include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
 
@@ -21,11 +20,11 @@ Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
     for (auto & group_node : group_nodes)
     {
         std::vector<PhysicalProperties> required_child_prop;
-        for (size_t j = 0; j < group_node.getChildren().size(); ++j)
+        for (size_t j = 0; j < group_node->getChildren().size(); ++j)
         {
             required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
         }
-        group_node.addRequiredChildrenProp(required_child_prop);
+        group_node->addRequiredChildrenProp(required_child_prop);
     }
 }
 
@@ -42,12 +41,13 @@ Group & Memo::buildGroup(const QueryPlan::Node & node)
 
     Group & group = groups.back();
 
-    GroupNode group_node(node.step, child_groups);
+    GroupNodePtr group_node = std::make_shared<GroupNode>(node.step, child_groups);
     group.addGroupNode(group_node,  ++group_node_id_counter);
+    all_group_nodes.insert(group_node);
     return group;
 }
 
-GroupNode & Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group * target_group)
+GroupNodePtr Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group * target_group)
 {
     std::vector<Group *> child_groups;
     for (auto * child : node.children)
@@ -58,47 +58,34 @@ GroupNode & Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group * targe
         }
         else
         {
-            GroupNode & added_node = addPlanNodeToGroup(*child, nullptr);
-            child_groups.emplace_back(&added_node.getGroup());
+            GroupNodePtr added_node = addPlanNodeToGroup(*child, nullptr);
+            child_groups.emplace_back(&added_node->getGroup());
         }
     }
 
-    GroupNode group_node(node.step, child_groups);
-    /// TODO group_node duplicate detection
-
+    GroupNodePtr group_node = std::make_shared<GroupNode>(node.step, child_groups);
+    /// group_node duplicate detection
+    auto it = all_group_nodes.find(group_node);
+    if (it != all_group_nodes.end())
+        return *it;
 
     if (target_group)
     {
-        return target_group->addGroupNode(group_node, ++group_node_id_counter);
+        target_group->addGroupNode(group_node, ++group_node_id_counter);
     }
     else
     {
         groups.emplace_back(Group(++group_id_counter));
         auto & group = groups.back();
-
-        return group.addGroupNode(group_node, ++group_node_id_counter);
+        group.addGroupNode(group_node, ++group_node_id_counter);
     }
+
+    all_group_nodes.insert(group_node);
+    return group_node;
 }
 
 void Memo::dump()
 {
-//    auto & group_nodes = group.getGroupNodes();
-//
-//    for (auto & group_node : group_nodes)
-//    {
-//        String child;
-//        for (const auto & child_group : group_node.getChildren())
-//        {
-//            child += std::to_string(child_group->getId()) + ", ";
-//        }
-//
-//        LOG_DEBUG(log, "Group id {}, {}, child group : {}", group.getId(),  group_node.getStep()->getName(), child);
-//        for (auto * child_group : group_node.getChildren())
-//        {
-//            dump(*child_group);
-//        }
-//    }
-
     for (auto & group : groups)
     {
         LOG_DEBUG(log, "Group: {}", group.toString());
@@ -108,193 +95,6 @@ void Memo::dump()
 Group & Memo::rootGroup()
 {
     return *root_group;
-}
-
-void Memo::deriveStat()
-{
-    deriveStat(*root_group);
-}
-
-Statistics Memo::deriveStat(Group & group)
-{
-    auto & group_nodes = group.getGroupNodes();
-
-    Statistics res;
-    for (auto & group_node : group_nodes)
-    {
-        std::vector<Statistics> child_statistics;
-        for (auto * child_group : group_node.getChildren())
-        {
-            Statistics stat = deriveStat(*child_group);
-            child_statistics.emplace_back(stat);
-        }
-
-        DeriveStatistics visitor(child_statistics);
-        Statistics stat = group_node.accept(visitor);
-        group.setStatistics(stat);
-        res = stat;
-    }
-    LOG_DEBUG(log, "Group {} statistics output row size {}", group.getId(), group.getStatistics().getOutputRowSize());
-    return res;
-}
-
-void Memo::transform()
-{
-    dump();
-
-    std::unordered_map<Group *, std::vector<StepTree>> group_transformed_node;
-    transform(*root_group, group_transformed_node);
-
-    for (auto & [group, sub_query_plans] : group_transformed_node)
-    {
-        for (auto & sub_query_plan : sub_query_plans)
-        {
-            addPlanNodeToGroup(*sub_query_plan.getRoot(), group);
-        }
-    }
-
-    dump();
-}
-
-void Memo::transform(Group & group, std::unordered_map<Group *, std::vector<StepTree>> & group_transformed_node)
-{
-    auto & group_nodes = group.getGroupNodes();
-
-    for (auto & group_node : group_nodes)
-    {
-        const auto & transformations = Optimizer::getTransformations();
-
-        /// Apply all transformations.
-        for (const auto & transformation : transformations)
-        {
-            if (!transformation.apply)
-                continue;
-
-            auto sub_query_plans = transformation.apply(group_node, context);
-
-            if (!sub_query_plans.empty())
-                group_transformed_node.emplace(&group, std::move(sub_query_plans));
-        }
-
-        for (auto * child_group : group_node.getChildren())
-        {
-            transform(*child_group, group_transformed_node);
-        }
-    }
-}
-
-void Memo::enforce()
-{
-    enforce(*root_group, PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
-
-    dump();
-}
-
-std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Memo::enforce(Group & group, const PhysicalProperties & required_prop)
-{
-    auto & group_nodes = group.getGroupNodes();
-
-    std::vector<std::pair<GroupNode, PhysicalProperties>> collection_enforced_nodes_child_prop;
-
-    for (auto & group_node : group_nodes)
-    {
-        if (group_node.isEnforceNode())
-            continue;
-
-        /// get required prop to child
-        DeriveRequiredChildProp visitor(group_node);
-        AlternativeChildrenProp alternative_prop = group_node.accept(visitor);
-
-        /// every alternative prop, required to child
-        for (auto & required_child_props : alternative_prop)
-        {
-            std::vector<PhysicalProperties> actual_children_prop;
-            std::vector<Statistics> children_statistics;
-
-            Float64 cost = 0;
-            const auto & child_groups = group_node.getChildren();
-            for (size_t j = 0; j < group_node.getChildren().size(); ++j)
-            {
-                auto required_child_prop = required_child_props[j];
-                auto best_node = child_groups[j]->getSatisfyBestGroupNode(required_child_prop);
-                if (!best_node)
-                {
-                    best_node = enforce(*child_groups[j], required_child_prop);
-                }
-                cost += best_node->second.cost;
-                actual_children_prop.emplace_back(best_node->first);
-                children_statistics.emplace_back(child_groups[j]->getStatistics());
-            }
-
-            /// derivation output prop by required_prop and children_prop
-            DeriveOutputProp output_prop_visitor(required_prop, actual_children_prop, context);
-            auto output_prop = group_node.accept(output_prop_visitor);
-
-            group_node.updateBestChild(output_prop, actual_children_prop, cost);
-
-            CostCalculator cost_calc(group.getStatistics(), children_statistics);
-            Float64 total_cost = group_node.accept(cost_calc) + (actual_children_prop.empty() ? 0 : cost);
-
-            LOG_DEBUG(log, "Try update prop {} best node total cost {}, group {} group node {}", output_prop.toString(), total_cost, group.getId(), group_node.toString());
-            group.updatePropBestNode(output_prop, &group_node, total_cost); /// need keep lowest cost
-
-            /// enforce
-            if (!output_prop.satisfy(required_prop))
-            {
-                enforceGroupNode(required_prop, output_prop, group_node, collection_enforced_nodes_child_prop);
-            }
-        }
-    }
-
-    for (auto & [group_enforce_node, child_prop] : collection_enforced_nodes_child_prop)
-    {
-        // GroupNode group_enforce_singleton_node(exchange_step);
-        auto & added_node = group.addGroupNode(group_enforce_node, ++group_node_id_counter);
-
-        auto child_cost = group.getCostByProp(child_prop);
-
-        CostCalculator cost_calc(group.getStatistics(), {});
-        Float64 total_cost = added_node.accept(cost_calc) + child_cost;
-        added_node.updateBestChild(required_prop, {child_prop}, child_cost);
-
-        LOG_DEBUG(log, "Try update prop {} best node total cost {}, group {} group node {}", required_prop.toString(), total_cost, group.getId(), added_node.toString());
-        group.updatePropBestNode(required_prop, &added_node, total_cost);
-    }
-
-    auto best_node = group.getSatisfyBestGroupNode(required_prop);
-    return best_node;
-}
-
-void Memo::enforceGroupNode(
-    const PhysicalProperties & required_prop,
-    const PhysicalProperties & output_prop,
-    GroupNode & group_node,
-    std::vector<std::pair<GroupNode, PhysicalProperties>> & collection)
-{
-    std::shared_ptr<ExchangeDataStep> exchange_step
-        = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node.getStep()->getOutputStream());
-
-    if (!output_prop.sort_description.empty())
-    {
-        auto * sorting_step = typeid_cast<SortingStep *>(group_node.getStep().get());
-        if (sorting_step)
-        {
-            const SortDescription & sort_description = sorting_step->getSortDescription();
-            const UInt64 limit = sorting_step->getLimit();
-            const auto max_block_size = context->getSettingsRef().max_block_size;
-            const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
-
-            ExchangeDataStep::SortInfo sort_info{
-                .max_block_size = max_block_size,
-                .always_read_till_end = exact_rows_before_limit,
-                .limit = limit,
-                .result_description = sort_description};
-            exchange_step->setSortInfo(sort_info);
-        }
-    }
-
-    GroupNode group_enforce_node(exchange_step, {});
-    collection.emplace_back(std::move(group_enforce_node), output_prop);
 }
 
 StepTree Memo::extractPlan()
@@ -337,7 +137,7 @@ StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_pr
     StepTree plan;
     if (child_plans.size() > 1)
     {
-        plan.unitePlans(group_node.getStep(), std::move(child_plans));
+        plan.unitePlans(group_node.getStep(), child_plans);
     }
     else if (child_plans.size() == 1)
     {

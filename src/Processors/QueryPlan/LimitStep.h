@@ -10,10 +10,10 @@ class LimitStep : public ITransformingStep
 {
 public:
     /// Only work on query coordination
-    enum Type
+    enum Phase
     {
-        Global,
-        Local,
+        Final,
+        Preliminary,
         Unknown,
     };
 
@@ -45,9 +45,14 @@ public:
 
     size_t getOffset() const { return offset; }
 
-    Type getType() const { return type; }
+    Phase getPhase() const { return phase; }
 
-    void setType(Type type_) { type = type_; }
+    void setPhase(Phase phase_) { phase = phase_; }
+
+    StepType stepType() const override
+    {
+        return Limit;
+    }
 
 private:
     void updateOutputStream() override
@@ -62,7 +67,7 @@ private:
     bool with_ties;
     const SortDescription description;
 
-    Type type = Type::Unknown;
+    Phase phase = Phase::Unknown;
 };
 
 }

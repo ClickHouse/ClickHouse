@@ -6,18 +6,19 @@ namespace DB
 {
 
 class GroupNode;
+using GroupNodePtr = std::shared_ptr<GroupNode>;
 
 class OptimizeNode final : public OptimizeTask
 {
 public:
-    OptimizeNode(GroupNode & group_node_, TaskContextPtr task_context_);
+    OptimizeNode(GroupNodePtr group_node_, TaskContextPtr task_context_);
 
     void execute() override;
 
     String getDescription() override;
 
 private:
-    GroupNode & group_node;
+    GroupNodePtr group_node;
 };
 
 }

@@ -12,7 +12,7 @@ class Group
 public:
     struct GroupNodeCost
     {
-        GroupNode * group_node = nullptr;
+        GroupNodePtr group_node;
         Float64 cost;
     };
 
@@ -24,15 +24,15 @@ public:
     Group(Group &&) noexcept = default;
     Group & operator=(Group &&) noexcept = default;
 
-    GroupNode & addGroupNode(GroupNode & group_plan_node, UInt32 group_node_id);
+    void addGroupNode(GroupNodePtr group_node, UInt32 group_node_id);
 
-    GroupNode & getOneGroupNode();
+    GroupNodePtr getOneGroupNode();
 
-    const std::list<GroupNode> & getGroupNodes() const;
+    const std::list<GroupNodePtr> & getGroupNodes() const;
 
-    std::list<GroupNode> & getGroupNodes();
+    std::list<GroupNodePtr> & getGroupNodes();
 
-    void updatePropBestNode(const PhysicalProperties & properties, GroupNode * group_node, Float64 cost);
+    void updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Float64 cost);
 
     Float64 getCostByProp(const PhysicalProperties & properties);
 
@@ -55,7 +55,7 @@ public:
 private:
     UInt32 id = 0;
 
-    std::list<GroupNode> group_nodes;
+    std::list<GroupNodePtr> group_nodes;
 
     /// optimize temp result
     std::unordered_map<PhysicalProperties, GroupNodeCost, PhysicalProperties::HashFunction> prop_to_best_node;

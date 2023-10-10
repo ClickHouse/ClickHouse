@@ -13,21 +13,21 @@
 namespace DB
 {
 
-OptimizeInputs::OptimizeInputs(GroupNode & group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_)
+OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_)
     : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
 {
 }
 
 void OptimizeInputs::execute()
 {
-    if (group_node.isEnforceNode())
+    if (group_node->isEnforceNode())
         return;
 
     auto & group = task_context->getCurrentGroup();
     const auto & required_prop = task_context->getRequiredProp();
 
     std::vector<Statistics> children_statistics;
-    for (auto & child_group : group_node.getChildren())
+    for (auto & child_group : group_node->getChildren())
         children_statistics.emplace_back(child_group->getStatistics());
 
     if (!frame)
@@ -41,12 +41,12 @@ void OptimizeInputs::execute()
         if (frame->newAlternativeCalc())
         {
             CostCalculator cost_calc(group.getStatistics(), children_statistics, required_child_props);
-            frame->local_cost = group_node.accept(cost_calc);
+            frame->local_cost = group_node->accept(cost_calc);
             frame->total_cost = frame->local_cost;
         }
 
-        const auto & child_groups = group_node.getChildren();
-        for (; frame->child_idx < static_cast<Int32>(group_node.getChildren().size()); ++frame->child_idx)
+        const auto & child_groups = group_node->getChildren();
+        for (; frame->child_idx < static_cast<Int32>(group_node->getChildren().size()); ++frame->child_idx)
         {
             auto required_child_prop = required_child_props[frame->child_idx];
             auto & child_group = *child_groups[frame->child_idx];
@@ -75,16 +75,16 @@ void OptimizeInputs::execute()
         }
 
         /// all child problem has solution
-        if (frame->child_idx == static_cast<Int32>(group_node.getChildren().size()))
+        if (frame->child_idx == static_cast<Int32>(group_node->getChildren().size()))
         {
             /// derivation output prop by required_prop and children_prop
-            DeriveOutputProp output_prop_visitor(required_prop, frame->actual_children_prop, task_context->getQueryContext());
-            auto output_prop = group_node.accept(output_prop_visitor);
+            DeriveOutputProp output_prop_visitor(group_node, required_prop, frame->actual_children_prop, task_context->getQueryContext());
+            auto output_prop = group_node->accept(output_prop_visitor);
 
             Float64 child_cost = frame->total_cost - frame->local_cost;
-            group_node.updateBestChild(output_prop, frame->actual_children_prop, child_cost);
+            group_node->updateBestChild(output_prop, frame->actual_children_prop, child_cost);
 
-            group.updatePropBestNode(output_prop, &group_node, frame->total_cost);
+            group.updatePropBestNode(output_prop, group_node->shared_from_this(), frame->total_cost);
 
             if (!output_prop.satisfy(required_prop))
             {
@@ -107,43 +107,27 @@ Float64 OptimizeInputs::enforceGroupNode(
     const PhysicalProperties & output_prop)
 {
     std::shared_ptr<ExchangeDataStep> exchange_step
-        = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node.getStep()->getOutputStream());
+        = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream());
 
-    if (!output_prop.sort_description.empty())
-    {
-        auto * sorting_step = typeid_cast<SortingStep *>(group_node.getStep().get());
-        if (sorting_step)
-        {
-            const SortDescription & sort_description = sorting_step->getSortDescription();
-            const UInt64 limit = sorting_step->getLimit();
-
-            auto query_context = task_context->getQueryContext();
-            const auto max_block_size = query_context->getSettingsRef().max_block_size;
-            const auto exact_rows_before_limit = query_context->getSettingsRef().exact_rows_before_limit;
-
-            ExchangeDataStep::SortInfo sort_info{
-                .max_block_size = max_block_size,
-                .always_read_till_end = exact_rows_before_limit,
-                .limit = limit,
-                .result_description = sort_description};
-            /// TODO(wjc) NPE if required_prop.distribution.type == any
-            exchange_step->setSortInfo(sort_info);
-        }
-    }
     auto & group = task_context->getCurrentGroup();
 
-    GroupNode group_enforce_node(exchange_step, {}, true);
+    std::vector<Group *> children;
+    GroupNodePtr group_enforce_node = std::make_shared<GroupNode>(exchange_step, children, true);
 
-    auto group_node_id = task_context->getMemo().fetchGroupNodeId();
-    auto & added_node = group.addGroupNode(group_enforce_node, group_node_id);
+    auto group_node_id = task_context->getMemo().fetchAddGroupNodeId();
+    group.addGroupNode(group_enforce_node, group_node_id);
 
     auto child_cost = group.getCostByProp(output_prop);
 
     CostCalculator cost_calc(group.getStatistics());
-    Float64 total_cost = added_node.accept(cost_calc) + child_cost;
+    Float64 total_cost = group_enforce_node->accept(cost_calc) + child_cost;
 
-    added_node.updateBestChild(required_prop, {output_prop}, child_cost);
-    group.updatePropBestNode(required_prop, &added_node, total_cost);
+    DeriveOutputProp output_prop_visitor(group_enforce_node, required_prop, {output_prop}, task_context->getQueryContext());
+
+    const auto & actual_output_prop = group_enforce_node->accept(output_prop_visitor);
+
+    group_enforce_node->updateBestChild(actual_output_prop, {output_prop}, child_cost);
+    group.updatePropBestNode(actual_output_prop, group_enforce_node->shared_from_this(), total_cost);
 
     return total_cost;
 }
@@ -155,7 +139,7 @@ OptimizeTaskPtr OptimizeInputs::clone()
 
 String OptimizeInputs::getDescription()
 {
-    return "OptimizeInputs (" + group_node.getStep()->getName() + ")";
+    return "OptimizeInputs (" + group_node->getStep()->getName() + ")";
 }
 
 }

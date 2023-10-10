@@ -171,6 +171,16 @@ def test_aggregate_query(started_cluster):
 
     assert r == rr
 
+    print("local table select:")
+    r = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY GROUPING SETS((name,val),(name),(val),()) ORDER BY name,val SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 1")
+    print(r)
+
+    print("distribute table select:")
+    rr = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY GROUPING SETS((name,val),(name),(val),()) ORDER BY name,val")
+    print(rr)
+
+    assert r == rr
+
 
     print("local table select:")
     r = node1.query("SELECT sum(id),name,val FROM distributed_table GROUP BY name,val with totals ORDER BY name,val SETTINGS extremes=1,allow_experimental_query_coordination = 1, allow_experimental_analyzer = 1")

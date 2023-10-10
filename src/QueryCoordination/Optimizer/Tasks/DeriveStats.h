@@ -6,11 +6,12 @@ namespace DB
 {
 
 class GroupNode;
+using GroupNodePtr = std::shared_ptr<GroupNode>;
 
 class DeriveStats final : public OptimizeTask
 {
 public:
-    DeriveStats(GroupNode & group_node_, bool need_derive_child_, TaskContextPtr task_context_);
+    DeriveStats(GroupNodePtr group_node_, bool need_derive_child_, TaskContextPtr task_context_);
 
     void execute() override;
 
@@ -21,7 +22,7 @@ private:
 
     OptimizeTaskPtr clone(bool need_derive_child_);
 
-    GroupNode & group_node;
+    GroupNodePtr group_node;
 
     bool need_derive_child;
 };

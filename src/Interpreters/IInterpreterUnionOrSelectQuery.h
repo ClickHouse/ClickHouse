@@ -78,8 +78,6 @@ protected:
     /// Add filter from additional_post_filter setting.
     void addAdditionalPostFilter(QueryPlan & plan) const;
 
-    void addAdditionalPostFilter(PlanFragment & fragment) const;
-
     static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };
 }

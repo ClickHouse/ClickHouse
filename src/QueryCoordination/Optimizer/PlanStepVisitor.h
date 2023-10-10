@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/TopNStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -62,6 +63,10 @@ public:
         else if (auto * sort_step = typeid_cast<SortingStep *>(step.get()))
         {
             return visit(*sort_step);
+        }
+        else if (auto * topn_step = typeid_cast<TopNStep *>(step.get()))
+        {
+            return visit(*topn_step);
         }
         else if (auto * join_step = typeid_cast<JoinStep *>(step.get()))
         {
@@ -148,6 +153,8 @@ public:
     virtual R visit(CubeStep & step) { return visitDefault(step); }
 
     virtual R visit(TotalsHavingStep & step) { return visitDefault(step); }
+
+    virtual R visit(TopNStep & step) { return visitDefault(step); }
 };
 
 }

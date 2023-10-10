@@ -15,7 +15,7 @@ using PropAndAlternativeChildrenProp = std::unordered_map<PhysicalProperties, Al
 
 class Group;
 
-class GroupNode
+class GroupNode final : public std::enable_shared_from_this<GroupNode>
 {
 public:
     struct ChildrenPropCost
@@ -89,6 +89,31 @@ private:
     AlternativeChildrenProp required_children_prop;
 
     bool is_derived_stat;
+};
+
+using GroupNodePtr = std::shared_ptr<GroupNode>;
+
+struct GroupNodeHash
+{
+    std::size_t operator()(const GroupNodePtr & s) const
+    {
+        if (!s)
+            return 0;
+
+        size_t hash = 0;
+//        size_t hash = s->getStep()->hash();
+//        hash = MurmurHash3Impl64::combineHashes(hash, IntHash64Impl::apply(child_groups.size()));
+//        for (auto child_group : child_groups)
+//        {
+//            hash = MurmurHash3Impl64::combineHashes(hash, child_group);
+//        }
+        return hash;
+    }
+};
+
+struct GroupNodeEquals
+{
+    bool operator()(const GroupNodePtr & /*t1*/, const GroupNodePtr & /*t2*/) const { return false; }
 };
 
 }

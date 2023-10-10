@@ -35,6 +35,8 @@ public:
 
     Float64 visit(LimitStep & step) override;
 
+    Float64 visit(TopNStep & step) override;
+
 private:
     const Statistics & statistics;
     const std::vector<Statistics> & input_statistics;

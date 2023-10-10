@@ -42,7 +42,7 @@ public:
 
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<StepTree>> plans);
+    void unitePlans(QueryPlanStepPtr step, std::vector<std::shared_ptr<StepTree>> & plans);
 
     Node * getRoot() const
     {
@@ -58,6 +58,6 @@ private:
     Node * root = nullptr;
 };
 
-using StepTreePtr = std::unique_ptr<StepTree>;
+using StepTreePtr = std::shared_ptr<StepTree>;
 
 }

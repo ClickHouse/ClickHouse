@@ -5,12 +5,6 @@
 namespace DB
 {
 
-enum StepType
-{
-    Source,
-    Agg,
-};
-
 class PlanFragment;
 using PlanFragmentPtr = std::shared_ptr<PlanFragment>;
 
@@ -20,8 +14,6 @@ struct PlanNode
     std::vector<PlanNode *> children = {};
 
     UInt32 plan_id;
-
-    StepType type;
 };
 
 }
