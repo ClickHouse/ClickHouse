@@ -526,6 +526,10 @@ try
 
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings.set("input_format_parallel_parsing", false);
+    /// It maybe insert into distributed table.
+    /// It doesn't make sense to make insert into destination tables asynchronous.
+    key.settings.set("async_insert", false);
+
     insert_context->makeQueryContext();
 
     /// Access rights must be checked for the user who executed the initial INSERT query.
