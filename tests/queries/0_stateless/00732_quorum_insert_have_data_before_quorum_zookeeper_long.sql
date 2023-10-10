@@ -20,6 +20,7 @@ SET select_sequential_consistency=1;
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;
 
+SET insert_keeper_fault_injection_probability=0;
 SET insert_quorum=2, insert_quorum_parallel=0;
 
 INSERT INTO quorum1 VALUES (4, '1990-11-15');

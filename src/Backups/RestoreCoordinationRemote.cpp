@@ -2,6 +2,8 @@
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/RestoreCoordinationRemote.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
@@ -87,6 +89,7 @@ void RestoreCoordinationRemote::createRootNodes()
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_tables_data_acquired", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access_storages_acquired", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects_acquired", "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/table_uuids", "", zkutil::CreateMode::Persistent));
             zk->tryMulti(ops, responses);
         });
 }
@@ -229,6 +232,33 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
             result =  zk->get(path) == toString(current_host_index);
         });
     return result;
+}
+
+void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)
+{
+    String query_str = serializeAST(create_query);
+    String new_uuids_str = create_query.generateRandomUUID(/* always_generate_new_uuid= */ true).toString();
+
+    auto holder = with_retries.createRetriesControlHolder("generateUUIDForTable");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = zookeeper_path + "/table_uuids/" + escapeForFileName(query_str);
+            Coordination::Error res = zk->tryCreate(path, new_uuids_str, zkutil::CreateMode::Persistent);
+
+            if (res == Coordination::Error::ZOK)
+                return;
+
+            if (res == Coordination::Error::ZNODEEXISTS)
+            {
+                create_query.setUUID(ASTCreateQuery::UUIDs::fromString(zk->get(path)));
+                return;
+            }
+
+            zkutil::KeeperException::fromPath(res, path);
+        });
 }
 
 void RestoreCoordinationRemote::removeAllNodes()

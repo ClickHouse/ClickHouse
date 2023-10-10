@@ -133,8 +133,6 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/S3/S3ObjectStorage.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/S3/S3Capabilities.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/S3/diskSettings.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/S3/ProxyListConfiguration.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/S3/ProxyResolverConfiguration.cpp
 
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/IO/createReadBufferFromFileBase.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/IO/ReadBufferFromRemoteFSGather.cpp
@@ -176,7 +174,7 @@ if (BUILD_STANDALONE_KEEPER)
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
-    target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_PROGRAM_STANDALONE_BUILD)
+    target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_KEEPER_STANDALONE_BUILD)
     target_compile_definitions (clickhouse-keeper PUBLIC -DWITHOUT_TEXT_LOG)
 
     if (ENABLE_CLICKHOUSE_KEEPER_CLIENT AND TARGET ch_rust::skim)

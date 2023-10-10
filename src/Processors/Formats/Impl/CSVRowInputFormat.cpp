@@ -12,6 +12,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -167,8 +168,10 @@ void CSVFormatReader::skipRow()
             {
                 ++istr.position();
                 if (!istr.eof() && *pos == '\n')
+                {
                     ++pos;
-                return;
+                    return;
+                }
             }
         }
     }
