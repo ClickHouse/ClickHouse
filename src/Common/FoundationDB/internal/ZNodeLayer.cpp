@@ -65,7 +65,8 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
         if (!ignore_exists)
             trxb.then(TRX_STEP() { throw KeeperException(Error::ZNODEEXISTS); });
         else
-            trxb.then(TRX_STEP(var_resp) {
+            trxb.then(TRX_STEP(var_resp)
+            {
                 auto & resp = *ctx.getVar(var_resp);
                 resp.path_created = "/";
                 return nullptr;

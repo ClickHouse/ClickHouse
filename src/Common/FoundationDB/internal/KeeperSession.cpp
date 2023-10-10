@@ -3,6 +3,14 @@
 #include "KeeperConst.h"
 #include "KeeperSession.h"
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
+
 namespace DB::FoundationDB
 {
 KeeperSession::KeeperSession(BackgroundSchedulePool & pool, KeeperKeys & keys_, FDBTransaction * tr)
