@@ -64,7 +64,6 @@ private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 
     void initialize(size_t offset, size_t size);
-    void assertCorrectness() const;
 
     /**
      * Return a list of file segments ordered in ascending order. This list represents
@@ -76,7 +75,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment);
 
     ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
@@ -90,7 +89,7 @@ private:
 
     bool completeFileSegmentAndGetNext();
 
-    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
+    void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
 
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
@@ -110,7 +109,8 @@ private:
     ImplementationBufferCreator implementation_buffer_creator;
 
     /// Remote read buffer, which can only be owned by current buffer.
-    FileSegment::RemoteFileReaderPtr remote_file_reader;
+    ImplementationBufferPtr remote_file_reader;
+    ImplementationBufferPtr cache_file_reader;
 
     FileSegmentsHolderPtr file_segments;
 

@@ -14,7 +14,9 @@
 
 (def coordination-data-dir (str data-dir "/coordination"))
 (def coordination-snapshots-dir (str coordination-data-dir "/snapshots"))
+(def coordination-latest-snapshot-dir (str coordination-data-dir "/latest_snapshot"))
 (def coordination-logs-dir (str coordination-data-dir "/logs"))
+(def coordination-latest_log-dir (str coordination-data-dir "/latest_log"))
 
 (def stderr-file (str logs-dir "/stderr.log"))
 

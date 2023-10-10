@@ -41,7 +41,7 @@ Context::Params::Params():
 	verificationMode(VERIFY_RELAXED),
 	verificationDepth(9),
 	loadDefaultCAs(false),
-	cipherList("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH")
+	cipherList("ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH")
 {
 }
 

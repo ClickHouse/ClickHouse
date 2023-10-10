@@ -27,12 +27,13 @@ TableFunctionNode::TableFunctionNode(String table_function_name_)
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context)
+void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_)
 {
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 
 const StorageID & TableFunctionNode::getStorageID() const
@@ -132,6 +133,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
     result->settings_changes = settings_changes;
+    result->unresolved_arguments_indexes = unresolved_arguments_indexes;
 
     return result;
 }

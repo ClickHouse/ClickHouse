@@ -1,10 +1,16 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
+#include <Interpreters/Context.h>
 #include <Common/checkStackSize.h>
 #include <ranges>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Disks/WriteMode.h>
+#include <base/defines.h>
+
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -63,11 +69,18 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
     std::string getInfoForLog() const override { return fmt::format("PureMetadataObjectStorageOperation"); }
 };
 
+
+struct ObjectsToRemove
+{
+    StoredObjects objects;
+    UnlinkMetadataFileOperationOutcomePtr unlink_outcome;
+};
+
 struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
     std::string path;
     bool delete_metadata_only;
-    StoredObjects objects_to_remove;
+    ObjectsToRemove objects_to_remove;
     bool if_exists;
     bool remove_from_cache = false;
 
@@ -103,15 +116,12 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
         try
         {
-            uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
             auto objects = metadata_storage.getStorageObjects(path);
 
-            tx->unlinkMetadata(path);
+            auto unlink_outcome = tx->unlinkMetadata(path);
 
-            if (hardlink_count == 0)
-            {
-                objects_to_remove = std::move(objects);
-            }
+            if (unlink_outcome)
+                objects_to_remove = ObjectsToRemove{std::move(objects), std::move(unlink_outcome)};
         }
         catch (const Exception & e)
         {
@@ -140,18 +150,22 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         /// due to network error or similar. And when it will retry an operation it may receive
         /// a 404 HTTP code. We don't want to threat this code as a real error for deletion process
         /// (e.g. throwing some exceptions) and thus we just use method `removeObjectsIfExists`
-        if (!delete_metadata_only && !objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+        if (!delete_metadata_only && !objects_to_remove.objects.empty()
+            && objects_to_remove.unlink_outcome->num_hardlinks == 0)
+        {
+            object_storage.removeObjectsIfExist(objects_to_remove.objects);
+        }
     }
 };
 
 struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    RemoveBatchRequest remove_paths;
-    bool keep_all_batch_data;
-    NameSet file_names_remove_metadata_only;
-    StoredObjects objects_to_remove;
-    bool remove_from_cache = false;
+    const RemoveBatchRequest remove_paths;
+    const bool keep_all_batch_data;
+    const NameSet file_names_remove_metadata_only;
+
+    std::vector<String> paths_removed_with_objects;
+    std::vector<ObjectsToRemove> objects_to_remove;
 
     RemoveManyObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -174,7 +188,6 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     {
         for (const auto & [path, if_exists] : remove_paths)
         {
-
             if (!metadata_storage.exists(path))
             {
                 if (if_exists)
@@ -188,14 +201,13 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
             try
             {
-                uint32_t hardlink_count = metadata_storage.getHardlinkCount(path);
                 auto objects = metadata_storage.getStorageObjects(path);
-
-                tx->unlinkMetadata(path);
-
-                /// File is really redundant
-                if (hardlink_count == 0 && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
-                    std::move(objects.begin(), objects.end(), std::back_inserter(objects_to_remove));
+                auto unlink_outcome = tx->unlinkMetadata(path);
+                if (unlink_outcome && !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename()))
+                {
+                    objects_to_remove.emplace_back(ObjectsToRemove{std::move(objects), std::move(unlink_outcome)});
+                    paths_removed_with_objects.push_back(path);
+                }
             }
             catch (const Exception & e)
             {
@@ -205,6 +217,12 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
                     || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
                     || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                 {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                        "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
+                        metadata_storage.getPath() + path,
+                        e.message());
+
                     tx->unlinkFile(path);
                 }
                 else
@@ -215,26 +233,46 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
     void undo() override
     {
-
     }
 
     void finalize() override
     {
+        StoredObjects remove_from_remote;
+        for (auto && [objects, unlink_outcome] : objects_to_remove)
+        {
+            if (unlink_outcome->num_hardlinks == 0)
+                std::move(objects.begin(), objects.end(), std::back_inserter(remove_from_remote));
+        }
+
         /// Read comment inside RemoveObjectStorageOperation class
         /// TL;DR Don't pay any attention to 404 status code
-        if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+        if (!remove_from_remote.empty())
+            object_storage.removeObjectsIfExist(remove_from_remote);
+
+        if (!keep_all_batch_data)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("RemoveManyObjectStorageOperation"),
+                "metadata and objects were removed for [{}], "
+                "only metadata were removed for [{}].",
+                boost::algorithm::join(paths_removed_with_objects, ", "),
+                boost::algorithm::join(file_names_remove_metadata_only, ", "));
+        }
     }
 };
 
 
 struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    std::string path;
-    std::unordered_map<std::string, StoredObjects> objects_to_remove;
-    bool keep_all_batch_data;
-    NameSet file_names_remove_metadata_only;
-    StoredObjects objects_to_remove_from_cache;
+    /// path inside disk with metadata
+    const std::string path;
+    const bool keep_all_batch_data;
+    /// paths inside the 'this->path'
+    const NameSet file_names_remove_metadata_only;
+
+    /// map from local_path to its remote objects with hardlinks counter
+    /// local_path is the path inside 'this->path'
+    std::unordered_map<std::string, ObjectsToRemove> objects_to_remove_by_path;
 
     RemoveRecursiveObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -261,14 +299,16 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         {
             try
             {
-                uint32_t hardlink_count = metadata_storage.getHardlinkCount(path_to_remove);
+                chassert(path_to_remove.starts_with(path));
+                auto rel_path = String(fs::relative(fs::path(path_to_remove), fs::path(path)));
+
                 auto objects_paths = metadata_storage.getStorageObjects(path_to_remove);
+                auto unlink_outcome = tx->unlinkMetadata(path_to_remove);
 
-                tx->unlinkMetadata(path_to_remove);
-
-                if (hardlink_count == 0)
+                if (unlink_outcome && !file_names_remove_metadata_only.contains(rel_path))
                 {
-                    objects_to_remove[path_to_remove] = std::move(objects_paths);
+                    objects_to_remove_by_path[std::move(rel_path)]
+                        = ObjectsToRemove{std::move(objects_paths), std::move(unlink_outcome)};
                 }
             }
             catch (const Exception & e)
@@ -310,24 +350,38 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void undo() override
     {
-
     }
 
     void finalize() override
     {
         if (!keep_all_batch_data)
         {
+            std::vector<String> total_removed_paths;
+            total_removed_paths.reserve(objects_to_remove_by_path.size());
+
             StoredObjects remove_from_remote;
-            for (auto && [local_path, remote_paths] : objects_to_remove)
+            for (auto && [local_path, objects_to_remove] : objects_to_remove_by_path)
             {
-                if (!file_names_remove_metadata_only.contains(fs::path(local_path).filename()))
+                chassert(!file_names_remove_metadata_only.contains(local_path));
+                if (objects_to_remove.unlink_outcome->num_hardlinks == 0)
                 {
-                    std::move(remote_paths.begin(), remote_paths.end(), std::back_inserter(remove_from_remote));
+                    std::move(objects_to_remove.objects.begin(), objects_to_remove.objects.end(), std::back_inserter(remove_from_remote));
+                    total_removed_paths.push_back(local_path);
                 }
             }
+
             /// Read comment inside RemoveObjectStorageOperation class
             /// TL;DR Don't pay any attention to 404 status code
             object_storage.removeObjectsIfExist(remove_from_remote);
+
+            LOG_DEBUG(
+                &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                "Recursively remove path {}: "
+                "metadata and objects were removed for [{}], "
+                "only metadata were removed for [{}].",
+                path,
+                boost::algorithm::join(total_removed_paths, ", "),
+                boost::algorithm::join(file_names_remove_metadata_only, ", "));
         }
     }
 };
@@ -422,6 +476,9 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
 struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
+    ReadSettings read_settings;
+    WriteSettings write_settings;
+
     /// Local paths
     std::string from_path;
     std::string to_path;
@@ -431,9 +488,13 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     CopyFileObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
+        const ReadSettings & read_settings_,
+        const WriteSettings & write_settings_,
         const std::string & from_path_,
         const std::string & to_path_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , read_settings(read_settings_)
+        , write_settings(write_settings_)
         , from_path(from_path_)
         , to_path(to_path_)
     {}
@@ -453,7 +514,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
             std::string blob_name = object_storage.generateBlobNameForPath(to_path);
             auto object_to = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
 
-            object_storage.copyObject(object_from, object_to);
+            object_storage.copyObject(object_from, object_to, read_settings, write_settings);
 
             tx->addBlobToMetadata(to_path, blob_name, object_from.bytes_size);
 
@@ -622,10 +683,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
     if (autocommit)
     {
-        create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
+        create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name](size_t count)
         {
             if (mode == WriteMode::Rewrite)
+            {
+                // Otherwise we will produce lost blobs which nobody points to
+                /// WriteOnce storages are not affected by the issue
+                if (!tx->object_storage.isWriteOnce() && tx->metadata_storage.exists(path))
+                    tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
+
                 tx->metadata_transaction->createMetadataFile(path, blob_name, count);
+            }
             else
                 tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
 
@@ -634,7 +702,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     }
     else
     {
-        create_metadata_callback = [write_op = write_operation.get(), mode, path, blob_name] (size_t count)
+        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, blob_name](size_t count)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
@@ -646,15 +714,24 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// ...
             /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
             /// tx->commit()
-            write_op->setOnExecute([mode, path, blob_name, count](MetadataTransactionPtr tx)
+            write_op->setOnExecute([object_storage_tx, mode, path, blob_name, count](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)
+                {
+                    /// Otherwise we will produce lost blobs which nobody points to
+                    /// WriteOnce storages are not affected by the issue
+                    if (!object_storage_tx->object_storage.isWriteOnce() && object_storage_tx->metadata_storage.exists(path))
+                    {
+                        object_storage_tx->object_storage.removeObjectsIfExist(
+                            object_storage_tx->metadata_storage.getStorageObjects(path));
+                    }
+
                     tx->createMetadataFile(path, blob_name, count);
+                }
                 else
                     tx->addBlobToMetadata(path, blob_name, count);
             });
         };
-
     }
 
     operations_to_execute.emplace_back(std::move(write_operation));
@@ -707,7 +784,12 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
 
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
+    {
+        if (!object_storage.isWriteOnce() && metadata_storage.exists(path))
+            object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
+
         metadata_transaction->createMetadataFile(path, blob_name, object_size);
+    }
     else
         metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
 }
@@ -758,10 +840,10 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         }));
 }
 
-void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
+void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, from_file_path, to_file_path));
+        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
 void DiskObjectStorageTransaction::commit()

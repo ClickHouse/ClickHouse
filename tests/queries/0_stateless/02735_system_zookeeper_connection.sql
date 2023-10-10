@@ -9,7 +9,7 @@ ENGINE ReplicatedMergeTree('zookeeper2:/clickhouse/{database}/02731_zk_connectio
 ORDER BY tuple();
 
 select name, host, port, index, is_expired, keeper_api_version, (connected_time between yesterday() and now()),
-       (abs(session_uptime_elapsed_seconds  - zookeeperSessionUptime()) < 10)
+       (abs(session_uptime_elapsed_seconds  - zookeeperSessionUptime()) < 10), enabled_feature_flags
 from system.zookeeper_connection where name='default';
 
 -- keeper_api_version will by 0 for auxiliary_zookeeper2, because we fail to get /api_version due to chroot

@@ -22,11 +22,13 @@ struct FileCacheSettings
     size_t cache_hits_threshold = FILECACHE_DEFAULT_HITS_THRESHOLD;
     bool enable_filesystem_query_cache_limit = false;
 
-    bool enable_bypass_cache_with_threashold = false;
-    size_t bypass_cache_threashold = FILECACHE_BYPASS_THRESHOLD;
-    size_t delayed_cleanup_interval_ms = FILECACHE_DELAYED_CLEANUP_INTERVAL_MS;
+    bool enable_bypass_cache_with_threshold = false;
+    size_t bypass_cache_threshold = FILECACHE_BYPASS_THRESHOLD;
 
-    size_t boundary_alignment = DBMS_DEFAULT_BUFFER_SIZE;
+    size_t boundary_alignment = FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT;
+    size_t background_download_threads = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_THREADS;
+
+    size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

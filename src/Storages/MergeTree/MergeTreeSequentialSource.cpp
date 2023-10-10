@@ -119,7 +119,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(data_part, alter_conversions), storage_snapshot, /*with_subcolumns=*/ false, columns_to_read);
+    injectRequiredColumns(
+        LoadedMergeTreeDataPartInfoForReader(data_part, alter_conversions),
+        storage_snapshot,
+        storage.supportsSubcolumns(),
+        columns_to_read);
 
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
@@ -127,6 +131,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
             .withSystemColumns();
+        if (storage.supportsSubcolumns())
+            options.withSubcolumns();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
@@ -138,6 +144,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     ReadSettings read_settings;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     MergeTreeReaderSettings reader_settings =
     {
@@ -150,7 +157,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         mark_ranges.emplace(MarkRanges{MarkRange(0, data_part->getMarksCount())});
 
     reader = data_part->getReader(
-        columns_for_reader, storage_snapshot->metadata,
+        columns_for_reader, storage_snapshot,
         *mark_ranges, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), alter_conversions, reader_settings, {}, {});
 }
@@ -175,7 +182,7 @@ try
             current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
 
             if (should_evaluate_missing_defaults)
             {

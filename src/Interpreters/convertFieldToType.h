@@ -20,4 +20,8 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 /// Does the same, but throws ARGUMENT_OUT_OF_BOUND if value does not fall into the range.
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr);
 
+/// Applies stricter rules than convertFieldToType, doesn't allow loss of precision converting to Decimal.
+/// Returns `Field` if the conversion was successful and the result is equal to the original value, otherwise returns nullopt.
+std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type);
+
 }

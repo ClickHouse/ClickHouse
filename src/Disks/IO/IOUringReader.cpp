@@ -62,8 +62,16 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
     struct io_uring_params params =
     {
+        .sq_entries = 0, // filled by the kernel, initializing to silence warning
         .cq_entries = 0, // filled by the kernel, initializing to silence warning
         .flags = 0,
+        .sq_thread_cpu = 0, // Unused (IORING_SETUP_SQ_AFF isn't set). Silences warning
+        .sq_thread_idle = 0, // Unused (IORING_SETUP_SQPOL isn't set). Silences warning
+        .features = 0, // filled by the kernel, initializing to silence warning
+        .wq_fd = 0, // Unused (IORING_SETUP_ATTACH_WQ isn't set). Silences warning.
+        .resv = {0, 0, 0}, // "The resv array must be initialized to zero."
+        .sq_off = {}, // filled by the kernel, initializing to silence warning
+        .cq_off = {}, // filled by the kernel, initializing to silence warning
     };
 
     int ret = io_uring_queue_init_params(entries_, &ring, &params);

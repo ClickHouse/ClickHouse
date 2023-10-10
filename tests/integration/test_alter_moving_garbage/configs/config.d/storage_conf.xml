@@ -1,12 +1,18 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <s3>
+            <s31>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-            </s3>
+            </s31>
+            <s32>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data2/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s32>
         </disks>
         <policies>
             <two_disks>
@@ -15,10 +21,17 @@
                         <disk>default</disk>
                     </default>
                     <external>
-                        <disk>s3</disk>
+                        <disk>s31</disk>
                     </external>
                 </volumes>
             </two_disks>
+            <one_disk>
+                <volumes>
+                    <external>
+                        <disk>s32</disk>
+                    </external>
+                </volumes>
+            </one_disk>
         </policies>
     </storage_configuration>
 

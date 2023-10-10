@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -27,6 +28,20 @@ const DB::DataStream & getChildOutputStream(DB::QueryPlan::Node & node)
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// This is a check that output columns does not have the same name
+/// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
+static bool areOutputsConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & outputs)
+{
+    std::unordered_set<std::string_view> names;
+    for (const auto & output : outputs)
+    {
+        if (!names.emplace(output->result_name).second)
+            return false;
+    }
+
+    return true;
+}
 
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
 {
@@ -55,6 +70,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     // No calculations can be postponed.
     if (unneeded_for_sorting->trivial())
+        return 0;
+
+    if (!areOutputsConvertableToBlock(needed_for_sorting->getOutputs()))
         return 0;
 
     // Sorting (parent_node) -> Expression (child_node)

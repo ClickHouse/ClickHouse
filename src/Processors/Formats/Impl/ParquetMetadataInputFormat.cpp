@@ -130,7 +130,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
     return parquet::ReadMetaData(arrow_file);
 }
 
@@ -180,7 +180,7 @@ Chunk ParquetMetadataInputFormat::generate()
         else if (name == names[3])
         {
             auto column = types[3]->createColumn();
-            /// Version сan be only PARQUET_1_0 or PARQUET_2_LATEST (which is 2.6).
+            /// Version can be only PARQUET_1_0 or PARQUET_2_LATEST (which is 2.6).
             String version = metadata->version() == parquet::ParquetVersion::PARQUET_1_0 ? "1.0" : "2.6";
             assert_cast<ColumnString &>(*column).insertData(version.data(), version.size());
             res.addColumn(std::move(column));
@@ -495,16 +495,18 @@ NamesAndTypesList ParquetMetadataSchemaReader::readSchema()
 
 void registerInputFormatParquetMetadata(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
-        [](ReadBuffer &buf,
-           const Block &sample,
-           const RowInputFormatParams &,
-           const FormatSettings & settings)
+        [](ReadBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            const ReadSettings &,
+            bool /* is_remote_fs */,
+            size_t /* max_download_threads */,
+            size_t /* max_parsing_threads */)
         {
             return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
         });
-    factory.markFormatSupportsSubcolumns("ParquetMetadata");
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 

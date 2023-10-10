@@ -41,6 +41,7 @@ struct QueryPlanOptimizationSettings
     /// If reading from projection can be applied
     bool optimize_projection = false;
     bool force_use_projection = false;
+    bool optimize_use_implicit_projections = false;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);

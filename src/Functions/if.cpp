@@ -1096,14 +1096,25 @@ public:
             return res != nullptr;
         };
 
-        TypeIndex left_id = arg_then.type->getTypeId();
-        TypeIndex right_id = arg_else.type->getTypeId();
+        DataTypePtr left_type = arg_then.type;
+        DataTypePtr right_type = arg_else.type;
 
         if (const auto * left_array = checkAndGetDataType<DataTypeArray>(arg_then.type.get()))
-            left_id = left_array->getNestedType()->getTypeId();
+            left_type = left_array->getNestedType();
 
         if (const auto * right_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
-            right_id = right_array->getNestedType()->getTypeId();
+            right_type = right_array->getNestedType();
+
+        /// Special case when one column is Integer and another is UInt64 that can be actually Int64.
+        /// The result type for this case is Int64 and we need to change UInt64 type to Int64
+        /// so the NumberTraits::ResultOfIf will return Int64 instead if Int128.
+        if (isNativeInteger(left_type) && isUInt64ThatCanBeInt64(right_type))
+            right_type = std::make_shared<DataTypeInt64>();
+        else if (isNativeInteger(right_type) && isUInt64ThatCanBeInt64(left_type))
+            left_type = std::make_shared<DataTypeInt64>();
+
+        TypeIndex left_id = left_type->getTypeId();
+        TypeIndex right_id = right_type->getTypeId();
 
         if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))

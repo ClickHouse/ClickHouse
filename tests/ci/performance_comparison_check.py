@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import os
 import logging
 import sys
@@ -8,6 +7,7 @@ import json
 import subprocess
 import traceback
 import re
+from pathlib import Path
 from typing import Dict
 
 from github import Github
@@ -15,16 +15,28 @@ from github import Github
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
-from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL, S3_BUILDS_BUCKET, S3_DOWNLOAD
+from env_helper import (
+    GITHUB_EVENT_PATH,
+    GITHUB_RUN_URL,
+    REPO_COPY,
+    REPORTS_PATH,
+    S3_BUILDS_BUCKET,
+    S3_DOWNLOAD,
+    TEMP_PATH,
+)
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
+from clickhouse_helper import get_instance_type, get_instance_id
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
 
 def get_run_command(
+    check_start_time,
+    check_name,
     workspace,
     result_path,
     repo_tests_path,
@@ -33,48 +45,42 @@ def get_run_command(
     additional_env,
     image,
 ):
+    instance_type = get_instance_type()
+    instance_id = get_instance_id()
+
+    envs = [
+        f"-e CHECK_START_TIME='{check_start_time}'",
+        f"-e CHECK_NAME='{check_name}'",
+        f"-e INSTANCE_TYPE='{instance_type}'",
+        f"-e INSTANCE_ID='{instance_id}'",
+        f"-e PR_TO_TEST={pr_to_test}",
+        f"-e SHA_TO_TEST={sha_to_test}",
+    ]
+
+    env_str = " ".join(envs)
+
     return (
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
-        f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} "
+        f"{env_str} {additional_env} "
         f"{image}"
     )
 
 
-class RamDrive:
-    def __init__(self, path, size):
-        self.path = path
-        self.size = size
-
-    def __enter__(self):
-        if not os.path.exists(self.path):
-            os.makedirs(self.path)
-
-        subprocess.check_call(
-            f"sudo mount -t tmpfs -o rw,size={self.size} tmpfs {self.path}", shell=True
-        )
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        subprocess.check_call(f"sudo umount {self.path}", shell=True)
-
-
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
-    repo_tests_path = os.path.join(repo_path, "tests")
-    ramdrive_path = os.getenv("RAMDRIVE_PATH", os.path.join(temp_path, "ramdrive"))
-    # currently unused, doesn't make tests more stable
-    ramdrive_size = os.getenv("RAMDRIVE_SIZE", "0G")
-    reports_path = os.getenv("REPORTS_PATH", "./reports")
+
+    stopwatch = Stopwatch()
+
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_tests_path = Path(REPO_COPY, "tests")
+    reports_path = Path(REPORTS_PATH)
 
     check_name = sys.argv[1]
-    required_build = CI_CONFIG["tests_config"][check_name]["required_build"]
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    required_build = CI_CONFIG.test_configs[check_name].required_build
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
@@ -121,15 +127,6 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
-    test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
-        "test_grep_exclude_filter"
-    ]
-    if test_grep_exclude_filter:
-        docker_env += f" -e CHPC_TEST_GREP_EXCLUDE={test_grep_exclude_filter}"
-        logging.info(
-            "Fill fliter our performance tests by grep -v %s", test_grep_exclude_filter
-        )
-
     rerun_helper = RerunHelper(commit, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
@@ -146,10 +143,8 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
-    # with RamDrive(ramdrive_path, ramdrive_size):
-    result_path = ramdrive_path
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    result_path = temp_path / "result"
+    result_path.mkdir(parents=True, exist_ok=True)
 
     database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
     database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
@@ -166,6 +161,8 @@ if __name__ == "__main__":
     docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
+        stopwatch.start_time_str,
+        check_name,
         result_path,
         result_path,
         repo_tests_path,
@@ -176,7 +173,8 @@ if __name__ == "__main__":
     )
     logging.info("Going to run command %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = temp_path / "run.log"
+    compare_log_path = result_path / "compare.log"
 
     popen_env = os.environ.copy()
     popen_env.update(env_extra)
@@ -190,14 +188,12 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     paths = {
-        "compare.log": os.path.join(result_path, "compare.log"),
-        "output.7z": os.path.join(result_path, "output.7z"),
-        "report.html": os.path.join(result_path, "report.html"),
-        "all-queries.html": os.path.join(result_path, "all-queries.html"),
-        "queries.rep": os.path.join(result_path, "queries.rep"),
-        "all-query-metrics.tsv": os.path.join(
-            result_path, "report/all-query-metrics.tsv"
-        ),
+        "compare.log": compare_log_path,
+        "output.7z": result_path / "output.7z",
+        "report.html": result_path / "report.html",
+        "all-queries.html": result_path / "all-queries.html",
+        "queries.rep": result_path / "queries.rep",
+        "all-query-metrics.tsv": result_path / "report/all-query-metrics.tsv",
         "run.log": run_log_path,
     }
 
@@ -206,22 +202,25 @@ if __name__ == "__main__":
     uploaded = {}  # type: Dict[str, str]
     for name, path in paths.items():
         try:
-            uploaded[name] = s3_helper.upload_test_report_to_s3(path, s3_prefix + name)
+            uploaded[name] = s3_helper.upload_test_report_to_s3(
+                Path(path), s3_prefix + name
+            )
         except Exception:
             uploaded[name] = ""
             traceback.print_exc()
 
     # Upload all images and flamegraphs to S3
     try:
-        s3_helper.upload_test_folder_to_s3(
-            os.path.join(result_path, "images"), s3_prefix + "images"
+        s3_helper.upload_test_directory_to_s3(
+            Path(result_path) / "images", s3_prefix + "images"
         )
     except Exception:
         traceback.print_exc()
 
     def too_many_slow(msg):
         match = re.search(r"(|.* )(\d+) slower.*", msg)
-        # This threshold should be synchronized with the value in https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
+        # This threshold should be synchronized with the value in
+        # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
         threshold = 5
         return int(match.group(2).strip()) > threshold if match else False
 
@@ -229,9 +228,7 @@ if __name__ == "__main__":
     status = ""
     message = ""
     try:
-        with open(
-            os.path.join(result_path, "report.html"), "r", encoding="utf-8"
-        ) as report_fd:
+        with open(result_path / "report.html", "r", encoding="utf-8") as report_fd:
             report_text = report_fd.read()
             status_match = re.search("<!--[ ]*status:(.*)-->", report_text)
             message_match = re.search("<!--[ ]*message:(.*)-->", report_text)
@@ -259,17 +256,12 @@ if __name__ == "__main__":
 
     report_url = GITHUB_RUN_URL
 
-    if uploaded["run.log"]:
-        report_url = uploaded["run.log"]
-
-    if uploaded["compare.log"]:
-        report_url = uploaded["compare.log"]
-
-    if uploaded["output.7z"]:
-        report_url = uploaded["output.7z"]
-
-    if uploaded["report.html"]:
-        report_url = uploaded["report.html"]
+    report_url = (
+        uploaded["report.html"]
+        or uploaded["output.7z"]
+        or uploaded["compare.log"]
+        or uploaded["run.log"]
+    )
 
     post_commit_status(
         commit, status, report_url, message, check_name_with_group, pr_info
@@ -277,3 +269,7 @@ if __name__ == "__main__":
 
     if status == "error":
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

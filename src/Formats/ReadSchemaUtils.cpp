@@ -1,13 +1,12 @@
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <IO/WithFileName.h>
+#include <IO/WithFileSize.h>
+
 
 namespace DB
 {
@@ -49,10 +48,11 @@ bool isRetryableSchemaInferenceError(int code)
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    ReadBufferIterator & read_buffer_iterator,
+    IReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context,
     std::unique_ptr<ReadBuffer> & buf)
+try
 {
     NamesAndTypesList names_and_types;
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
@@ -78,16 +78,25 @@ ColumnsDescription readSchemaFromFormat(
         size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
                                                                              : context->getSettingsRef().input_format_max_bytes_to_read_for_schema_inference;
         size_t iterations = 0;
-        ColumnsDescription cached_columns;
         while (true)
         {
             bool is_eof = false;
             try
             {
-                buf = read_buffer_iterator(cached_columns);
+                read_buffer_iterator.setPreviousReadBuffer(std::move(buf));
+                buf = read_buffer_iterator.next();
                 if (!buf)
                     break;
-                is_eof = buf->eof();
+
+                /// We just want to check for eof, but eof() can be pretty expensive.
+                /// So we use getFileSize() when available, which has better worst case.
+                /// (For remote files, typically eof() would read 1 MB from S3, which may be much
+                ///  more than what the schema reader and even data reader will read).
+                auto size = tryGetFileSizeFromReadBuffer(*buf);
+                if (size.has_value())
+                    is_eof = *size == 0;
+                else
+                    is_eof = buf->eof();
             }
             catch (Exception & e)
             {
@@ -124,6 +133,9 @@ ColumnsDescription readSchemaFromFormat(
                 schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
                 schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                 names_and_types = schema_reader->readSchema();
+                auto num_rows = schema_reader->readNumberOrRows();
+                if (num_rows)
+                    read_buffer_iterator.setNumRowsToLastFile(*num_rows);
                 break;
             }
             catch (...)
@@ -178,8 +190,8 @@ ColumnsDescription readSchemaFromFormat(
             }
         }
 
-        if (!cached_columns.empty())
-            return cached_columns;
+        if (auto cached_columns = read_buffer_iterator.getCachedColumns())
+            return *cached_columns;
 
         if (names_and_types.empty())
             throw Exception(
@@ -209,17 +221,28 @@ ColumnsDescription readSchemaFromFormat(
             ErrorCodes::BAD_ARGUMENTS,
             "{} file format doesn't support schema inference. You must specify the structure manually",
             format_name);
+
     /// Some formats like CSVWithNames can contain empty column names. We don't support empty column names and further processing can fail with an exception. Let's just remove columns with empty names from the structure.
     names_and_types.erase(
         std::remove_if(names_and_types.begin(), names_and_types.end(), [](const NameAndTypePair & pair) { return pair.name.empty(); }),
         names_and_types.end());
     return ColumnsDescription(names_and_types);
 }
+catch (Exception & e)
+{
+    if (!buf)
+        throw;
+    auto file_name = getFileNameFromReadBuffer(*buf);
+    if (!file_name.empty())
+        e.addMessage(fmt::format("(in file/uri {})", file_name));
+    throw;
+}
+
 
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    ReadBufferIterator & read_buffer_iterator,
+    IReadBufferIterator & read_buffer_iterator,
     bool retry,
     ContextPtr & context)
 {

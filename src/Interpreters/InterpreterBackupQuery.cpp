@@ -17,7 +17,7 @@ namespace DB
 
 namespace
 {
-    Block getResultRow(const BackupsWorker::Info & info)
+    Block getResultRow(const BackupOperationInfo & info)
     {
         auto column_id = ColumnString::create();
         auto column_status = ColumnInt8::create();

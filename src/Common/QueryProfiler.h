@@ -28,7 +28,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#if USE_UNWIND
+#ifndef __APPLE__
 class Timer
 {
 public:
@@ -60,7 +60,7 @@ private:
 
     Poco::Logger * log;
 
-#if USE_UNWIND
+#ifndef __APPLE__
     inline static thread_local Timer timer = Timer();
 #endif
 

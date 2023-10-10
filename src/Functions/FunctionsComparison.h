@@ -1112,6 +1112,11 @@ private:
         bool c0_const = isColumnConst(*c0);
         bool c1_const = isColumnConst(*c1);
 
+        /// This is a paranoid check to protect from a broken query analysis.
+        if (c0->isNullable() != c1->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Logical error: columns are assumed to be of identical types, but they are different in Nullable");
+
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
@@ -1178,15 +1183,9 @@ public:
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
-            try
-            {
-                getLeastSupertype(arguments);
-            }
-            catch (const Exception &)
-            {
+            if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
-            }
         }
 
         if (left_tuple && right_tuple)
