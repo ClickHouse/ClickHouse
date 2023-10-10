@@ -2741,7 +2741,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
             i[0] += 1
             mes_id = str(i)
             channel.basic_publish(
-                exchange="test_sharding",
+                exchange="random",
                 routing_key="",
                 properties=pika.BasicProperties(message_id=mes_id),
                 body=messages[-1],
