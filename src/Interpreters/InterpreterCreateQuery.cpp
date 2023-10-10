@@ -880,7 +880,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         for (const auto & [name, type] : properties.columns.getAllPhysical())
         {
-            auto basic_type = removeLowCardinality(removeNullable(type));
+            auto basic_type = removeLowCardinalityAndNullable(type);
             if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
             {
                 if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
