@@ -30,7 +30,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/Client.h>
 
-#include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
@@ -228,6 +228,7 @@ struct Client : DB::S3::Client
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
+            /* s3_retry_attempts = */ 0,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* get_request_throttler = */ {},
@@ -1207,6 +1208,7 @@ TEST_F(WBS3Test, ReadBeyondLastOffset) {
         wb.finalize();
     }
 
+    auto reader = std::make_unique<ThreadPoolRemoteFSReader>(1, 1);
     std::unique_ptr<ReadBufferFromEncryptedFile> encrypted_read_buffer;
 
     {
@@ -1214,7 +1216,6 @@ TEST_F(WBS3Test, ReadBeyondLastOffset) {
 
         auto cache_log = std::shared_ptr<FilesystemCacheLog>();
         const StoredObjects objects = { StoredObject(remote_file, data.size() + FileEncryption::Header::kSize) };
-        auto reader = std::make_unique<ThreadPoolReader>(1, 1);
         auto async_read_counters = std::make_shared<AsyncReadCounters>();
         auto prefetch_log = std::shared_ptr<FilesystemReadPrefetchesLog>();
 
@@ -1253,7 +1254,7 @@ TEST_F(WBS3Test, ReadBeyondLastOffset) {
         ASSERT_EQ(rb_async->getPosition(), FileEncryption::Header::kSize);
         ASSERT_EQ(rb_async->getFileOffsetOfBufferEnd(), disk_read_settings.remote_fs_buffer_size);
 
-        /// ReadBufferFromEncryptedFile is constructed over an ReadBuffer which was already in use.
+        /// ReadBufferFromEncryptedFile is constructed over a ReadBuffer which was already in use.
         /// The 'FileEncryption::Header' has been read from `rb_async`.
         /// 'rb_async' will read the data from `rb_async` working buffer
         encrypted_read_buffer = std::make_unique<ReadBufferFromEncryptedFile>(

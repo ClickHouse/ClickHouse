@@ -68,7 +68,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -84,12 +83,9 @@
 #include <Core/ProtocolDefines.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
-#include <base/sort.h>
-#include <base/types.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/checkStackSize.h>
@@ -97,7 +93,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 
-#include "config_version.h"
 
 namespace ProfileEvents
 {
@@ -468,12 +463,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Set skip_unavailable_shards to true only if it wasn't disabled explicitly
-    if (settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.skip_unavailable_shards && !settings.isChanged("skip_unavailable_shards"))
-    {
-        context->setSetting("skip_unavailable_shards", true);
-    }
-
     /// Check support for JOIN for parallel replicas with custom key
     if (joined_tables.tablesCount() > 1 && !settings.parallel_replicas_custom_key.value.empty())
     {
@@ -695,7 +684,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze)
         {
             if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
-                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
             {
@@ -2527,6 +2516,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
+    query_plan.setConcurrencyControl(settings.use_concurrency_control);
+
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
     {
@@ -2583,6 +2574,7 @@ static Aggregator::Params getAggregatorParams(
         settings.max_block_size,
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
+        settings.optimize_group_by_constant_keys,
         stats_collecting_params
     };
 }

@@ -295,9 +295,14 @@ public:
     ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
     const FormatSettings format_settings;
+    std::shared_ptr<arrow::io::RandomAccessFile> arrow_file;
+    std::shared_ptr<parquet::FileMetaData> metadata;
 };
 
 }

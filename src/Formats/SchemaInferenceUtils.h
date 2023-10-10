@@ -69,11 +69,14 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 ///     we will convert both types to Object('JSON').
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
-/// Check if type is Tuple(...), try to transform nested types to find a common type for them and if all nested types
-/// are the same after transform, we convert this tuple to an Array with common nested type.
-/// For example, if we have Tuple(String, Nullable(Nothing)) we will convert it to Array(String).
-/// It's used when all rows were read and we have Tuple in the result type that can be actually an Array.
-void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info);
+/// Make final transform for types inferred in JSON format. It does 3 types of transformation:
+/// 1) Checks if type is unnamed Tuple(...), tries to transform nested types to find a common type for them and if all nested types
+///    are the same after transform, it converts this tuple to an Array with common nested type.
+///    For example, if we have Tuple(String, Nullable(Nothing)) we will convert it to Array(String).
+///    It's used when all rows were read and we have Tuple in the result type that can be actually an Array.
+/// 2) Finalizes all DataTypeJSONPaths to named Tuple.
+/// 3) Converts all Nothing types to String types if input_format_json_infer_incomplete_types_as_strings is enabled.
+void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// Make type Nullable recursively:
 /// - Type -> Nullable(type)

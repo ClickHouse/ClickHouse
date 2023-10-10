@@ -18,7 +18,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     try
     {
         const auto & config = server.config();
-        unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+        unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
@@ -47,25 +47,31 @@ createPrometheusHandlerFactory(IServer & server,
     AsynchronousMetrics & async_metrics,
     const std::string & config_prefix)
 {
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-        server, PrometheusMetricsWriter(config, config_prefix + ".handler", async_metrics));
+    PrometheusMetricsWriter writer(config, config_prefix + ".handler", async_metrics);
+    auto creator = [&server, writer]() -> std::unique_ptr<PrometheusRequestHandler>
+    {
+        return std::make_unique<PrometheusRequestHandler>(server, writer);
+    };
+
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }
 
-HTTPRequestHandlerFactoryPtr
-createPrometheusMainHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & name)
+HTTPRequestHandlerFactoryPtr createPrometheusMainHandlerFactory(
+    IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-        server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
+    PrometheusMetricsWriter writer(config, "prometheus", async_metrics);
+    auto creator = [&server, writer]() -> std::unique_ptr<PrometheusRequestHandler>
+    {
+        return std::make_unique<PrometheusRequestHandler>(server, writer);
+    };
+
+    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(std::move(creator));
     handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
     handler->allowGetAndHeadRequest();
     factory->addHandler(handler);
     return factory;
 }
-
 }
