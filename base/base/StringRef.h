@@ -177,7 +177,7 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
             return false;
     }
 
-    switch (size / 16)
+    switch (size / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
         case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
         case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];

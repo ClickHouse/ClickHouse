@@ -289,6 +289,4 @@ Pull request можно создать, даже если работа над з
 
 ## Навигация по коду ClickHouse {#navigatsiia-po-kodu-clickhouse}
 
-Для навигации по коду онлайн доступен **Woboq**, он расположен [здесь](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). В нём реализовано удобное перемещение между исходными файлами, семантическая подсветка, подсказки, индексация и поиск. Слепок кода обновляется ежедневно.
-
 Также вы можете просматривать исходники на [GitHub](https://github.com/ClickHouse/ClickHouse).

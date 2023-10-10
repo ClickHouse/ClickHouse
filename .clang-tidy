@@ -5,6 +5,9 @@
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
+# TODO: Once clang(-tidy) 17 is the minimum, we can convert this list to YAML
+# See https://releases.llvm.org/17.0.1/tools/clang/tools/extra/docs/ReleaseNotes.html#improvements-to-clang-tidy
+
 # TODO Let clang-tidy check headers in further directories
 #      --> HeaderFilterRegex: '^.*/(src|base|programs|utils)/.*(h|hpp)$'
 HeaderFilterRegex: '^.*/(base)/.*(h|hpp)$'
@@ -35,38 +38,9 @@ Checks: '*,
     -cert-oop54-cpp,
     -cert-oop57-cpp,
 
-    -clang-analyzer-optin.performance.Padding,
-    -clang-analyzer-optin.portability.UnixAPI,
-    -clang-analyzer-security.insecureAPI.bzero,
-    -clang-analyzer-security.insecureAPI.strcpy,
+    -clang-analyzer-unix.Malloc,
 
-    -cppcoreguidelines-avoid-c-arrays,
-    -cppcoreguidelines-avoid-const-or-ref-data-members,
-    -cppcoreguidelines-avoid-do-while,
-    -cppcoreguidelines-avoid-goto,
-    -cppcoreguidelines-avoid-magic-numbers,
-    -cppcoreguidelines-avoid-non-const-global-variables,
-    -cppcoreguidelines-explicit-virtual-functions,
-    -cppcoreguidelines-init-variables,
-    -cppcoreguidelines-interfaces-global-init,
-    -cppcoreguidelines-macro-usage,
-    -cppcoreguidelines-narrowing-conversions,
-    -cppcoreguidelines-no-malloc,
-    -cppcoreguidelines-non-private-member-variables-in-classes,
-    -cppcoreguidelines-owning-memory,
-    -cppcoreguidelines-prefer-member-initializer,
-    -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-    -cppcoreguidelines-pro-bounds-constant-array-index,
-    -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-    -cppcoreguidelines-pro-type-const-cast,
-    -cppcoreguidelines-pro-type-cstyle-cast,
-    -cppcoreguidelines-pro-type-member-init,
-    -cppcoreguidelines-pro-type-reinterpret-cast,
-    -cppcoreguidelines-pro-type-static-cast-downcast,
-    -cppcoreguidelines-pro-type-union-access,
-    -cppcoreguidelines-pro-type-vararg,
-    -cppcoreguidelines-slicing,
-    -cppcoreguidelines-special-member-functions,
+    -cppcoreguidelines-*, # impractical in a codebase as large as ClickHouse, also slow
 
     -darwin-*,
 
@@ -78,7 +52,6 @@ Checks: '*,
     -google-readability-function-size,
     -google-readability-namespace-comments,
     -google-readability-todo,
-    -google-upgrade-googletest-case,
 
     -hicpp-avoid-c-arrays,
     -hicpp-avoid-goto,
@@ -108,6 +81,7 @@ Checks: '*,
     -openmp-*,
 
     -misc-const-correctness,
+    -misc-include-cleaner, # useful but far too many occurrences
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
     -misc-confusable-identifiers, # useful but slooow
@@ -127,10 +101,12 @@ Checks: '*,
 
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
+    -performance-avoid-endl,
     -performance-unnecessary-value-param,
 
     -portability-simd-intrinsics,
 
+    -readability-avoid-unconditional-preprocessor-if,
     -readability-braces-around-statements,
     -readability-convert-member-functions-to-static,
     -readability-else-after-return,
@@ -153,6 +129,13 @@ Checks: '*,
 '
 
 WarningsAsErrors: '*'
+
+ExtraArgs:
+# clang-tidy 17 started to complain (for unknown reasons) that various pragmas are unknown ("clang-diagnostic-unknown-pragmas").
+# This is technically a compiler error, not a clang-tidy error. We could litter the code base with more pragmas that suppress
+# this error but it is better to pass the following flag to the compiler:
+- '-Wno-unknown-pragmas'
+- '-Wno-unused-command-line-argument' # similar issue
 
 CheckOptions:
   readability-identifier-naming.ClassCase: CamelCase

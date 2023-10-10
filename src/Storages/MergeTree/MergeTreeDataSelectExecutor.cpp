@@ -629,7 +629,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
-        DataTypePtr sampling_column_type = sampling_key.data_types[0];
+        DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
         {
@@ -814,6 +814,9 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
+
+    if (virtual_columns_block.rows() == 0)
+        return {};
 
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);

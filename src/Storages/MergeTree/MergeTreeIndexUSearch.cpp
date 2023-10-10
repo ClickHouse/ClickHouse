@@ -174,10 +174,14 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
         const auto & column_array_data = column_array->getData();
-        const auto & column_array_data_float_data = typeid_cast<const ColumnFloat32 &>(column_array_data).getData();
+        const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
+        const auto & column_array_data_float_data = column_array_data_float.getData();
 
         const auto & column_array_offsets = column_array->getOffsets();
         const size_t num_rows = column_array_offsets.size();
+
+        if (column_array->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
 
         /// The Usearch algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
         /// are INSERTed into an Usearch-indexed column or if no value was specified at all in which case the arrays take on their default
@@ -316,20 +320,20 @@ std::vector<size_t> MergeTreeIndexConditionUSearch::getUsefulRangesImpl(MergeTre
     std::vector<Float32> distances(result.size());
     result.dump_to(neighbors.data(), distances.data());
 
-    std::vector<size_t> granule_numbers;
-    granule_numbers.reserve(neighbors.size());
+    std::vector<size_t> granules;
+    granules.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granule_numbers.push_back(neighbors[i] / index_granularity);
+        granules.push_back(neighbors[i] / index_granularity);
     }
 
     /// make unique
-    std::sort(granule_numbers.begin(), granule_numbers.end());
-    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
+    std::sort(granules.begin(), granules.end());
+    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
 
-    return granule_numbers;
+    return granules;
 }
 
 MergeTreeIndexUSearch::MergeTreeIndexUSearch(const IndexDescription & index_, const String & distance_function_, unum::usearch::scalar_kind_t scalar_kind_)
@@ -348,7 +352,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexUSearch::createIndexGranule() const
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexUSearch::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     if (distance_function == DISTANCE_FUNCTION_L2)
         return std::make_shared<MergeTreeIndexAggregatorUSearch<unum::usearch::metric_kind_t::l2sq_k>>(index.name, index.sample_block, scalar_kind);
