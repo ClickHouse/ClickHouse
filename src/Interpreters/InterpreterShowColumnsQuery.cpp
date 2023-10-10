@@ -24,6 +24,8 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
+    [[maybe_unused]] const bool use_mysql_types = getContext()->getSettingsRef().use_mysql_types_in_show_columns;
+
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
     writeEscapedString(resolved_database, buf_database);
@@ -33,17 +35,63 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     writeEscapedString(query.table, buf_table);
     String table = buf_table.str();
 
-    String rewritten_query = R"(
+    String rewritten_query;
+    if (use_mysql_types)
+        /// Cheapskate mapping from native to MySQL types, see https://dev.mysql.com/doc/refman/8.0/en/data-types.html
+        /// Known issues:
+        /// - Enums are translated to TEXT
+        rewritten_query += R"(
+WITH map(
+        'Int8',       'TINYINT',
+        'Int16',      'SMALLINT',
+        'Int32',      'INTEGER',
+        'Int64',      'BIGINT',
+        'UInt8',      'TINYINT UNSIGNED',
+        'UInt16',     'SMALLINT UNSIGNED',
+        'UInt32',     'INTEGER UNSIGNED',
+        'UInt64',     'BIGINT UNSIGNED',
+        'Float32',    'FLOAT',
+        'Float64',    'DOUBLE',
+        'String',     'BLOB',
+        'UUID',       'CHAR',
+        'Bool',       'TINYINT',
+        'Date',       'DATE',
+        'Date32',     'DATE',
+        'DateTime',   'DATETIME',
+        'DateTime64', 'DATETIME',
+        'Map',        'JSON',
+        'Tuple',      'JSON',
+        'Object',     'JSON') AS native_to_mysql_mapping,
+    splitByRegexp('\(|\)', type) AS split,
+    multiIf(startsWith(type, 'LowCardinality(Nullable'), split[3],
+             startsWith(type, 'LowCardinality'), split[2],
+             startsWith(type, 'Nullable'), split[2],
+             split[1]) AS inner_type,
+     if(length(split) > 1, splitByString(', ', split[2]), []) AS decimal_scale_and_precision,
+     multiIf(inner_type = 'Decimal' AND toInt8(decimal_scale_and_precision[1]) <= 65 AND toInt8(decimal_scale_and_precision[2]) <= 30, concat('DECIMAL(', decimal_scale_and_precision[1], ', ', decimal_scale_and_precision[2], ')'),
+             mapContains(native_to_mysql_mapping, inner_type) = true, native_to_mysql_mapping[inner_type],
+             'TEXT') AS mysql_type
+        )";
+
+    rewritten_query += R"(
 SELECT
     name AS field,
+    )";
+
+    if (use_mysql_types)
+        rewritten_query += R"(
+    mysql_type AS type,
+        )";
+    else
+        rewritten_query += R"(
     type AS type,
-    if (startsWith(type, 'Nullable'), 'YES', 'NO') AS `null`,
+        )";
+
+    rewritten_query += R"(
+    multiIf(startsWith(type, 'Nullable('), 'YES', startsWith(type, 'LowCardinality(Nullable('), 'YES', 'NO') AS `null`,
     trim(concatWithSeparator(' ', if (is_in_primary_key, 'PRI', ''), if (is_in_sorting_key, 'SOR', ''))) AS key,
     if (default_kind IN ('ALIAS', 'DEFAULT', 'MATERIALIZED'), default_expression, NULL) AS default,
     '' AS extra )";
-
-    // Known issue: Field 'null' is wrong for types like 'LowCardinality(Nullable(String))'. Can't simply replace 'startsWith' by
-    // `hasSubsequence` as that would return `true` for non-nullable types such as `Tuple(Nullable(String), String)`...
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
     // IStorage::getVirtuals(). We can't easily do that via SQL.
