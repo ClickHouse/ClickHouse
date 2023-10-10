@@ -347,6 +347,8 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
+
     size_t getNumberOfUnfinishedMutations() const override;
 
     /// Returns the same as getTableSharedID(), but extracts it from a create query.

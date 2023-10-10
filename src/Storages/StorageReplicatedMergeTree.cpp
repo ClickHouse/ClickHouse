@@ -8715,6 +8715,11 @@ size_t StorageReplicatedMergeTree::getNumberOfUnfinishedMutations() const
     return queue.countUnfinishedMutations();
 }
 
+std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishedMutationCommands() const
+{
+    return queue.getUnfinishedMutations();
+}
+
 void StorageReplicatedMergeTree::createTableSharedID() const
 {
     LOG_DEBUG(log, "Creating shared ID for table {}", getStorageID().getNameForLogs());

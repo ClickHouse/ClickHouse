@@ -714,6 +714,33 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     return result;
 }
 
+std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommands() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    std::vector<PartVersionWithName> part_versions_with_names;
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    part_versions_with_names.reserve(data_parts.size());
+    for (const auto & part : data_parts)
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+
+    std::map<std::string, MutationCommands> result;
+
+    for (const auto & kv : current_mutations_by_version)
+    {
+        Int64 mutation_version = kv.first;
+        const MergeTreeMutationEntry & entry = kv.second;
+        const PartVersionWithName needle{mutation_version, ""};
+        auto versions_it = std::lower_bound(
+            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+
+        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        if (parts_to_do > 0)
+            result.emplace(entry.file_name, entry.commands);
+    }
+    return result;
+}
+
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);

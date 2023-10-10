@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include "Storages/MutationCommands.h"
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 
@@ -1776,6 +1777,21 @@ size_t ReplicatedMergeTreeQueue::countUnfinishedMutations() const
     return count;
 }
 
+
+std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedMutations() const
+{
+    std::map<std::string, MutationCommands> result;
+    std::lock_guard lock(state_mutex);
+
+    for (const auto & [name, status] : mutations_by_znode | std::views::reverse)
+    {
+        if (status.is_done)
+            break;
+        result.emplace(name, status.entry->commands);
+    }
+
+    return result;
+}
 
 ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
                                                                               std::optional<PartitionIdsHint> && partition_ids_hint)
