@@ -107,7 +107,6 @@ public:
     };
 
     using Nodes = std::vector<Node>;
-    using ConnectedCallback = std::function<void(size_t, const Node&)>;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -116,8 +115,7 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_,
-        std::optional<ConnectedCallback> && connected_callback_ = {});
+        std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
@@ -222,7 +220,6 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    std::optional<ConnectedCallback> connected_callback = {};
 
     /// The n member of the array 'args.hosts' is now being connected.
     int32_t connected_hosts_idx = -1;

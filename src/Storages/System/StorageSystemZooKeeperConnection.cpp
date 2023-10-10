@@ -38,13 +38,13 @@ NamesAndTypesList StorageSystemZooKeeperConnection::getNamesAndTypes()
 void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, ContextPtr context,
     const SelectQueryInfo &) const
 {
-    const auto add_enabled_feature_flags = [&](const auto& zookeeper)
+    const auto add_enabled_feature_flags = [&](const auto & zookeeper)
     {
         Array enabled_feature_flags;
-        const auto* feature_flags = zookeeper->getKeeperFeatureFlags();
+        const auto * feature_flags = zookeeper->getKeeperFeatureFlags();
         if (feature_flags)
         {
-            for (const auto& feature_flag : magic_enum::enum_values<KeeperFeatureFlag>())
+            for (const auto & feature_flag : magic_enum::enum_values<KeeperFeatureFlag>())
             {
                 if (feature_flags->isEnabled(feature_flag))
                 {
@@ -56,7 +56,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
     };
 
     /// For read-only snapshot type functionality, it's acceptable even though 'getZooKeeper' may cause data inconsistency.
-    auto fill_data = [](const String & name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
+    auto fill_data = [&](const String & name, const zkutil::ZooKeeperPtr zookeeper, MutableColumns & columns)
     {
         int32_t index = zookeeper->getConnectedHostIdx();
         String host_port = zookeeper->getConnectedHostPort();
@@ -76,7 +76,7 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[4]->insert(time);
             columns[5]->insert(uptime);
             columns[6]->insert(zookeeper->expired());
-            columns[7]->insert(zookeeper->getApiVersion());
+            columns[7]->insert(0);
             columns[8]->insert(zookeeper->getClientID());
             columns[9]->insert(zookeeper->getConnectionXid());
             add_enabled_feature_flags(zookeeper);

@@ -313,8 +313,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
-    : args(args_), connected_callback(std::move(connected_callback_))
+    std::shared_ptr<ZooKeeperLog> zk_log_)
+    : args(args_)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -446,6 +446,7 @@ void ZooKeeper::connect(
                 }
                 connected = true;
 
+                /// We can't user 'i' as idx because the nodes have already been shuffled.
                 for (size_t idx = 0; idx < args.hosts.size(); ++idx)
                 {
                     /// The domain names of two nodes in a cluster cannot point to the same IP address.
@@ -455,9 +456,6 @@ void ZooKeeper::connect(
                     connected_hosts_idx = static_cast<int32_t>(idx);
                     break;
                 }
-
-                if (connected_callback.has_value())
-                    (*connected_callback)(i, node);
 
                 if (i != 0)
                 {

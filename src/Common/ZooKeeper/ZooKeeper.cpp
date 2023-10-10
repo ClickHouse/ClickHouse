@@ -113,12 +113,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
         }
 
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log, [this](size_t node_idx, const Coordination::ZooKeeper::Node & node)
-        {
-            connected_zk_host = node.address.host().toString();
-            connected_zk_port = node.address.port();
-            connected_zk_index = node_idx;
-        });
+        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
