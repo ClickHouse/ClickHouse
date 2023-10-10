@@ -15,7 +15,7 @@ namespace BackupCoordinationStage
     /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
     constexpr const char * GATHERING_METADATA = "gathering metadata";
 
-    String formatGatheringMetadata(size_t pass);
+    String formatGatheringMetadata(int attempt_no);
 
     /// Making temporary hard links and prepare backup entries.
     constexpr const char * EXTRACTING_DATA_FROM_TABLES = "extracting data from tables";

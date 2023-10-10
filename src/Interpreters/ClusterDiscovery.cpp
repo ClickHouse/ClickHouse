@@ -7,13 +7,15 @@
 #include <unordered_set>
 
 #include <base/getFQDNOrHostName.h>
-#include <Common/logger_useful.h>
 
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ZooKeeper/Types.h>
-#include <Common/setThreadName.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ZooKeeper/Types.h>
 
 #include <Core/ServerUUID.h>
 
@@ -31,7 +33,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int KEEPER_EXCEPTION;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char cluster_discovery_faults[];
 }
 
 namespace
@@ -347,6 +355,19 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
 void ClusterDiscovery::initialUpdate()
 {
+    LOG_DEBUG(log, "Initializing");
+
+    fiu_do_on(FailPoints::cluster_discovery_faults,
+    {
+        constexpr UInt8 success_chance = 4;
+        static size_t fail_count = 0;
+        fail_count++;
+        /// strict limit on fail count to avoid flaky tests
+        auto is_failed = fail_count < success_chance && std::uniform_int_distribution<>(0, success_chance)(thread_local_rng) != 0;
+        if (is_failed)
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
+    });
+
     auto zk = context->getZooKeeper();
     for (auto & [_, info] : clusters_info)
     {
@@ -357,6 +378,8 @@ void ClusterDiscovery::initialUpdate()
             clusters_to_update->set(info.name);
         }
     }
+    LOG_DEBUG(log, "Initialized");
+    is_initialized = true;
 }
 
 void ClusterDiscovery::start()
@@ -414,6 +437,10 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
+
+    if (!is_initialized)
+        initialUpdate();
+
     bool finished = false;
     while (!finished)
     {
