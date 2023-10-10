@@ -1,3 +1,5 @@
+#pragma once
+
 #include "Core/DecimalFunctions.h"
 #include "DataTypes/IDataType.h"
 #include "base/types.h"
