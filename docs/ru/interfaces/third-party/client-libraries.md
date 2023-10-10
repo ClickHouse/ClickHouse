@@ -6,8 +6,8 @@ sidebar_label: "Клиентские библиотеки от сторонни�
 
 # Клиентские библиотеки от сторонних разработчиков {#klientskie-biblioteki-ot-storonnikh-razrabotchikov}
 
-:::danger "Disclaimer"
-    Яндекс не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
+:::danger Предупреждение
+ClickHouse Inc. не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
 :::
 
 -   Python:
@@ -37,6 +37,8 @@ sidebar_label: "Клиентские библиотеки от сторонни�
     -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
     -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
     -   [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
+    -   [clickhouse-ts](https://github.com/bytadaniel/clickhouse-ts)
+    -   [clickcache](https://github.com/bytadaniel/clickcache)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)

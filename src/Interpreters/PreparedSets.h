@@ -47,7 +47,7 @@ public:
     /// Returns set if set is ready (created and filled) or nullptr if not.
     virtual SetPtr get() const = 0;
     /// Returns set->getElementsTypes(), even if set is not created yet.
-    virtual const DataTypes & getTypes() const = 0;
+    virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 };
@@ -62,7 +62,7 @@ public:
     FutureSetFromStorage(SetPtr set_);
 
     SetPtr get() const override;
-    const DataTypes & getTypes() const override;
+    DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
 
 private:
@@ -79,7 +79,7 @@ public:
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    const DataTypes & getTypes() const override;
+    DataTypes getTypes() const override;
 
 private:
     SetPtr set;
@@ -105,7 +105,7 @@ public:
         const Settings & settings);
 
     SetPtr get() const override;
-    const DataTypes & getTypes() const override;
+    DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
