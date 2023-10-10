@@ -305,7 +305,7 @@ static void buildORCSearchArgumentImpl(
             auto set_index = curr.set_index;
             if (contains_in_set)
             {
-                if (!set_index || set_index->size() != 1 || set_index->hasMonotonicFunctionsChain())
+                if (!set_index || set_index->getOrderedSet().size() != 1 || set_index->hasMonotonicFunctionsChain())
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);
                     break;
