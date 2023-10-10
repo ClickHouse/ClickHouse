@@ -511,14 +511,14 @@ SELECT
 ```
 
 
-## jsonMerge
+## jsonMergePatch
 
 Return the merged JSON object string which is formed by merging multiple JSON objects.
 
 **Syntax**
 
 ``` sql
-jsonMerge(json1, json2, ...)
+jsonMergePatch(json1, json2, ...)
 ```
 
 **Arguments**
@@ -534,7 +534,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 **Example**
 
 ``` sql
-SELECT jsonMerge('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res
+SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res
 
 ┌─res───────────────────┐
 │ {"a":1,"name":"zoey"} │

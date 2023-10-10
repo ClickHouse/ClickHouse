@@ -1660,7 +1660,7 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonMerge
+jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
