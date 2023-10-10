@@ -27,7 +27,8 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1), (1, '0', 3);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1), (1, '0', 3);"
 
 $CLICKHOUSE_CLIENT --query="SELECT 'REPLACE empty partition with duplicated parts';"
-query_with_retry "ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM src;"
+$CLICKHOUSE_CLIENT --query="ALTER TABLE dst_r1 REPLACE PARTITION 1 FROM src;"
+echo $?
 
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst_r2;"
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM dst_r1;"
