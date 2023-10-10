@@ -3,14 +3,8 @@
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <IO/WriteHelpers.h>
 #include "Common/Exception.h"
 #include "DataTypes/IDataType.h"
-#include "base/Decimal_fwd.h"
-#include "base/types.h"
-#include "config.h"
 
 #include <boost/integer/common_factor.hpp>
 #include <libdivide-config.h>
@@ -84,7 +78,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     const char * const source_end = source + source_size;
 
-    T gcd_divider{};
+    T gcd_divider = 0;
     const auto * cur_source = source;
     while (gcd_divider != T(1) && cur_source < source_end)
     {
@@ -100,7 +94,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if constexpr (sizeof(T) <= 8)
     {
-        /// libdivide support only UInt32 and UInt64.
+        /// libdivide supports only UInt32 and UInt64.
         using LibdivideT = std::conditional_t<sizeof(T) <= 4, UInt32, UInt64>;
         libdivide::divider<LibdivideT> divider(static_cast<LibdivideT>(gcd_divider));
         cur_source = source;
@@ -126,8 +120,6 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
-    const char * const output_end = dest + output_size;
-
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {} is not aligned to {}", source_size, sizeof(T));
 
@@ -135,11 +127,14 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot GCD decompress, data size {} is less than {}", source_size, sizeof(T));
 
     const char * const source_end = source + source_size;
+    const char * const dest_end = dest + output_size;
+
     const T gcd_multiplier = unalignedLoad<T>(source);
     source += sizeof(T);
+
     while (source < source_end)
     {
-        if (dest + sizeof(T) > output_end) [[unlikely]]
+        if (dest + sizeof(T) > dest_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
         unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
 
@@ -157,7 +152,7 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
-    switch (gcd_bytes_size)
+    switch (gcd_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -202,7 +197,7 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size)
+    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);

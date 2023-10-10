@@ -13,6 +13,7 @@
 #include <Core/BackgroundSchedulePool.h>
 
 #include <IO/AsyncReadCounters.h>
+#include <IO/IResourceManager.h>
 
 #include <Poco/Util/Application.h>
 
@@ -117,6 +118,10 @@ public:
     ThrottlerPtr getLocalWriteThrottler() const;
 
     ReadSettings getReadSettings() const;
+
+    /// Resource management related
+    ResourceManagerPtr getResourceManager() const;
+    ClassifierPtr getWorkloadClassifier() const;
 
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;

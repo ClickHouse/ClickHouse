@@ -64,7 +64,7 @@ namespace
             rapidjson::Document::AllocatorType& allocator = merged_json.GetAllocator();
 
             std::function<void(rapidjson::Value&, const rapidjson::Value&)> mergeObjects;
-            mergeObjects = [&mergeObjects, &allocator](rapidjson::Value& dest, const rapidjson::Value& src) -> void 
+            mergeObjects = [&mergeObjects, &allocator](rapidjson::Value& dest, const rapidjson::Value& src) -> void
             {
                 if (!src.IsObject())
                     return;

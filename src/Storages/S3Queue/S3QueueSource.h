@@ -54,6 +54,8 @@ public:
         Strings
         filterProcessingFiles(const S3QueueMode & engine_mode, std::unordered_set<String> & exclude_keys, const String & max_file = "");
 
+        size_t estimatedKeysCount() override;
+
     private:
         UInt64 max_poll_size;
         KeysWithInfo keys_buf;
