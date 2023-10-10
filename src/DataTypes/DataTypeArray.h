@@ -29,8 +29,6 @@ public:
         return "Array(" + nested->getName() + ")";
     }
 
-    std::string doGetPrettyName(size_t indent) const override;
-
     const char * getFamilyName() const override
     {
         return "Array";

@@ -132,6 +132,18 @@ protected:
 
             bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
+            auto get_type_name = [this](const IDataType& type) -> std::string
+            {
+                // Check if the use_mysql_types_in_show_columns setting is enabled and client is connected via MySQL protocol
+                if (use_mysql_types && client_info_interface == DB::ClientInfo::Interface::MYSQL)
+                {
+                    return type.getSQLCompatibleName();
+                }
+                else
+                {
+                    return type.getName();
+                }
+            };
             size_t position = 0;
             for (const auto & column : columns)
             {
@@ -149,7 +161,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(use_mysql_types ? (column.type->getSQLCompatibleName()) : (column.type->getName()));
+                    res_columns[res_index++]->insert(get_type_name(*column.type));
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(position);
 

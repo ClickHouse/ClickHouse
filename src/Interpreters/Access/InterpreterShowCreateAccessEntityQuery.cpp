@@ -10,7 +10,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -65,13 +64,6 @@ namespace
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
             query->auth_data = user.auth_data.toAST();
-
-        if (user.valid_until)
-        {
-            WriteBufferFromOwnString out;
-            writeDateTimeText(user.valid_until, out);
-            query->valid_until = std::make_shared<ASTLiteral>(out.str());
-        }
 
         if (!user.settings.empty())
         {

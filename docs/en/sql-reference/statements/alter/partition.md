@@ -113,7 +113,6 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
-- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 
 ## REPLACE PARTITION
@@ -133,7 +132,6 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
-- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 
 ## MOVE PARTITION TO TABLE
@@ -148,7 +146,6 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
-- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 - Both tables must be the same engine family (replicated or non-replicated).
 

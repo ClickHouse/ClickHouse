@@ -33,7 +33,6 @@ from clickhouse_helper import (
     CiLogsCredentials,
     prepare_tests_results_for_clickhouse,
     get_instance_type,
-    get_instance_id,
 )
 from stopwatch import Stopwatch
 
@@ -365,7 +364,6 @@ def main():
     ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
     if ci_logs_credentials.host:
         instance_type = get_instance_type()
-        instance_id = get_instance_id()
         query = f"""INSERT INTO build_time_trace
 (
     pull_request_number,
@@ -373,7 +371,6 @@ def main():
     check_start_time,
     check_name,
     instance_type,
-    instance_id,
     file,
     library,
     time,
@@ -389,7 +386,7 @@ def main():
     avgMs,
     args_name
 )
-SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', *
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
 FROM input('
     file String,
     library String,

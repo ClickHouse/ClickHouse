@@ -14,7 +14,7 @@ The `system.columns` table contains the following columns (the column type is sh
 - `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Column name.
-- `type` ([String](../../sql-reference/data-types/string.md)) — Column type. If setting `[use_mysql_types_in_show_columns](../../operations/settings/settings.md#use_mysql_types_in_show_columns) = 1` (default: 0), then the equivalent type name in MySQL is shown.
+- `type` ([String](../../sql-reference/data-types/string.md)) — Column type.
 - `position` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Ordinal position of a column in a table starting with 1.
 - `default_kind` ([String](../../sql-reference/data-types/string.md)) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
 - `default_expression` ([String](../../sql-reference/data-types/string.md)) — Expression for the default value, or an empty string if it is not defined.

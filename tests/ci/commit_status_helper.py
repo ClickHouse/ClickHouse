@@ -240,16 +240,9 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     hidden_table_rows = []  # type: List[str]
     for desc, gs in grouped_statuses.items():
         state = get_worst_state(gs)
-        state_text = f"{STATUS_ICON_MAP[state]} {state}"
-        # take the first target_url
-        target_url = next(
-            (status.target_url for status in gs if status.target_url), None
-        )
-        if target_url:
-            state_text = f'<a href="{target_url}">{state_text}</a>'
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{state_text}</td></tr>\n"
+            f"<td>{STATUS_ICON_MAP[state]} {state}</td></tr>\n"
         )
         if state == SUCCESS:
             hidden_table_rows.append(table_row)
