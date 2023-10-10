@@ -50,10 +50,7 @@ ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTyp
                 payload_size += 1;
                 break;
             case TypeIndex::UInt8:
-                if (data_type->getName() == "Bool")
-                    payload_size += 2; // BIT MySQL type is string<lenenc> in binary
-                else
-                    payload_size += 1;
+                payload_size += 1;
                 break;
             case TypeIndex::Int16:
             case TypeIndex::UInt16:
@@ -168,8 +165,6 @@ void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
             }
             case TypeIndex::UInt8: {
                 UInt8 value = assert_cast<const ColumnVector<UInt8> &>(*col).getData()[row_num];
-                if (data_type->getName() == "Bool")
-                    buffer.write(static_cast<char>(1));
                 buffer.write(reinterpret_cast<char *>(&value), 1);
                 break;
             }
