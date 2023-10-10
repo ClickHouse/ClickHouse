@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -2426,6 +2427,20 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             compound_expression_from_error_message += compound_expression_source;
         }
 
+        if (auto * column = compound_expression->as<ColumnNode>())
+        {
+            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
+            if (column_type->getTypeId() == TypeIndex::Object)
+            {
+                const auto * object_type = checkAndGetDataType<DataTypeObject>(column_type.get());
+                if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
+                {
+                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
+                    return constant_node_null;
+                }
+            }
+        }
+
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
             expression_identifier,
@@ -3035,6 +3050,31 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     JoinKind join_kind = from_join_node.getKind();
     bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
+
+    /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
+    /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
+    if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
+        && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+        if (left_resolved_column.getValueStringRepresentation() == "NULL" && right_resolved_column.getValueStringRepresentation() == "NULL")
+            return left_resolved_identifier;
+    }
+    else if (left_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        resolved_side = JoinTableSide::Left;
+        auto & left_resolved_column = left_resolved_identifier->as<ConstantNode &>();
+        if (left_resolved_column.getValueStringRepresentation() == "NULL")
+            return left_resolved_identifier;
+    }
+    else if (right_resolved_identifier && right_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+    {
+        resolved_side = JoinTableSide::Right;
+        auto & right_resolved_column = right_resolved_identifier->as<ConstantNode &>();
+        if (right_resolved_column.getValueStringRepresentation() == "NULL")
+            return right_resolved_identifier;
+    }
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
@@ -6243,11 +6283,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            const auto & insert_structure = DatabaseCatalog::instance()
-                                                .getTable(insertion_table, scope_context)
-                                                ->getInMemoryMetadataPtr()
-                                                ->getColumns()
-                                                .getInsertable();
+            const auto & insert_columns = DatabaseCatalog::instance()
+                                              .getTable(insertion_table, scope_context)
+                                              ->getInMemoryMetadataPtr()
+                                              ->getColumns();
+            const auto & insert_column_names = scope_context->hasInsertionTableColumnNames() ? *scope_context->getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
 
             bool use_columns_from_insert_query = true;
@@ -6255,8 +6295,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
-            auto insert_column = insert_structure.begin();
-            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
+            auto insert_column_name_it = insert_column_names.begin();
+            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
@@ -6264,7 +6304,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
+            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
             {
                 if (auto * identifier_node = (*expression)->as<IdentifierNode>())
                 {
@@ -6280,15 +6320,19 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                             break;
                         }
 
-                        structure_hint.add({ identifier_node->getIdentifier().getFullName(), insert_column->type });
+                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                        column.name = identifier_node->getIdentifier().getFullName();
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
+                        structure_hint.add(std::move(column));
                     }
 
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
                 else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
                 {
@@ -6322,18 +6366,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
                 else
                 {
                     /// Once we hit asterisk we want to find end of the range covered by asterisk
                     /// contributing every further SELECT expression to the tail of insert structure
                     if (asterisk)
-                        --insert_structure_end;
+                        --insert_column_names_end;
                     else
-                        ++insert_column;
+                        ++insert_column_name_it;
                 }
             }
 
@@ -6353,8 +6397,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     /// Append tail of insert structure to the hint
                     if (asterisk)
                     {
-                        for (; insert_column != insert_structure_end; ++insert_column)
-                            structure_hint.add({ insert_column->name, insert_column->type });
+                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
+                        {
+                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                            /// Change ephemeral columns to default columns.
+                            column.default_desc.kind = ColumnDefaultKind::Default;
+                            structure_hint.add(insert_columns.get(*insert_column_name_it));
+                        }
                     }
 
                     if (!structure_hint.empty())

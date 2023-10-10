@@ -13,12 +13,11 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
-      - 'SECURITY.md'
+      - '**.md'
       - 'docker/docs/**'
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
+      - 'tests/ci/docs_check.py'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
@@ -648,6 +647,13 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
+          git -C "$GITHUB_WORKSPACE" checkout .  && echo 'restored'
+          "$GITHUB_WORKSPACE/contrib/update-submodules.sh" && echo 'OK'
+          du -hs "$GITHUB_WORKSPACE/contrib" ||:
+          find "$GITHUB_WORKSPACE/contrib" -type f | wc -l ||:
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -771,6 +777,13 @@ jobs:
         with:
           clear-repository: true
           submodules: true
+      - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
+          git -C "$GITHUB_WORKSPACE" checkout .  && echo 'restored'
+          "$GITHUB_WORKSPACE/contrib/update-submodules.sh" && echo 'OK'
+          du -hs "$GITHUB_WORKSPACE/contrib" ||:
+          find "$GITHUB_WORKSPACE/contrib" -type f | wc -l ||:
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -5187,9 +5200,16 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
           python3 merge_pr.py --check-approved
-##############################################################################################
-########################### SQLLOGIC TEST ###################################################
-##############################################################################################
+#############################################################################################
+####################################### libFuzzer ###########################################
+#############################################################################################
+  libFuzzer:
+    if: contains(github.event.pull_request.labels.*.name, 'libFuzzer')
+    needs: [DockerHubPush, StyleCheck]
+    uses: ./.github/workflows/libfuzzer.yml
+  ##############################################################################################
+  ############################ SQLLOGIC TEST ###################################################
+  ##############################################################################################
   SQLLogicTestRelease:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]

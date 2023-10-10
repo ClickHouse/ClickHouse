@@ -75,7 +75,7 @@ std::vector<String> KeeperClient::getCompletions(const String & prefix) const
         for (const auto & child : zookeeper->getChildren(parent_path))
             result.push_back(child);
     }
-    catch (Coordination::Exception &) {}
+    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
 
     std::sort(result.begin(), result.end());
 
