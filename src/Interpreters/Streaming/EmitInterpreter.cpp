@@ -17,6 +17,7 @@ namespace Streaming
 {
 namespace
 {
+/// proton: porting note. TODO: remove this function. Using the function defined in WindowCommon.h
 std::optional<IntervalKind> mapIntervalKind(const String & func_name)
 {
     if (func_name == "toIntervalNanosecond")

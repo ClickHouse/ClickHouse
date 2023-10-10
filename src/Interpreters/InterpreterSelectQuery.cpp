@@ -44,6 +44,7 @@
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/Streaming/EmitInterpreter.h>
 #include <Interpreters/Streaming/SubstituteStreamingFunction.h>
+#include <Interpreters/Streaming/Aggregator.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -69,6 +70,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Streaming/WatermarkStep.h>
+#include <Processors/QueryPlan/Streaming/AggregatingStep.h>
 #include <Processors/Transforms/Streaming/WatermarkStamper.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -2737,9 +2739,10 @@ static Aggregator::Params getAggregatorParams(
     };
 }
 
-static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & query_analyzer, const Names & all_keys)
+template<typename T>
+static T getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & query_analyzer, const Names & all_keys)
 {
-    GroupingSetsParamsList result;
+    T result;
     if (query_analyzer.useGroupingSetKey())
     {
         auto const & aggregation_keys_list = query_analyzer.aggregationKeysList();
@@ -2763,6 +2766,14 @@ static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryE
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
+    /// proton: porting starts. TODO: remove comments
+    if (isStreaming())
+    {
+        executeStreamingAggregation(query_plan, expression, overflow_row, final);
+        return;
+    }
+    /// proton: porting ends. TODO: remove comments
+
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
@@ -2787,7 +2798,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_two_level_threshold,
         settings.group_by_two_level_threshold_bytes);
 
-    auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, keys);
+    auto grouping_sets_params = getAggregatorGroupingSetsParams<GroupingSetsParamsList>(*query_analyzer, keys);
 
     SortDescription group_by_sort_description;
     SortDescription sort_description_for_merging;
@@ -3372,6 +3383,141 @@ void InterpreterSelectQuery::executeStreamingOrder(QueryPlan & query_plan)
     query_plan.addStep(std::move(sorting_step));
 }
 
+void InterpreterSelectQuery::executeStreamingAggregation(
+    QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final)
+{
+    assert(isStreaming());
+
+    auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
+    expression_before_aggregation->setStepDescription("Before GROUP BY");
+    query_plan.addStep(std::move(expression_before_aggregation));
+
+    if (options.is_projection_query)
+        return;
+
+    auto streaming_group_by = Streaming::Aggregator::Params::GroupBy::OTHER;
+
+    // const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
+    const auto & keys = query_analyzer->aggregationKeys().getNames();
+
+    // ssize_t delta_col_pos = data_stream_semantic_pair.isChangelogInput()
+    //     ? header_before_aggregation.getPositionByName(ProtonConsts::RESERVED_DELTA_FLAG)
+    //     : -1;
+
+    // size_t window_keys_num = 0;
+
+    // for (const auto & key : query_analyzer->aggregationKeys())
+    // {
+    //     /// In case when `select count() from (select 1 as window_start, 2 as window_end from test) group by window_start, window_end`
+    //     /// There is no window, so `window_start/window_end` are just normal group by keys.
+    //     if (query_info.streaming_window_params)
+    //     {
+    //         if ((key.name == ProtonConsts::STREAMING_WINDOW_END) && (isDate(key.type) || isDateTime(key.type) || isDateTime64(key.type)))
+    //         {
+    //             keys.insert(keys.begin(), header_before_aggregation.getPositionByName(key.name));
+    //             streaming_group_by = Streaming::Aggregator::Params::GroupBy::WINDOW_END;
+    //             ++window_keys_num;
+    //             continue;
+    //         }
+    //         else if ((key.name == ProtonConsts::STREAMING_WINDOW_START) && (isDate(key.type) || isDateTime(key.type) || isDateTime64(key.type)))
+    //         {
+    //             keys.insert(keys.begin(), header_before_aggregation.getPositionByName(key.name));
+    //             streaming_group_by = Streaming::Aggregator::Params::GroupBy::WINDOW_START;
+    //             ++window_keys_num;
+    //             continue;
+    //         }
+    //     }
+
+    //     keys.push_back(header_before_aggregation.getPositionByName(key.name));
+    // }
+
+    AggregateDescriptions aggregates = query_analyzer->aggregates();
+    /// Convert window over aggregate descriptions to regular Aggregate descriptions
+    // if (query_info.has_aggregate_over)
+    // {
+    //     /// Window over aggregates are not compatible with regular aggregates
+    //     /// so they can't coexist at the same level in one SQL.
+    //     assert(aggregates.empty());
+    //     assert(query_analyzer->windowDescriptions().size() <= 1);
+    //     for (const auto & [_, window_desc] : query_analyzer->windowDescriptions())
+    //     {
+    //         for (const auto & window_func : window_desc.window_functions)
+    //         {
+    //             if (!window_func.aggregate_function)
+    //                 continue;
+
+    //             AggregateDescription aggr_desc;
+    //             aggr_desc.function = window_func.aggregate_function;
+    //             aggr_desc.argument_names = window_func.argument_names;
+    //             aggr_desc.column_name = window_func.column_name;
+    //             aggregates.emplace_back(std::move(aggr_desc));
+    //         }
+    //     }
+    // }
+
+    // for (auto & descr : aggregates)
+    //     if (descr.arguments.empty())
+    //         for (const auto & name : descr.argument_names)
+    //             descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
+
+    // if (has_user_defined_emit_strategy)
+    // {
+    //     if (aggregates.size() > 1)
+    //         throw Exception(
+    //             ErrorCodes::NOT_IMPLEMENTED,
+    //             "User defined aggregation function with emit strategy shouldn't be used together with other aggregation function");
+
+    //     if (windowType() != Streaming::WindowType::NONE)
+    //         throw Exception(
+    //             ErrorCodes::NOT_IMPLEMENTED,
+    //             "User defined aggregation function with emit strategy shouldn't be used together with streaming window");
+
+    //     assert(streaming_group_by == Streaming::Aggregator::Params::GroupBy::OTHER);
+    //     streaming_group_by = Streaming::Aggregator::Params::GroupBy::USER_DEFINED;
+    // }
+
+    const Settings & settings = context->getSettingsRef();
+
+    Streaming::Aggregator::Params params(
+        keys,
+        aggregates,
+        overflow_row,
+        settings.max_rows_to_group_by,
+        settings.group_by_overflow_mode,
+        settings.group_by_two_level_threshold,
+        settings.group_by_two_level_threshold_bytes,
+        settings.max_bytes_before_external_group_by,
+        settings.empty_result_for_aggregation_by_empty_set
+            || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                && query_analyzer->hasConstAggregationKeys()),
+        context->getGlobalTemporaryVolume(),
+        settings.max_threads,
+        settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions,
+        settings.min_count_to_compile_aggregate_expression,
+        /* only_merge */ false,
+        shouldKeepState(),
+        /* settings.keep_windows, */
+        streaming_group_by
+        /* delta_col_pos,
+        window_keys_num,
+        query_info.streaming_window_params */);
+
+    auto grouping_sets_params = getAggregatorGroupingSetsParams<Streaming::GroupingSetsParamsList>(*query_analyzer, keys);
+
+    auto merge_threads = max_streams;
+    auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+        : static_cast<size_t>(settings.max_threads);
+
+    // if (query_info.hasPartitionByKeys())
+    //     query_plan.addStep(
+    //         std::make_unique<Streaming::AggregatingStepWithSubstream>(query_plan.getCurrentDataStream(), params, final, emit_version));
+    // else
+    query_plan.addStep(std::make_unique<Streaming::AggregatingStep>(
+        query_plan.getCurrentDataStream(), params, std::move(grouping_sets_params), final, merge_threads, temporary_data_merge_threads, settings.group_by_use_nulls, emit_version));
+}
+
 bool InterpreterSelectQuery::isStreaming() const
 {
     if (is_streaming.has_value())
@@ -3398,6 +3544,22 @@ bool InterpreterSelectQuery::isStreaming() const
 bool InterpreterSelectQuery::hasGlobalAggregation() const
 {
     return isStreaming() && hasAggregation();
+}
+
+bool InterpreterSelectQuery::shouldKeepState() const
+{
+    if (!isStreaming())
+        return false;
+
+    if (hasGlobalAggregation())
+    {
+        if (interpreter_subquery && interpreter_subquery->hasGlobalAggregation())
+            return false;
+
+        return true;
+    }
+
+    return false;
 }
 
 void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const

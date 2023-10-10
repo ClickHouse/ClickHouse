@@ -206,6 +206,8 @@ private:
 
     /// proton: porting starts. TODO: remove comments
     void executeStreamingOrder(QueryPlan & query_plan);
+    void executeStreamingAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final);
+    bool shouldKeepState() const;
     void checkAndPrepareStreamingFunctions();
     void buildWatermarkQueryPlan(QueryPlan & query_plan) const;
     void buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan);
