@@ -1,6 +1,5 @@
 # pylint: disable=too-many-lines
 import logging
-import re
 import threading
 import time
 
@@ -14,7 +13,7 @@ from helpers.error_codes import (
     TABLE_OVERRIDE_NOT_FOUND,
 )
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, assert_query_fails
 
 from .utils import ReplicationHelper
 
@@ -2744,10 +2743,9 @@ def alter_database_settings_test(replication: ReplicationHelper):
         clickhouse_node.query(f"ALTER DATABASE {db} {modify_commands}")
 
     def should_fail(modify_commands, code):
-        with pytest.raises(
-            QueryRuntimeException, match=re.compile(f"\nCode: {code}\\.", re.MULTILINE)
-        ):
-            clickhouse_node.query(f"ALTER DATABASE {db} {modify_commands}")
+        assert_query_fails(
+            clickhouse_node, f"ALTER DATABASE {db} {modify_commands}", code=code
+        )
 
     def create_query() -> str:
         return clickhouse_node.query(f"SHOW CREATE DATABASE {db}")
@@ -2842,13 +2840,7 @@ def alter_database_table_overrides(replication: ReplicationHelper):
         )
 
     def should_fail(sql, code=None, message=None):
-        match = "" if code is None else f"\nCode: {code}\\."
-        if message is not None:
-            match += f".*{message}"
-        with pytest.raises(
-            QueryRuntimeException, match=re.compile(match, re.MULTILINE)
-        ):
-            clickhouse_node.query(f"/* expecting error: {match} */ {sql}")
+        assert_query_fails(clickhouse_node, sql, code=code, message=message)
 
     replication.create_db_mysql(db)
     mysql_node.query(f"CREATE TABLE {db}.t1 (id INT PRIMARY KEY, b_id INT)")
@@ -2860,7 +2852,7 @@ def alter_database_table_overrides(replication: ReplicationHelper):
     # This override is from the original CREATE DATABASE query
     check_column("t1", "idmod3", "Int8", "ALIAS", "id % 3")
 
-    logging.debug("%s", clickhouse_node.query(f"SHOW CREATE TABLE {db}.t1"))
+    # Adding an index should be allowed (the alias column remains the same):
     clickhouse_node.query(
         f"""ALTER DATABASE {db} MODIFY TABLE OVERRIDE t1 (
             COLUMNS (
