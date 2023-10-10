@@ -2406,8 +2406,16 @@ This section contains the following parameters:
   * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
+- implementation - Specifies the implementation of IKeeper. It indicates what ClickHouse actually interacts with. Optional.
+  * zookeeper - interacts with a ZooKeeper cluster. Default setting.
+  * fdbkeeper - interacts with a [FoundationDB](https://apple.github.io/foundationdb/index.html) cluster.
+  * testkeeper - interacts with local disk. For testing only.
+- `fdb_prefix` - To prevent multiple ClickHouse instances from conflicting, specifies a common prefix for keys stored by ClickHouse in FoundationDB. Optional.
+- `fdb_cluster` - Specifies the FoundationDB cluster configuration file. Only meaningful when `implementation` is `fdbkeeper`.
 
 **Example configuration**
+
+Interacts with ZooKeeper cluster:
 
 ``` xml
 <zookeeper>
@@ -2427,6 +2435,16 @@ This section contains the following parameters:
     <identity>user:password</identity>
     <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
+</zookeeper>
+```
+
+Interacts with FoundationDB cluster:
+
+``` xml
+<zookeeper>
+    <implementation>fdbkeeper</implementation>
+    <fdb_prefix>/common/prefix/</fdb_prefix>
+    <fdb_cluster>/etc/foundationdb/fdb.cluster</fdb_cluster>
 </zookeeper>
 ```
 
