@@ -9,10 +9,10 @@
 namespace DB
 {
 
-static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_snapshot)
+static std::pair<Block, Block> getHeaders(StorageNATS & storage, const StorageSnapshotPtr & storage_snapshot)
 {
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->getSampleBlockForColumns({"_subject"});
+    auto virtual_header = storage_snapshot->getSampleBlockForColumns(storage.getVirtuals().getNames());
 
     return {non_virtual_header, virtual_header};
 }
@@ -31,8 +31,9 @@ NATSSource::NATSSource(
     const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
     const Names & columns,
-    size_t max_block_size_)
-    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_snapshot_), context_, columns, max_block_size_)
+    size_t max_block_size_,
+    StreamingHandleErrorMode handle_error_mode_)
+    : NATSSource(storage_, storage_snapshot_, getHeaders(storage_, storage_snapshot_), context_, columns, max_block_size_, handle_error_mode_)
 {
 }
 
@@ -42,13 +43,15 @@ NATSSource::NATSSource(
     std::pair<Block, Block> headers,
     ContextPtr context_,
     const Names & columns,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    StreamingHandleErrorMode handle_error_mode_)
     : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
+    , handle_error_mode(handle_error_mode_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
@@ -97,16 +100,41 @@ Chunk NATSSource::generate()
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
         storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
-
-    StreamingFormatExecutor executor(non_virtual_header, input_format);
-
+    std::optional<String> exception_message;
     size_t total_rows = 0;
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    {
+        if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+        {
+            exception_message = e.message();
+            for (const auto & column : result_columns)
+            {
+                // We could already push some rows to result_columns
+                // before exception, we need to fix it.
+                auto cur_rows = column->size();
+                if (cur_rows > total_rows)
+                    column->popBack(cur_rows - total_rows);
+
+                // All data columns will get default value in case of error.
+                column->insertDefault();
+            }
+
+            return 1;
+        }
+        else
+        {
+            throw std::move(e);
+        }
+    };
+
+    StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
 
     while (true)
     {
         if (consumer->queueEmpty())
             break;
 
+        exception_message.reset();
         size_t new_rows = 0;
         if (auto buf = consumer->consume())
             new_rows = executor.execute(*buf);
@@ -115,6 +143,21 @@ Chunk NATSSource::generate()
         {
             auto subject = consumer->getSubject();
             virtual_columns[0]->insertMany(subject, new_rows);
+            if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+            {
+                if (exception_message)
+                {
+                    const auto & current_message = consumer->getCurrentMessage();
+                    virtual_columns[1]->insertData(current_message.data(), current_message.size());
+                    virtual_columns[2]->insertData(exception_message->data(), exception_message->size());
+
+                }
+                else
+                {
+                    virtual_columns[1]->insertDefault();
+                    virtual_columns[2]->insertDefault();
+                }
+            }
 
             total_rows = total_rows + new_rows;
         }
