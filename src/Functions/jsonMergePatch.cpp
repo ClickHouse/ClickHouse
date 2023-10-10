@@ -29,17 +29,17 @@ namespace ErrorCodes
 
 namespace
 {
-    // select jsonMerge('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
+    // select jsonMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
     //           ||
     //           \/
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionjsonMerge : public IFunction
+    class FunctionjsonMergePatch : public IFunction
     {
     public:
-        static constexpr auto name = "jsonMerge";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionjsonMerge>(); }
+        static constexpr auto name = "jsonMergePatch";
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionjsonMergePatch>(); }
 
         String getName() const override { return name; }
 
@@ -63,6 +63,29 @@ namespace
             merged_json.SetObject();
             rapidjson::Document::AllocatorType& allocator = merged_json.GetAllocator();
 
+            std::function<void(rapidjson::Value&, const rapidjson::Value&)> mergeObjects;
+            mergeObjects = [&mergeObjects, &allocator](rapidjson::Value& dest, const rapidjson::Value& src) -> void 
+            {
+                if (!src.IsObject())
+                    return;
+                for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
+                {
+                    rapidjson::Value key(it->name, allocator);
+                    rapidjson::Value value(it->value, allocator);
+                    if (dest.HasMember(key))
+                    {
+                        if (dest[key].IsObject() && value.IsObject())
+                            mergeObjects(dest[key], value);
+                        else
+                            dest[key] = value;
+                    }
+                    else
+                    {
+                        dest.AddMember(key, value, allocator);
+                    }
+                }
+            };
+
             for (const auto & arg : arguments)
             {
                 const ColumnPtr column = arg.column;
@@ -78,16 +101,7 @@ namespace
                     document.Parse(json);
                     if (!document.IsObject())
                         throw Exception(ErrorCodes::ILLEGAL_JSON_OBJECT_FORMAT, "Wrong input Json object format");
-
-                    for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
-                    {
-                        rapidjson::Value key(it->name, allocator);
-                        rapidjson::Value value(it->value, allocator);
-                        if (merged_json.HasMember(key))
-                            merged_json[key] = value;
-                        else
-                            merged_json.AddMember(key, value, allocator);
-                    }
+                    mergeObjects(merged_json, document);
                 }
             }
 
@@ -105,9 +119,9 @@ namespace
 
 }
 
-REGISTER_FUNCTION(jsonMerge)
+REGISTER_FUNCTION(jsonMergePatch)
 {
-    factory.registerFunction<FunctionjsonMerge>(FunctionDocumentation{
+    factory.registerFunction<FunctionjsonMergePatch>(FunctionDocumentation{
         .description="Return the merged JSON object string, which is formed by merging multiple JSON objects."});
 }
 
