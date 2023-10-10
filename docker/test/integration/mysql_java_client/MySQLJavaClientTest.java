@@ -13,13 +13,27 @@ public class MySQLJavaClientTest {
         String binary = "false";
         while (i < args.length) {
             switch (args[i]) {
-                case "--host" -> host = args[++i];
-                case "--port" -> port = args[++i];
-                case "--user" -> user = args[++i];
-                case "--password" -> password = args[++i];
-                case "--database" -> database = args[++i];
-                case "--binary" -> binary = args[++i];
-                default -> i++;
+                case "--host":
+                    host = args[++i];
+                    break;
+                case "--port":
+                    port = args[++i];
+                    break;
+                case "--user":
+                    user = args[++i];
+                    break;
+                case "--password":
+                    password = args[++i];
+                    break;
+                case "--database":
+                    database = args[++i];
+                    break;
+                case "--binary":
+                    binary = args[++i];
+                    break;
+                default:
+                    i++;
+                    break;
             }
         }
 

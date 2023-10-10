@@ -792,56 +792,6 @@ def test_mysqljs_client(started_cluster, nodejs_container):
     assert code == 1
 
 
-@pytest.mark.skip(
-    """Deprecated in favor of test_java_client as the scope of the tests is higher,
-    and it covers both binary and test protocols"""
-)
-def test_java_client_old(started_cluster, java_container):
-    with open(os.path.join(SCRIPT_DIR, "java.reference")) as fp:
-        reference = fp.read()
-
-    # database not exists exception.
-    code, (stdout, stderr) = java_container.exec_run(
-        "java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database "
-        "abc".format(host=started_cluster.get_instance_ip("node"), port=server_port),
-        demux=True,
-    )
-    assert code == 1
-
-    # empty password passed.
-    code, (stdout, stderr) = java_container.exec_run(
-        "java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database "
-        "default".format(
-            host=started_cluster.get_instance_ip("node"), port=server_port
-        ),
-        demux=True,
-    )
-    assert code == 0
-    assert stdout.decode() == reference
-
-    # non-empty password passed.
-    code, (stdout, stderr) = java_container.exec_run(
-        "java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database "
-        "default".format(
-            host=started_cluster.get_instance_ip("node"), port=server_port
-        ),
-        demux=True,
-    )
-    assert code == 0
-    assert stdout.decode() == reference
-
-    # double-sha1 password passed.
-    code, (stdout, stderr) = java_container.exec_run(
-        "java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database "
-        "default".format(
-            host=started_cluster.get_instance_ip("node"), port=server_port
-        ),
-        demux=True,
-    )
-    assert code == 0
-    assert stdout.decode() == reference
-
-
 def test_java_client_text(started_cluster, java_container):
     command = setup_java_client(started_cluster, "false")
     code, (stdout, stderr) = java_container.exec_run(
