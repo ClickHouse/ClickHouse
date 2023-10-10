@@ -12,13 +12,13 @@ namespace
 {
 template <typename T>
 requires std::is_integral_v<T>
-inline T byteSwap(T x)
+T byteSwap(T x)
 {
     return std::byteswap(x);
 }
 
 template <typename T>
-inline T byteSwap(T)
+T byteSwap(T)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap() is not implemented for {} datatype", demangle(typeid(T).name()));
 }
@@ -28,7 +28,7 @@ struct ByteSwapImpl
 {
     using ResultType = T;
     static constexpr const bool allow_string_or_fixed_string = false;
-    static inline T apply(T x) { return byteSwap<T>(x); }
+    static T apply(T x) { return byteSwap<T>(x); }
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false;
@@ -55,9 +55,7 @@ REGISTER_FUNCTION(ByteSwap)
     factory.registerFunction<FunctionByteSwap>(
         FunctionDocumentation{
             .description = R"(
-Accepts an integer `operand` and returns the integer which is obtained by swapping the **endianness** of `operand` i.e. reversing the bytes of the `operand`.
-
-Currently, this is supported for up to 64-bit (signed and unsigned) integers.
+Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness). Currently, integers of up to 64 bit are supported.
 
 **Example**
 
@@ -74,13 +72,12 @@ Result:
 ```
 
 The above example can be worked out in the following manner:
-1. First, convert the integer operand (base 10) to its equivalent hexadecimal interpretation (base 16) in big-endian format i.e. 3351772109 -> C7 C7 FB CD (4 bytes)
-2. Then, reverse the bytes i.e. C7 C7 FB CD -> CD FB C7 C7
-3. Finally, the convert the hexadecimal number back to an integer assuming big-endian i.e. CD FB C7 C7  -> 3455829959
+1. Convert the base-10 integer to its equivalent hexadecimal format in big-endian format, i.e. 3351772109 -> C7 C7 FB CD (4 bytes)
+2. Reverse the bytes, i.e. C7 C7 FB CD -> CD FB C7 C7
+3. Convert the result back to an integer assuming big-endian, i.e. CD FB C7 C7  -> 3455829959
 
-Note that, in step#1, one can also choose to convert the operand to bytes in little-endian as long as one also assumes little-endian when converting back to integer in step#3.
+One use-case of this function is reversing IPv5s:
 
-One use-case of this function is reversing IPv4s:
 ```result
 ┌─toIPv4(byteSwap(toUInt32(toIPv4('205.251.199.199'))))─┐
 │ 199.199.251.205                                       │
