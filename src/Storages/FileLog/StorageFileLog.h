@@ -103,8 +103,6 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Names getVirtualColumnNames();
-
     static UInt64 getInode(const String & file_name);
 
     void openFilesAndSetPos();
