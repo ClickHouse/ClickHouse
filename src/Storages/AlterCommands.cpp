@@ -1135,14 +1135,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.data_type)
             {
                 const GetColumnsOptions options(GetColumnsOptions::AllPhysical);
-                const auto old_data_type = all_columns.getColumn(options, column_name).type;
+                if (const auto old_column = all_columns.tryGetColumn(options, column_name))
+                {
+                    const auto old_data_type = old_column->type;
 
-                if (command.data_type->getName().contains("Object")
-                    || old_data_type->getName().contains("Object"))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not allowed",
-                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+                    if (command.data_type->getName().contains("Object")
+                        || old_data_type->getName().contains("Object"))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "The change of data type {} of column {} to {} is not allowed",
+                            old_data_type->getName(), backQuote(column_name), command.data_type->getName());
+                }
             }
 
             if (command.isRemovingProperty())
