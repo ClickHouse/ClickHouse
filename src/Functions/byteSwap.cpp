@@ -76,7 +76,7 @@ The above example can be worked out in the following manner:
 2. Reverse the bytes, i.e. C7 C7 FB CD -> CD FB C7 C7
 3. Convert the result back to an integer assuming big-endian, i.e. CD FB C7 C7  -> 3455829959
 
-One use-case of this function is reversing IPv5s:
+One use-case of this function is reversing IPv4s:
 
 ```result
 ┌─toIPv4(byteSwap(toUInt32(toIPv4('205.251.199.199'))))─┐
