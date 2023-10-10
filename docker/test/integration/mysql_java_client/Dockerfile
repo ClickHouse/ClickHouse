@@ -1,7 +1,7 @@
 # docker build -t clickhouse/mysql-java-client .
 # MySQL Java client docker container
 
-FROM openjdk:8-jdk-alpine
+FROM openjdk:17-jdk-alpine
 
 RUN apk --no-cache add curl
 
@@ -10,6 +10,5 @@ RUN curl -L -o /mysql-connector-j-${ver}.jar https://repo1.maven.org/maven2/com/
 ENV CLASSPATH=$CLASSPATH:/mysql-connector-j-${ver}.jar
 
 WORKDIR /jdbc
-COPY Test.java Test.java
-COPY PreparedStatementsTest.java PreparedStatementsTest.java
-RUN javac Test.java PreparedStatementsTest.java
+COPY MySQLJavaClientTest.java MySQLJavaClientTest.java
+RUN javac MySQLJavaClientTest.java

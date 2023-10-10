@@ -117,3 +117,13 @@ Row #2
 dt type is TIMESTAMP, value: 2022-09-04 20:31:05.0
 dt64_3 type is TIMESTAMP, value: 2022-09-04 20:31:05.022
 
+### testSuspiciousNullableLowCardinalityTypes
+Row #1
+f type is FLOAT, value: 1.0
+d type is DATE, value: 2022-04-15
+dt type is TIMESTAMP, value: 2021-06-04 13:55:11.0
+Row #2
+f type is FLOAT, value: 3.14
+d type is DATE, value: 1970-01-01
+dt type is TIMESTAMP, value: 1970-01-01 00:00:00.0
+
