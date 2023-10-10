@@ -113,17 +113,20 @@ template <typename Distance>
 MergeTreeIndexAggregatorAnnoy<Distance>::MergeTreeIndexAggregatorAnnoy(
     const String & index_name_,
     const Block & index_sample_block_,
-    UInt64 trees_)
+    UInt64 trees_,
+    size_t max_threads_for_creation_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , trees(trees_)
+    , max_threads_for_creation(max_threads_for_creation_)
 {}
 
 template <typename Distance>
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy<Distance>::getGranuleAndReset()
 {
-    // NOLINTNEXTLINE(*)
-    index->build(static_cast<int>(trees), /*number_of_threads=*/1);
+    int threads = (max_threads_for_creation == 0) ? -1 : static_cast<int>(max_threads_for_creation);
+    /// clang-tidy reports a false positive: it considers %p with an outdated pointer in fprintf() (used by logging which we don't do) dereferencing
+    index->build(static_cast<int>(trees), threads);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy<Distance>>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
@@ -155,10 +158,14 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
     if (const auto & column_array = typeid_cast<const ColumnArray *>(column_cut.get()))
     {
         const auto & column_array_data = column_array->getData();
-        const auto & column_arary_data_float_data = typeid_cast<const ColumnFloat32 &>(column_array_data).getData();
+        const auto & column_array_data_float = typeid_cast<const ColumnFloat32 &>(column_array_data);
+        const auto & column_array_data_float_data = column_array_data_float.getData();
 
         const auto & column_array_offsets = column_array->getOffsets();
         const size_t num_rows = column_array_offsets.size();
+
+        if (column_array->empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
 
         /// The Annoy algorithm naturally assumes that the indexed vectors have dimension >= 1. This condition is violated if empty arrays
         /// are INSERTed into an Annoy-indexed column or if no value was specified at all in which case the arrays take on their default
@@ -182,9 +189,9 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
             index = std::make_shared<AnnoyIndexWithSerialization<Distance>>(dimension);
 
         /// Add all rows of block
-        index->add_item(index->get_n_items(), column_arary_data_float_data.data());
+        index->add_item(index->get_n_items(), column_array_data_float_data.data());
         for (size_t current_row = 1; current_row < num_rows; ++current_row)
-            index->add_item(index->get_n_items(), &column_arary_data_float_data[column_array_offsets[current_row - 1]]);
+            index->add_item(index->get_n_items(), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
     }
     else if (const auto & column_tuple = typeid_cast<const ColumnTuple *>(column_cut.get()))
     {
@@ -278,20 +285,20 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     chassert(neighbors.size() == distances.size());
 
-    std::vector<size_t> granule_numbers;
-    granule_numbers.reserve(neighbors.size());
+    std::vector<size_t> granules;
+    granules.reserve(neighbors.size());
     for (size_t i = 0; i < neighbors.size(); ++i)
     {
         if (comparison_distance && distances[i] > comparison_distance)
             continue;
-        granule_numbers.push_back(neighbors[i] / index_granularity);
+        granules.push_back(neighbors[i] / index_granularity);
     }
 
     /// make unique
-    std::sort(granule_numbers.begin(), granule_numbers.end());
-    granule_numbers.erase(std::unique(granule_numbers.begin(), granule_numbers.end()), granule_numbers.end());
+    std::sort(granules.begin(), granules.end());
+    granules.erase(std::unique(granules.begin(), granules.end()), granules.end());
 
-    return granule_numbers;
+    return granules;
 }
 
 MergeTreeIndexAnnoy::MergeTreeIndexAnnoy(const IndexDescription & index_, UInt64 trees_, const String & distance_function_)
@@ -309,13 +316,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexAnnoy::createIndexGranule() const
     std::unreachable();
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexAnnoy::createIndexAggregator(const MergeTreeWriterSettings & settings) const
 {
     /// TODO: Support more metrics. Available metrics: https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     if (distance_function == DISTANCE_FUNCTION_L2)
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Euclidean>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     else if (distance_function == DISTANCE_FUNCTION_COSINE)
-        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees);
+        return std::make_shared<MergeTreeIndexAggregatorAnnoy<Annoy::Angular>>(index.name, index.sample_block, trees, settings.max_threads_for_annoy_index_creation);
     std::unreachable();
 }
 

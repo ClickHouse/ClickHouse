@@ -8,6 +8,7 @@
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
+#include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
@@ -18,8 +19,8 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include "config.h"
 
+#include "config.h"
 
 namespace DB
 {
@@ -78,6 +79,7 @@ namespace
             bool expect_ldap_server_name = false;
             bool expect_kerberos_realm = false;
             bool expect_common_names = false;
+            bool expect_public_ssh_key = false;
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
@@ -93,6 +95,8 @@ namespace
                             expect_kerberos_realm = true;
                         else if (check_type == AuthenticationType::SSL_CERTIFICATE)
                             expect_common_names = true;
+                        else if (check_type == AuthenticationType::SSH_KEY)
+                            expect_public_ssh_key = true;
                         else if (check_type != AuthenticationType::NO_PASSWORD)
                             expect_password = true;
 
@@ -129,6 +133,8 @@ namespace
             ASTPtr value;
             ASTPtr parsed_salt;
             ASTPtr common_names;
+            ASTPtr public_ssh_keys;
+
             if (expect_password || expect_hash)
             {
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
@@ -164,6 +170,14 @@ namespace
                 if (!ParserList{std::make_unique<ParserStringAndSubstitution>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
                     return false;
             }
+            else if (expect_public_ssh_key)
+            {
+                if (!ParserKeyword{"BY"}.ignore(pos, expected))
+                    return false;
+
+                if (!ParserList{std::make_unique<ParserPublicSSHKey>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, common_names, expected))
+                    return false;
+            }
 
             auth_data = std::make_shared<ASTAuthenticationData>();
 
@@ -179,6 +193,9 @@ namespace
 
             if (common_names)
                 auth_data->children = std::move(common_names->children);
+
+            if (public_ssh_keys)
+                auth_data->children = std::move(public_ssh_keys->children);
 
             return true;
         });
@@ -364,6 +381,19 @@ namespace
             return true;
         });
     }
+
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"VALID UNTIL"}.ignore(pos, expected))
+                return false;
+
+            ParserStringAndSubstitution until_p;
+
+            return until_p.parse(pos, valid_until, expected);
+        });
+    }
 }
 
 
@@ -414,6 +444,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
     std::shared_ptr<ASTDatabaseOrNone> default_database;
+    ASTPtr valid_until;
     String cluster;
     String storage_name;
 
@@ -427,6 +458,11 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 auth_data = std::move(new_auth_data);
                 continue;
             }
+        }
+
+        if (!valid_until)
+        {
+            parseValidUntil(pos, expected, valid_until);
         }
 
         AllowedClientHosts new_hosts;
@@ -519,10 +555,14 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->settings = std::move(settings);
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
+    query->valid_until = std::move(valid_until);
     query->storage_name = std::move(storage_name);
 
     if (query->auth_data)
         query->children.push_back(query->auth_data);
+
+    if (query->valid_until)
+        query->children.push_back(query->valid_until);
 
     return true;
 }

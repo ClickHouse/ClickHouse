@@ -11,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/GinFilter.h>
@@ -937,7 +938,20 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
+    {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+
+        /// If partition key expression is changed, we also need to rebuild minmax_count_projection
+        if (!blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+        {
+            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
+            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer().visit(partition_key.get());
+            auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
+            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));
+        }
+    }
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
@@ -1159,7 +1173,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         "Column {} doesn't have MATERIALIZED, cannot remove it",
                         backQuote(column_name));
 
-                auto column_from_table = all_columns.get(column_name);
+                const auto & column_from_table = all_columns.get(column_name);
                 if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

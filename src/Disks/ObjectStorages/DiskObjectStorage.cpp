@@ -1,14 +1,9 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromEmptyFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
-#include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
@@ -16,7 +11,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
-#include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -68,7 +62,7 @@ DiskObjectStorage::DiskObjectStorage(
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
     , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
-    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
+    , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
 {}
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
@@ -180,7 +174,8 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const String & from_file_path,
     IDisk & to_disk,
     const String & to_file_path,
-    const WriteSettings & settings)
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
 {
     if (this == &to_disk)
     {
@@ -192,7 +187,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, settings);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings);
     }
 }
 

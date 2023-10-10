@@ -48,17 +48,18 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
-INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2);
-```
+-- Parse DateTime
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 3);
 
-``` sql
 SELECT * FROM dt;
 ```
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
 │ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 03:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -73,7 +74,7 @@ SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istan
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 00:00:00 │        2 │
+│ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
@@ -85,7 +86,7 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 
 ``` text
 ┌───────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00 │        1 │
+│ 2019-01-01 00:00:00 │        1 │
 └─────────────────────┴──────────┘
 ```
 
