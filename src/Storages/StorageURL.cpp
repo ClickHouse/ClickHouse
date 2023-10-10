@@ -177,6 +177,7 @@ namespace
         poco_proxy_config.host = proxy_configuration.host;
         poco_proxy_config.port = proxy_configuration.port;
         poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+        poco_proxy_config.tunnel = proxy_configuration.use_connect_protocol;
 
         return poco_proxy_config;
     }
