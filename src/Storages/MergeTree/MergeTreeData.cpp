@@ -1744,62 +1744,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    if (settings->in_memory_parts_enable_wal)
-    {
-        std::vector<MutableDataPartsVector> disks_wal_parts(disks.size());
-        std::mutex wal_init_lock;
-
-        std::vector<std::future<void>> wal_disks_futures;
-        wal_disks_futures.reserve(disks.size());
-
-        for (size_t i = 0; i < disks.size(); ++i)
-        {
-            const auto & disk_ptr = disks[i];
-            if (disk_ptr->isBroken())
-                continue;
-
-            auto & disk_wal_parts = disks_wal_parts[i];
-
-            wal_disks_futures.push_back(runner([&, disk_ptr]()
-            {
-                for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
-                {
-                    if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
-                        continue;
-
-                    if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE_NAME)
-                    {
-                        std::lock_guard lock(wal_init_lock);
-                        if (write_ahead_log != nullptr)
-                            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                                            "There are multiple WAL files appeared in current storage policy. "
-                                            "You need to resolve this manually");
-
-                        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
-                        for (auto && part : write_ahead_log->restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
-                            disk_wal_parts.push_back(std::move(part));
-                    }
-                    else
-                    {
-                        MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                        for (auto && part : wal.restore(metadata_snapshot, getContext(), part_lock, is_static_storage))
-                            disk_wal_parts.push_back(std::move(part));
-                    }
-                }
-            }, Priority{0}));
-        }
-
-        /// For for iteration to be completed
-        waitForAllToFinishAndRethrowFirstError(wal_disks_futures);
-
-        MutableDataPartsVector parts_from_wal;
-        for (auto & disk_wal_parts : disks_wal_parts)
-            std::move(disk_wal_parts.begin(), disk_wal_parts.end(), std::back_inserter(parts_from_wal));
-
-        loadDataPartsFromWAL(parts_from_wal);
-        num_parts += parts_from_wal.size();
-    }
-
     if (num_parts == 0)
     {
         resetObjectColumnsFromActiveParts(part_lock);
@@ -2629,68 +2573,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
 }
 
 
-size_t MergeTreeData::clearOldWriteAheadLogs()
-{
-    DataPartsVector parts = getDataPartsVectorForInternalUsage();
-    std::vector<std::pair<Int64, Int64>> all_block_numbers_on_disk;
-    std::vector<std::pair<Int64, Int64>> block_numbers_on_disk;
-
-    for (const auto & part : parts)
-        if (part->isStoredOnDisk())
-            all_block_numbers_on_disk.emplace_back(part->info.min_block, part->info.max_block);
-
-    if (all_block_numbers_on_disk.empty())
-        return 0;
-
-    ::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
-    block_numbers_on_disk.push_back(all_block_numbers_on_disk[0]);
-    for (size_t i = 1; i < all_block_numbers_on_disk.size(); ++i)
-    {
-        if (all_block_numbers_on_disk[i].first == all_block_numbers_on_disk[i - 1].second + 1)
-            block_numbers_on_disk.back().second = all_block_numbers_on_disk[i].second;
-        else
-            block_numbers_on_disk.push_back(all_block_numbers_on_disk[i]);
-    }
-
-    auto is_range_on_disk = [&block_numbers_on_disk](Int64 min_block, Int64 max_block)
-    {
-        auto lower = std::lower_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, Int64(-1L)));
-        if (lower != block_numbers_on_disk.end() && min_block >= lower->first && max_block <= lower->second)
-            return true;
-
-        if (lower != block_numbers_on_disk.begin())
-        {
-            --lower;
-            if (min_block >= lower->first && max_block <= lower->second)
-                return true;
-        }
-
-        return false;
-    };
-
-    size_t cleared_count = 0;
-    auto disks = getStoragePolicy()->getDisks();
-    for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
-    {
-        auto disk_ptr = *disk_it;
-        if (disk_ptr->isBroken())
-            continue;
-
-        for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
-        {
-            auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
-            if (min_max_block_number && is_range_on_disk(min_max_block_number->first, min_max_block_number->second))
-            {
-                LOG_DEBUG(log, "Removing from filesystem the outdated WAL file {}", it->name());
-                disk_ptr->removeFile(relative_data_path + it->name());
-                ++cleared_count;
-            }
-        }
-    }
-
-    return cleared_count;
-}
-
 size_t MergeTreeData::clearEmptyParts()
 {
     if (!getSettings()->remove_empty_parts)
@@ -2747,17 +2629,6 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
             throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Target path already exists: {}", fullPath(disk, new_table_path));
     }
 
-    {
-        /// Relies on storage path, so we drop it during rename
-        /// it will be recreated automatically.
-        std::lock_guard wal_lock(write_ahead_log_mutex);
-        if (write_ahead_log)
-        {
-            write_ahead_log->shutdown();
-            write_ahead_log.reset();
-        }
-    }
-
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = parentPath(new_table_path);
@@ -2798,12 +2669,6 @@ void MergeTreeData::dropAllData()
     {
         modifyPartState(it, DataPartState::Deleting);
         all_parts.push_back(*it);
-    }
-
-    {
-        std::lock_guard wal_lock(write_ahead_log_mutex);
-        if (write_ahead_log)
-            write_ahead_log->shutdown();
     }
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
@@ -2863,8 +2728,6 @@ void MergeTreeData::dropAllData()
 
         if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
-
-        MergeTreeWriteAheadLog::dropAllWriteAheadLogs(disk, relative_data_path);
 
         try
         {
@@ -3830,9 +3693,6 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
         if (part->getState() != MergeTreeDataPartState::Outdated)
             modifyPartState(part, MergeTreeDataPartState::Outdated);
-
-        if (isInMemoryPart(part) && getSettings()->in_memory_parts_enable_wal)
-            getWriteAheadLog()->dropPart(part->name);
     }
 
     if (removed_active_part)
@@ -8253,30 +8113,6 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(MergeTreeDataPartP
             result->addMutationCommand(command);
 
     return result;
-}
-
-MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
-{
-    std::lock_guard lock(write_ahead_log_mutex);
-    if (!write_ahead_log)
-    {
-        auto reservation = reserveSpace(getSettings()->write_ahead_log_max_bytes);
-        for (const auto & disk: reservation->getDisks())
-        {
-            if (!disk->isRemote())
-            {
-                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk);
-                break;
-            }
-        }
-
-        if (!write_ahead_log)
-            throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Can't store write ahead log in remote disk. It makes no sense.");
-    }
-
-    return write_ahead_log;
 }
 
 NamesAndTypesList MergeTreeData::getVirtuals() const
