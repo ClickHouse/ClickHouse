@@ -258,6 +258,7 @@ String transformQueryForExternalDatabaseImpl(
     Names used_columns,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
     ContextPtr context)
@@ -334,9 +335,11 @@ String transformQueryForExternalDatabaseImpl(
     dropAliases(select_ptr);
 
     WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(out, true);
-    settings.identifier_quoting_style = identifier_quoting_style;
-    settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;
+    IAST::FormatSettings settings(
+            out, /*one_line*/ true, /*hilite*/ false,
+            /*always_quote_identifiers*/ identifier_quoting_style != IdentifierQuotingStyle::None,
+            /*identifier_quoting_style*/ identifier_quoting_style, /*show_secrets_*/ true,
+            /*literal_escaping_style*/ literal_escaping_style);
 
     select->format(settings);
 
@@ -350,6 +353,7 @@ String transformQueryForExternalDatabase(
     const Names & column_names,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
     ContextPtr context)
@@ -374,6 +378,7 @@ String transformQueryForExternalDatabase(
             column_names,
             available_columns,
             identifier_quoting_style,
+            literal_escaping_style,
             database,
             table,
             context);
@@ -385,6 +390,7 @@ String transformQueryForExternalDatabase(
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         available_columns,
         identifier_quoting_style,
+        literal_escaping_style,
         database,
         table,
         context);

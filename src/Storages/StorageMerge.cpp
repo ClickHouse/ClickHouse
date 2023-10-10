@@ -458,7 +458,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
         /// If sampling requested, then check that table supports it.
         if (sampling_requested && !storage->supportsSampling())
-            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
+            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -490,7 +490,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
                         replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
                                                 syntax_result->array_join_result_to_source, context);
 
-                        auto column_description = storage_columns.get(column);
+                        const auto & column_description = storage_columns.get(column);
                         column_expr = addTypeConversionToAST(std::move(column_expr), column_description.type->getName(),
                                                             storage_metadata_snapshot->getColumns().getAll(), context);
                         column_expr = setAlias(column_expr, column);
@@ -795,6 +795,10 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     bool filter_by_database_virtual_column /* = false */,
     bool filter_by_table_virtual_column /* = false */) const
 {
+    /// FIXME: filtering does not work with allow_experimental_analyzer due to
+    /// different column names there (it has "table_name._table" not just
+    /// "_table")
+
     assert(!filter_by_database_virtual_column || !filter_by_table_virtual_column || query);
 
     const Settings & settings = query_context->getSettingsRef();

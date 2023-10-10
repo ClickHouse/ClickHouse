@@ -92,7 +92,7 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
-    void flush() override;
+    void flushAndPrepareForShutdown() override;
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,

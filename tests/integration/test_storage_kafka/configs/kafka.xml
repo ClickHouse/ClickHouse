@@ -10,6 +10,10 @@
         -->
         <debug>cgrp,consumer,topic,protocol</debug>
 
+        <!-- librdkafka stat in system.kafka_consumers -->
+				<!-- default 3000 (every three second) seems too long for test -->
+				<statistics_interval_ms>600</statistics_interval_ms>
+
         <kafka_topic>
             <name>consumer_hang</name>
             <!-- default: 3000 -->

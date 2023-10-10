@@ -6,6 +6,7 @@
 
 namespace DB
 {
+
 struct NameHasToken
 {
     static constexpr auto name = "hasToken";
@@ -17,9 +18,9 @@ struct NameHasTokenOrNull
 };
 
 using FunctionHasToken
-    = FunctionsStringSearch<HasTokenImpl<NameHasToken, VolnitskyCaseSensitiveToken, false>>;
+    = FunctionsStringSearch<HasTokenImpl<NameHasToken, Volnitsky, false>>;
 using FunctionHasTokenOrNull
-    = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, VolnitskyCaseSensitiveToken, false>, ExecutionErrorPolicy::Null>;
+    = FunctionsStringSearch<HasTokenImpl<NameHasTokenOrNull, Volnitsky, false>, ExecutionErrorPolicy::Null>;
 
 REGISTER_FUNCTION(HasToken)
 {

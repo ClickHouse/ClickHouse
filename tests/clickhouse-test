@@ -57,6 +57,8 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    # This is from LSan, and it indicates its own internal problem:
+    "Unable to get registers from thread",
 ]
 
 MAX_RETRIES = 3
@@ -381,19 +383,19 @@ def get_stacktraces_from_clickhouse(args):
     )
     replicated_msg = (
         f"{args.client} {settings_str} --query "
-        '"SELECT materialize((hostName(), tcpPort())) as host, thread_id, '
+        '"SELECT materialize((hostName(), tcpPort())) as host, thread_name, thread_id, query_id, trace, '
         "arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
         "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
         "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
         'ORDER BY host, thread_id FORMAT Vertical"'
     )
 
     msg = (
         f"{args.client} {settings_str} --query "
-        "\"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
+        "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
         "arrayMap(x -> addressToLine(x), trace), "
-        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace "
+        "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
         'FROM system.stack_trace FORMAT Vertical"'
     )
 
@@ -503,7 +505,6 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
-    NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
@@ -525,6 +526,12 @@ def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
             return random.uniform(min_val, max_val)
 
     return gen
+
+
+# To keep dependency list as short as possible, tzdata is not used here (to
+# avoid try/except block for import)
+def get_localzone():
+    return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
 class SettingsRandomizer:
@@ -600,20 +607,39 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
+        "session_timezone": lambda: random.choice(
+            [
+                # special non-deterministic around 1970 timezone, see [1].
+                #
+                #   [1]: https://github.com/ClickHouse/ClickHouse/issues/42653
+                "America/Mazatlan",
+                "America/Hermosillo",
+                "Mexico/BajaSur",
+                # These timezones had DST transitions on some unusual dates (e.g. 2000-01-15 12:00:00).
+                "Africa/Khartoum",
+                "Africa/Juba",
+                # server default that is randomized across all timezones
+                # NOTE: due to lots of trickery we cannot use empty timezone here, but this should be the same.
+                get_localzone(),
+            ]
+        ),
     }
 
     @staticmethod
     def get_random_settings(args):
-        random_settings = []
+        random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
             if (
                 is_debug
                 and setting == "allow_prefetched_read_pool_for_remote_filesystem"
             ):
-                random_settings.append(f"{setting}=0")
+                random_settings[setting] = 0
             else:
-                random_settings.append(f"{setting}={generator()}")
+                random_settings[setting] = generator()
         return random_settings
 
 
@@ -645,14 +671,16 @@ class MergeTreeSettingsRandomizer:
         "compress_primary_key": lambda: random.randint(0, 1),
         "marks_compress_block_size": lambda: random.randint(8000, 100000),
         "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
+        "replace_long_file_name_to_hash": lambda: random.randint(0, 1),
+        "max_file_name_length": threshold_generator(0.3, 0.3, 0, 128),
     }
 
     @staticmethod
     def get_random_settings(args):
-        random_settings = []
+        random_settings = {}
         for setting, generator in MergeTreeSettingsRandomizer.settings.items():
             if setting not in args.changed_merge_tree_settings:
-                random_settings.append(f"{setting}={generator()}")
+                random_settings[setting] = generator()
         return random_settings
 
 
@@ -764,7 +792,14 @@ class TestCase:
 
     @staticmethod
     def cli_format_settings(settings_list) -> str:
-        return " ".join([f"--{setting}" for setting in settings_list])
+        out = []
+        for k, v in settings_list.items():
+            out.extend([f"--{k}", str(v)])
+        return " ".join(out)
+
+    @staticmethod
+    def http_format_settings(settings_list) -> str:
+        return urllib.parse.urlencode(settings_list)
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
@@ -772,11 +807,12 @@ class TestCase:
     def add_random_settings(self, client_options):
         new_options = ""
         if self.randomize_settings:
+            http_params = self.http_format_settings(self.random_settings)
             if len(self.base_url_params) == 0:
-                os.environ["CLICKHOUSE_URL_PARAMS"] = "&".join(self.random_settings)
+                os.environ["CLICKHOUSE_URL_PARAMS"] = http_params
             else:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
-                    self.base_url_params + "&" + "&".join(self.random_settings)
+                    self.base_url_params + "&" + http_params
                 )
 
             new_options += f" {self.cli_format_settings(self.random_settings)}"
@@ -917,13 +953,17 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        # TODO: remove checking "no-upgrade-check" after 23.1
-        elif args.upgrade_check and (
-            "no-upgrade-check" in tags or "no-upgrade-check" in tags
-        ):
-            return FailureReason.NO_UPGRADE_CHECK
-
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
+            return FailureReason.S3_STORAGE
+        elif (
+            tags
+            and ("no-s3-storage-with-slow-build" in tags)
+            and args.s3_storage
+            and (
+                BuildFlags.THREAD in args.build_flags
+                or BuildFlags.DEBUG in args.build_flags
+            )
+        ):
             return FailureReason.S3_STORAGE
 
         elif tags:
@@ -1161,8 +1201,18 @@ class TestCase:
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
+        query_params = ""
+        if "need-query-parameters" in self.tags:
+            query_params = (
+                " --param_CLICKHOUSE_DATABASE="
+                + database
+                + " --param_CLICKHOUSE_DATABASE_1="
+                + database
+                + "_1"
+            )
+
         params = {
-            "client": client + " --database=" + database,
+            "client": client + " --database=" + database + query_params,
             "logs_level": server_logs_level,
             "options": client_options,
             "test": self.case_file,
@@ -1190,58 +1240,12 @@ class TestCase:
         ).total_seconds() < args.timeout and proc.poll() is None:
             sleep(0.01)
 
-        need_drop_database = not args.database
-        if need_drop_database and args.no_drop_if_fail:
-            maybe_passed = (
-                (proc.returncode == 0)
-                and (proc.stderr is None)
-                and (proc.stdout is None or "Exception" not in proc.stdout)
-            )
-            need_drop_database = maybe_passed
-
         debug_log = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
                 debug_log += self.testcase_args.debug_log_file + ":\n"
                 debug_log += str(stream.read(), errors="replace", encoding="utf-8")
                 debug_log += "\n"
-
-        if need_drop_database:
-            seconds_left = max(
-                args.timeout - (datetime.now() - start_time).total_seconds(), 20
-            )
-            drop_database_query = "DROP DATABASE IF EXISTS " + database
-            if args.replicated_database:
-                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
-
-            try:
-                # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
-                for _ in range(1, 60):
-                    try:
-                        clickhouse_execute(
-                            args,
-                            drop_database_query,
-                            timeout=seconds_left,
-                            settings={
-                                "log_comment": args.testcase_basename,
-                            },
-                        )
-                    except HTTPError as e:
-                        if need_retry(args, e.message, e.message, 0):
-                            continue
-                        raise
-                    break
-
-            except socket.timeout:
-                total_time = (datetime.now() - start_time).total_seconds()
-                return (
-                    None,
-                    "",
-                    f"Timeout dropping database {database} after test",
-                    debug_log,
-                    total_time,
-                )
-            shutil.rmtree(args.test_tmp_dir)
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -1271,6 +1275,8 @@ class TestCase:
         return proc, stdout, stderr, debug_log, total_time
 
     def run(self, args, suite, client_options, server_logs_level):
+        start_time = datetime.now()
+
         try:
             skip_reason = self.should_skip_test(suite)
             if skip_reason is not None:
@@ -1306,39 +1312,117 @@ class TestCase:
 
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
+
+            self._cleanup(result.status == TestStatus.OK)
+
             return result
         except KeyboardInterrupt as e:
             raise e
         except HTTPError:
+            total_time = (datetime.now() - start_time).total_seconds()
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
                 FailureReason.INTERNAL_QUERY_FAIL,
-                0.0,
+                total_time,
+                self.add_info_about_settings(
+                    self.get_description_from_exception_info(sys.exc_info())
+                ),
+            )
+        except socket.timeout:
+            total_time = (datetime.now() - start_time).total_seconds()
+            return TestResult(
+                self.name,
+                TestStatus.FAIL,
+                FailureReason.INTERNAL_QUERY_FAIL,
+                total_time,
                 self.add_info_about_settings(
                     self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
         except (ConnectionError, http.client.ImproperConnectionState):
+            total_time = (datetime.now() - start_time).total_seconds()
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
                 FailureReason.SERVER_DIED,
-                0.0,
+                total_time,
                 self.add_info_about_settings(
                     self.get_description_from_exception_info(sys.exc_info())
                 ),
             )
         except Exception:
+            total_time = (datetime.now() - start_time).total_seconds()
             return TestResult(
                 self.name,
                 TestStatus.UNKNOWN,
                 FailureReason.INTERNAL_ERROR,
-                0.0,
+                total_time,
                 self.get_description_from_exception_info(sys.exc_info()),
             )
         finally:
             self.remove_random_settings_from_env()
+
+    def _cleanup(self, passed):
+        args = self.testcase_args
+
+        need_cleanup = not args.database
+        if need_cleanup and args.no_drop_if_fail:
+            need_cleanup = passed
+
+        if not need_cleanup:
+            return
+
+        time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
+        timeout = max(args.timeout - time_passed, 20)
+
+        self._cleanup_database(args, timeout)
+        shutil.rmtree(args.test_tmp_dir)
+
+    def _cleanup_database(self, args, timeout):
+        database = args.testcase_database
+
+        # Check if the test does not cleanup its tables.
+        # Only for newly added tests. Please extend this check to the old tests as well.
+        if self.case_file >= "02800":
+            leftover_tables = (
+                clickhouse_execute(
+                    args,
+                    f"SHOW TABLES FROM {database}",
+                    timeout=timeout,
+                    settings={
+                        "log_comment": args.testcase_basename,
+                    },
+                )
+                .decode()
+                .replace("\n", ", ")
+            )
+
+            if len(leftover_tables) != 0:
+                raise Exception(
+                    f"The test should cleanup its tables ({leftover_tables}), otherwise it is inconvenient for running it locally."
+                )
+
+        drop_database_query = f"DROP DATABASE IF EXISTS {database}"
+        if args.replicated_database:
+            drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+
+        # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
+        for _ in range(1, 60):
+            try:
+                clickhouse_execute(
+                    args,
+                    drop_database_query,
+                    timeout=timeout,
+                    settings={
+                        "log_comment": args.testcase_basename,
+                    },
+                )
+            except HTTPError as e:
+                if need_retry(args, e.message, e.message, 0):
+                    continue
+                raise
+            break
 
 
 class TestSuite:
@@ -1400,13 +1484,13 @@ class TestSuite:
             else:
                 raise Exception(f"Unknown file_extension: {filename}")
 
-        def parse_tags_from_line(line, comment_sign):
+        def parse_tags_from_line(line, comment_sign) -> Set[str]:
             if not line.startswith(comment_sign):
-                return None
+                return set()
             tags_str = line[len(comment_sign) :].lstrip()  # noqa: ignore E203
             tags_prefix = "Tags:"
             if not tags_str.startswith(tags_prefix):
-                return None
+                return set()
             tags_str = tags_str[len(tags_prefix) :]  # noqa: ignore E203
             tags = tags_str.split(",")
             tags = {tag.strip() for tag in tags}
@@ -1424,12 +1508,23 @@ class TestSuite:
 
         def load_tags_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
+            need_query_params = False
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    line = find_tag_line(file)
+                    tag_line = find_tag_line(file)
                 except UnicodeDecodeError:
                     return []
-            return parse_tags_from_line(line, comment_sign)
+                try:
+                    if filepath.endswith(".sql"):
+                        for line in file:
+                            if "{CLICKHOUSE_DATABASE" in line:
+                                need_query_params = True
+                except UnicodeDecodeError:
+                    pass
+            parsed_tags = parse_tags_from_line(tag_line, comment_sign)
+            if need_query_params:
+                parsed_tags.add("need-query-parameters")
+            return parsed_tags
 
         all_tags = {}
         start_time = datetime.now()
@@ -2095,7 +2190,7 @@ def reportLogStats(args):
     print("\n")
 
     query = """
-        SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
+        SELECT message_format_string, count(), any(message) AS any_message
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
@@ -2424,7 +2519,7 @@ def parse_args():
     parser.add_argument(
         "--no-drop-if-fail",
         action="store_true",
-        help="Do not drop database for test if test has failed (does not work if reference file mismatch)",
+        help="Do not drop database for test if test has failed",
     )
     parser.add_argument(
         "--hide-db-name",

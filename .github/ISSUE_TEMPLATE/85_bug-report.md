@@ -21,8 +21,7 @@ assignees: ''
 
 **Enable crash reporting**
 
-> If possible, change "enabled" to true in "send_crash_reports" section in `config.xml`:
-
+> Change "enabled" to true in "send_crash_reports" section in `config.xml`:
 ```
 <send_crash_reports>
         <!-- Changing <enabled> to true allows sending crash reports to -->

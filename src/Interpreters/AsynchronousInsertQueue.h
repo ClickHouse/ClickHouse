@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Core/Settings.h>
+#include <Parsers/IAST_fwd.h>
 #include <Poco/Logger.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/ThreadPool.h>
+
 #include <future>
 
 namespace DB
@@ -17,7 +19,7 @@ class AsynchronousInsertQueue : public WithContext
 public:
     using Milliseconds = std::chrono::milliseconds;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
     ~AsynchronousInsertQueue();
 
     struct PushResult
@@ -38,6 +40,8 @@ public:
         std::unique_ptr<ReadBuffer> insert_data_buffer;
     };
 
+    /// Force flush the whole queue.
+    void flushAll();
     PushResult push(ASTPtr query, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
@@ -49,40 +53,17 @@ private:
         ASTPtr query;
         String query_str;
         Settings settings;
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_roles;
         UInt128 hash;
 
-        InsertQuery(const ASTPtr & query_, const Settings & settings_);
+        InsertQuery(const ASTPtr & query_, const Settings & settings_, const std::optional<UUID> & user_id_, const std::vector<UUID> & current_roles_);
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
 
     private:
         UInt128 calculateHash() const;
-    };
-
-    struct UserMemoryTrackerSwitcher
-    {
-        explicit UserMemoryTrackerSwitcher(MemoryTracker * new_tracker)
-        {
-            auto * thread_tracker = CurrentThread::getMemoryTracker();
-            prev_untracked_memory = current_thread->untracked_memory;
-            prev_memory_tracker_parent = thread_tracker->getParent();
-
-            current_thread->untracked_memory = 0;
-            thread_tracker->setParent(new_tracker);
-        }
-
-        ~UserMemoryTrackerSwitcher()
-        {
-            CurrentThread::flushUntrackedMemory();
-            auto * thread_tracker = CurrentThread::getMemoryTracker();
-
-            current_thread->untracked_memory = prev_untracked_memory;
-            thread_tracker->setParent(prev_memory_tracker_parent);
-        }
-
-        MemoryTracker * prev_memory_tracker_parent;
-        Int64 prev_untracked_memory;
     };
 
     struct InsertData
@@ -92,10 +73,11 @@ private:
         public:
             String bytes;
             const String query_id;
+            const String async_dedup_token;
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
 
-            Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_);
+            Entry(String && bytes_, String && query_id_, const String & async_dedup_token, MemoryTracker * user_memory_tracker_);
 
             void finish(std::exception_ptr exception_ = nullptr);
             std::future<void> getFuture() { return promise.get_future(); }
@@ -114,7 +96,7 @@ private:
             // so we need to switch current thread's MemoryTracker parent on each iteration.
             while (it != entries.end())
             {
-                UserMemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
+                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
                 it = entries.erase(it);
             }
         }
@@ -122,9 +104,7 @@ private:
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
-
         size_t size_in_bytes = 0;
-        size_t query_number = 0;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -152,6 +132,8 @@ private:
     };
 
     const size_t pool_size;
+    const bool flush_on_shutdown;
+
     std::vector<QueueShard> queue_shards;
 
     /// Logic and events behind queue are as follows:
@@ -163,6 +145,10 @@ private:
     /// (async_insert_max_data_size setting). If so, then again we dump the data.
 
     std::atomic<bool> shutdown{false};
+    std::atomic<bool> flush_stopped{false};
+
+    /// A mutex that prevents concurrent forced flushes of queue.
+    mutable std::mutex flush_mutex;
 
     /// Dump the data only inside this pool.
     ThreadPool pool;

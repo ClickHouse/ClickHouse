@@ -75,10 +75,13 @@ void DelayedPortsProcessor::finishPair(PortsPair & pair)
         pair.input_port->close();
 
         pair.is_finished = true;
-        ++num_finished_pairs;
+        ++num_finished_inputs;
 
         if (pair.output_port)
             ++num_finished_outputs;
+
+        if (!pair.is_delayed)
+            ++num_finished_main_inputs;
     }
 }
 
@@ -112,9 +115,15 @@ bool DelayedPortsProcessor::processPair(PortsPair & pair)
     return true;
 }
 
+
+bool DelayedPortsProcessor::shouldSkipDelayed() const
+{
+    return num_finished_main_inputs + num_delayed_ports < port_pairs.size();
+}
+
 IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
-    bool skip_delayed = (num_finished_pairs + num_delayed_ports) < port_pairs.size();
+    bool skip_delayed = shouldSkipDelayed();
     bool need_data = false;
 
     if (!are_inputs_initialized && !updated_outputs.empty())
@@ -154,14 +163,14 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
     }
 
     /// In case if main streams are finished at current iteration, start processing delayed streams.
-    if (skip_delayed && (num_finished_pairs + num_delayed_ports) >= port_pairs.size())
+    if (skip_delayed && !shouldSkipDelayed())
     {
         for (auto & pair : port_pairs)
             if (pair.is_delayed)
                 need_data = processPair(pair) || need_data;
     }
 
-    if (num_finished_pairs == port_pairs.size())
+    if (num_finished_inputs == port_pairs.size())
         return Status::Finished;
 
     if (need_data)

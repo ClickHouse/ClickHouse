@@ -53,6 +53,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/config.d/named_collections.xml"],
+            user_configs=["configs/users.d/users.xml"],
             with_minio=True,
         )
 
@@ -273,7 +274,7 @@ def test_multiple_log_files(started_cluster):
     assert len(files) == 2  # 1 metadata files + 1 data file
 
     s3_objects = list(
-        minio_client.list_objects(bucket, f"/{TABLE_NAME}/_delta_log/", recursive=True)
+        minio_client.list_objects(bucket, f"{TABLE_NAME}/_delta_log/", recursive=True)
     )
     assert len(s3_objects) == 1
 
@@ -287,7 +288,7 @@ def test_multiple_log_files(started_cluster):
     assert len(files) == 4  # 2 metadata files + 2 data files
 
     s3_objects = list(
-        minio_client.list_objects(bucket, f"/{TABLE_NAME}/_delta_log/", recursive=True)
+        minio_client.list_objects(bucket, f"{TABLE_NAME}/_delta_log/", recursive=True)
     )
     assert len(s3_objects) == 2
 

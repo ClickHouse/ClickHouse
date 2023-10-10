@@ -89,11 +89,13 @@ private:
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
-    // Used for write the header X-ClickHouse-Progress
+    /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
+    void writeHeaderProgressImpl(const char * header_name);
+    /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
-    // Used for write the header X-ClickHouse-Summary
+    /// Used to write the header X-ClickHouse-Summary
     void writeHeaderSummary();
-    // Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
+    /// Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
     void writeExceptionCode();
 
     /// This method finish headers with \r\n, allowing to start to send body.

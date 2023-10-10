@@ -80,6 +80,11 @@ DataPartStorageIteratorPtr DataPartStorageOnDiskFull::iterate() const
         volume->getDisk()->iterateDirectory(fs::path(root_path) / part_dir));
 }
 
+Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & file_name) const
+{
+    return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
+}
+
 size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);

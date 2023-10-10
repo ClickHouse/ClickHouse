@@ -156,14 +156,27 @@ namespace
         {
             initialize(arguments, result_type);
 
-            const auto * in = arguments.front().column.get();
+            const auto * in = arguments[0].column.get();
 
             if (isColumnConst(*in))
                 return executeConst(arguments, result_type, input_rows_count);
 
             ColumnPtr default_non_const;
             if (!cache.default_column && arguments.size() == 4)
+            {
                 default_non_const = castColumn(arguments[3], result_type);
+                if (in->size() > default_non_const->size())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Fourth argument of function {} must be a constant or a column at least as big as the second and third arguments",
+                        getName());
+                }
+            }
+
+            ColumnPtr in_casted = arguments[0].column;
+            if (arguments.size() == 3)
+                in_casted = castColumn(arguments[0], result_type);
 
             auto column_result = result_type->createColumn();
             if (cache.is_empty)
@@ -174,30 +187,30 @@ namespace
             }
             else if (cache.table_num_to_idx)
             {
-                if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<UInt64>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int8>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int16>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const)
-                    && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const))
+                if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<UInt32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<UInt64>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int8>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int16>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const, *in_casted)
+                    && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const, *in_casted))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
                 }
             }
             else if (cache.table_string_to_idx)
             {
-                if (!executeString(in, *column_result, default_non_const))
-                    executeContiguous(in, *column_result, default_non_const);
+                if (!executeString(in, *column_result, default_non_const, *in_casted))
+                    executeContiguous(in, *column_result, default_non_const, *in_casted);
             }
             else if (cache.table_anything_to_idx)
             {
-                executeAnything(in, *column_result, default_non_const);
+                executeAnything(in, *column_result, default_non_const, *in_casted);
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "State of the function `transform` is not initialized");
@@ -218,7 +231,7 @@ namespace
             return impl->execute(args, result_type, input_rows_count);
         }
 
-        void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const) const
+        void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const size_t size = in->size();
             const auto & table = *cache.table_anything_to_idx;
@@ -236,11 +249,11 @@ namespace
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
-                    column_result.insertFrom(*in, i);
+                    column_result.insertFrom(in_casted, i);
             }
         }
 
-        void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const) const
+        void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const size_t size = in->size();
             const auto & table = *cache.table_string_to_idx;
@@ -255,12 +268,12 @@ namespace
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
-                    column_result.insertFrom(*in, i);
+                    column_result.insertFrom(in_casted, i);
             }
         }
 
         template <typename T>
-        bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
+        bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const auto * const in = checkAndGetColumn<T>(in_untyped);
             if (!in)
@@ -297,7 +310,7 @@ namespace
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, i);
                     else
-                        column_result.insertFrom(*in, i);
+                        column_result.insertFrom(in_casted, i);
                 }
             }
             return true;
@@ -451,7 +464,7 @@ namespace
             }
         }
 
-        bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const) const
+        bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted) const
         {
             const auto * const in = checkAndGetColumn<ColumnString>(in_untyped);
             if (!in)
@@ -486,9 +499,9 @@ namespace
                     else if (cache.default_column)
                         column_result.insertFrom(*cache.default_column, 0);
                     else if (default_non_const)
-                        column_result.insertFrom(*default_non_const, 0);
+                        column_result.insertFrom(*default_non_const, i);
                     else
-                        column_result.insertFrom(*in, i);
+                        column_result.insertFrom(in_casted, i);
                 }
             }
             return true;
@@ -654,13 +667,13 @@ namespace
             std::unique_ptr<StringToIdx> table_string_to_idx;
             std::unique_ptr<AnythingToIdx> table_anything_to_idx;
 
-            bool is_empty = false;
-
             ColumnPtr from_column;
             ColumnPtr to_column;
             ColumnPtr default_column;
 
-            std::atomic<bool> initialized{false};
+            bool is_empty = false;
+            bool initialized = false;
+
             std::mutex mutex;
         };
 
@@ -693,6 +706,7 @@ namespace
         /// Can be called from different threads. It works only on the first call.
         void initialize(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
         {
+            std::lock_guard lock(cache.mutex);
             if (cache.initialized)
                 return;
 
@@ -710,8 +724,6 @@ namespace
             if (!array_from || !array_to)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays.", getName());
-
-            std::lock_guard lock(cache.mutex);
 
             const ColumnPtr & from_column_uncasted = array_from->getDataPtr();
 
@@ -761,9 +773,8 @@ namespace
             }
 
             /// Note: Doesn't check the duplicates in the `from` array.
-
-            WhichDataType which(from_type);
-            if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
+            /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
+            if (WhichDataType which(from_type); isNativeNumber(which) || which.isDecimal32() || which.isDecimal64())
             {
                 cache.table_num_to_idx = std::make_unique<Cache::NumToIdx>();
                 auto & table = *cache.table_num_to_idx;
@@ -771,10 +782,17 @@ namespace
                 {
                     if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
                     {
-                        /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
-                        StringRef ref = cache.from_column->getDataAt(i);
                         UInt64 key = 0;
-                        memcpy(&key, ref.data, ref.size);
+                        auto * dst = reinterpret_cast<char *>(&key);
+                        const auto ref = cache.from_column->getDataAt(i);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+                        if constexpr (std::endian::native == std::endian::big)
+                            dst += sizeof(key) - ref.size;
+#pragma clang diagnostic pop
+
+                        memcpy(dst, ref.data, ref.size);
                         table[key] = i;
                     }
                 }

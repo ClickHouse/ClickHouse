@@ -32,6 +32,12 @@ TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(o
     other.timer_fd = -1;
 }
 
+TimerDescriptor & TimerDescriptor::operator=(DB::TimerDescriptor && other) noexcept
+{
+    std::swap(timer_fd, other.timer_fd);
+    return *this;
+}
+
 TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.

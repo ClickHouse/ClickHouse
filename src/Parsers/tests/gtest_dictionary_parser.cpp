@@ -155,7 +155,7 @@ TEST(ParserDictionaryDDL, AttributesWithMultipleProperties)
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
+    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression), "(rand() % 100) * 77");
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
@@ -201,7 +201,7 @@ TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
+    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression), "(rand() % 100) * 77");
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
@@ -288,7 +288,7 @@ TEST(ParserDictionaryDDL, Formatting)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    auto str = serializeAST(*create, true);
+    auto str = serializeAST(*create);
     EXPECT_EQ(str, "CREATE DICTIONARY test.dict5 (`key_column1` UInt64 DEFAULT 1 HIERARCHICAL INJECTIVE, `key_column2` String DEFAULT '', `second_column` UInt8 EXPRESSION intDiv(50, rand() % 1000), `third_column` UInt8) PRIMARY KEY key_column1, key_column2 SOURCE(MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA (HOST '127.0.0.1' PRIORITY 1) PASSWORD '')) LIFETIME(MIN 1 MAX 10) LAYOUT(CACHE(SIZE_IN_CELLS 50)) RANGE(MIN second_column MAX third_column)");
 }
 
@@ -303,7 +303,7 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     EXPECT_TRUE(drop1->is_dictionary);
     EXPECT_EQ(drop1->getDatabase(), "test");
     EXPECT_EQ(drop1->getTable(), "dict1");
-    auto str1 = serializeAST(*drop1, true);
+    auto str1 = serializeAST(*drop1);
     EXPECT_EQ(input1, str1);
 
     String input2 = "DROP DICTIONARY IF EXISTS dict2";
@@ -314,7 +314,7 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     EXPECT_TRUE(drop2->is_dictionary);
     EXPECT_EQ(drop2->getDatabase(), "");
     EXPECT_EQ(drop2->getTable(), "dict2");
-    auto str2 = serializeAST(*drop2, true);
+    auto str2 = serializeAST(*drop2);
     EXPECT_EQ(input2, str2);
 }
 

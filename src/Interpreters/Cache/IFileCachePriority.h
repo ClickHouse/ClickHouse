@@ -44,7 +44,7 @@ public:
 
         virtual size_t use(const CacheGuard::Lock &) = 0;
 
-        virtual std::shared_ptr<IIterator> remove(const CacheGuard::Lock &) = 0;
+        virtual void remove(const CacheGuard::Lock &) = 0;
 
         virtual const Entry & getEntry() const = 0;
 
@@ -87,6 +87,8 @@ public:
 
     /// From lowest to highest priority.
     virtual void iterate(IterateFunc && func, const CacheGuard::Lock &) = 0;
+
+    virtual void shuffle(const CacheGuard::Lock &) = 0;
 
 private:
     const size_t max_size = 0;
