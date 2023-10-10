@@ -2961,9 +2961,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     NamesAndTypesList columns_to_check_conversion;
 
+    auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
+        checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -8080,6 +8082,57 @@ bool MergeTreeData::canUsePolymorphicParts() const
 {
     String unused;
     return canUsePolymorphicParts(*getSettings(), unused);
+}
+
+
+void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr /*local_context*/) const
+{
+    if (!command.isDropSomething())
+        return;
+
+    for (const auto & [mutation_name, commands] : unfinished_mutations)
+    {
+        for (const MutationCommand & mutation_command : commands)
+        {
+            if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot drop index {} because it's affected by mutation with ID '{}' which is not finished yet. "
+                    "Wait this mutation, or KILL it with command "
+                    "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+                    command.index_name,
+                    mutation_name,
+                    mutation_name);
+            }
+            else if (command.type == AlterCommand::DROP_PROJECTION
+                     && mutation_command.projection_name == command.projection_name)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot drop projection {} because it's affected by mutation with ID '{}' which is not finished yet. "
+                    "Wait this mutation, or KILL it with command "
+                    "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+                    command.index_name,
+                    mutation_name,
+                    mutation_name);
+            }
+            else if (command.type == AlterCommand::DROP_COLUMN)
+            {
+                if (mutation_command.column_name == command.column_name)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot drop column {} because it's affected by mutation with ID '{}' which is not finished yet. "
+                        "Wait this mutation, or KILL it with command "
+                        "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+                        command.index_name,
+                        mutation_name,
+                        mutation_name);
+                }
+            }
+        }
+    }
 }
 
 bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const

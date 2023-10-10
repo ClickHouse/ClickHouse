@@ -47,6 +47,7 @@ namespace DB
 /// Number of streams is not number parts, but number or parts*files, hence 1000.
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
+struct AlterCommand;
 class AlterCommands;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
@@ -720,6 +721,11 @@ public:
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    void checkDropCommandDoesntAffectInProgressMutations(
+        const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr context) const;
+
+    virtual std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const = 0;
 
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)

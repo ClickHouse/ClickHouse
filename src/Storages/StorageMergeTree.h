@@ -114,6 +114,8 @@ public:
 
     size_t getNumberOfUnfinishedMutations() const override;
 
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
+
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
 private:
