@@ -3015,16 +3015,14 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
     {
         SharedLockGuard lock(shared->mutex);
-        if (!shared->system_logs) {
+        if (!shared->system_logs)
             return;
-        }
 
         zookeeper_log = shared->system_logs->zookeeper_log;
     }
 
-    if (!zookeeper_log) {
+    if (!zookeeper_log)
         return;
-    }
 
     {
         std::lock_guard lock(shared->zookeeper_mutex);
