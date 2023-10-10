@@ -669,7 +669,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     orc::RowReaderOptions row_reader_options;
     row_reader_options.include(include_indices);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
-    if (format_settings.orc.filter_push_down)
+    if (format_settings.orc.filter_push_down && sarg)
     {
         // std::cout << "orc filter push down applied" << std::endl;
         row_reader_options.searchArgument(sarg);
