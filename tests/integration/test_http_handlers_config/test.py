@@ -448,7 +448,13 @@ def test_defaults_http_handlers():
             == cluster.instance.http_request("?query=SELECT+1", method="GET").content
         )
 
-        assert 404 == cluster.instance.http_request("/nonexistent?query=SELECT+1", method="GET").status_code
+        assert (
+            404
+            == cluster.instance.http_request(
+                "/nonexistent?query=SELECT+1", method="GET"
+            ).status_code
+        )
+
 
 def test_prometheus_handler():
     with contextlib.closing(
