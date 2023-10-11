@@ -54,7 +54,7 @@ function run_query_with_pure_parallel_replicas () {
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
         --send_logs_level "trace" \
-    |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
+    2>&1 | grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 
 query_id_base="02784_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
