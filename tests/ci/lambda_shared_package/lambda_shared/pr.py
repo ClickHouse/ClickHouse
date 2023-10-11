@@ -9,7 +9,7 @@ from typing import Tuple
 TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
-        "achimbab",
+        "achimbab",  # Kakao corp
         "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
         "azat",
