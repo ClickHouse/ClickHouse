@@ -7,7 +7,7 @@ namespace DB
 {
 
 template <typename Mutex>
-class TSA_SCOPED_LOCKABLE SharedLockGuard
+class TSA_SCOPED_CAPABILITY SharedLockGuard
 {
 public:
     explicit SharedLockGuard(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_) : mutex(mutex_)

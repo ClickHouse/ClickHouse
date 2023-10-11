@@ -137,20 +137,19 @@
 /// Macros for Clang Thread Safety Analysis (TSA). They can be safely ignored by other compilers.
 /// Feel free to extend, but please stay close to https://clang.llvm.org/docs/ThreadSafetyAnalysis.html#mutexheader
 #if defined(__clang__)
-#    define TSA_GUARDED_BY(...) __attribute__((guarded_by(__VA_ARGS__)))                       /// data is protected by given capability
-#    define TSA_PT_GUARDED_BY(...) __attribute__((pt_guarded_by(__VA_ARGS__)))                 /// pointed-to data is protected by the given capability
-#    define TSA_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))                /// thread needs exclusive possession of given capability
-#    define TSA_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))  /// thread needs shared possession of given capability
-#    define TSA_ACQUIRED_AFTER(...) __attribute__((acquired_after(__VA_ARGS__)))               /// annotated lock must be locked after given lock
-#    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           /// disable TSA for a function
-#    define TSA_CAPABILITY(...) __attribute__((capability(__VA_ARGS__)))                       /// object of a class can be used as capability
-#    define TSA_ACQUIRE(...) __attribute__((acquire_capability(__VA_ARGS__)))                        /// function acquires a capability, but does not release it
-#    define TSA_TRY_ACQUIRE(...) __attribute__((try_acquire_capability(__VA_ARGS__)))                /// function tries to acquire a capability and returns a boolean value indicating success or failure
-#    define TSA_RELEASE(...) __attribute__((release_capability(__VA_ARGS__)))                        /// function releases the given capability
+#    define TSA_GUARDED_BY(...) __attribute__((guarded_by(__VA_ARGS__)))                             /// data is protected by given capability
+#    define TSA_PT_GUARDED_BY(...) __attribute__((pt_guarded_by(__VA_ARGS__)))                       /// pointed-to data is protected by the given capability
+#    define TSA_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))                      /// function needs exclusive possession of given capability
+#    define TSA_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))        /// function needs shared possession of given capability
+#    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))                 /// disable TSA for a function
+#    define TSA_CAPABILITY(...) __attribute__((capability(__VA_ARGS__)))                             /// object of a class can be used as capability
+#    define TSA_ACQUIRE(...) __attribute__((acquire_capability(__VA_ARGS__)))                        /// function acquires a exclusive capability, but does not release it
 #    define TSA_ACQUIRE_SHARED(...) __attribute__((acquire_shared_capability(__VA_ARGS__)))          /// function acquires a shared capability, but does not release it
+#    define TSA_TRY_ACQUIRE(...) __attribute__((try_acquire_capability(__VA_ARGS__)))                /// function tries to acquire a exclusive capability and returns a boolean value indicating success or failure
 #    define TSA_TRY_ACQUIRE_SHARED(...) __attribute__((try_acquire_shared_capability(__VA_ARGS__)))  /// function tries to acquire a shared capability and returns a boolean value indicating success or failure
+#    define TSA_RELEASE(...) __attribute__((release_capability(__VA_ARGS__)))                        /// function releases the given exclusive capability
 #    define TSA_RELEASE_SHARED(...) __attribute__((release_shared_capability(__VA_ARGS__)))          /// function releases the given shared capability
-#    define TSA_SCOPED_LOCKABLE __attribute__((scoped_lockable)) /// object of a class has scoped lockable capability
+#    define TSA_SCOPED_CAPABILITY __attribute__((scoped_lockable))                                   /// class ctor/dtor performs RAII-style locking
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
 /// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of
@@ -173,11 +172,12 @@
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS
 #    define TSA_CAPABILITY(...)
 #    define TSA_ACQUIRE(...)
-#    define TSA_TRY_ACQUIRE(...)
-#    define TSA_RELEASE(...)
 #    define TSA_ACQUIRE_SHARED(...)
+#    define TSA_TRY_ACQUIRE(...)
 #    define TSA_TRY_ACQUIRE_SHARED(...)
+#    define TSA_RELEASE(...)
 #    define TSA_RELEASE_SHARED(...)
+#    define TSA_SCOPED_CAPABILITY(...)
 
 #    define TSA_SUPPRESS_WARNING_FOR_READ(x) (x)
 #    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) (x)
