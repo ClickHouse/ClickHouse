@@ -10,6 +10,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
+#include <Common/SharedMutex.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -27,7 +28,6 @@
 
 #include "config.h"
 
-#include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -228,16 +228,9 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-
-/** A set of known objects that can be used in the query.
-  * Consists of a shared part (always common to all sessions and queries)
-  *  and copied part (which can be its own for each session or query).
-  *
-  * Everything is encapsulated for all sorts of checks and locks.
-  */
-class Context: public std::enable_shared_from_this<Context>
+class ContextData
 {
-private:
+protected:
     ContextSharedPart * shared;
 
     ClientInfo client_info;
@@ -446,7 +439,7 @@ public:
 
     KitchenSink kitchen_sink;
 
-private:
+protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
@@ -473,13 +466,36 @@ private:
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     /// Use copy constructor or createGlobal() instead
+    ContextData();
+    ContextData(const ContextData &);
+
+    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
+    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
+
+    mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
+
+    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
+};
+
+/** A set of known objects that can be used in the query.
+  * Consists of a shared part (always common to all sessions and queries)
+  *  and copied part (which can be its own for each session or query).
+  *
+  * Everything is encapsulated for all sorts of checks and locks.
+  */
+class Context: public ContextData, public std::enable_shared_from_this<Context>
+{
+private:
+    /// ContextData mutex
+    mutable SharedMutex mutex;
+
     Context();
     Context(const Context &);
-    Context & operator=(const Context &);
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static ContextMutablePtr createGlobal(ContextSharedPart * shared);
+    static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
@@ -549,8 +565,8 @@ public:
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
-    boost::container::flat_set<UUID> getCurrentRoles() const;
-    boost::container::flat_set<UUID> getEnabledRoles() const;
+    std::vector<UUID> getCurrentRoles() const;
+    std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
@@ -713,6 +729,7 @@ public:
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;
+    bool isCurrentQueryKilled() const;
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
     bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
@@ -862,6 +879,7 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
+    QueryStatusPtr getProcessListElementSafe() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -1196,7 +1214,49 @@ public:
     const ServerSettings & getServerSettings() const;
 
 private:
-    std::unique_lock<std::recursive_mutex> getLock() const;
+    std::unique_lock<SharedMutex> getGlobalLock() const;
+
+    std::shared_lock<SharedMutex> getGlobalSharedLock() const;
+
+    std::unique_lock<SharedMutex> getLocalLock() const;
+
+    std::shared_lock<SharedMutex> getLocalSharedLock() const;
+
+    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::unique_lock<SharedMutex> & lock) const;
+
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
+
+    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::unique_lock<SharedMutex> & lock);
+
+    void setSettingWithLock(std::string_view name, const String & value, const std::unique_lock<SharedMutex> & lock);
+
+    void setSettingWithLock(std::string_view name, const Field & value, const std::unique_lock<SharedMutex> & lock);
+
+    void applySettingChangeWithLock(const SettingChange & change, const std::unique_lock<SharedMutex> & lock);
+
+    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::unique_lock<SharedMutex> & lock);
+
+    void setUserIDWithLock(const UUID & user_id_, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentDatabaseWithLock(const String & name, const std::unique_lock<SharedMutex> & lock);
+
+    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+
+    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+
+    void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     void initGlobal();
 
@@ -1231,14 +1291,9 @@ public:
 
     ThrottlerPtr getBackupsThrottler() const;
 
-private:
-    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
-    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
-
-    mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
-    mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
-
-    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
+    /// Kitchen sink
+    using ContextData::KitchenSink;
+    using ContextData::kitchen_sink;
 };
 
 struct HTTPContext : public IHTTPContext
