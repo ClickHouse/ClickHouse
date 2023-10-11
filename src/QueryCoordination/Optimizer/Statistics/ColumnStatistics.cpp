@@ -5,7 +5,9 @@ namespace DB
 
 ColumnStatisticsPtr ColumnStatistics::unknown()
 {
-    return std::make_shared<ColumnStatistics>();
+    auto ret = std::make_shared<ColumnStatistics>();
+    ret->is_unknown = true;
+    return ret;
 }
 
 ColumnStatisticsPtr ColumnStatistics::create(Float64 value)
@@ -41,47 +43,22 @@ void ColumnStatistics::mergeColumnByUnion(ColumnStatisticsPtr other)
 {
     if (other->isUnKnown() && !isUnKnown())
     {
-        this->is_unknown = true;
-        this->min_value = 0.0;
-        this->max_value = 0.0;
-        this->ndv = 1.0;
-        this->avg_row_size = 1.0;
-        this->data_type = {};
-        this->histogram = {};
+        *this = *unknown();
         return;
     }
-
     this->setMinValue(std::min(this->getMinValue(), other->getMinValue()));
     this->setMaxValue(std::max(this->getMaxValue(), other->getMaxValue()));
-
-    auto ndv_ = std::max(this->getNdv(), other->getNdv());
-    ndv_ = ndv_ + (ndv_ - std::min(this->getNdv(), other->getNdv())) * 0.1; /// TODO add to settings
-    this->setNdv(ndv_);
 }
 
 void ColumnStatistics::mergeColumnByIntersect(ColumnStatisticsPtr other)
 {
     if (other->isUnKnown())
     {
-        if (!isUnKnown())
-        {
-            this->is_unknown = true;
-            this->min_value = 0.0;
-            this->max_value = 0.0;
-            this->ndv = 1.0;
-            this->avg_row_size = 1.0;
-            this->data_type = {};
-            this->histogram = {};
-        }
+        *this = *unknown();
         return;
     }
-
     this->setMinValue(std::max(this->getMinValue(), other->getMinValue()));
     this->setMaxValue(std::min(this->getMaxValue(), other->getMaxValue()));
-
-    auto ndv_ = std::min(this->getNdv(), other->getNdv());
-    ndv_ = ndv_ * 0.1; /// TODO add to settings
-    this->setNdv(ndv_);
 }
 
 bool ColumnStatistics::isUnKnown() const

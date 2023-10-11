@@ -145,4 +145,10 @@ void Statistics::addAllColumnsFrom(const Statistics & other)
     }
 }
 
+void Statistics::reset()
+{
+    output_row_size = 1.0;
+    columns_stats_map.clear();
+}
+
 }

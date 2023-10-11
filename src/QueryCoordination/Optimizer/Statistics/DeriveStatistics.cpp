@@ -295,7 +295,15 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     for (size_t i = 0; i < output_columns.size(); i++)
     {
         auto column_stats = second_stats.getColumnStatistics(second_input_columns[i]);
-        statistics.mergeColumnByUnion(output_columns[i], column_stats);
+        auto output_column_stats = statistics.getColumnStatistics(output_columns[i]);
+
+        /// merge min_value / max_value
+        output_column_stats->mergeColumnByUnion(column_stats);
+
+        /// merge ndv
+        auto ndv = std::max(column_stats->getNdv(), output_column_stats->getNdv());
+        ndv = ndv + (ndv - std::min(column_stats->getNdv(), output_column_stats->getNdv())) * 0.1; /// TODO add to settings
+        output_column_stats->setNdv(ndv);
     }
 
     /// calculate output row size;

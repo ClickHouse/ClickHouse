@@ -45,7 +45,7 @@ public:
     {
     }
 
-    ColumnStatistics() : ColumnStatistics(0.0, 0.0, 1.0, 1.0, {}, true, {}) { }
+    ColumnStatistics() : ColumnStatistics(0.0, 0.0, 1.0, 1.0, {}, false, {}) { }
 
     ColumnStatistics(Float64 value)
         : ColumnStatistics(value, value, 1.0, 1.0, {}, false, {})
@@ -53,7 +53,7 @@ public:
     }
 
     ColumnStatistics(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_)
-        : ColumnStatistics(min_value_, max_value_, ndv_, avg_row_size_, {}, true, {})
+        : ColumnStatistics(min_value_, max_value_, ndv_, avg_row_size_, {}, false, {})
     {
     }
 
@@ -71,6 +71,7 @@ public:
     void updateValues(OP_TYPE, Float64 value);
 
     void mergeColumnByUnion(ColumnStatisticsPtr other);
+    /// Intersect min_value/max_value with others
     void mergeColumnByIntersect(ColumnStatisticsPtr other);
 
     ColumnStatisticsPtr clone();
