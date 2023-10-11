@@ -5748,6 +5748,7 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
+
     auto ast_to_str = [](ASTPtr query) -> String
     {
         if (!query)
@@ -5762,6 +5763,25 @@ void StorageReplicatedMergeTree::alter(
 
     while (true)
     {
+        bool pulled_queue = false;
+        std::optional<int32_t> maybe_mutations_version_after_logs_pull;
+        std::map<std::string, MutationCommands> unfinished_mutations;
+        for (const auto & command : commands)
+        {
+            if (command.isDropSomething())
+            {
+                if (!pulled_queue)
+                {
+                    auto [_, mutations_version] = queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::SYNC);
+                    maybe_mutations_version_after_logs_pull.emplace(mutations_version);
+                    unfinished_mutations = getUnfinishedMutationCommands();
+                    pulled_queue = true;
+                }
+
+                checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, query_context);
+            }
+        }
+
         /// Clear nodes from previous iteration
         alter_entry.emplace();
         mutation_znode.reset();
@@ -5875,8 +5895,18 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
 
-            Coordination::Stat mutations_stat;
-            zookeeper->get(mutations_path, &mutations_stat);
+            int32_t mutations_version;
+            if (maybe_mutations_version_after_logs_pull.has_value())
+            {
+                mutations_version = *maybe_mutations_version_after_logs_pull;
+            }
+            else
+            {
+                Coordination::Stat mutations_stat;
+                zookeeper->get(mutations_path, &mutations_stat);
+                mutations_version = mutations_stat.version;
+            }
+
 
             partition_block_numbers_holder =
                 allocateBlockNumbersInAffectedPartitions(mutation_entry.commands, query_context, zookeeper);
@@ -5884,7 +5914,7 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.block_numbers = partition_block_numbers_holder.getBlockNumbers();
             mutation_entry.create_time = time(nullptr);
 
-            ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_stat.version));
+            ops.emplace_back(zkutil::makeSetRequest(mutations_path, String(), mutations_version));
             mutation_path_idx = ops.size();
             ops.emplace_back(
                 zkutil::makeCreateRequest(fs::path(mutations_path) / "", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
