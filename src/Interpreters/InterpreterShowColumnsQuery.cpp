@@ -24,7 +24,7 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
-    [[maybe_unused]] const bool use_mysql_types = getContext()->getSettingsRef().use_mysql_types_in_show_columns;
+    const bool use_mysql_types = getContext()->getSettingsRef().use_mysql_types_in_show_columns;
 
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
