@@ -3281,7 +3281,7 @@ Default value: `0`.
 
 ## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
 
-Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns) and SELECTs on [system.columns](../system-tables/columns.md).
+Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
 
 Possible values:
 
