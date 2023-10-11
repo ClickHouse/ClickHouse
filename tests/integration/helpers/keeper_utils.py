@@ -145,6 +145,9 @@ class KeeperClient(object):
 
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)
+    
+    def get_all_children_number(self, path: str, timeout: float = 60.0) -> str:
+        return self.execute_query(f"get_all_children_number {path}", timeout)
 
     def reconfig(
         self,
