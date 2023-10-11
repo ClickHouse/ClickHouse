@@ -14,12 +14,12 @@ add_library(_gtest_all INTERFACE)
 target_link_libraries(_gtest_all INTERFACE _gtest _gtest_main)
 add_library(ch_contrib::gtest_all ALIAS _gtest_all)
 
-
 add_library(_gmock "${SRC_DIR}/googlemock/src/gmock-all.cc")
 set_target_properties(_gmock PROPERTIES VERSION "1.0.0")
 target_compile_definitions (_gmock PUBLIC GTEST_HAS_POSIX_RE=0)
 target_include_directories(_gmock SYSTEM PUBLIC "${SRC_DIR}/googlemock/include" "${SRC_DIR}/googletest/include")
 target_include_directories(_gmock PRIVATE "${SRC_DIR}/googlemock")
+target_link_libraries(_gmock PUBLIC _gtest)
 
 add_library(_gmock_main "${SRC_DIR}/googlemock/src/gmock_main.cc")
 set_target_properties(_gmock_main PROPERTIES VERSION "1.0.0")
