@@ -14,7 +14,7 @@ ui128 type is CHAR, value: 15324355
 ui256 type is CHAR, value: 41345135123432
 f32 type is FLOAT, value: -0.796896
 f64 type is DOUBLE, value: -0.113259
-b type is BIT, value: true
+b type is TINYINT, value: true
 Row #2
 i8 type is TINYINT, value: 127
 i16 type is SMALLINT, value: 32767
@@ -30,7 +30,7 @@ ui128 type is CHAR, value: 340282366920938463463374607431768211455
 ui256 type is CHAR, value: 115792089237316195423570985008687907853269984665640564039457584007913129639935
 f32 type is FLOAT, value: 1.234000
 f64 type is DOUBLE, value: 3.352451
-b type is BIT, value: false
+b type is TINYINT, value: false
 
 ### testStringTypes
 Row #1
@@ -116,4 +116,14 @@ dt64_3 type is TIMESTAMP, value: 1969-12-31 16:00:00.0
 Row #2
 dt type is TIMESTAMP, value: 2022-09-04 20:31:05.0
 dt64_3 type is TIMESTAMP, value: 2022-09-04 20:31:05.022
+
+### testSuspiciousNullableLowCardinalityTypes
+Row #1
+f type is FLOAT, value: 1.0
+d type is DATE, value: 2022-04-15
+dt type is TIMESTAMP, value: 2021-06-04 13:55:11.0
+Row #2
+f type is FLOAT, value: 3.14
+d type is DATE, value: 1970-01-01
+dt type is TIMESTAMP, value: 1970-01-01 00:00:00.0
 
