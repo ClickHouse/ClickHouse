@@ -9,6 +9,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/ProjectionsDescription.h>
 
 #include <memory>
@@ -30,6 +31,9 @@ using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
+struct LazilyReadInfo;
+using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 struct InputOrderInfo;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
@@ -100,6 +104,15 @@ struct FilterDAGInfo
     bool do_remove_column = false;
 
     std::string dump() const;
+};
+
+struct LazilyReadInfo
+{
+    Names lazily_read_columns_names;
+    bool do_remove_column;
+    DataPartsInfoPtr data_parts_info;
+
+    LazilyReadInfo() = default;
 };
 
 struct InputOrderInfo

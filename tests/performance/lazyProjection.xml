@@ -1,0 +1,7 @@
+<test>
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 5 SETTINGS query_plan_optimize_lazy_projection = 0</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 5 SETTINGS query_plan_optimize_lazy_projection = 0</query>
+
+    <query>SELECT * FROM test.hits ORDER BY EventTime LIMIT 5 SETTINGS query_plan_optimize_lazy_projection = 1</query>
+    <query>SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 5 SETTINGS query_plan_optimize_lazy_projection = 1</query>
+</test>

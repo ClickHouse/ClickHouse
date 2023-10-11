@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
@@ -39,7 +40,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
     const MergeTreeData & storage_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    const LazilyReadInfoPtr & lazily_read_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReadTask::BlockSizeParams & block_size_params_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -49,6 +52,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
+    , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
     , block_size_params(block_size_params_)
     , virt_column_names(virt_column_names_)
@@ -78,6 +82,12 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
+
+    if (lazily_read_info)
+    {
+        lazily_read_header = storage_snapshot_->getSampleBlockForColumns(lazily_read_info->lazily_read_columns_names);
+        injectLazilyReadColumns(0, result_header, lazily_read_header, nullptr, lazily_read_info);
+    }
 
     if (!prewhere_actions.steps.empty())
         LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
@@ -162,6 +172,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         if (res.row_count)
         {
             injectVirtualColumns(res.block, res.row_count, task.get(), partition_value_type, virt_column_names);
+            injectLazilyReadColumns(
+                res.row_count, res.block, lazily_read_header,
+                task.get(), lazily_read_info);
 
             /// Reorder the columns according to result_header
             Columns ordered_columns;
@@ -393,6 +406,43 @@ void MergeTreeSelectProcessor::injectVirtualColumns(
     injectPartConstVirtualColumns(row_count, block, task, partition_value_type, virtual_columns);
 }
 
+void MergeTreeSelectProcessor::injectLazilyReadColumns(
+    size_t rows,
+    Block & block,
+    Block & lazily_read_block,
+    MergeTreeReadTask * task,
+    const LazilyReadInfoPtr & lazily_read_info)
+{
+    if (!lazily_read_info)
+        return;
+
+    const auto & lazily_read_columns = lazily_read_info->lazily_read_columns_names;
+    if (rows)
+    {
+        ColumnPtr row_num_column =  block.getByName("_part_offset").column;
+        ColumnPtr part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
+        for (auto & column_name : lazily_read_columns)
+        {
+            ColumnPtr lazy_column = ColumnLazy::create(part_num_column, row_num_column);
+            auto column_with_type_and_name = lazily_read_block.getByName(column_name);
+            column_with_type_and_name.column = lazy_column;
+            block.insert(column_with_type_and_name);
+        }
+    }
+    else
+    {
+        for (auto & column_name : lazily_read_columns)
+        {
+            auto column_with_type_and_name = lazily_read_block.getByName(column_name);
+            column_with_type_and_name.column = ColumnLazy::create();
+            block.insert(column_with_type_and_name);
+        }
+    }
+
+    if (lazily_read_info->do_remove_column)
+        block.erase("_part_offset");
+}
+
 Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info)
 {
     if (prewhere_info)
@@ -445,10 +495,16 @@ Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const Prewhere
 }
 
 Block MergeTreeSelectProcessor::transformHeader(
-    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
+    Block block,
+    Block lazily_read_block,
+    const LazilyReadInfoPtr & lazily_read_info,
+    const PrewhereInfoPtr & prewhere_info,
+    const DataTypePtr & partition_value_type,
+    const Names & virtual_columns)
 {
     auto transformed = applyPrewhereActions(std::move(block), prewhere_info);
     injectVirtualColumns(transformed, 0, nullptr, partition_value_type, virtual_columns);
+    injectLazilyReadColumns(0, transformed, lazily_read_block, nullptr, lazily_read_info);
     return transformed;
 }
 

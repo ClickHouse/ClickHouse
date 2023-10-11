@@ -42,7 +42,9 @@ public:
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
         const MergeTreeData & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
+        const LazilyReadInfoPtr & lazily_read_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
         const MergeTreeReaderSettings & reader_settings_,
@@ -52,6 +54,8 @@ public:
 
     static Block transformHeader(
         Block block,
+        Block lazily_read_block,
+        const LazilyReadInfoPtr & lazily_read_info,
         const PrewhereInfoPtr & prewhere_info,
         const DataTypePtr & partition_value_type,
         const Names & virtual_columns);
@@ -81,6 +85,12 @@ private:
 
     /// Used for filling header with no rows as well as block with data
     static void injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    static void injectLazilyReadColumns(
+        size_t rows,
+        Block & block,
+        Block & lazily_read_block,
+        MergeTreeReadTask * task,
+        const LazilyReadInfoPtr & lazily_read_info);
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
     /// Sets up range readers corresponding to data readers
@@ -92,6 +102,8 @@ private:
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
+
+    const LazilyReadInfoPtr lazily_read_info;
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
@@ -108,6 +120,8 @@ private:
     Block header_without_const_virtual_columns;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
+    /// This header is used for lazily reading.
+    Block lazily_read_header;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

@@ -50,6 +50,9 @@ public:
     /// Return amount of rows before mark
     size_t getMarkStartingRow(size_t mark_index) const;
 
+    ///
+    MarkRange getMarkRangeForRowOffset(size_t row_offset) const;
+
     /// Amount of rows after last mark
     size_t getLastMarkRows() const
     {

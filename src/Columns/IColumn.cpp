@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLazy.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
@@ -86,6 +87,11 @@ bool isColumnNullable(const IColumn & column)
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
+}
+
+bool isColumnLazy(const IColumn & column)
+{
+    return checkColumn<ColumnLazy>(column);
 }
 
 }

@@ -1,0 +1,54 @@
+-- { echoOn }
+SELECT * FROM optimize_lazy_projection ORDER BY c LIMIT 3;
+0	0	0	0
+1	1	1	1
+2	0	2	2
+-- queries with filter
+SELECT * FROM optimize_lazy_projection WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+SELECT * FROM optimize_lazy_projection PREWHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+-- queries with function in order by
+SELECT * FROM optimize_lazy_projection WHERE d > 1 ORDER BY -c LIMIT 3;
+197	1	197	2
+194	0	194	2
+191	1	191	2
+SELECT * FROM optimize_lazy_projection WHERE d > 1 ORDER BY -toFloat64(c) LIMIT 3;
+197	1	197	2
+194	0	194	2
+191	1	191	2
+SELECT * FROM optimize_lazy_projection WHERE d > 1 ORDER BY c+1 LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+-- queries with function in filter
+SELECT * FROM optimize_lazy_projection WHERE d%3 > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+-- queries with aliases
+SELECT a AS a, b AS b, c AS c, d AS d FROM optimize_lazy_projection WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+SELECT a AS a, b AS b, c AS c, d AS d FROM optimize_lazy_projection WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+SELECT a+1 AS a, b AS b, c+1 AS c, d+1 AS d FROM optimize_lazy_projection WHERE d > 1 ORDER BY c LIMIT 3;
+2	1	2	2
+3	0	3	3
+5	0	5	2
+SELECT a+1 AS a, b AS b, c+1 AS c, d+1 AS d FROM optimize_lazy_projection WHERE d > 1 ORDER BY c LIMIT 3;
+2	1	2	2
+3	0	3	3
+5	0	5	2
+-- queries with non-trivial action's chain in expression
+SELECT y, z FROM (SELECT a as y, b as z FROM optimize_lazy_projection WHERE d > 1 ORDER BY c LIMIT 3) ORDER BY z + 1;
+2	0
+8	0
+5	1
