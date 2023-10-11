@@ -127,7 +127,7 @@ function setup_logs_replication
     do
         # Calculate hash of its structure. Note: 1 is the version of extra columns - increment it if extra columns are changed:
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(1, groupArray((name, type)))
+            SELECT sipHash64(2, groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
