@@ -71,28 +71,30 @@ def get_gh_api(
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
 
-    need_retry = False
-    for _ in range(retries):
+    header_is_set = "Authorization" in kwargs.get("headers", {})
+    retry = 1
+    exc = Exception("placeholder")
+    while retry <= retries:
         try:
+            retry += 1
             response = get_with_retries(url, 1, sleep, **kwargs)
             response.raise_for_status()
             return response
-        except requests.HTTPError as exc:
+        except requests.HTTPError as e:
+            exc = e
             if (
-                exc.response.status_code == 403
+                e.response.status_code == 403
                 and b"rate limit exceeded"
-                in exc.response._content  # pylint:disable=protected-access
+                in e.response._content  # pylint:disable=protected-access
+                and not header_is_set
             ):
                 logging.warning(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
-                need_retry = True
-                break
-            raise exc
+                retry = 1
 
-    if need_retry:
-        return get_with_retries(url, retries, sleep, **kwargs)
+    raise exc
 
 
 def get_build_name_for_check(check_name: str) -> str:
