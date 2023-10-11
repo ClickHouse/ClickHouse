@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-
+#include <optional>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ class ASTPartition : public IAST
 {
 public:
     ASTPtr value;
-    size_t fields_count = 0;
+    std::optional<size_t> fields_count;
 
     String id;
     bool all = false;
