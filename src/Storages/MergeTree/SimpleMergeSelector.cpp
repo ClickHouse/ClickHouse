@@ -165,7 +165,7 @@ void selectWithinPartition(
     /// grow uncontrollably, similar to a snowball effect.
     /// To address this we will try to assign a merge taking into consideration
     /// only last N parts.
-    static constexpr parts_threshold = 1000;
+    static constexpr size_t parts_threshold = 1000;
     size_t begin = 0;
     if (parts_count >= parts_threshold)
         begin = parts_count - parts_threshold;
