@@ -847,7 +847,8 @@ bool AlterCommand::isRemovingProperty() const
 
 bool AlterCommand::isDropSomething() const
 {
-    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX || type == Type::DROP_CONSTRAINT;
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const

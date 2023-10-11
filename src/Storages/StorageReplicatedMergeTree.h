@@ -349,8 +349,6 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
-    size_t getNumberOfUnfinishedMutations() const override;
-
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
 

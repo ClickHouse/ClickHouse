@@ -8710,11 +8710,6 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     return toString(table_shared_id);
 }
 
-size_t StorageReplicatedMergeTree::getNumberOfUnfinishedMutations() const
-{
-    return queue.countUnfinishedMutations();
-}
-
 std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishedMutationCommands() const
 {
     return queue.getUnfinishedMutations();

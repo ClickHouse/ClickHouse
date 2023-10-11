@@ -1420,26 +1420,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return scheduled;
 }
 
-size_t StorageMergeTree::getNumberOfUnfinishedMutations() const
-{
-    std::unique_lock lock(currently_processing_in_background_mutex);
-
-    size_t count = 0;
-    for (const auto & [version, _] : current_mutations_by_version | std::views::reverse)
-    {
-        auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, true);
-        if (!status)
-            continue;
-
-        if (status->is_done)
-            break;
-
-        ++count;
-    }
-
-    return count;
-}
-
 UInt64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const

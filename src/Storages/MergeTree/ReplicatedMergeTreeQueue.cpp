@@ -1762,22 +1762,6 @@ size_t ReplicatedMergeTreeQueue::countFinishedMutations() const
     return count;
 }
 
-size_t ReplicatedMergeTreeQueue::countUnfinishedMutations() const
-{
-    std::lock_guard lock(state_mutex);
-
-    size_t count = 0;
-    for (const auto & [_, status] : mutations_by_znode | std::views::reverse)
-    {
-        if (status.is_done)
-            break;
-        ++count;
-    }
-
-    return count;
-}
-
-
 std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedMutations() const
 {
     std::map<std::string, MutationCommands> result;
