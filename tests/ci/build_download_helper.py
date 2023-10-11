@@ -51,10 +51,8 @@ def get_gh_api(
     sleep: int = 3,
     **kwargs: Any,
 ) -> requests.Response:
-    """It's a wrapper around get_with_retries that requests GH api w/o auth by
-    default, and falls back to the get_best_robot_token in case of receiving
-    "403 rate limit exceeded" error
-    It sets auth automatically when ROBOT_TOKEN is already set by get_best_robot_token
+    """
+    get gh api with retries and failover to another token if ratelimit is exceeded
     """
 
     def set_auth_header():
@@ -71,12 +69,10 @@ def get_gh_api(
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
 
-    header_is_set = "Authorization" in kwargs.get("headers", {})
-    retry = 1
-    exc = Exception("placeholder")
-    while retry <= retries:
+    token_is_set = "Authorization" in kwargs.get("headers", {})
+    exc = Exception("A placeholder to satisfy typing and avoid nesting")
+    for i in range(retries):
         try:
-            retry += 1
             response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
@@ -84,21 +80,20 @@ def get_gh_api(
             exc = e
             if (
                 e.response.status_code == 403
-                and b"rate limit exceeded"
-                in e.response._content  # pylint:disable=protected-access
-                and not header_is_set
+                and b"rate limit exceeded" in e.response._content  # pylint:disable=protected-access
+                and token_is_set
             ):
                 logging.warning(
-                    "Received rate limit exception, setting the auth header and retry"
+                    "Received rate limit exception, re-setting the auth header and retry"
                 )
                 set_auth_header()
-                retry = 1
-            elif retry < retries:
-                time.sleep(sleep)
+                continue
         except Exception as e:
             exc = e
-            if retry < retries:
-                time.sleep(sleep)
+
+        if i + 1 < retries:
+            logging.info("Exception '%s' while getting, retry %i", exc, i + 1)
+            time.sleep(sleep)
 
     raise exc
 

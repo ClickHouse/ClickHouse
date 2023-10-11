@@ -169,10 +169,11 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-                self.diff_urls.append(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                    f"compare/master...{self.head_ref}"
-                )
+            self.diff_urls.append(
+                f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                f"compare/master...{self.head_ref}"
+            )
+
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
             commit_message = github_event["head_commit"]["message"]  # type: str
