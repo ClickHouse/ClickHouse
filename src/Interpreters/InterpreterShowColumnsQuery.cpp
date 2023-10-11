@@ -38,6 +38,7 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     String rewritten_query;
     if (use_mysql_types)
         /// Cheapskate SQL-based mapping from native types to MySQL types, see https://dev.mysql.com/doc/refman/8.0/en/data-types.html
+        /// Only used with setting 'use_mysql_types_in_show_columns = 1'
         /// Known issues:
         /// - Enums are translated to TEXT
         rewritten_query += R"(
