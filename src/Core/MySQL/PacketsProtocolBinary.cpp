@@ -26,7 +26,7 @@ namespace MySQLProtocol
 {
 namespace ProtocolBinary
 {
-ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, size_t row_num_)
     : row_num(row_num_), columns(columns_), data_types(data_types_), serializations(serializations_)
 {
     payload_size = 1 + null_bitmap_size;

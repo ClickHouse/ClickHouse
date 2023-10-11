@@ -13,7 +13,7 @@ namespace MySQLUtils
 {
 
 DecimalUtils::DecimalComponents<DateTime64>
-getNormalizedDateTime64Components(const DataTypePtr data_type, const ColumnPtr col, const int row_num)
+getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t row_num)
 {
     const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(data_type.get());
 
