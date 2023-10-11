@@ -80,7 +80,8 @@ def get_gh_api(
             exc = e
             if (
                 e.response.status_code == 403
-                and b"rate limit exceeded" in e.response._content  # pylint:disable=protected-access
+                and b"rate limit exceeded"
+                in e.response._content  # pylint:disable=protected-access
                 and token_is_set
             ):
                 logging.warning(
