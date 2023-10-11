@@ -194,9 +194,6 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
-class ParallelReplicasReadingCoordinator;
-using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
-
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
@@ -443,8 +440,6 @@ public:
     KitchenSink kitchen_sink;
 
 protected:
-    ParallelReplicasReadingCoordinatorPtr parallel_reading_coordinator;
-
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
