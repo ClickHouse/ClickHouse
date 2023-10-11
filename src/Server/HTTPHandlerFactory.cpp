@@ -48,7 +48,8 @@ static inline auto createHandlersFactoryFromConfig(
 
     for (const auto & key : keys)
     {
-        if (key == "defaults") {
+        if (key == "defaults")
+        {
             addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
         }
         else if (startsWith(key, "rule"))
