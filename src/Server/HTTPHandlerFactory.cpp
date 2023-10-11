@@ -44,11 +44,12 @@ static inline auto createHandlersFactoryFromConfig(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
 
+    bool enable_default_handlers = false;
+
     for (const auto & key : keys)
     {
-        if (key == "defaults")
-        {
-            addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
+        if (key == "defaults") {
+            enable_default_handlers = true;
         }
         else if (startsWith(key, "rule"))
         {
@@ -76,6 +77,10 @@ static inline auto createHandlersFactoryFromConfig(
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
                 "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
+
+    /// Adding default handlers as the last ones due to aggressive handler matching for `/query`
+    if (enable_default_handlers)
+        addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
 
     return main_handler_factory;
 }
@@ -181,7 +186,6 @@ void addDefaultHandlersFactory(
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->allowPostAndGetParamsAndOptionsRequest();
-    query_handler->attachNonStrictPath("/query");
     factory.addHandler(query_handler);
 
     /// We check that prometheus handler will be served on current (default) port.
