@@ -18,6 +18,7 @@ function were_parallel_replicas_used () {
     FORMAT TSV"
 }
 
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_parallel_replicas_automatic_count"
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE IF NOT EXISTS test_parallel_replicas_automatic_count
     (
@@ -95,4 +96,4 @@ run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_5M" 5000
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 were_parallel_replicas_used "${query_id_base}"
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE test_parallel_replicas_automatic_count"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_parallel_replicas_automatic_count"
