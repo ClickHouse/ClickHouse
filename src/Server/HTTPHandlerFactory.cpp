@@ -181,6 +181,7 @@ void addDefaultHandlersFactory(
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->allowPostAndGetParamsAndOptionsRequest();
+    query_handler->attachNonStrictPath("/query");
     factory.addHandler(query_handler);
 
     /// We check that prometheus handler will be served on current (default) port.
