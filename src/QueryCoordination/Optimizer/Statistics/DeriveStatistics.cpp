@@ -66,7 +66,8 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
 Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
 {
     Statistics statistics;
-    statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
+//    statistics.setOutputRowSize(step.getAnalysisResult().selected_rows);
+    statistics.setOutputRowSize(10000);
 
     //    if (step.getStorageID().table_name == "student")
     //    {
@@ -405,7 +406,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
 
     auto output_columns = step.getOutputStream().header.getNames();
 
-    for (size_t i = 0; input_statistics.size(); i++)
+    for (size_t i = 0; i < input_statistics.size(); i++)
     {
         chassert(step.getInputStreams()[i].header.getNames().size() == output_columns.size());
         chassert(input_statistics[i].getColumnStatisticsSize() == output_columns.size());
@@ -415,7 +416,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     auto first_input_columns = step.getInputStreams()[0].header.getNames();
     auto & first_stats = input_statistics[0];
 
-    for (size_t i = 0; output_columns.size(); i++)
+    for (size_t i = 0; i < output_columns.size(); i++)
     {
         auto column_stats = first_stats.getColumnStatistics(first_input_columns[i]);
         statistics.addColumnStatistics(output_columns[i], column_stats);
@@ -425,7 +426,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
     auto second_input_columns = step.getInputStreams()[1].header.getNames();
     auto & second_stats = input_statistics[1];
 
-    for (size_t i = 0; output_columns.size(); i++)
+    for (size_t i = 0; i < output_columns.size(); i++)
     {
         auto column_stats = second_stats.getColumnStatistics(second_input_columns[i]);
         statistics.mergeColumnByUnion(output_columns[i], column_stats);
@@ -448,6 +449,23 @@ Statistics DeriveStatistics::visit(ExchangeDataStep & /*step*/)
         ErrorCodes::LOGICAL_ERROR,
         "Should never reach here, for the statistics of group of ExchangeDataStep is calculated by other step."
         "And we just skip the calculating the step.");
+}
+
+Statistics DeriveStatistics::visit(TopNStep & step)
+{
+    chassert(input_statistics.size() == 1);
+    Statistics statistics = input_statistics.front().clone();
+
+    size_t length = step.getLimitForSorting();
+    if (length)
+    {
+        Float64 input_row_size = input_statistics.front().getOutputRowSize();
+        if (length < input_row_size)
+            statistics.setOutputRowSize(length);
+    }
+
+    statistics.adjustStatistics();
+    return statistics;
 }
 
 }

@@ -32,11 +32,14 @@ public:
 
     void setPhase(Phase phase_) { phase = phase_; }
 
-    size_t getLimit() const
+    size_t getLimitForSorting() const
     {
         auto * limit = typeid_cast<LimitStep *>(limit_step.get());
         assert(limit != nullptr);
-        return limit->getLimit();
+        if (limit->getLimit() > std::numeric_limits<UInt64>::max() - limit->getOffset())
+            return 0;
+
+        return limit->getLimit() + limit->getOffset();
     }
 
     std::shared_ptr<TopNStep> makePreliminary(bool exact_rows_before_limit);
