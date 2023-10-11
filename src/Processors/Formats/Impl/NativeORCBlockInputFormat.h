@@ -82,8 +82,8 @@ private:
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
 
-    FormatSettings format_settings;
-    std::unordered_set<int> & skip_stripes;
+    const FormatSettings format_settings;
+    const std::unordered_set<int> & skip_stripes;
 
     int total_stripes = 0;
     int current_stripe = -1;

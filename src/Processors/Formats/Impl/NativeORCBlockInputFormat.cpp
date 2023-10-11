@@ -128,7 +128,6 @@ static std::optional<orc::PredicateDataType> convertORCTypeToPredicateType(const
         case orc::DATE:
             return orc::PredicateDataType::DATE;
         case orc::TIMESTAMP:
-        case orc::TIMESTAMP_INSTANT:
             return orc::PredicateDataType::TIMESTAMP;
         case orc::DECIMAL:
             return orc::PredicateDataType::DECIMAL;

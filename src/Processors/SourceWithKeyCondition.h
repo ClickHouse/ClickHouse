@@ -50,14 +50,13 @@ public:
     using Base = ISource;
     using Base::Base;
 
-    /// If the format is used by a SELECT query, this method may be called.
-    /// The source may use it for filter pushdown.
+    /// Set key_condition directly. It is used for filter push down in source.
     virtual void setKeyCondition(const std::shared_ptr<const KeyCondition> & key_condition_) { key_condition = key_condition_; }
 
-    /// It is used for filter push down when allow_experimental_analyzer is false.
+    /// Set key_condition created by query_info and context. It is used for filter push down when allow_experimental_analyzer is false.
     virtual void setKeyCondition(const SelectQueryInfo & /*query_info*/, ContextPtr /*context*/) { }
 
-    /// It is used for filter push down when allow_experimental_analyzer is true
+    /// Set key_condition created by nodes and context. It is used for filter push down when allow_experimental_analyzer is true.
     virtual void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & /*nodes*/, ContextPtr /*context*/) { }
 };
 }
