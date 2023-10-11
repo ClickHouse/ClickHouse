@@ -615,12 +615,12 @@ void ValuesBlockInputFormat::readSuffix()
     {
         ++buf->position();
         skipWhitespaceIfAny(*buf);
-        if (buf->hasUnreadData())
+        if (buf->hasUnreadData() || !buf->eof())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
         return;
     }
 
-    if (buf->hasUnreadData())
+    if (buf->hasUnreadData() || !buf->eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
