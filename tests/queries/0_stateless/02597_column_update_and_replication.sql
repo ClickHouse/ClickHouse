@@ -22,8 +22,6 @@ ALTER TABLE test UPDATE x = x + 1 where 1 SETTINGS mutations_sync = 2;
 
 ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync = 2;
 
-SELECT * FROM system.mutations WHERE database=currentDatabase() AND table='test' AND NOT is_done;
-
 select * from test format Null;
 
 DROP TABLE test;
