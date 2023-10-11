@@ -102,4 +102,4 @@ Additional virtual columns when `kafka_handle_error_mode='stream'`:
 - `_raw_record` - Raw record that couldn't be parsed successfully.
 - `_error` - Exception message happened during failed parsing.
 
-Note: `_raw_record` and `_error` virtual columns are filled inly in case of exception during parsing, they are always empty when message was parsed successfully.
+Note: `_raw_record` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
