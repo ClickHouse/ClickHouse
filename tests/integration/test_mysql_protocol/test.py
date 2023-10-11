@@ -577,6 +577,37 @@ def test_mysql_set_variables(started_cluster):
     assert code == 0
 
 
+def test_mysql_boolean_format(started_cluster):
+    node.query(
+        """
+            CREATE OR REPLACE TABLE mysql_boolean_format_test
+            (
+                `a` Bool,
+                `b` Nullable(Bool),
+                `c` LowCardinality(Nullable(Bool))
+            ) ENGINE MergeTree ORDER BY a;
+        """,
+        settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
+    )
+    node.query(
+        "INSERT INTO mysql_boolean_format_test VALUES (false, true, false), (true, false, true);",
+        settings={"password": "123"},
+    )
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u user_with_double_sha1 --password=abacaba
+        -e "SELECT * FROM mysql_boolean_format_test;"
+        """.format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    logging.debug(
+        f"test_mysql_boolean_format code:{code} stdout:{stdout}, stderr:{stderr}"
+    )
+    assert stdout.decode() == "a\tb\tc\n" + "0\t1\t0\n" + "1\t0\t1\n"
+
+
 def test_python_client(started_cluster):
     client = pymysql.connections.Connection(
         host=started_cluster.get_instance_ip("node"),
