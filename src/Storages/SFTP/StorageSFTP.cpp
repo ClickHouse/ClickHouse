@@ -163,6 +163,10 @@ namespace DB
             std::cout << "LSWithRegexpMatching5" << std::endl;
 
             re2::RE2 matcher(makeRegexpPatternFromGlobs(current_glob));
+
+            std::cout << "regex.pattern " << makeRegexpPatternFromGlobs(current_glob) << std::endl;
+
+            std::cout << "matcher " << matcher.pattern() << std::endl;
             if (!matcher.ok())
                 throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                                 "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
@@ -170,7 +174,7 @@ namespace DB
             SFTPWrapper::DirectoryIterator ls;
 
             try {
-                std::cout << "LSWithRegexpMatching6" << std::endl;
+                std::cout << "LSWithRegexpMatching6" << ' ' << prefix_without_globs << std::endl;
 
                 ls = client->openDir(prefix_without_globs);
                 std::cout << "LSWithRegexpMatching7" << std::endl;
@@ -181,26 +185,40 @@ namespace DB
             }
 
             std::vector<StorageSFTP::PathWithInfo> result;
-            for (SftpAttributes attrs = ls.next(); ls.eof(); attrs = ls.next())
+            for (SftpAttributes attrs = ls.next(); !ls.eof(); attrs = ls.next())
             {
+                std::cout << "eof = " << ls.eof() << std::endl;
+                std::cout << "attrs eof = " << attrs.eof() << std::endl;
                 // TODO: test getname and getlongname
                 std::cout << attrs.getName() << ' ' << attrs.getLongName() << std::endl;
-                const String full_path = fs::path(attrs.getName()).lexically_normal();
+                const String full_path = (fs::path(prefix_without_globs) / fs::path(attrs.getName())).lexically_normal();
                 const size_t last_slash = full_path.rfind('/');
                 const String file_name = full_path.substr(last_slash);
                 const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
                 const bool is_directory = attrs.isDirectory();
 
+                std::cout << "full_path = " << full_path << std::endl;
+                std::cout << "file_name = " << file_name << std::endl;
+                std::cout << "looking_for_directory = " << looking_for_directory << std::endl;
+                std::cout << "is_directory = " << is_directory << std::endl;
 
                 if (!is_directory && !looking_for_directory)
                 {
-                    if (re2::RE2::FullMatch(file_name, matcher))
+                    std::cout << "LSWithRegexpMatching8" << std::endl;
+                    std::cout << "full match " << file_name << ' ' << matcher.pattern() << std::endl;
+                    std::cout << "full match " << re2::RE2::FullMatch(file_name, matcher) << std::endl;
+                    if (re2::RE2::FullMatch(file_name, matcher)) {
+                        std::cout << "LSWithRegexpMatching8.2" << std::endl;
                         result.push_back(StorageSFTP::PathWithInfo{
                                 String(full_path),
-                                StorageSFTP::PathInfo{static_cast<time_t>(attrs.getLastModifiedTime()), attrs.getSize()}});
+                                StorageSFTP::PathInfo{static_cast<time_t>(attrs.getLastModifiedTime()),
+                                                      attrs.getSize()}});
+                    }
+                    std::cout << "LSWithRegexpMatching8.1" << std::endl;
                 }
                 else if (is_directory && looking_for_directory)
                 {
+                    std::cout << "LSWithRegexpMatching9" << std::endl;
                     if (re2::RE2::FullMatch(file_name, matcher))
                     {
                         std::vector<StorageSFTP::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", client,
@@ -208,8 +226,16 @@ namespace DB
                         /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                         std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                     }
+                    std::cout << "LSWithRegexpMatching9.1" << std::endl;
                 }
+                std::cout << "LSWithRegexpMatching10" << std::endl;
             }
+            std::cout << "LSWithRegexpMatching11" << std::endl;
+
+            for (auto & elem : result)
+                std::cout << "result = " << elem.path << ' ' << elem.info->last_mod_time << std::endl;
+
+            std::cout << "LSWithRegexpMatching12" << std::endl;
 
             return result;
         }
@@ -271,7 +297,10 @@ namespace DB
         client = std::make_shared<SFTPWrapper>(ssh_wrapper);
 
         std::cout << "storage constructor2" << std::endl;
-        uri = "sftp://" + configuration.user + "@" + configuration.host + ":" + std::to_string(configuration.port);
+        if (!configuration.path.starts_with('/')) {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path in SFTP storage must start with '/'");
+        }
+        uri = "sftp://" + configuration.user + "@" + configuration.host + ":" + std::to_string(configuration.port) + configuration.path;
         FormatFactory::instance().checkFormatName(format_name);
 
         std::cout << "storage constructor2.1" << std::endl;
@@ -467,12 +496,16 @@ namespace DB
                       const ASTPtr &query, const NamesAndTypesList &virtual_columns, const ContextPtr &context_)
                 : WithContext(context_), uris(uris_with_paths_), client(client_), file_progress_callback(context_->getFileProgressCallback())
         {
+            std::cout << "URISIterator::Impl start" << std::endl;
+            std::cout << "uri " << uris[0] << std::endl;
             ASTPtr filter_ast;
             if (!uris.empty())
                 filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getPathFromUriAndUriWithoutPath(uris[0]).first, getContext());
 
+            std::cout << "URISIterator::Impl 1" << std::endl;
             if (filter_ast)
             {
+                std::cout << "URISIterator::Impl 2" << std::endl;
                 std::vector<String> paths;
                 paths.reserve(uris.size());
                 for (const auto & uri : uris)
@@ -511,7 +544,7 @@ namespace DB
                     file_progress_callback(FileProgress(0, sftp_info.getSize()));
             }
 
-            return {uri, info};
+            return {getPathFromUriAndUriWithoutPath(uri).first, info};
         }
 
     private:
@@ -545,7 +578,7 @@ namespace DB
     }
 
     SFTPSource::SFTPSource(
-            const std::shared_ptr<SFTPWrapper> &client_,
+            const StorageSFTP::Configuration &configuration_,
             const ReadFromFormatInfo & info,
             StorageSFTPPtr storage_,
             ContextPtr context_,
@@ -555,7 +588,7 @@ namespace DB
             const SelectQueryInfo & query_info_)
             : ISource(info.source_header, false)
             , WithContext(context_)
-            , client(client_)
+            , configuration(configuration_)
             , storage(std::move(storage_))
             , block_for_format(info.format_header)
             , requested_columns(info.requested_columns)
@@ -571,6 +604,17 @@ namespace DB
 
     bool SFTPSource::initialize()
     {
+        std::shared_ptr<SSHWrapper> ssh_wrapper;
+        if (!configuration.password.empty()) {
+            ssh_wrapper = std::make_shared<SSHWrapper>(configuration.user, configuration.password, configuration.host,
+                                                       configuration.port);
+        } else {
+            ssh_wrapper = std::make_shared<SSHWrapper>(configuration.user, configuration.host, configuration.port);
+        }
+
+        client = std::make_shared<SFTPWrapper>(ssh_wrapper);
+
+        std::cout << "SFTP SOURCE START" << std::endl;
         bool skip_empty_files = getContext()->getSettingsRef().sftp_skip_empty_files;
         StorageSFTP::PathWithInfo path_with_info;
         while (true)
@@ -578,6 +622,7 @@ namespace DB
             path_with_info = (*file_iterator)();
             if (path_with_info.path.empty())
                 return false;
+            std::cout << "path with info " << path_with_info.path << std::endl;
 
             if (path_with_info.info && skip_empty_files && path_with_info.info->size == 0)
                 continue;
@@ -895,7 +940,7 @@ namespace DB
         for (size_t i = 0; i < num_streams; ++i)
         {
             pipes.emplace_back(std::make_shared<SFTPSource>(
-                    client,
+                    configuration,
                     read_from_format_info,
                     this_ptr,
                     context_,

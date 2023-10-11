@@ -22,13 +22,12 @@ namespace DB {
     private:
         friend class SFTPWrapper;
 
-        ssh_session ssh_session;
+        ssh_session ssh_session = nullptr;
         String user;
         String host;
         int port;
 
         void setOption(ssh_options_e type, const void *value) {
-            \
             int rc = ssh_options_set(ssh_session, type, value);
             if (rc != SSH_OK) {
                 throw SSHException(ssh_get_error_code(ssh_session));
@@ -129,7 +128,7 @@ namespace DB {
 
         friend class FileStream;
 
-        sftp_attributes attributes;
+        sftp_attributes attributes = nullptr;
 
         explicit SftpAttributes(sftp_attributes attributes_) : attributes(attributes_) {}
 
@@ -140,18 +139,20 @@ namespace DB {
 
         SftpAttributes &operator=(const SftpAttributes &) = delete;
 
-        SftpAttributes(SftpAttributes && other) noexcept : SftpAttributes() {
+        SftpAttributes(SftpAttributes &&other) noexcept: SftpAttributes() {
             *this = std::move(other);
         }
 
-        SftpAttributes &operator=(SftpAttributes && other) noexcept {
+        SftpAttributes &operator=(SftpAttributes &&other) noexcept {
             std::swap(attributes, other.attributes);
             return *this;
         }
 
         ~SftpAttributes() {
+            std::cout << "sftp_attributes_free start" << std::endl;
             if (attributes != nullptr)
                 sftp_attributes_free(attributes);
+            std::cout << "sftp_attributes_free end" << std::endl;
         }
 
         operator bool() const {
@@ -257,7 +258,7 @@ namespace DB {
 
     class SFTPWrapper : public std::enable_shared_from_this<SFTPWrapper> {
     private:
-        sftp_session sftp_session;
+        sftp_session sftp_session = nullptr;
         std::shared_ptr<SSHWrapper> ssh_session;
 
     public:
@@ -287,7 +288,9 @@ namespace DB {
         SFTPWrapper &operator=(SFTPWrapper &&) = delete;
 
         ~SFTPWrapper() {
+            std::cout << "sftp free start" << std::endl;
             sftp_free(sftp_session);
+            std::cout << "sftp free end" << std::endl;
         }
 
         SftpAttributes getPathInfo(String path) {
@@ -298,7 +301,7 @@ namespace DB {
         private:
             friend class SFTPWrapper;
 
-            sftp_file file;
+            sftp_file file = nullptr;
             std::shared_ptr<SFTPWrapper> sftp_wrapper;
 
             FileStream(const std::shared_ptr<SFTPWrapper> &sftp_wrapper_, sftp_file file_)
@@ -351,7 +354,7 @@ namespace DB {
 
         FileStream openFile(String fileName, int accessSpecifiers, mode_t permissions = {}) {
             if (accessSpecifiers & O_RDONLY) {
-                accessSpecifiers ^= O_TRUNC;
+                accessSpecifiers &= ~O_TRUNC;
             }
             auto *file = sftp_open(sftp_session, fileName.c_str(), accessSpecifiers, permissions);
             if (file == nullptr) {
@@ -364,8 +367,8 @@ namespace DB {
         private:
             friend class SFTPWrapper;
 
-            sftp_dir dir;
-            std::shared_ptr<SFTPWrapper> sftp_wrapper;
+            sftp_dir dir = nullptr;
+            std::shared_ptr<SFTPWrapper> sftp_wrapper = nullptr;
 
             DirectoryIterator(const std::shared_ptr<SFTPWrapper> &sftp_wrapper_, const String &path) : sftp_wrapper(
                     sftp_wrapper_) {
@@ -381,19 +384,24 @@ namespace DB {
             DirectoryIterator() = default;
 
             ~DirectoryIterator() {
-                if (dir != nullptr)
+                if (dir != nullptr) {
+                    std::cout << " sftp_closedir start" << std::endl;
                     sftp_closedir(dir);
+                    std::cout << " sftp_closedir end" << std::endl;
+                }
             }
 
             DirectoryIterator(const DirectoryIterator &) = delete;
 
             DirectoryIterator &operator=(const DirectoryIterator &) = delete;
 
-            DirectoryIterator(DirectoryIterator &&other) noexcept : DirectoryIterator() {
+            DirectoryIterator(DirectoryIterator &&other) noexcept: DirectoryIterator() {
+                std::cout << "DirectoryIterator move ctor start" << std::endl;
                 *this = std::move(other);
             }
 
             DirectoryIterator &operator=(DirectoryIterator &&other) noexcept {
+                std::cout << "DirectoryIterator move start" << std::endl;
                 std::swap(dir, other.dir);
                 std::swap(sftp_wrapper, other.sftp_wrapper);
                 return *this;
@@ -403,10 +411,15 @@ namespace DB {
                 if (dir == nullptr) {
                     throw std::runtime_error("directory not opened");
                 }
+                SftpAttributes result;
+                do {
+                    result = SftpAttributes{sftp_readdir(sftp_wrapper->sftp_session, dir)};
+                } while (!sftp_dir_eof(dir) && (result.getName() == "." || result.getName() == ".."));
+
                 if (sftp_dir_eof(dir)) {
                     return SftpAttributes();
                 }
-                return SftpAttributes{sftp_readdir(sftp_wrapper->sftp_session, dir)};
+                return result;
             }
 
             bool eof() {

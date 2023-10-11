@@ -153,7 +153,7 @@ namespace DB
         using StorageSFTPPtr = std::shared_ptr<StorageSFTP>;
 
         SFTPSource(
-                const std::shared_ptr<SFTPWrapper> &client,
+                const StorageSFTP::Configuration &configuration_,
                 const ReadFromFormatInfo & info,
                 StorageSFTPPtr storage_,
                 ContextPtr context_,
@@ -171,6 +171,7 @@ namespace DB
         std::optional<size_t> tryGetNumRowsFromCache(const StorageSFTP::PathWithInfo & path_with_info);
 
         std::shared_ptr<SFTPWrapper> client;
+        StorageSFTP::Configuration configuration;
         StorageSFTPPtr storage;
         Block block_for_format;
         NamesAndTypesList requested_columns;
