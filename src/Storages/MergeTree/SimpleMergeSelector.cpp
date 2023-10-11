@@ -172,10 +172,6 @@ void selectWithinPartition(
 
     for (; begin < parts_count; ++begin)
     {
-        /// If too many parts, select only from first, to avoid complexity.
-        if (begin > parts_threshold)
-            break;
-
         if (!parts[begin].shall_participate_in_merges)
             continue;
 
