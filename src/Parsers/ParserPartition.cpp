@@ -40,7 +40,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_expr.parse(pos, value, expected))
             return false;
 
-        size_t fields_count;
+        std::optional<size_t> fields_count;
 
         const auto * tuple_ast = value->as<ASTFunction>();
         bool surrounded_by_parens = false;
@@ -65,7 +65,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 fields_count = 1;
             }
         }
-        else
+        else if (!value->as<ASTQueryParameter>())
             return false;
 
         if (surrounded_by_parens)
