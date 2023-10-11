@@ -170,7 +170,7 @@ void selectWithinPartition(
     if (parts_count >= parts_threshold)
         begin = parts_count - parts_threshold;
 
-    for (size_t begin = ; begin < parts_count; ++begin)
+    for (; begin < parts_count; ++begin)
     {
         /// If too many parts, select only from first, to avoid complexity.
         if (begin > parts_threshold)
