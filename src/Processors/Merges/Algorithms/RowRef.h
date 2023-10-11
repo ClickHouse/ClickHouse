@@ -29,10 +29,14 @@ struct SharedChunk : Chunk
     ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
 
+    /// Used in ReplacingSortedAlgorithm when using skipping final
     MutableColumnPtr replace_final_selection;
 
     using Chunk::Chunk;
     using Chunk::operator=;
+
+    /// Create a new chunk from row `row_num`
+    boost::intrusive_ptr<detail::SharedChunk> cloneForSelectedRow(size_t row_num);
 
 private:
     int refcount = 0;
@@ -122,6 +126,29 @@ inline void intrusive_ptr_release(SharedChunk * ptr)
 {
     if (0 == --ptr->refcount)
         ptr->allocator->release(ptr);
+}
+
+inline boost::intrusive_ptr<detail::SharedChunk> SharedChunk::cloneForSelectedRow(size_t row_num)
+{
+    auto columns = cloneEmptyColumns();
+    ColumnRawPtrs columns_raws;
+    ColumnRawPtrs sort_columns_raws;
+    sort_columns_raws.resize(sort_columns.size());
+    std::map<const IColumn *, size_t> all_previous_sorted_column;
+    for (size_t i = 0; i < sort_columns.size(); ++i)
+        all_previous_sorted_column[sort_columns[i]] = i;
+    for (size_t i = 0; i < all_columns.size(); ++i)
+    {
+        columns[i]->insertFrom(*all_columns[i], row_num);
+        columns_raws.push_back(columns[i].get());
+        if (auto it = all_previous_sorted_column.find(all_columns[i]); it != all_previous_sorted_column.end())
+            sort_columns_raws[it->second] = columns[i].get();
+    }
+    auto single_chunk = Chunk(std::move(columns), 1);
+    auto shared_single_chunk = allocator->alloc(single_chunk);
+    shared_single_chunk->all_columns = std::move(columns_raws);
+    shared_single_chunk->sort_columns = std::move(sort_columns_raws);
+    return shared_single_chunk;
 }
 
 /// This class represents a row in a chunk.

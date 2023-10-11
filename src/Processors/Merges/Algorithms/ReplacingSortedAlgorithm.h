@@ -2,6 +2,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Merges/Algorithms/RowRef.h>
 
 namespace Poco
 {
@@ -58,6 +59,7 @@ private:
     PODArray<RowSourcePart> current_row_sources;
 
     detail::SharedChunkPtr insertRow();
+    static Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false);
 };
 
 }

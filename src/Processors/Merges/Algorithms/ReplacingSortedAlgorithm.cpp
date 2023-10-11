@@ -26,12 +26,12 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     bool use_average_block_sizes,
     bool cleanup_,
     size_t * cleanedup_rows_count_,
-    bool require_sorted_output_)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
+    bool use_skipping_final_)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, use_skipping_final_ ? 2*max_row_refs : max_row_refs)
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes)
     , cleanup(cleanup_)
     , cleanedup_rows_count(cleanedup_rows_count_)
-    , use_skipping_final(require_sorted_output_)
+    , use_skipping_final(use_skipping_final_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -53,11 +53,12 @@ detail::SharedChunkPtr ReplacingSortedAlgorithm::insertRow()
     }
     if (use_skipping_final)
     {
+        /// We just record the position to be selected in the chunk
         if (!selected_row.owned_chunk->replace_final_selection)
             selected_row.owned_chunk->replace_final_selection = ColumnUInt32::create();
         // fmt::print(stderr, "Adding row {} for chunk {}\n", selected_row.row_num, static_cast<void *>(selected_row.owned_chunk.get()));
         selected_row.owned_chunk->replace_final_selection->insert(selected_row.row_num);
-        if (selected_row.current_cursor == nullptr)
+        if (selected_row.current_cursor == nullptr) /// This is the "lonely" chunk w/o cursor, we keep and then emit it later
             res = std::move(selected_row.owned_chunk);
     }
     else
@@ -77,40 +78,25 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (sources[current.impl->order].chunk->empty() || (current->isLast() && skipLastRowFor(current->order)))
         {
             auto & chunk = sources[current.impl->order].chunk;
-            if (chunk->empty() || !use_skipping_final)
+            if (!chunk->empty() && use_skipping_final)
             {
-                /// We get the next block from the corresponding source, if there is one.
-                queue.removeTop();
-                return Status(current.impl->order);
-            }
-
-            if (selected_row.owned_chunk.get() == chunk.get())
-            {
-                auto columns = chunk->cloneEmptyColumns();
-                ColumnRawPtrs columns_raws;
-                ColumnRawPtrs sort_columns_raws;
-                std::set<const IColumn *> all_previous_sorted_column(selected_row.sort_columns->begin(), selected_row.sort_columns->end());
-                for (size_t i = 0; i < columns.size(); ++i)
+                if (selected_row.owned_chunk.get() == chunk.get())
                 {
-                    columns[i]->insertFrom(*(selected_row.all_columns->at(i)), selected_row.row_num);
-                    columns_raws.push_back(columns[i].get());
-                    if (all_previous_sorted_column.contains(selected_row.all_columns->at(i)))
-                        sort_columns_raws.push_back(columns[i].get());
+                    /// selected_row points to current source chunk but the chunk will be destroy soon, either in emitChunk() or queue.removeTop()
+                    /// In the first case, we create a cloned chunk with only one row from `selected_row.row_num` and let selected_row point to it
+                    /// In the second case, we mark selected_row.owned_chunk = nullptr
+                    /// In either case, the chunk is "lonely" and if later selected_row is inserted to final result, the chunk will be emitted
+                    /// immediately. This will create some blocks with only single row, but it's not a big problem.
+                    if (chunk->replace_final_selection)
+                        selected_row.set(selected_row.owned_chunk->cloneForSelectedRow(selected_row.row_num), 0);
+                    else
+                        selected_row.current_cursor = nullptr;
                 }
-                auto single_chunk = Chunk(std::move(columns), 1);
-                auto shared_single_chunk = chunk_allocator.alloc(single_chunk);
-                shared_single_chunk->all_columns = std::move(columns_raws);
-                shared_single_chunk->sort_columns = std::move(sort_columns_raws);
-                // fmt::print(stderr, "0: Create fake chunk {} to replace chunk {}\n", static_cast<void *>(shared_single_chunk.get()), static_cast<void *>(selected_row.owned_chunk.get()));
-                selected_row.set(std::move(shared_single_chunk), 0);
+
+                if (chunk->replace_final_selection)
+                    return emitChunk(chunk);
             }
 
-            if (chunk->replace_final_selection)
-            {
-                // fmt::print(stderr, "0: Emit chunk {} with {} rows\n", static_cast<void *>(chunk.get()), chunk->replace_final_selection->size());
-                chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-                return Status(std::move(*chunk));
-            }
             /// Get the next block from the corresponding source, if there is one.
             queue.removeTop();
             return Status(current.impl->order);
@@ -150,11 +136,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             selected_row.clear();
 
             if (chunk_to_emit)
-            {
-                // fmt::print(stderr, "1: Emit chunk {} with {} rows\n", static_cast<void *>(chunk_to_emit.get()), chunk_to_emit->replace_final_selection->size());
-                chunk_to_emit->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk_to_emit->replace_final_selection)));
-                return Status(std::move(*chunk_to_emit));
-            }
+                return emitChunk(chunk_to_emit);
         }
 
         /// Initially, skip all rows. Unskip last on insert.
@@ -188,46 +170,26 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         else
         {
             auto & chunk = sources[current.impl->order].chunk;
-            if (!use_skipping_final || chunk->empty())
+            if (use_skipping_final && !chunk->empty())
             {
-                /// We get the next block from the corresponding source, if there is one.
-                queue.removeTop();
-                return Status(current.impl->order);
-            }
-
-            if (selected_row.owned_chunk.get() == chunk.get())
-            {
-                auto columns = chunk->cloneEmptyColumns();
-                ColumnRawPtrs columns_raws;
-                ColumnRawPtrs sort_columns_raws;
-                sort_columns_raws.resize(selected_row.sort_columns->size());
-                std::map<const IColumn *, size_t> all_previous_sorted_column;
-                for (size_t i = 0; i < selected_row.sort_columns->size(); ++i)
-                    all_previous_sorted_column[selected_row.sort_columns->at(i)] = i;
-                for (size_t i = 0; i < columns.size(); ++i)
+                if (selected_row.owned_chunk.get() == chunk.get())
                 {
-                    columns[i]->insertFrom(*(selected_row.all_columns->at(i)), selected_row.row_num);
-                    columns_raws.push_back(columns[i].get());
-                    if (auto it = all_previous_sorted_column.find(selected_row.all_columns->at(i)); it != all_previous_sorted_column.end())
-                    {
-                        sort_columns_raws[it->second] = columns[i].get();
-                    }
+                    /// selected_row points to current source chunk but the chunk will be destroy soon, either in emitChunk() or queue.removeTop()
+                    /// In the first case, we create a cloned chunk with only one row from `selected_row.row_num` and let selected_row point to it
+                    /// In the second case, we mark selected_row.owned_chunk = nullptr
+                    /// In either case, the chunk is "lonely" and if later selected_row is inserted to final result, the chunk will be emitted
+                    /// immediately. This will create some blocks with only single row, but it's not a big problem.
+                    if (chunk->replace_final_selection)
+                        selected_row.set(selected_row.owned_chunk->cloneForSelectedRow(selected_row.row_num), 0);
+                    else
+                        selected_row.current_cursor = nullptr;
                 }
-                auto single_chunk = Chunk(std::move(columns), 1);
-                auto shared_single_chunk = chunk_allocator.alloc(single_chunk);
-                shared_single_chunk->all_columns = std::move(columns_raws);
-                shared_single_chunk->sort_columns = std::move(sort_columns_raws);
-                // fmt::print(stderr, "2: Create fake chunk {} to replace chunk {}\n", static_cast<void *>(shared_single_chunk.get()), static_cast<void *>(selected_row.owned_chunk.get()));
-                selected_row.set(std::move(shared_single_chunk), 0);
+
+                if (chunk->replace_final_selection)
+                    return emitChunk(chunk);
             }
 
-            if (chunk->replace_final_selection)
-            {
-                // fmt::print(stderr, "2: Emit chunk {} with {} rows\n", static_cast<void *>(chunk.get()), chunk->replace_final_selection->size());
-                chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-                return Status(std::move(*chunk));
-            }
-
+            /// We get the next block from the corresponding source, if there is one.
             queue.removeTop();
             return Status(current.impl->order);
         }
@@ -256,14 +218,16 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             chunk = insertRow();
 
         if (chunk)
-        {
-            // fmt::print(stderr, "3: Emit final chunk {} with {} rows...\n", static_cast<void *>(chunk.get()), chunk->replace_final_selection->size());
-            chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
-            return Status(std::move(*chunk), true);
-        }
+            return emitChunk(chunk, true);
     }
 
     return Status(merged_data.pull(), true);
+}
+
+IMergingAlgorithm::Status ReplacingSortedAlgorithm::emitChunk(detail::SharedChunkPtr & chunk, bool finished)
+{
+    chunk->setChunkInfo(std::make_shared<ChunkSelectFinalIndices>(std::move(chunk->replace_final_selection)));
+    return Status(std::move(*chunk), finished);
 }
 
 }

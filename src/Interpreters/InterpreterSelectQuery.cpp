@@ -2880,7 +2880,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
     SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
 
-    if (input_sorting_info && !context->getSettingsRef().use_skipping_final)
+    if (input_sorting_info)
     {
         /* Case of sorting with optimization using sorting key.
          * We have several threads, each of them reads batch of parts in direct

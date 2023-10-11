@@ -7,8 +7,8 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
     Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs)
     : header(std::move(header_))
     , description(std::move(description_))
+    , chunk_allocator(num_inputs + max_row_refs)
     , cursors(num_inputs)
-    , chunk_allocator(num_inputs + 2*max_row_refs)
     , sources(num_inputs)
     , out_row_sources_buf(out_row_sources_buf_)
 {
