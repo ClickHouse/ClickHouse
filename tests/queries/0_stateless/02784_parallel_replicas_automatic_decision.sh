@@ -4,12 +4,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-function involved_parallel_replicas () {
+function were_parallel_replicas_used () {
     # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            (count() - 2) / 2 as number_of_parallel_replicas
+            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
         FROM system.query_log
     WHERE event_date >= yesterday()
       AND initial_query_id LIKE '$1%'
@@ -34,20 +34,26 @@ $CLICKHOUSE_CLIENT --query "
       SELECT number, 3 AS p FROM numbers(10_000_000, 8_000_000)
 "
 
-function run_query_with_pure_parallel_replicas () {
     # $1 -> query_id
     # $2 -> min rows per replica
     # $3 -> query
+function run_query_with_pure_parallel_replicas () {
+    # Note that we look into the logs to know how many parallel replicas were estimated because, although the coordinator
+    # might decide to use N replicas, one of them might be fast and do all the work before others start up. This means
+    # that those replicas wouldn't log into the system.query_log and the test would be flaky
+
     $CLICKHOUSE_CLIENT \
         --query "$3" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
         --use_hedged_requests 0 \
-        --cluster_for_parallel_replicas 'parallel_replicas' \
+        --cluster_for_parallel_replicas "parallel_replicas" \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
-        --parallel_replicas_min_number_of_rows_per_replica "$2" --
+        --parallel_replicas_min_number_of_rows_per_replica "$2" \
+        --send_logs_level "trace" \
+    |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 
 query_id_base="02784_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
@@ -87,6 +93,6 @@ run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_10M" 100
 run_query_with_pure_parallel_replicas "${query_id_base}_helpless_filter_5M" 5000000 "$helpless_filter_query"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-involved_parallel_replicas "${query_id_base}"
+were_parallel_replicas_used "${query_id_base}"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE test_parallel_replicas_automatic_count"
