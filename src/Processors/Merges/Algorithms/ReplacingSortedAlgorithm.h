@@ -57,7 +57,7 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
-    void insertRow();
+    detail::SharedChunkPtr insertRow();
 };
 
 }

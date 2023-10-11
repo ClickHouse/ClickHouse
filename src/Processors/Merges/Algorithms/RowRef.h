@@ -173,12 +173,15 @@ struct RowRefWithOwnedChunk
     ColumnRawPtrs * sort_columns = nullptr;
     UInt64 row_num = 0;
 
+    const SortCursorImpl * current_cursor = nullptr;
+
     void swap(RowRefWithOwnedChunk & other)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
         std::swap(sort_columns, other.sort_columns);
         std::swap(row_num, other.row_num);
+        std::swap(current_cursor, other.current_cursor);
     }
 
     bool empty() const { return owned_chunk == nullptr; }
@@ -189,6 +192,7 @@ struct RowRefWithOwnedChunk
         all_columns = nullptr;
         sort_columns = nullptr;
         row_num = 0;
+        current_cursor = nullptr;
     }
 
     void set(SortCursor & cursor, SharedChunkPtr chunk)
@@ -197,6 +201,7 @@ struct RowRefWithOwnedChunk
         row_num = cursor.impl->getRow();
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
+        current_cursor = cursor.impl;
     }
 
     void set(SharedChunkPtr chunk, UInt64 row_num_)
@@ -205,6 +210,7 @@ struct RowRefWithOwnedChunk
         row_num = row_num_;
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
+        current_cursor = nullptr;
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
