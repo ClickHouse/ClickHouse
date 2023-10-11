@@ -50,13 +50,7 @@ namespace DB {
                 setOption(SSH_OPTIONS_USER, user.c_str());
                 setOption(SSH_OPTIONS_HOST, host.c_str());
                 setOption(SSH_OPTIONS_PORT, &port);
-                ssh_set_log_level(SSH_LOG_FUNCTIONS);
-                ssh_set_log_callback([](int, const char *message, const char *buffer, void *) {
-                    std::cout << "ssh log: " << message << " " << buffer << " " << std::endl;
-                });
-                std::cout << "connect start" << std::endl;
                 connect();
-                std::cout << "connect end" << std::endl;
             }
             catch (...) {
                 ssh_free(ssh_session);
@@ -65,9 +59,7 @@ namespace DB {
         }
 
         void userauthPassword(String password) {
-            std::cout << "userauth start" << std::endl;
             int rc = ssh_userauth_password(ssh_session, user.c_str(), password.c_str());
-            std::cout << "userauth end" << std::endl;
             if (rc != SSH_AUTH_SUCCESS) {
                 throw SSHException(ssh_get_error_code(ssh_session));
             }
@@ -149,10 +141,8 @@ namespace DB {
         }
 
         ~SftpAttributes() {
-            std::cout << "sftp_attributes_free start" << std::endl;
             if (attributes != nullptr)
                 sftp_attributes_free(attributes);
-            std::cout << "sftp_attributes_free end" << std::endl;
         }
 
         operator bool() const {
@@ -263,9 +253,7 @@ namespace DB {
 
     public:
         explicit SFTPWrapper(std::shared_ptr<SSHWrapper> ssh_session_) : ssh_session(std::move(ssh_session_)) {
-            std::cout << "sftp new start" << std::endl;
             sftp_session = sftp_new(ssh_session->getCSession());
-            std::cout << "sftp new end" << std::endl;
             if (sftp_session == nullptr) {
                 if (SSH_ERROR == ssh_get_error_code(ssh_session->getCSession())) {
                     throw SSHException(SSH_ERROR);
@@ -288,9 +276,7 @@ namespace DB {
         SFTPWrapper &operator=(SFTPWrapper &&) = delete;
 
         ~SFTPWrapper() {
-            std::cout << "sftp free start" << std::endl;
             sftp_free(sftp_session);
-            std::cout << "sftp free end" << std::endl;
         }
 
         SftpAttributes getPathInfo(String path) {
@@ -372,9 +358,7 @@ namespace DB {
 
             DirectoryIterator(const std::shared_ptr<SFTPWrapper> &sftp_wrapper_, const String &path) : sftp_wrapper(
                     sftp_wrapper_) {
-                std::cout << "sftp opendir start path " << path << std::endl;
                 dir = sftp_opendir(sftp_wrapper->sftp_session, path.c_str());
-                std::cout << "sftp opendir end" << std::endl;
                 if (dir == nullptr) {
                     throw SFTPException(sftp_wrapper->sftp_session);
                 }
@@ -385,9 +369,7 @@ namespace DB {
 
             ~DirectoryIterator() {
                 if (dir != nullptr) {
-                    std::cout << " sftp_closedir start" << std::endl;
                     sftp_closedir(dir);
-                    std::cout << " sftp_closedir end" << std::endl;
                 }
             }
 
@@ -396,12 +378,10 @@ namespace DB {
             DirectoryIterator &operator=(const DirectoryIterator &) = delete;
 
             DirectoryIterator(DirectoryIterator &&other) noexcept: DirectoryIterator() {
-                std::cout << "DirectoryIterator move ctor start" << std::endl;
                 *this = std::move(other);
             }
 
             DirectoryIterator &operator=(DirectoryIterator &&other) noexcept {
-                std::cout << "DirectoryIterator move start" << std::endl;
                 std::swap(dir, other.dir);
                 std::swap(sftp_wrapper, other.sftp_wrapper);
                 return *this;

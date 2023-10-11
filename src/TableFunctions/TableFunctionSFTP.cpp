@@ -26,7 +26,6 @@ namespace DB
             const String & /* source */, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
             const std::string & table_name, const String & compression_method_) const
     {
-        std::cout << "get storage start" << std::endl;
         return std::make_shared<StorageSFTP>(
                 configuration,
                 StorageID(getDatabaseName(), table_name),
@@ -40,7 +39,6 @@ namespace DB
 
     ColumnsDescription TableFunctionSFTP::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
     {
-        std::cout << "get structure start" << std::endl;
         if (structure == "auto")
         {
             std::shared_ptr<SSHWrapper> ssh_wrapper;
@@ -60,13 +58,10 @@ namespace DB
             return StorageSFTP::getTableStructureFromData(format, client, uri, configuration.path, compression_method, context);
         }
 
-        std::cout << "get structure end" << std::endl;
         return parseColumnsListFromString(structure, context);
     }
 
     void TableFunctionSFTP::parseArgumentsImpl(ASTs &args, const ContextPtr &context) {
-        std::cout << "parse start" << std::endl;
-
         if (args.empty() || args.size() > 8)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
@@ -91,7 +86,6 @@ namespace DB
 
         size_t curr_arg = 4;
 
-        std::cout << "start port" << std::endl;
         if (args.size() > curr_arg) {
             try {
                 port = checkAndGetLiteralArgument<UInt64>(args[curr_arg], "port");
@@ -102,7 +96,6 @@ namespace DB
             }
         }
         configuration.port = port;
-        std::cout << "end port" << std::endl;
         if (args.size() > curr_arg)
         {
             args[curr_arg] = evaluateConstantExpressionOrIdentifierAsLiteral(args[curr_arg], context);
@@ -113,7 +106,6 @@ namespace DB
         if (format == "auto")
             format = FormatFactory::instance().getFormatFromFileName(configuration.path, true);
 
-        std::cout << "end port" << std::endl;
         if (args.size() > curr_arg)
         {
             args[curr_arg] = evaluateConstantExpressionOrIdentifierAsLiteral(args[curr_arg], context);
@@ -126,7 +118,6 @@ namespace DB
             args[curr_arg] = evaluateConstantExpressionOrIdentifierAsLiteral(args[curr_arg], context);
             compression_method = checkAndGetLiteralArgument<String>(args[curr_arg], "compression_method");
         } else compression_method = "auto";
-        std::cout << "parse stop" << std::endl;
     }
 
     void registerTableFunctionSFTP(TableFunctionFactory & factory)

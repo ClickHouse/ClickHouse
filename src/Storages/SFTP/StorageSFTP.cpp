@@ -129,25 +129,16 @@ namespace DB
                 const std::shared_ptr<SFTPWrapper> &client,
                 const String & for_match)
         {
-            std::cout << "LSWithRegexpMatching" << std::endl;
-            std::cout << "path_for_ls = " << path_for_ls << std::endl;
-            std::cout << "for_match = " << for_match << std::endl;
             /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
             static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");
-
-            std::cout << "LSWithRegexpMatching1" << std::endl;
 
             std::string_view for_match_view(for_match);
             std::string_view matched;
             if (RE2::FindAndConsume(&for_match_view, enum_or_range, &matched))
             {
-                std::cout << "LSWithRegexpMatching2" << std::endl;
-
                 std::string buffer(matched);
                 if (buffer.find(',') != std::string::npos)
                     return expandSelector(path_for_ls, client, for_match);
-                std::cout << "LSWithRegexpMatching3" << std::endl;
-
             }
 
             const size_t first_glob_pos = for_match.find_first_of("*?{");
@@ -160,13 +151,7 @@ namespace DB
 
             const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
 
-            std::cout << "LSWithRegexpMatching5" << std::endl;
-
             re2::RE2 matcher(makeRegexpPatternFromGlobs(current_glob));
-
-            std::cout << "regex.pattern " << makeRegexpPatternFromGlobs(current_glob) << std::endl;
-
-            std::cout << "matcher " << matcher.pattern() << std::endl;
             if (!matcher.ok())
                 throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                                 "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
@@ -174,11 +159,7 @@ namespace DB
             SFTPWrapper::DirectoryIterator ls;
 
             try {
-                std::cout << "LSWithRegexpMatching6" << ' ' << prefix_without_globs << std::endl;
-
                 ls = client->openDir(prefix_without_globs);
-                std::cout << "LSWithRegexpMatching7" << std::endl;
-
             } catch(...) {
                 // TODO: access errors
                 throw;
@@ -187,38 +168,23 @@ namespace DB
             std::vector<StorageSFTP::PathWithInfo> result;
             for (SftpAttributes attrs = ls.next(); !ls.eof(); attrs = ls.next())
             {
-                std::cout << "eof = " << ls.eof() << std::endl;
-                std::cout << "attrs eof = " << attrs.eof() << std::endl;
-                // TODO: test getname and getlongname
-                std::cout << attrs.getName() << ' ' << attrs.getLongName() << std::endl;
                 const String full_path = (fs::path(prefix_without_globs) / fs::path(attrs.getName())).lexically_normal();
                 const size_t last_slash = full_path.rfind('/');
                 const String file_name = full_path.substr(last_slash);
                 const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
                 const bool is_directory = attrs.isDirectory();
 
-                std::cout << "full_path = " << full_path << std::endl;
-                std::cout << "file_name = " << file_name << std::endl;
-                std::cout << "looking_for_directory = " << looking_for_directory << std::endl;
-                std::cout << "is_directory = " << is_directory << std::endl;
-
                 if (!is_directory && !looking_for_directory)
                 {
-                    std::cout << "LSWithRegexpMatching8" << std::endl;
-                    std::cout << "full match " << file_name << ' ' << matcher.pattern() << std::endl;
-                    std::cout << "full match " << re2::RE2::FullMatch(file_name, matcher) << std::endl;
                     if (re2::RE2::FullMatch(file_name, matcher)) {
-                        std::cout << "LSWithRegexpMatching8.2" << std::endl;
                         result.push_back(StorageSFTP::PathWithInfo{
                                 String(full_path),
                                 StorageSFTP::PathInfo{static_cast<time_t>(attrs.getLastModifiedTime()),
                                                       attrs.getSize()}});
                     }
-                    std::cout << "LSWithRegexpMatching8.1" << std::endl;
                 }
                 else if (is_directory && looking_for_directory)
                 {
-                    std::cout << "LSWithRegexpMatching9" << std::endl;
                     if (re2::RE2::FullMatch(file_name, matcher))
                     {
                         std::vector<StorageSFTP::PathWithInfo> result_part = LSWithRegexpMatching(fs::path(full_path) / "", client,
@@ -226,16 +192,8 @@ namespace DB
                         /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                         std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
                     }
-                    std::cout << "LSWithRegexpMatching9.1" << std::endl;
                 }
-                std::cout << "LSWithRegexpMatching10" << std::endl;
             }
-            std::cout << "LSWithRegexpMatching11" << std::endl;
-
-            for (auto & elem : result)
-                std::cout << "result = " << elem.path << ' ' << elem.info->last_mod_time << std::endl;
-
-            std::cout << "LSWithRegexpMatching12" << std::endl;
 
             return result;
         }
@@ -280,13 +238,10 @@ namespace DB
             , distributed_processing(distributed_processing_)
             , partition_by(partition_by_)
     {
-        std::cout << "start storage constructor" << std::endl;
         std::shared_ptr<SSHWrapper> ssh_wrapper;
         if (configuration.port == 0) {
             configuration.port = 22;
         }
-        std::cout << configuration.host << " " << configuration.user << " " << configuration.password << " "
-                  << configuration.port << std::endl;
         if (!configuration.password.empty()) {
             ssh_wrapper = std::make_shared<SSHWrapper>(configuration.user, configuration.password, configuration.host,
                                                        configuration.port);
@@ -296,42 +251,33 @@ namespace DB
 
         client = std::make_shared<SFTPWrapper>(ssh_wrapper);
 
-        std::cout << "storage constructor2" << std::endl;
         if (!configuration.path.starts_with('/')) {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path in SFTP storage must start with '/'");
         }
         uri = "sftp://" + configuration.user + "@" + configuration.host + ":" + std::to_string(configuration.port) + configuration.path;
         FormatFactory::instance().checkFormatName(format_name);
 
-        std::cout << "storage constructor2.1" << std::endl;
         is_path_with_globs = configuration.path.find_first_of("*?{") != std::string::npos;
 
-        std::cout << "storage constructor2.2" << std::endl;
         StorageInMemoryMetadata storage_metadata;
 
         if (columns_.empty())
         {
-            std::cout << "storage constructor2.3" << std::endl;
             auto columns = getTableStructureFromData(format_name, client, uri, configuration.path, compression_method, context_);
             storage_metadata.setColumns(columns);
-            std::cout << "storage constructor2.4" << std::endl;
         }
         else
         {
-            std::cout << "storage constructor2.5" << std::endl;
             /// We don't allow special columns in SFTP storage.
             if (!columns_.hasOnlyOrdinary())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine SFTP doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
             storage_metadata.setColumns(columns_);
-            std::cout << "storage constructor2.6" << std::endl;
         }
-        std::cout << "storage constructor3" << std::endl;
         storage_metadata.setConstraints(constraints_);
         storage_metadata.setComment(comment);
         setInMemoryMetadata(storage_metadata);
 
         virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
-        std::cout << "storage constructor end" << std::endl;
     }
 
     namespace
@@ -411,14 +357,12 @@ namespace DB
             ContextPtr ctx)
     {
         auto paths_with_info = getPathsList(path, client);
-        std::cout << "paths_with_info.size() = " << paths_with_info.size() << std::endl;
 
         if (paths_with_info.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
             throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                     "Cannot extract table structure from {} format file, because there are no files in SFTP with provided path."
                     " You must specify table structure manually", format);
-        std::cout << "table structure" << std::endl;
 
         std::optional<ColumnsDescription> columns_from_cache;
         if (ctx->getSettingsRef().schema_inference_use_cache_for_sftp)
@@ -496,16 +440,12 @@ namespace DB
                       const ASTPtr &query, const NamesAndTypesList &virtual_columns, const ContextPtr &context_)
                 : WithContext(context_), uris(uris_with_paths_), client(client_), file_progress_callback(context_->getFileProgressCallback())
         {
-            std::cout << "URISIterator::Impl start" << std::endl;
-            std::cout << "uri " << uris[0] << std::endl;
             ASTPtr filter_ast;
             if (!uris.empty())
                 filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, getPathFromUriAndUriWithoutPath(uris[0]).first, getContext());
 
-            std::cout << "URISIterator::Impl 1" << std::endl;
             if (filter_ast)
             {
-                std::cout << "URISIterator::Impl 2" << std::endl;
                 std::vector<String> paths;
                 paths.reserve(uris.size());
                 for (const auto & uri : uris)
@@ -614,7 +554,6 @@ namespace DB
 
         client = std::make_shared<SFTPWrapper>(ssh_wrapper);
 
-        std::cout << "SFTP SOURCE START" << std::endl;
         bool skip_empty_files = getContext()->getSettingsRef().sftp_skip_empty_files;
         StorageSFTP::PathWithInfo path_with_info;
         while (true)
@@ -622,7 +561,6 @@ namespace DB
             path_with_info = (*file_iterator)();
             if (path_with_info.path.empty())
                 return false;
-            std::cout << "path with info " << path_with_info.path << std::endl;
 
             if (path_with_info.info && skip_empty_files && path_with_info.info->size == 0)
                 continue;
@@ -1127,27 +1065,18 @@ namespace DB
             const String & format_name,
             const ContextPtr & ctx)
     {
-        std::cout << "columns from cache" << std::endl;
-
         auto & schema_cache = getSchemaCache(ctx);
         for (const auto & path_with_info : paths_with_info)
         {
             auto get_last_mod_time = [&, client]() -> std::optional<time_t>
             {
-                std::cout << "columns from cache 1" << std::endl;
                 if (path_with_info.info)
                     return path_with_info.info->last_mod_time;
-                std::cout << "columns from cache2" << std::endl;
                 auto sftp_attributes = client->getPathInfo(path_with_info.path);
-                std::cout << "columns from cache3" << std::endl;
-                std::cout << sftp_attributes.getLastModifiedTime() << " time modified" << std::endl;
                 return sftp_attributes ? std::make_optional(sftp_attributes.getLastModifiedTime()) : std::nullopt;
             };
-            std::cout << "columns from cache4" << std::endl;
             String url = uri_without_path + path_with_info.path;
-            std::cout << "columns from cache5 url: " << url << std::endl;
             auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
-            std::cout << "columns from cache3" << std::endl;
             auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
             if (columns)
                 return columns;
