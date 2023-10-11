@@ -248,7 +248,7 @@ class GetAllChildrenNumberCommand : public IKeeperClientCommand
 
     String getHelpMessage() const override
     {
-        return "{} [path] -- Returns the total number of znode nodes for all children";
+        return "{} [path] -- Get all numbers of children nodes under a specific path";
     }
 };
 
