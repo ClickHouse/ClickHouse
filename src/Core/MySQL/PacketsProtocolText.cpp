@@ -7,6 +7,7 @@
 #include "DataTypes/DataTypeLowCardinality.h"
 #include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesDecimal.h"
+#include "MySQLUtils.h"
 
 namespace DB
 {
@@ -17,16 +18,31 @@ namespace MySQLProtocol
 namespace ProtocolText
 {
 
-ResultSetRow::ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, int row_num_)
     : columns(columns_), row_num(row_num_)
 {
     static FormatSettings format_settings = {.bool_true_representation = "1", .bool_false_representation = "0"};
+
     for (size_t i = 0; i < columns.size(); ++i)
     {
+        DataTypePtr data_type = removeLowCardinalityAndNullable(data_types[i]);
+        TypeIndex type_index = data_type->getTypeId();
         if (columns[i]->isNullAt(row_num))
         {
             payload_size += 1;
             serialized.emplace_back("\xfb");
+        }
+        // Arbitrary precision DateTime64 needs to be forced into precision 6, as it is the maximum that MySQL supports
+        else if (type_index == TypeIndex::DateTime64)
+        {
+            WriteBufferFromOwnString ostr;
+            ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
+            auto components = MySQLUtils::getNormalizedDateTime64Components(data_type, col, row_num);
+            writeDateTimeText<'-', ':', ' '>(LocalDateTime(components.whole, DateLUT::instance(getDateTimeTimezone(*data_type))), ostr);
+            ostr.write('.');
+            writeDateTime64FractionalText<DateTime64>(components.fractional, 6, ostr);
+            payload_size += getLengthEncodedStringSize(ostr.str());
+            serialized.push_back(std::move(ostr.str()));
         }
         else
         {
@@ -141,7 +157,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
     CharacterSet charset = CharacterSet::binary;
     int flags = 0;
     uint8_t decimals = 0;
-    DataTypePtr normalized_data_type = removeLowCardinality(removeNullable(data_type));
+    DataTypePtr normalized_data_type = removeLowCardinalityAndNullable(data_type);
     TypeIndex type_index = normalized_data_type->getTypeId();
     switch (type_index)
     {
