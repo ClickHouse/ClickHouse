@@ -388,14 +388,12 @@ public:
 
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
-    /// Count the total number of active mutations that are not finished (is_done = false).
-    size_t countUnfinishedMutations() const;
 
     std::map<std::string, MutationCommands> getUnfinishedMutations() const;
 
-        /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-        ReplicatedMergeTreeMergePredicate
-        getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
+    /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
+    ReplicatedMergeTreeMergePredicate
+    getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;

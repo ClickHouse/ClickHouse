@@ -14,14 +14,13 @@ set mutations_sync=0;
 
 ALTER TABLE test UPDATE d = d || toString(sleepEachRow(0.3)) where 1;
 
-ALTER TABLE test ADD PROJECTION d_order ( SELECT min(c_id) GROUP BY `d`);
-ALTER TABLE test MATERIALIZE PROJECTION d_order;
-ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2; --{serverError 36}
+ALTER TABLE test ADD COLUMN x UInt32 default 0;
+ALTER TABLE test UPDATE d = d || '1' where x = 42;
+ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync = 2; --{serverError 36}
 
--- just to wait prev mutation
-ALTER TABLE test DELETE where d = 'Hello' SETTINGS mutations_sync = 2;
+ALTER TABLE test UPDATE x = x + 1 where 1 SETTINGS mutations_sync = 2;
 
-ALTER TABLE test DROP PROJECTION d_order SETTINGS mutations_sync = 2;
+ALTER TABLE test DROP COLUMN x SETTINGS mutations_sync = 2;
 
 SELECT * FROM system.mutations WHERE database=currentDatabase() AND table='test' AND NOT is_done;
 
