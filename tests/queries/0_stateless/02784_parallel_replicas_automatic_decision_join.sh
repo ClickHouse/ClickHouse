@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
+## Note: The analyzer doesn't support JOIN with parallel replicas yet
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-function involved_parallel_replicas () {
+function were_parallel_replicas_used () {
     # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            (count() - 2) / 2 as number_of_parallel_replicas
+            concat('Distinct parallel subqueries: ' , countDistinctIf(query, initial_query_id != query_id)::String) as subqueries_parallelized,
+            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
         FROM system.query_log
     WHERE event_date >= yesterday()
       AND initial_query_id LIKE '$1%'
@@ -47,39 +50,49 @@ $CLICKHOUSE_CLIENT --query "
       SELECT number, number % 2 AS v FROM numbers(1_000_000)
 "
 
-function run_query_with_pure_parallel_replicas () {
     # $1 -> query_id
     # $2 -> min rows per replica
     # $3 -> query
+function run_query_with_pure_parallel_replicas () {
+    # Note that we look into the logs to know how many parallel replicas were estimated because, although the coordinator
+    # might decide to use N replicas, one of them might be fast and do all the work before others start up. This means
+    # that those replicas wouldn't log into the system.query_log and the test would be flaky
+
     $CLICKHOUSE_CLIENT \
         --query "$3" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
         --use_hedged_requests 0 \
-        --cluster_for_parallel_replicas 'parallel_replicas' \
+        --cluster_for_parallel_replicas "parallel_replicas" \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
-        --parallel_replicas_min_number_of_rows_per_replica "$2"
+        --parallel_replicas_min_number_of_rows_per_replica "$2" \
+        --send_logs_level "trace" \
+    |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 
 query_id_base="02784_automatic_parallel_replicas_join-$CLICKHOUSE_DATABASE"
 
 
 #### JOIN (left side 10M, right side 1M)
-#### As the right side of the JOIN is a table, ideally it shouldn't be executed with parallel replicas and instead passed as is to the replicas
-#### so each of them executes the join with the assigned granules of the left table, but that's not implemented yet
-#### https://github.com/ClickHouse/ClickHouse/issues/49301#issuecomment-1619897920
-#### Note that this currently fails with the analyzer since it doesn't support JOIN with parallel replicas
+#### As the right side of the JOIN is a table and not a subquery, ideally the right side should be left untouched and
+#### pushed down into each replica. This isn't implemented yet and the right side of the join is being transformed into
+#### a subquery, which then is executed in parallel (https://github.com/ClickHouse/ClickHouse/issues/49301#issuecomment-1619897920)
+#### This is why when we print estimation it happens twice, once for each side of the join
 simple_join_query="SELECT sum(value) FROM test_parallel_replicas_automatic_left_side INNER JOIN test_parallel_replicas_automatic_count_right_side USING number format Null"
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_0" 0 "$simple_join_query" # 3 replicas for the right side first, 3 replicas for the left
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_10M" 10000000 "$simple_join_query" # Right: 0. Left: 0
+
+# With 0 rows we won't have any estimation (no logs either). Both queries will be executed in parallel
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_0" 0 "$simple_join_query"
+
+# Once a limit is set we get estimation. One message for each part of the join (see message above)
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_10M" 10000000 "$simple_join_query" # Right: 0. Left: 1->0
 run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_5M" 5000000 "$simple_join_query" # Right: 0. Left: 2
 run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_1M" 1000000 "$simple_join_query" # Right: 1->0. Left: 10->3
-run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_300k" 400000 "$simple_join_query" # Right: 2. Left: 3
+run_query_with_pure_parallel_replicas "${query_id_base}_simple_join_300k" 300000 "$simple_join_query" # Right: 2. Left: 33->3
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
-involved_parallel_replicas "${query_id_base}"
+were_parallel_replicas_used "${query_id_base}"
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE test_parallel_replicas_automatic_left_side"
-$CLICKHOUSE_CLIENT --query "DROP TABLE test_parallel_replicas_automatic_count_right_side"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_parallel_replicas_automatic_left_side"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_parallel_replicas_automatic_count_right_side"
