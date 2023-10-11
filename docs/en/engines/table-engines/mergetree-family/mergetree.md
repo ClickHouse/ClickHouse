@@ -1358,16 +1358,27 @@ In this sample configuration:
 
 ## Column Statistics (Experimental) {#column-statistics}
 
-The statistic declaration is in the columns section of the `CREATE` query.
+The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
 
 ``` sql
-STATISTIC(type)
+CREATE TABLE example_table
+(
+    a Int64 STATISTIC(tdigest),
+    b Float64
+)
+ENGINE = MergeTree
+ORDER BY a
 ```
 
-For tables from the `*MergeTree` family, statistics can be specified.
+We can also manipulate statistics with `ATLER` statements.
+
+```sql
+ATLER TABLE example_table ADD STATISTIC b TYPE tdigest;
+ATLER TABLE example_table DROP STATISTIC a TYPE tdigest;
+```
 
 These lightweight statistics aggregate information about distribution of values in columns.
-They can be used for query optimization (At current time they are used for moving expressions to PREWHERE).
+They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
 
 #### Available Types of Column Statistics {#available-types-of-column-statistics}
 

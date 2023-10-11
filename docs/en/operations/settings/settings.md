@@ -4726,3 +4726,11 @@ a	Tuple(
     l Nullable(String)
 )
 ```
+
+## allow_experimental_statistic {#allow_experimental_statistic}
+
+Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
+
+## allow_statistic_optimize {#allow_statistic_optimize}
+
+Allows using statistic to optimize the order of [prewhere conditions](../../sql-reference/statements/select/prewhere.md).
