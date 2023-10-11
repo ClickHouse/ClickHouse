@@ -52,7 +52,9 @@ def get_gh_api(
     **kwargs: Any,
 ) -> requests.Response:
     """
-    get gh api with retries and failover to another token if ratelimit is exceeded
+    Request GH api w/o auth by default, and failover to the get_best_robot_token in case of receiving
+    "403 rate limit exceeded" or "404 not found" error
+    It sets auth automatically when ROBOT_TOKEN is already set by get_best_robot_token
     """
 
     def set_auth_header():
@@ -71,29 +73,32 @@ def get_gh_api(
 
     token_is_set = "Authorization" in kwargs.get("headers", {})
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
-    for i in range(retries):
+    try_cnt = 0
+    while try_cnt < retries:
+        try_cnt += 1
         try:
             response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
         except requests.HTTPError as e:
             exc = e
-            if (
-                e.response.status_code == 403
-                and b"rate limit exceeded"
+            ratelimit_exceeded = (
+                e.response.status_code == 403 and b"rate limit exceeded"
                 in e.response._content  # pylint:disable=protected-access
-                and token_is_set
-            ):
+            )
+            try_auth = e.response.status_code == 404
+            if (ratelimit_exceeded or try_auth) and not token_is_set:
                 logging.warning(
                     "Received rate limit exception, re-setting the auth header and retry"
                 )
                 set_auth_header()
+                try_cnt = 0
                 continue
         except Exception as e:
             exc = e
 
-        if i + 1 < retries:
-            logging.info("Exception '%s' while getting, retry %i", exc, i + 1)
+        if try_cnt < retries:
+            logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
     raise exc
