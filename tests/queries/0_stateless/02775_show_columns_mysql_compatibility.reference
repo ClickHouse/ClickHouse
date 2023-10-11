@@ -39,8 +39,8 @@ ls	LowCardinality(String)	NO		\N
 m	Map(Int32, String)	NO		\N	
 m_complex	Map(Int32, Map(Int32, LowCardinality(Nullable(String))))	NO		\N	
 mpg	MultiPolygon	NO		\N	
+ndt64	Nullable(DateTime64(3))	YES		\N	
 ndt64_tz	Nullable(DateTime64(3, \'Asia/Shanghai\'))	YES		\N	
-ndt_tz	Nullable(DateTime64(3))	YES		\N	
 nested.col1	Array(String)	NO		\N	
 nested.col2	Array(UInt32)	NO		\N	
 nfs	Nullable(FixedString(3))	YES		\N	
@@ -100,8 +100,8 @@ ls	BLOB	NO		\N
 m	JSON	NO		\N	
 m_complex	JSON	NO		\N	
 mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
 ndt64_tz	DATETIME	YES		\N	
-ndt_tz	DATETIME	YES		\N	
 nested.col1	TEXT	NO		\N	
 nested.col2	TEXT	NO		\N	
 nfs	TEXT	YES		\N	
