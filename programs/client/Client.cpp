@@ -706,6 +706,17 @@ bool Client::processWithFuzzing(const String & full_query)
         return true;
     }
 
+    // Kusto is not a subject for fuzzing (yet)
+    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    {
+        return true;
+    }
+    if (auto *q = orig_ast->as<ASTSetQuery>())
+    {
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+            return true;
+    }
+
     // Don't repeat:
     // - INSERT -- Because the tables may grow too big.
     // - CREATE -- Because first we run the unmodified query, it will succeed,
