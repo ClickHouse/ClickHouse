@@ -12,7 +12,7 @@ TRUSTED_CONTRIBUTORS = {
         "achimbab",  # Kakao corp
         "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
-        "azat",
+        "azat",  # SEMRush
         "bharatnc",  # Many contributions.
         "bobrik",  # Seasoned contributor, CloudFlare
         "cwurm",  # ClickHouse, Inc
