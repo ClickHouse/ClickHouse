@@ -89,6 +89,7 @@ def get_gh_api(
                 set_auth_header()
                 need_retry = True
                 break
+            raise exc
 
     if need_retry:
         return get_with_retries(url, retries, sleep, **kwargs)

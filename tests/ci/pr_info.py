@@ -4,8 +4,6 @@ import logging
 import os
 from typing import Dict, List, Set, Union, Literal
 
-from unidiff import PatchSet  # type: ignore
-
 from build_download_helper import get_gh_api
 from env_helper import (
     GITHUB_REPOSITORY,
@@ -171,7 +169,10 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_urls.append(github_event["pull_request"]["diff_url"])
+                self.diff_urls.append(
+                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                    f"compare/master...{self.head_ref}"
+                )
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
             commit_message = github_event["head_commit"]["message"]  # type: str
@@ -215,12 +216,12 @@ class PRInfo:
                     # files changed in upstream AND master...{self.head_ref}
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{self.head_ref}.diff"
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                        f"compare/master...{self.head_ref}"
                     )
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master.diff"
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master"
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
@@ -232,8 +233,8 @@ class PRInfo:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master.diff"
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master"
                     )
         else:
             print("event.json does not match pull_request or push:")
@@ -261,19 +262,11 @@ class PRInfo:
             raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
-            response = get_gh_api(
-                diff_url,
-                sleep=RETRY_SLEEP,
-            )
+            response = get_gh_api(diff_url, sleep=RETRY_SLEEP)
             response.raise_for_status()
-            if "commits" in self.event and self.number == 0:
-                diff = response.json()
-
-                if "files" in diff:
-                    self.changed_files = {f["filename"] for f in diff["files"]}
-            else:
-                diff_object = PatchSet(response.text)
-                self.changed_files.update({f.path for f in diff_object})
+            diff = response.json()
+            if "files" in diff:
+                self.changed_files = {f["filename"] for f in diff["files"]}
         print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
