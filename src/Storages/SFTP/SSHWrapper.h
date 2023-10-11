@@ -5,21 +5,22 @@
 #pragma GCC diagnostic ignored "-Wreserved-identifier"
 #pragma GCC diagnostic ignored "-Wdocumentation"
 
+#include <iostream>
 #include <libssh/sftp.h>
 #include <fcntl.h>
 
 #pragma GCC diagnostic pop
 
 #include <memory>
-#include "SshException.h"
+#include "SSHException.h"
 
 namespace DB {
     // Ssh wrapper on raw c libssh
-    class SftpWrapper;
+    class SFTPWrapper;
 
-    class SshWrapper {
+    class SSHWrapper {
     private:
-        friend class SftpWrapper;
+        friend class SFTPWrapper;
 
         ssh_session ssh_session;
         String user;
@@ -27,30 +28,36 @@ namespace DB {
         int port;
 
         void setOption(ssh_options_e type, const void *value) {
+            \
             int rc = ssh_options_set(ssh_session, type, value);
             if (rc != SSH_OK) {
-                throw SshException(ssh_get_error_code(ssh_session));
+                throw SSHException(ssh_get_error_code(ssh_session));
             }
         }
 
         void connect() {
             int rc = ssh_connect(ssh_session);
             if (rc != SSH_OK) {
-                throw SshException(ssh_get_error_code(ssh_session));
+                throw SSHException(ssh_get_error_code(ssh_session));
             }
         }
 
         void initAndConnect() {
             ssh_session = ssh_new();
             if (ssh_session == nullptr) {
-                throw SshException(SSH_ERROR);
+                throw SSHException(SSH_ERROR);
             }
             try {
                 setOption(SSH_OPTIONS_USER, user.c_str());
                 setOption(SSH_OPTIONS_HOST, host.c_str());
-                setOption(SSH_OPTIONS_LOG_VERBOSITY, "SSH_LOG_PROTOCOL");
                 setOption(SSH_OPTIONS_PORT, &port);
+                ssh_set_log_level(SSH_LOG_FUNCTIONS);
+                ssh_set_log_callback([](int, const char *message, const char *buffer, void *) {
+                    std::cout << "ssh log: " << message << " " << buffer << " " << std::endl;
+                });
+                std::cout << "connect start" << std::endl;
                 connect();
+                std::cout << "connect end" << std::endl;
             }
             catch (...) {
                 ssh_free(ssh_session);
@@ -59,16 +66,18 @@ namespace DB {
         }
 
         void userauthPassword(String password) {
+            std::cout << "userauth start" << std::endl;
             int rc = ssh_userauth_password(ssh_session, user.c_str(), password.c_str());
+            std::cout << "userauth end" << std::endl;
             if (rc != SSH_AUTH_SUCCESS) {
-                throw SshException(ssh_get_error_code(ssh_session));
+                throw SSHException(ssh_get_error_code(ssh_session));
             }
         }
 
         void userauthSshAgent() {
             int rc = ssh_userauth_agent(ssh_session, user.c_str());
             if (rc != SSH_AUTH_SUCCESS) {
-                throw SshException(ssh_get_error_code(ssh_session));
+                throw SSHException(ssh_get_error_code(ssh_session));
             }
         }
 
@@ -77,7 +86,7 @@ namespace DB {
         }
 
     public:
-        SshWrapper(String user_, String host_, int port_ = 22) : user(user_), host(host_), port(port_) {
+        SSHWrapper(String user_, String host_, int port_ = 22) : user(user_), host(host_), port(port_) {
             initAndConnect();
             try {
                 userauthSshAgent();
@@ -88,7 +97,7 @@ namespace DB {
             }
         }
 
-        SshWrapper(String user_, String password_, String host_, int port_ = 22) : user(user_), host(host_),
+        SSHWrapper(String user_, String password_, String host_, int port_ = 22) : user(user_), host(host_),
                                                                                    port(port_) {
             initAndConnect();
             try {
@@ -100,15 +109,15 @@ namespace DB {
             }
         }
 
-        SshWrapper(const SshWrapper &) = delete;
+        SSHWrapper(const SSHWrapper &) = delete;
 
-        SshWrapper &operator=(const SshWrapper &) = delete;
+        SSHWrapper &operator=(const SSHWrapper &) = delete;
 
-        SshWrapper(SshWrapper &&) = delete;
+        SSHWrapper(SSHWrapper &&) = delete;
 
-        SshWrapper &operator=(SshWrapper &&) = delete;
+        SSHWrapper &operator=(SSHWrapper &&) = delete;
 
-        ~SshWrapper() {
+        ~SSHWrapper() {
             ssh_disconnect(ssh_session);
             ssh_free(ssh_session);
         }
@@ -116,7 +125,7 @@ namespace DB {
 
     class SftpAttributes {
     private:
-        friend class SftpWrapper;
+        friend class SFTPWrapper;
 
         friend class FileStream;
 
@@ -246,36 +255,38 @@ namespace DB {
         }
     };
 
-    class SftpWrapper : public std::enable_shared_from_this<SftpWrapper> {
+    class SFTPWrapper : public std::enable_shared_from_this<SFTPWrapper> {
     private:
         sftp_session sftp_session;
-        std::shared_ptr<SshWrapper> ssh_session;
+        std::shared_ptr<SSHWrapper> ssh_session;
 
     public:
-        explicit SftpWrapper(std::shared_ptr<SshWrapper> ssh_session_) : ssh_session(std::move(ssh_session_)) {
+        explicit SFTPWrapper(std::shared_ptr<SSHWrapper> ssh_session_) : ssh_session(std::move(ssh_session_)) {
+            std::cout << "sftp new start" << std::endl;
             sftp_session = sftp_new(ssh_session->getCSession());
+            std::cout << "sftp new end" << std::endl;
             if (sftp_session == nullptr) {
                 if (SSH_ERROR == ssh_get_error_code(ssh_session->getCSession())) {
-                    throw SshException(SSH_ERROR);
+                    throw SSHException(SSH_ERROR);
                 }
             }
             int rc = sftp_init(sftp_session);
             if (rc != SSH_OK) {
                 auto code = sftp_get_error(sftp_session);
                 sftp_free(sftp_session);
-                throw SshException(code);
+                throw SSHException(code);
             }
         }
 
-        SftpWrapper(const SftpWrapper &) = delete;
+        SFTPWrapper(const SFTPWrapper &) = delete;
 
-        SftpWrapper &operator=(const SftpWrapper &) = delete;
+        SFTPWrapper &operator=(const SFTPWrapper &) = delete;
 
-        SftpWrapper(SftpWrapper &&) = delete;
+        SFTPWrapper(SFTPWrapper &&) = delete;
 
-        SftpWrapper &operator=(SftpWrapper &&) = delete;
+        SFTPWrapper &operator=(SFTPWrapper &&) = delete;
 
-        ~SftpWrapper() {
+        ~SFTPWrapper() {
             sftp_free(sftp_session);
         }
 
@@ -285,12 +296,12 @@ namespace DB {
 
         class FileStream {
         private:
-            friend class SftpWrapper;
+            friend class SFTPWrapper;
 
             sftp_file file;
-            std::shared_ptr<SftpWrapper> sftp_wrapper;
+            std::shared_ptr<SFTPWrapper> sftp_wrapper;
 
-            FileStream(const std::shared_ptr<SftpWrapper> &sftp_wrapper_, sftp_file file_)
+            FileStream(const std::shared_ptr<SFTPWrapper> &sftp_wrapper_, sftp_file file_)
                     : file(file_), sftp_wrapper(sftp_wrapper_) {}
 
         public:
@@ -319,7 +330,7 @@ namespace DB {
 
                 auto rc = sftp_seek64(file, seek);
                 if (rc < 0) {
-                    throw SftpException(sftp_wrapper->sftp_session);
+                    throw SFTPException(sftp_wrapper->sftp_session);
                 }
             }
 
@@ -331,7 +342,7 @@ namespace DB {
                 ssize_t readCount = sftp_read(file, buffer, bufferSize);
 
                 if (readCount < 0) {
-                    throw SftpException(sftp_wrapper->sftp_session);
+                    throw SFTPException(sftp_wrapper->sftp_session);
                 }
 
                 return readCount;
@@ -344,23 +355,25 @@ namespace DB {
             }
             auto *file = sftp_open(sftp_session, fileName.c_str(), accessSpecifiers, permissions);
             if (file == nullptr) {
-                throw SftpException(sftp_session);
+                throw SFTPException(sftp_session);
             }
             return FileStream(shared_from_this(), file);
         }
 
         class DirectoryIterator {
         private:
-            friend class SftpWrapper;
+            friend class SFTPWrapper;
 
             sftp_dir dir;
-            std::shared_ptr<SftpWrapper> sftp_wrapper;
+            std::shared_ptr<SFTPWrapper> sftp_wrapper;
 
-            DirectoryIterator(const std::shared_ptr<SftpWrapper> &sftp_wrapper_, const String &path) : sftp_wrapper(
+            DirectoryIterator(const std::shared_ptr<SFTPWrapper> &sftp_wrapper_, const String &path) : sftp_wrapper(
                     sftp_wrapper_) {
+                std::cout << "sftp opendir start path " << path << std::endl;
                 dir = sftp_opendir(sftp_wrapper->sftp_session, path.c_str());
+                std::cout << "sftp opendir end" << std::endl;
                 if (dir == nullptr) {
-                    throw SftpException(sftp_wrapper->sftp_session);
+                    throw SFTPException(sftp_wrapper->sftp_session);
                 }
             }
 
@@ -381,8 +394,8 @@ namespace DB {
             }
 
             DirectoryIterator &operator=(DirectoryIterator &&other) noexcept {
-                if (dir != other.dir)
-                    std::swap(dir, other.dir);
+                std::swap(dir, other.dir);
+                std::swap(sftp_wrapper, other.sftp_wrapper);
                 return *this;
             }
 

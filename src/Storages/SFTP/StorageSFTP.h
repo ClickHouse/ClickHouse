@@ -8,7 +8,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Poco/URI.h>
-#include <Storages/SFTP/SshWrapper.h>
+#include <Storages/SFTP/SSHWrapper.h>
 
 namespace DB
 {
@@ -79,7 +79,7 @@ namespace DB
 
         static ColumnsDescription getTableStructureFromData(
                 const String & format,
-                const std::shared_ptr<SftpWrapper>& client,
+                const std::shared_ptr<SFTPWrapper> &client,
                 const String & uri,
                 const String & path,
                 const String & compression_method,
@@ -94,7 +94,7 @@ namespace DB
 
     private:
         static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-                const std::shared_ptr<SftpWrapper>& client,
+                const std::shared_ptr<SFTPWrapper> &client,
                 const std::vector<StorageSFTP::PathWithInfo> & paths_with_info,
                 const String & uri_without_path,
                 const String & format_name,
@@ -115,7 +115,7 @@ namespace DB
         ASTPtr partition_by;
         bool is_path_with_globs;
         NamesAndTypesList virtual_columns;
-        std::shared_ptr<SftpWrapper> client;
+        std::shared_ptr<SFTPWrapper> client;
 
         Poco::Logger * log = &Poco::Logger::get("StorageSFTP");
     };
@@ -128,7 +128,8 @@ namespace DB
         class DisclosedGlobIterator
         {
         public:
-            DisclosedGlobIterator(const std::shared_ptr<SftpWrapper>& client_, const String& path, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+            DisclosedGlobIterator(const std::shared_ptr<SFTPWrapper> &client_, const String &path, const ASTPtr &query,
+                                  const NamesAndTypesList &virtual_columns, const ContextPtr &context);
             StorageSFTP::PathWithInfo next();
         private:
             class Impl;
@@ -139,7 +140,8 @@ namespace DB
         class URISIterator
         {
         public:
-            URISIterator(const std::shared_ptr<SftpWrapper>& client_, const std::vector<String> & uris_with_paths_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+            URISIterator(const std::shared_ptr<SFTPWrapper> &client_, const std::vector<String> &uris_with_paths_,
+                         const ASTPtr &query, const NamesAndTypesList &virtual_columns, const ContextPtr &context);
             StorageSFTP::PathWithInfo next();
         private:
             class Impl;
@@ -151,7 +153,7 @@ namespace DB
         using StorageSFTPPtr = std::shared_ptr<StorageSFTP>;
 
         SFTPSource(
-                const std::shared_ptr<SftpWrapper>& client,
+                const std::shared_ptr<SFTPWrapper> &client,
                 const ReadFromFormatInfo & info,
                 StorageSFTPPtr storage_,
                 ContextPtr context_,
@@ -168,7 +170,7 @@ namespace DB
         void addNumRowsToCache(const String & path, size_t num_rows);
         std::optional<size_t> tryGetNumRowsFromCache(const StorageSFTP::PathWithInfo & path_with_info);
 
-        std::shared_ptr<SftpWrapper> client;
+        std::shared_ptr<SFTPWrapper> client;
         StorageSFTPPtr storage;
         Block block_for_format;
         NamesAndTypesList requested_columns;

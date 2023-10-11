@@ -10,7 +10,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-#include "SshWrapper.h"
+#include "SSHWrapper.h"
 
 
 namespace DB
@@ -21,7 +21,7 @@ namespace DB
 
     public:
         ReadBufferFromSFTP(
-                const std::shared_ptr<SftpWrapper> &client_,
+                const std::shared_ptr<SFTPWrapper> &client_,
                 const String &file_path_,
                 const ReadSettings &read_settings_,
                 size_t read_until_position_ = 0,

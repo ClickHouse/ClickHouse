@@ -6,7 +6,7 @@
 #include <Common/safe_cast.h>
 #include <mutex>
 
-#include "SshWrapper.h"
+#include "SSHWrapper.h"
 
 
 namespace ProfileEvents {
@@ -23,10 +23,10 @@ namespace DB {
 
 
     struct ReadBufferFromSFTP::ReadBufferFromSFTPImpl : public BufferWithOwnMemory<SeekableReadBuffer> {
-        std::shared_ptr<SftpWrapper> client;
+        std::shared_ptr<SFTPWrapper> client;
 
         String file_path;
-        SftpWrapper::FileStream fin;
+        SFTPWrapper::FileStream fin;
 
         ReadSettings read_settings;
 
@@ -35,7 +35,7 @@ namespace DB {
         off_t file_size;
 
         explicit ReadBufferFromSFTPImpl(
-                const std::shared_ptr<SftpWrapper> &client_,
+                const std::shared_ptr<SFTPWrapper> &client_,
                 const std::string &file_path_,
                 const ReadSettings &read_settings_,
                 size_t read_until_position_,
@@ -123,7 +123,7 @@ namespace DB {
     };
 
     ReadBufferFromSFTP::ReadBufferFromSFTP(
-            const std::shared_ptr<SftpWrapper> &client_,
+            const std::shared_ptr<SFTPWrapper> &client_,
             const String &file_path_,
             const ReadSettings &read_settings_,
             size_t read_until_position_,

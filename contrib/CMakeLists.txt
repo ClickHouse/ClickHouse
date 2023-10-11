@@ -144,7 +144,7 @@ add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
 if (NOT OS_DARWIN)
-    add_contrib (curl-cmake curl)  # requires: curl
+    add_contrib(curl-cmake curl)
     add_contrib (azure-cmake azure) # requires: curl
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()

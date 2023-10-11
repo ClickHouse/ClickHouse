@@ -16,17 +16,17 @@
 #include <string>
 
 namespace DB {
-    class SshException : public Exception {
+    class SSHException : public Exception {
     public:
-        SshException(ssh_session csession) {
+        SSHException(ssh_session csession) : Exception("SSH Error", ssh_get_error_code(csession)) {
             code = ssh_get_error_code(csession);
         }
 
-        SshException(int code_) {
+        SSHException(int code_) : Exception("SSH Error", code_) {
             code = code_;
         }
 
-        SshException(const SshException &e) {
+        SSHException(const SSHException &e) : Exception("SSH Error", e.code) {
             code = e.code;
         }
 
@@ -38,17 +38,17 @@ namespace DB {
         int code;
     };
 
-    class SftpException : public Exception {
+    class SFTPException : public Exception {
     public:
-        SftpException(sftp_session csession) {
+        SFTPException(sftp_session csession) : Exception("SFTP Error", sftp_get_error(csession)) {
             code = sftp_get_error(csession);
         }
 
-        SftpException(int code_) {
+        SFTPException(int code_) : Exception("SFTP Error", code_) {
             code = code_;
         }
 
-        SftpException(const SftpException &e) {
+        SFTPException(const SFTPException &e) : Exception("SFTP Error", e.code) {
             code = e.code;
         }
 
