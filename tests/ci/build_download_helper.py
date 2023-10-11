@@ -77,7 +77,7 @@ def get_gh_api(
     while retry <= retries:
         try:
             retry += 1
-            response = get_with_retries(url, 1, sleep, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
         except requests.HTTPError as e:
@@ -93,6 +93,12 @@ def get_gh_api(
                 )
                 set_auth_header()
                 retry = 1
+            elif retry < retries:
+                time.sleep(sleep)
+        except Exception as e:
+            exc = e
+            if retry < retries:
+                time.sleep(sleep)
 
     raise exc
 
