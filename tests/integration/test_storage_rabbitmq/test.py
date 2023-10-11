@@ -3505,7 +3505,9 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     assert errors_count == num_rows / 2
 
-    broken_messages = instance.query("SELECT broken_message FROM test.errors order by broken_message")
+    broken_messages = instance.query(
+        "SELECT broken_message FROM test.errors order by broken_message"
+    )
     expected = []
     for i in range(num_rows):
         if i % 2 != 0:
