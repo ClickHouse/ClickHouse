@@ -125,7 +125,7 @@ void Client::showWarnings()
             std::cout << std::endl;
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Ignore exception
     }
@@ -704,6 +704,17 @@ bool Client::processWithFuzzing(const String & full_query)
     if (orig_ast->as<ASTUseQuery>())
     {
         return true;
+    }
+
+    // Kusto is not a subject for fuzzing (yet)
+    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    {
+        return true;
+    }
+    if (auto *q = orig_ast->as<ASTSetQuery>())
+    {
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+            return true;
     }
 
     // Don't repeat:
