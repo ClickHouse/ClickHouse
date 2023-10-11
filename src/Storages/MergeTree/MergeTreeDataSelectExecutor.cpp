@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int PROJECTION_NOT_USED;
 }
 
 
@@ -178,11 +177,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read,
             query_info.merge_tree_select_result_ptr,
             enable_parallel_reading);
-
-        if (!step && settings.optimize_use_projections && settings.force_optimize_projection
-            && !metadata_for_reading->projections.empty() && !settings.query_plan_optimize_projection)
-            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
-                            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
         auto plan = std::make_unique<QueryPlan>();
         if (step)
