@@ -63,6 +63,7 @@ TRUSTED_CONTRIBUTORS = {
         "MikhailBurdukov",
         "tsolodov",  # ClickHouse Employee
         "kitaisreal",
+        "k-morozov",  # Konstantin Morozov, Yandex Cloud
     ]
 }
 
