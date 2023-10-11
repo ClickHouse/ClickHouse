@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <Common/HashTable/HashSet.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
@@ -84,9 +85,9 @@ private:
     bool has_two_level = false;
 
     bool all_inputs_finished = false;
-    bool read_from_all_inputs = false;
+    bool initialized_index_to_input = false;
     std::vector<InputPorts::iterator> index_to_input;
-    std::unordered_set<uint64_t> wait_input_ports_numbers;
+    HashSet<uint64_t> wait_input_ports_numbers;
 
     /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
     bool expect_several_chunks_for_single_bucket_per_source = true;

@@ -106,37 +106,14 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         return Status::Finished;
     }
 
-    /// Read first time from each input to understand if we have two-level aggregation.
-    if (!read_from_all_inputs)
+    if (!initialized_index_to_input)
     {
-        read_from_all_inputs = true;
+        initialized_index_to_input = true;
         auto in = inputs.begin();
         index_to_input.resize(num_inputs);
 
         for (size_t i = 0; i < num_inputs; ++i, ++in)
-        {
             index_to_input[i] = in;
-
-            if (in->isFinished())
-                continue;
-
-            in->setNeeded();
-
-            if (!in->hasData())
-            {
-                wait_input_ports_numbers.insert(i);
-                continue;
-            }
-
-            auto chunk = in->pull();
-            addChunk(std::move(chunk), i);
-        }
-
-        if (has_two_level && !single_level_chunks.empty())
-            return Status::Ready;
-
-        if (!wait_input_ports_numbers.empty())
-            return Status::NeedData;
     }
 
     auto need_input = [this](size_t input_num)
@@ -151,9 +128,10 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
     {
         for (const auto & updated_input_port_number : updated_input_ports)
         {
-            auto & input = index_to_input[updated_input_port_number];
-            // input->setNeeded();
+            if (!wait_input_ports_numbers.contains(updated_input_port_number))
+                continue;
 
+            auto & input = index_to_input[updated_input_port_number];
             if (!input->hasData())
             {
                 wait_input_ports_numbers.erase(updated_input_port_number);
@@ -169,18 +147,17 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             wait_input_ports_numbers.erase(updated_input_port_number);
         }
 
-        if (!output.canPush())
-            return Status::PortFull;
-
-        if (has_two_level && !single_level_chunks.empty())
-            return Status::Ready;
-
         if (!wait_input_ports_numbers.empty())
             return Status::NeedData;
     }
 
     if (!output.canPush())
+    {
+        for (auto & input : inputs)
+            input.setNotNeeded();
+
         return Status::PortFull;
+    }
 
     /// Convert single level to two levels if have two-level input.
     if (has_two_level && !single_level_chunks.empty())
