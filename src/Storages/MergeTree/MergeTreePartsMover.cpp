@@ -236,7 +236,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
                     part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
                     fullPath(disk, path_to_clone + relative_path));
 
-            LOG_WARNING(log, "Path {} already exists. Will remove it and clone again",
+            LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
                 fullPath(disk, path_to_clone + relative_path));
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
