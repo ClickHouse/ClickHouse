@@ -706,41 +706,15 @@ bool Client::processWithFuzzing(const String & full_query)
         return true;
     }
 
-    const auto & settings = global_context->getSettingsRef();
-    const Dialect & dialect = settings.dialect;
-    String old_dialect;
-    switch (dialect)
+    // Kusto is not a subject for fuzzing (yet)
+    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
     {
-        case DB::Dialect::kusto:
-            old_dialect = "kusto";
-            break;
-        case DB::Dialect::clickhouse:
-            old_dialect = "clickhouse";
-            break;
-        case DB::Dialect::prql:
-            old_dialect = "prql";
-            break;
+        return true;
     }
-
     if (auto *q = orig_ast->as<ASTSetQuery>())
     {
-        auto *setDialect = q->changes.tryGet("dialect");
-        if (setDialect)
-        {
-            old_dialect =  setDialect->get<String>();
-        }
-    }
-
-    //setting dialect to clickhouse during query fuzzing, restore dialect to original value after fuzzing
-
-    SCOPE_EXIT_SAFE({
-            global_context->setSetting("dialect", old_dialect);
-    });
-
-    if (dialect != DB::Dialect::clickhouse)
-    {
-        SettingChange new_setting("dialect", "clickhouse");
-        global_context->applySettingChange(new_setting);
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+            return true;
     }
 
     // Don't repeat:
