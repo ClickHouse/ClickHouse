@@ -997,6 +997,7 @@ protected:
                 --m_size;
                 buf[place_value].setZero();
                 inserted = false;
+                keyHolderDiscardKey(key_holder);
                 throw;
             }
 
