@@ -47,7 +47,15 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
-{}
+{
+    shared_data.query_is_canceled_predicate = [this] () -> bool {
+            if (auto context_locked = query_context.lock())
+            {
+                return context_locked->isCurrentQueryKilled();
+            }
+            return false;
+    };
+}
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
