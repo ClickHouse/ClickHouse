@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.304.0
+export RUNNER_VERSION=2.310.1
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -90,7 +90,7 @@ systemctl restart docker
 sudo -u ubuntu docker buildx version
 sudo -u ubuntu docker buildx create --use --name default-builder
 
-pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
+pip install boto3 pygithub requests urllib3 dohq-artifactory
 
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
 
