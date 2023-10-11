@@ -46,7 +46,15 @@ void AsyncTaskExecutor::cancel()
 {
     std::lock_guard guard(fiber_lock);
     is_cancelled = true;
-    cancelBefore();
+    try
+    {
+        cancelBefore();
+    }
+    catch (...)
+    {
+        destroyFiber();
+        throw;
+    }
     destroyFiber();
     cancelAfter();
 }
