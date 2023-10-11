@@ -226,7 +226,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
     InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
-    auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr());
+    auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr(), query_context);
 
     if (!FormatFactory::instance().isInputFormat(insert_query.format))
         throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);

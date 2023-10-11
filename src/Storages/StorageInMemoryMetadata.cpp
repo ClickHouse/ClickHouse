@@ -1,5 +1,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
@@ -7,6 +10,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -40,6 +44,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
+    , definer(other.definer)
+    , ignore_sql_security_check(other.ignore_sql_security_check)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -69,6 +75,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
+    definer = other.definer;
+    ignore_sql_security_check = other.ignore_sql_security_check;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
@@ -77,6 +85,47 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 void StorageInMemoryMetadata::setComment(const String & comment_)
 {
     comment = comment_;
+}
+
+void StorageInMemoryMetadata::setDefiner(std::shared_ptr<ASTSQLSecurity> sql_security)
+{
+    if (!sql_security)
+        return;
+
+    if (sql_security->type == ASTSQLSecurity::SQLSecurity::DEFINER)
+        definer = sql_security->definer->toString();
+
+    if (sql_security->type == ASTSQLSecurity::SQLSecurity::NONE)
+        ignore_sql_security_check = true;
+}
+
+UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
+{
+    if (!definer)
+    {
+        if (const auto definer_id = context->getUserID())
+            return *definer_id;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in context for sub query execution.");
+    }
+
+    const auto & access_control = context->getAccessControl();
+    return access_control.getID<User>(*definer);
+}
+
+bool StorageInMemoryMetadata::hasDefiner() const
+{
+    return definer.has_value();
+}
+
+ContextMutablePtr StorageInMemoryMetadata::getDefinerContext(ContextPtr context) const
+{
+    auto new_context = Context::createCopy(context);
+    if (shouldIgnoreSQLSecurity())
+        new_context->resetUser();
+    else if (hasDefiner())
+        new_context->setUser(getDefinerID(context));
+    return new_context;
 }
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)

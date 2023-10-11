@@ -28,6 +28,12 @@ void ASTUserNameWithHost::concatParts()
     host_pattern.clear();
 }
 
+void ASTUserNameWithHost::replace(const String name_)
+{
+    base_name = name_;
+    host_pattern.clear();
+}
+
 
 void ASTUserNamesWithHost::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {

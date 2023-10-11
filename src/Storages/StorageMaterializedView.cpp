@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/Common/AccessFlags.h>
@@ -68,6 +69,10 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setDefiner(query.sql_security);
+
+    if (!storage_metadata.hasDefiner() and !storage_metadata.shouldIgnoreSQLSecurity())
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -152,19 +157,26 @@ void StorageMaterializedView::read(
     const size_t max_block_size,
     const size_t num_streams)
 {
+    auto context = getInMemoryMetadataPtr()->getDefinerContext(local_context);
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
+    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, local_context);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
-    storage->read(query_plan, column_names, target_storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
+
+    /// We don't need to check access if the inner table was created automatically.
+    if (!has_inner_table)
+        context->checkAccess(AccessType::SELECT, storage->getStorageID(), column_names);
+
+    storage->read(query_plan, column_names, target_storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
+        auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
 
         /// No need to convert columns that does not exists in MV
@@ -194,11 +206,19 @@ void StorageMaterializedView::read(
 
 SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
 {
+    auto context = getInMemoryMetadataPtr()->getDefinerContext(local_context);
     auto storage = getTargetTable();
-    auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-
+    auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto sink = storage->write(query, metadata_snapshot, local_context, async_insert);
+
+    /// We don't need to check access if the inner table was created automatically.
+    if (!has_inner_table)
+    {
+        auto query_sample_block = InterpreterInsertQuery::getSampleBlock(query->as<ASTInsertQuery &>(), storage, metadata_snapshot, context);
+        context->checkAccess(AccessType::INSERT, storage->getStorageID(), query_sample_block.getNames());
+    }
+
+    auto sink = storage->write(query, metadata_snapshot, context, async_insert);
 
     sink->addTableLock(lock);
     return sink;

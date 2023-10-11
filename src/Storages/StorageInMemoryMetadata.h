@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
@@ -47,6 +49,15 @@ struct StorageInMemoryMetadata
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
+
+    /// DEFINER <user_name>. Allows to specify a definer of the table other than the current user.
+    /// Supported for MaterializedView and View.
+    /// std::nullopt means that the definer was not specified, and the current user will be used for the query execution.
+    std::optional<String> definer;
+
+    /// SQL SECURITY NONE. This is a deprecated setting, added only for backward compatibility.
+    /// This setting allows the invoker to run all view's sub-queries using global context (e.g., without checking any rights).
+    bool ignore_sql_security_check = false;
 
     String comment;
 
@@ -98,6 +109,14 @@ struct StorageInMemoryMetadata
     void setMetadataVersion(int32_t metadata_version_);
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
+
+    /// Sets a definer for the storage.
+    void setDefiner(std::shared_ptr<ASTSQLSecurity> sql_security);
+    UUID getDefinerID(ContextPtr context) const;
+    bool hasDefiner() const;
+    bool shouldIgnoreSQLSecurity() const { return ignore_sql_security_check; }
+    /// Returns a copy of the context with co
+    ContextMutablePtr getDefinerContext(ContextPtr context) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;

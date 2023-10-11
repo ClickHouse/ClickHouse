@@ -74,4 +74,9 @@ Chain buildPushingToViewsChain(
     /// LiveView executes query itself, it needs source block structure.
     const Block & live_view_header = {});
 
+
+/** Get list of columns we get from select query.
+ */
+Block getHeader(ContextPtr context, ASTPtr query);
+
 }

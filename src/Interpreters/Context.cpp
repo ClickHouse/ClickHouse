@@ -1182,6 +1182,13 @@ void Context::setUserID(const UUID & user_id_)
     setUserIDWithLock(user_id_, lock);
 }
 
+void Context::resetUser()
+{
+    auto lock = getLocalLock();
+    user_id.reset();
+    need_recalculate_access = true;
+}
+
 std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLocalSharedLock();

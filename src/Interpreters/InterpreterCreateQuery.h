@@ -107,6 +107,9 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
+    /// Validate definer statement and replace `CURRENT USER` with actual name.
+    void processSQLSecurityOption(std::shared_ptr<ASTSQLSecurity> sql_security, bool is_materialized_view = false) const;
+
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.

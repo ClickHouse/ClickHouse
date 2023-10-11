@@ -2,6 +2,9 @@
 
 #include <filesystem>
 
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+
 #include "Common/Exception.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -1062,6 +1065,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
+    processSQLSecurityOption(create.sql_security, create.is_materialized_view);
+
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
@@ -1794,6 +1799,48 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         ASTPtr columns = std::make_shared<ASTExpressionList>(*create_query_from_storage.columns_list->columns);
         create.columns_list->set(create.columns_list->columns, columns);
     }
+}
+
+void InterpreterCreateQuery::processSQLSecurityOption(std::shared_ptr<ASTSQLSecurity> sql_security, bool is_materialized_view) const
+{
+    if (!sql_security)
+        return;
+
+    if (!sql_security->type.has_value())
+    {
+        String default_security;
+        if (is_materialized_view)
+            default_security = getContext()->getSettingsRef().default_matview_sql_security;
+        else
+            default_security = getContext()->getSettingsRef().default_view_sql_security;
+
+        if (default_security == "NONE")
+            sql_security->type = ASTSQLSecurity::SQLSecurity::NONE;
+        else if (default_security == "INVOKER")
+            sql_security->type = ASTSQLSecurity::SQLSecurity::INVOKER;
+        else if (default_security == "CURRENT_USER")
+        {
+            sql_security->type = ASTSQLSecurity::SQLSecurity::DEFINER;
+            sql_security->is_definer_current_user = true;
+        }
+        else
+        {
+            sql_security->type = ASTSQLSecurity::SQLSecurity::DEFINER;
+            sql_security->definer = std::make_shared<ASTUserNameWithHost>(default_security);
+        }
+    }
+
+    if (sql_security->is_definer_current_user)
+    {
+        const String name = getContext()->getUserName();
+        if (sql_security->definer)
+            sql_security->definer->replace(name);
+        else
+            sql_security->definer = std::make_shared<ASTUserNameWithHost>(name);
+    }
+    else if (sql_security->definer)
+        /// Validate that definer exists.
+        getContext()->getAccessControl().getID<User>(sql_security->definer->toString());
 }
 
 }

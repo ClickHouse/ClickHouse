@@ -24,6 +24,14 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
+ */
+class ParserSQLSecurity : public IParserBase
+{
+protected:
+    const char * getName() const override { return "sql security"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Storage engine or Codec. For example:
  *         Memory()

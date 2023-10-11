@@ -568,6 +568,9 @@ public:
     std::optional<UUID> getUserID() const;
     String getUserName() const;
 
+    /// WARNING: all requests with this context won't trigger any access checks.
+    void resetUser();
+
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
@@ -13,6 +14,28 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
+
+
+class ASTSQLSecurity : public IAST
+{
+public:
+    enum class SQLSecurity: UInt8
+    {
+        INVOKER = 0,
+        DEFINER = 1,
+        NONE = 2,
+    };
+
+    bool is_definer_current_user{false};
+    std::shared_ptr<ASTUserNameWithHost> definer = nullptr;
+    std::optional<SQLSecurity> type = std::nullopt;
+
+    String getID(char) const override { return "View SQL Security"; }
+    ASTPtr clone() const override { return std::make_shared<ASTSQLSecurity>(*this); }
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+};
+
 
 class ASTStorage : public IAST
 {
@@ -109,6 +132,7 @@ public:
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
+    std::shared_ptr<ASTSQLSecurity> sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 

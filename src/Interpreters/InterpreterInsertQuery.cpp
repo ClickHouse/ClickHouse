@@ -124,7 +124,10 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 Block InterpreterInsertQuery::getSampleBlock(
     const ASTInsertQuery & query,
     const StoragePtr & table,
-    const StorageMetadataPtr & metadata_snapshot) const
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context_,
+    bool no_destination,
+    bool allow_materialized)
 {
     /// If the query does not include information about columns
     if (!query.columns)
@@ -138,7 +141,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, query.columns);
+    const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, query.columns);
     Names names;
     names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
@@ -147,7 +150,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         names.emplace_back(std::move(current_name));
     }
 
-    return getSampleBlock(names, table, metadata_snapshot);
+    return getSampleBlock(names, table, metadata_snapshot, allow_materialized);
 }
 
 std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
@@ -172,7 +175,8 @@ std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
 Block InterpreterInsertQuery::getSampleBlock(
     const Names & names,
     const StoragePtr & table,
-    const StorageMetadataPtr & metadata_snapshot) const
+    const StorageMetadataPtr & metadata_snapshot,
+    bool allow_materialized)
 {
     Block table_sample_physical = metadata_snapshot->getSampleBlock();
     Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
@@ -259,7 +263,8 @@ Chain InterpreterInsertQuery::buildChain(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
     ThreadStatusesHolderPtr thread_status_holder,
-    std::atomic_uint64_t * elapsed_counter_ms)
+    std::atomic_uint64_t * elapsed_counter_ms,
+    bool check_access)
 {
     ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
@@ -270,7 +275,9 @@ Chain InterpreterInsertQuery::buildChain(
     if (!running_group)
         running_group = std::make_shared<ThreadGroup>(getContext());
 
-    auto sample = getSampleBlock(columns, table, metadata_snapshot);
+    auto sample = getSampleBlock(columns, table, metadata_snapshot, allow_materialized);
+    if (check_access)
+        getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
 
     Chain sink = buildSink(table, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
     Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample, thread_status_holder);
@@ -410,7 +417,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().

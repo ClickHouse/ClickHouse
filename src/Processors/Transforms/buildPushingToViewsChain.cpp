@@ -38,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -186,6 +187,152 @@ private:
     std::exception_ptr any_exception;
 };
 
+Block getHeader(ContextPtr context, ASTPtr query)
+{
+    if (context->getSettingsRef().allow_experimental_analyzer)
+        return InterpreterSelectQueryAnalyzer::getSampleBlock(query, context);
+    else
+        return InterpreterSelectQuery(query, context, SelectQueryOptions().analyze()).getSampleBlock();
+}
+
+
+std::optional<Chain> generateViewChain(
+    const StorageID & view_id,
+    ContextPtr context,
+    ContextPtr select_context,
+    ContextPtr insert_context,
+    ThreadGroupPtr running_group,
+    Chain & result_chain,
+    ViewsDataPtr views_data,
+    ThreadStatusesHolderPtr thread_status_holder,
+    bool async_insert,
+    const Block & storage_header)
+{
+    auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+    if (view == nullptr)
+    {
+        LOG_WARNING(
+            &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+        return std::nullopt;
+    }
+
+    auto view_metadata_snapshot = view->getInMemoryMetadataPtr();
+
+    auto local_select_context = view_metadata_snapshot->getDefinerContext(select_context);
+    auto local_insert_context = view_metadata_snapshot->getDefinerContext(insert_context);
+
+    ASTPtr query;
+    Chain out;
+
+    /// We are creating a ThreadStatus per view to store its metrics individually
+    /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
+    /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
+    /// and switch back to the original thread_status.
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
+    current_thread = nullptr;
+    std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
+    /// Copy of a ThreadStatus should be internal.
+    view_thread_status_ptr->setInternalThread();
+    view_thread_status_ptr->attachToGroup(running_group);
+
+    auto * view_thread_status = view_thread_status_ptr.get();
+    views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));
+
+    auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
+    runtime_stats->target_name = view_id.getFullTableName();
+    runtime_stats->thread_status = view_thread_status;
+    runtime_stats->event_time = std::chrono::system_clock::now();
+    runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
+
+    auto & type = runtime_stats->type;
+    auto & target_name = runtime_stats->target_name;
+    auto * view_counter_ms = &runtime_stats->elapsed_ms;
+
+    if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
+    {
+        auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+
+        if (lock == nullptr)
+        {
+            // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
+            assert(materialized_view->is_dropped || materialized_view->is_detached);
+            LOG_WARNING(
+                &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+            return std::nullopt;
+        }
+
+        type = QueryViewsLogElement::ViewType::MATERIALIZED;
+        result_chain.addTableLock(lock);
+
+        StoragePtr inner_table = materialized_view->getTargetTable();
+        auto inner_table_id = inner_table->getStorageID();
+        auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+        query = view_metadata_snapshot->getSelectQuery().inner_query;
+        target_name = inner_table_id.getFullTableName();
+
+        auto header = getHeader(local_select_context, query);
+
+        /// Insert only columns returned by select.
+        Names insert_columns;
+        const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
+        for (const auto & column : header)
+        {
+            /// But skip columns which storage doesn't have.
+            if (inner_table_columns.hasPhysical(column.name))
+                insert_columns.emplace_back(column.name);
+        }
+
+        InterpreterInsertQuery interpreter(nullptr, local_insert_context, false, false, false);
+        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, !materialized_view->hasInnerTable());
+        out.addStorageHolder(view);
+        out.addStorageHolder(inner_table);
+    }
+    else if (auto * live_view = dynamic_cast<StorageLiveView *>(view.get()))
+    {
+        runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
+        query = live_view->getInnerQuery();
+        getHeader(local_select_context, query);  /// check implicitly that definer has enough rights
+        out = buildPushingToViewsChain(
+            view, view_metadata_snapshot, local_insert_context, ASTPtr(),
+            /* no_destination= */ true,
+            thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
+    {
+        runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
+        query = window_view->getMergeableQuery();
+        getHeader(local_select_context, query);  /// check implicitly that definer has enough rights
+        out = buildPushingToViewsChain(
+            view, view_metadata_snapshot, local_insert_context, ASTPtr(),
+            /* no_destination= */ true,
+            thread_status_holder, running_group, view_counter_ms, async_insert);
+    }
+    else
+        out = buildPushingToViewsChain(
+            view, view_metadata_snapshot, local_insert_context, ASTPtr(),
+            /* no_destination= */ false,
+            thread_status_holder, running_group, view_counter_ms, async_insert);
+
+    views_data->views.emplace_back(ViewRuntimeData{
+        std::move(query),
+        out.getInputHeader(),
+        view_id,
+        nullptr,
+        std::move(runtime_stats)});
+
+    if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
+    {
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
+            storage_header, views_data->views.back(), views_data);
+        executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
+
+        out.addSource(std::move(executing_inner_query));
+    }
+
+    return out;
+}
+
 
 Chain buildPushingToViewsChain(
     const StoragePtr & storage,
@@ -262,130 +409,24 @@ Chain buildPushingToViewsChain(
 
     for (const auto & view_id : views)
     {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-        if (view == nullptr)
+        try
         {
-            LOG_WARNING(
-                &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
+            auto out = generateViewChain(
+                view_id, context, select_context, insert_context,
+                running_group, result_chain, views_data, thread_status_holder,
+                async_insert, storage_header);
+
+            if (out)
+                chains.emplace_back(std::move(*out));
+        }
+        catch (const Exception & e)
+        {
+            LOG_ERROR(&Poco::Logger::get("PushingToViews"), "Failed to push block to view {}, {}", table_id, e.message());
+            if (context->getSettingsRef().stop_insert_if_fail_to_update_dependent_view)
+                throw;
+
             continue;
         }
-
-        auto view_metadata_snapshot = view->getInMemoryMetadataPtr();
-
-        ASTPtr query;
-        Chain out;
-
-        /// We are creating a ThreadStatus per view to store its metrics individually
-        /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
-        /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
-        /// and switch back to the original thread_status.
-        auto * original_thread = current_thread;
-        SCOPE_EXIT({ current_thread = original_thread; });
-        current_thread = nullptr;
-        std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
-        /// Copy of a ThreadStatus should be internal.
-        view_thread_status_ptr->setInternalThread();
-        view_thread_status_ptr->attachToGroup(running_group);
-
-        auto * view_thread_status = view_thread_status_ptr.get();
-        views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));
-
-        auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
-        runtime_stats->target_name = view_id.getFullTableName();
-        runtime_stats->thread_status = view_thread_status;
-        runtime_stats->event_time = std::chrono::system_clock::now();
-        runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
-
-        auto & type = runtime_stats->type;
-        auto & target_name = runtime_stats->target_name;
-        auto * view_counter_ms = &runtime_stats->elapsed_ms;
-
-        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
-        {
-            auto lock = materialized_view->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-
-            if (lock == nullptr)
-            {
-                // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
-                assert(materialized_view->is_dropped || materialized_view->is_detached);
-                LOG_WARNING(
-                    &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
-                continue;
-            }
-
-            type = QueryViewsLogElement::ViewType::MATERIALIZED;
-            result_chain.addTableLock(lock);
-
-            StoragePtr inner_table = materialized_view->getTargetTable();
-            auto inner_table_id = inner_table->getStorageID();
-            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-            query = view_metadata_snapshot->getSelectQuery().inner_query;
-            target_name = inner_table_id.getFullTableName();
-
-            Block header;
-
-            /// Get list of columns we get from select query.
-            if (select_context->getSettingsRef().allow_experimental_analyzer)
-                header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
-            else
-                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
-
-            /// Insert only columns returned by select.
-            Names insert_columns;
-            const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-            for (const auto & column : header)
-            {
-                /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
-                    insert_columns.emplace_back(column.name);
-            }
-
-            InterpreterInsertQuery interpreter(nullptr, insert_context, false, false, false);
-            out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms);
-            out.addStorageHolder(view);
-            out.addStorageHolder(inner_table);
-        }
-        else if (auto * live_view = dynamic_cast<StorageLiveView *>(view.get()))
-        {
-            runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
-            query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
-            out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(),
-                /* no_destination= */ true,
-                thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
-        }
-        else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
-        {
-            runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
-            query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
-            out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(),
-                /* no_destination= */ true,
-                thread_status_holder, running_group, view_counter_ms, async_insert);
-        }
-        else
-            out = buildPushingToViewsChain(
-                view, view_metadata_snapshot, insert_context, ASTPtr(),
-                /* no_destination= */ false,
-                thread_status_holder, running_group, view_counter_ms, async_insert);
-
-        views_data->views.emplace_back(ViewRuntimeData{
-            std::move(query),
-            out.getInputHeader(),
-            view_id,
-            nullptr,
-            std::move(runtime_stats)});
-
-        if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
-        {
-            auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-                storage_header, views_data->views.back(), views_data);
-            executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
-
-            out.addSource(std::move(executing_inner_query));
-        }
-
-        chains.emplace_back(std::move(out));
 
         /// Add the view to the query access info so it can appear in system.query_log
         /// hasQueryContext - for materialized tables with background replication process query context is not added
@@ -489,11 +530,11 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, local_context->getViewSource(), SelectQueryOptions());
+        InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
         pipeline = interpreter.buildQueryPipeline();
     }
     else
-    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
+    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions().ignoreAccessCheck());
         pipeline = interpreter.buildQueryPipeline();
     }
 

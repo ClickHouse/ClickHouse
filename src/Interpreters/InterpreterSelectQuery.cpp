@@ -832,7 +832,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction())
+    if (table_id && got_storage_from_query && !joined_tables.isLeftTableFunction() && !options.ignore_access_check)
     {
         /// The current user should have the SELECT privilege. If this table_id is for a table
         /// function we don't check access rights here because in this case they have been already
