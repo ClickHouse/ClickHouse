@@ -159,6 +159,13 @@ def test_predefined_query_handler():
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
         cluster.instance.query("DROP TABLE test_table")
 
+        res4 = cluster.instance.http_request(
+            "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
+            method="GET",
+            headers={"XXX": "xxx"},
+        )
+        assert b"max_threads\t1\n" == res1.content
+
 
 def test_fixed_static_handler():
     with contextlib.closing(
