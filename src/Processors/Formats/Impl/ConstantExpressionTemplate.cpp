@@ -597,6 +597,10 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             if (negative || *istr.position() == '+')
                 ++istr.position();
 
+            /// Consume leading zeroes - we don't want any funny octal business
+            while (*istr.position() == '0')
+                ++istr.position();
+
             static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
             char buf[MAX_LENGTH_OF_NUMBER + 1];
             size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
