@@ -101,6 +101,7 @@ public:
     String replica;
     String shard;
     String replica_zk_path;
+    String replica_group;
     bool is_drop_whole_replica{};
     String storage_policy;
     String volume;
