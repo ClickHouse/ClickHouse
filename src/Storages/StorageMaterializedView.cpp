@@ -166,7 +166,8 @@ void StorageMaterializedView::read(
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
-    context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
+    if (!getInMemoryMetadataPtr()->select.select_table_id.empty())
+        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
 
     auto storage_id = storage->getStorageID();
     /// We don't need to check access if the inner table was created automatically.
