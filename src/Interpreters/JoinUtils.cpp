@@ -16,7 +16,6 @@
 
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
-#include <Common/PODArray.h>
 
 #include <base/FnTraits.h>
 
@@ -847,75 +846,6 @@ Block NotJoinedBlocks::nextImpl()
     assertBlocksHaveEqualStructure(result_block, result_sample_block, "NotJoinedBlocks");
 #endif
     return result_block;
-}
-
-StreamReplicateBlocks::StreamReplicateBlocks(const Block & block_, std::unique_ptr<IColumn::Offsets> offsets_to_replicate_, const std::vector<size_t> & need_replicate_pos_, size_t max_block_size_)
-    : block(block_), offsets_to_replicate(std::move(offsets_to_replicate_)), need_replicate_pos(need_replicate_pos_), max_block_size(max_block_size_)
-{
-}
-
-Block StreamReplicateBlocks::nextImpl()
-{
-    if (need_replicate_pos.empty() || !offsets_to_replicate)
-    {
-        finished.store(true);
-        return block;
-    }
-    if (offsets_to_replicate->back() < DEFAULT_BLOCK_SIZE)
-    {
-        finished.store(true);
-        for (const auto & i : need_replicate_pos)
-        {
-            block.safeGetByPosition(i).column =
-                block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
-        }
-        return block;
-    }
-    IColumn::Offsets tmp_offsets_to_replicate;
-    size_t replicate_rows = 0;
-    size_t start_offset = offset_index;
-    // Split offsets_to_replicate according to max_block_size
-    while (offset_index < offsets_to_replicate->size() && replicate_rows < max_block_size)
-    {
-        auto current_offset_row = offset_index == 0 ? (*offsets_to_replicate)[offset_index] : (*offsets_to_replicate)[offset_index] - (*offsets_to_replicate)[offset_index - 1];
-        auto row = offset_remain_rows == 0 ? current_offset_row : offset_remain_rows;
-        if (row + replicate_rows > max_block_size)
-        {
-            size_t remain_rows = max_block_size - replicate_rows;
-            replicate_rows += remain_rows;
-            tmp_offsets_to_replicate.emplace_back(replicate_rows);
-            offset_remain_rows = row - remain_rows;
-        }
-        else
-        {
-            offset_remain_rows = 0;
-            replicate_rows += row;
-            tmp_offsets_to_replicate.emplace_back(replicate_rows);
-            offset_index ++;
-        }
-    }
-    Block res = block.cloneEmpty();
-    std::set<size_t> visited_pos;
-    // block that generates output
-    for (const auto & i : need_replicate_pos)
-    {
-        visited_pos.emplace(i);
-        res.safeGetByPosition(i).column =
-            block.safeGetByPosition(i).column->cut(start_offset,tmp_offsets_to_replicate.size())->replicate(tmp_offsets_to_replicate);
-    }
-    // Additional splitting is required for columns that do not need to be replicated.
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        if (!visited_pos.contains(i))
-            res.safeGetByPosition(i).column =
-                block.safeGetByPosition(i).column->cut(output_rows,replicate_rows);
-    }
-    output_rows += replicate_rows;
-    if (offset_index >= offsets_to_replicate->size()) finished.store(true);
-    return res;
-}
-StreamReplicateBlocks::StreamReplicateBlocks(const Block & block_) : block(block_)
-{
 }
 
 }

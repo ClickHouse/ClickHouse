@@ -170,10 +170,7 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & /* block */, ExtraBlockPtr & /* not_processed */) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method joinBlock is not supported for {}, use joinBlockWithStreamOutput", getName());
-    }
+    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
 
     IBlocksStreamPtr joinBlockWithStreamOutput(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override;
 
@@ -448,8 +445,6 @@ private:
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
-
-    std::shared_ptr<StreamReplicateBlocks> current_result;
 
     Poco::Logger * log;
 

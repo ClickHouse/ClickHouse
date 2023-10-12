@@ -170,23 +170,4 @@ private:
     void setRightIndex(size_t right_pos, size_t result_position);
 };
 
-class StreamReplicateBlocks final: public IBlocksStream
-{
-public:
-    explicit StreamReplicateBlocks(const Block & block);
-    StreamReplicateBlocks(const Block & block, std::unique_ptr<IColumn::Offsets> offsets_to_replicate, const std::vector<size_t> & need_replicate_pos, size_t max_block_size);
-
-protected:
-    Block nextImpl() override;
-
-private:
-    Block block;
-    std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
-    std::vector<size_t> need_replicate_pos;
-    size_t offset_index = 0;
-    size_t offset_remain_rows = 0;
-    size_t output_rows = 0;
-    size_t max_block_size = DEFAULT_BLOCK_SIZE;
-};
-
 }
