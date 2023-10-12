@@ -615,8 +615,10 @@ void ValuesBlockInputFormat::readSuffix()
     {
         ++buf->position();
         skipWhitespaceIfAny(*buf);
-        if (buf->hasUnreadData() || !buf->eof())
+        if (buf->hasUnreadData())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
+        if (!format_settings.values.allow_data_after_semicolon && !buf->eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)");
         return;
     }
 
