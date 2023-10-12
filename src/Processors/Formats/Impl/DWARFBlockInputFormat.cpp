@@ -144,18 +144,21 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, Block header_, co
 {
     auto tag_names = ColumnString::create();
     /// Note: TagString() returns empty string for tags that don't exist, and tag 0 doesn't exist.
+    constexpr std::string_view DW_TAG_ = "DW_TAG_";
     for (uint32_t tag = 0; tag <= UINT16_MAX; ++tag)
-        append(tag_names, removePrefix(llvm::dwarf::TagString(tag), strlen("DW_TAG_")));
+        append(tag_names, removePrefix(llvm::dwarf::TagString(tag), DW_TAG_.size()));
     tag_dict_column = ColumnUnique<ColumnString>::create(std::move(tag_names), /*is_nullable*/ false);
 
     auto attr_names = ColumnString::create();
+    constexpr std::string_view DW_AT_ = "DW_AT_";
     for (uint32_t attr = 0; attr <= UINT16_MAX; ++attr)
-        append(attr_names, removePrefix(llvm::dwarf::AttributeString(attr), strlen("DW_AT_")));
+        append(attr_names, removePrefix(llvm::dwarf::AttributeString(attr), DW_AT_.size()));
     attr_name_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_names), /*is_nullable*/ false);
 
     auto attr_forms = ColumnString::create();
+    constexpr std::string_view DW_FORM_ = "DW_FORM_";
     for (uint32_t form = 0; form <= UINT16_MAX; ++form)
-        append(attr_forms, removePrefix(llvm::dwarf::FormEncodingString(form), strlen("DW_FORM_")));
+        append(attr_forms, removePrefix(llvm::dwarf::FormEncodingString(form), DW_FORM_.size()));
     attr_form_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_forms), /*is_nullable*/ false);
 }
 
@@ -205,6 +208,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_abbrev section");
     LOG_DEBUG(&Poco::Logger::get("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", abbrev_section->size() * 1. / (1 << 20), info_section->size() * 1. / (1 << 20));
 
+    /// (The StringRef points into Elf's mmap of the whole file, or into file_contents.)
     extractor.emplace(llvm::StringRef(info_section->begin(), info_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
 
     auto line_section = elf->findSectionByName(".debug_line");
@@ -306,10 +310,8 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto form_params = unit.dwarf_unit->getFormParams();
 
     /// For parallel arrays, we nominate one of them to be responsible for populating the offsets vector.
-    if (need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR])
-        need[COL_ATTR_NAME] = true;
-    if (need[COL_ANCESTOR_OFFSETS])
-        need[COL_ANCESTOR_TAGS] = true;
+    need[COL_ATTR_NAME] = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
+    need[COL_ANCESTOR_TAGS] = need[COL_ANCESTOR_TAGS] || need[COL_ANCESTOR_OFFSETS];
 
     auto col_offset = ColumnVector<UInt64>::create();
     auto col_size = ColumnVector<UInt32>::create();
@@ -441,12 +443,14 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         }
                         else if (need[COL_ATTR_STR])
                         {
+                            static constexpr std::string_view DW_LANG_ = "DW_LANG_";
+                            static constexpr std::string_view DW_ATE_ = "DW_ATE_";
                             if (attr.Attr == llvm::dwarf::DW_AT_language) // programming language
                                 append(col_attr_str, removePrefix(llvm::dwarf::LanguageString(static_cast<uint32_t>(val.getRawUValue())),
-                                    strlen("DW_LANG_")));
+                                    DW_LANG_.size()));
                             else if (attr.Attr == llvm::dwarf::DW_AT_encoding) // primitive type
                                 append(col_attr_str, removePrefix(llvm::dwarf::AttributeEncodingString(static_cast<uint32_t>(val.getRawUValue())),
-                                    strlen("DW_ATE_")));
+                                    DW_ATE_.size()));
                             else
                                 col_attr_str->insertDefault();
                         }
