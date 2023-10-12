@@ -69,7 +69,7 @@ may return cached results then.
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
 `system.query_cache`. The number of query cache hits and misses since database start are shown as events "QueryCacheHits" and
 "QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for `SELECT` queries which run
-with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_log_usage` in system table
+with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage` in system table
 [system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or read from the
 query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
 [system.asynchronous_metrics](system-tables/asynchronous_metrics.md) show how many entries / bytes the query cache currently contains.
@@ -142,7 +142,7 @@ As a result, the query cache stores for each query multiple (partial)
 result blocks. While this behavior is a good default, it can be suppressed using setting
 [query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results).
 
-Also, results of queries with non-deterministic functions are not cached. Such functions include
+Also, results of queries with non-deterministic functions are not cached by default. Such functions include
 - functions for accessing dictionaries: [`dictGet()`](../sql-reference/functions/ext-dict-functions.md#dictGet) etc.
 - [user-defined functions](../sql-reference/statements/create/function.md),
 - functions which return the current date or time: [`now()`](../sql-reference/functions/date-time-functions.md#now),
@@ -158,7 +158,7 @@ Also, results of queries with non-deterministic functions are not cached. Such f
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
   [`queryID()`](../sql-reference/functions/other-functions.md#queryID),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
-Caching of non-deterministic functions can be forced regardless using setting
+To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a

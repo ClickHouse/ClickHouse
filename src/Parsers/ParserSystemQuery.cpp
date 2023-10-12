@@ -165,6 +165,14 @@ enum class SystemQueryTargetType
         if (!ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
         res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
+
+        if (database && ParserKeyword{"FROM GROUP"}.ignore(pos, expected))
+        {
+            ASTPtr group_ast;
+            if (!ParserStringLiteral{}.parse(pos, group_ast, expected))
+                return false;
+            res->replica_group = group_ast->as<ASTLiteral &>().value.safeGet<String>();
+        }
     }
 
     if (ParserKeyword{"FROM"}.ignore(pos, expected))
@@ -381,6 +389,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
         case Type::STOP_PULLING_REPLICATION_LOG:
         case Type::START_PULLING_REPLICATION_LOG:
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
@@ -449,7 +459,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+                if (ParserKeyword{"FOR"}.ignore(pos, expected))
+                {
+                    if (ParserKeyword{"Protobuf"}.ignore(pos, expected))
+                        res->schema_cache_format = "Protobuf";
+                    else
+                        return false;
+                }
+                break;
+        }
         case Type::UNFREEZE:
         {
             ASTPtr ast;

@@ -102,6 +102,8 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
+#include <Storages/BlockNumberColumn.h>
+
 #include <memory>
 #include <filesystem>
 #include <optional>
@@ -298,6 +300,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
+        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -997,7 +1000,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure

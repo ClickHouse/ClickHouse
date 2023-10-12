@@ -1,5 +1,6 @@
 #include <memory>
 #include <Core/NamesAndTypes.h>
+#include <Core/TypeId.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -288,7 +289,9 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
+    if (filter_column->getDataType() != TypeIndex::UInt8)
+        return;
 
     ConstantFilterDescription constant_filter(*filter_column);
 
@@ -389,19 +392,19 @@ void addRequestedPathAndFileVirtualsToChunk(
     {
         if (virtual_column.name == "_path")
         {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path));
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_file")
         {
             if (filename)
             {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename));
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
             }
             else
             {
                 size_t last_slash_pos = path.find_last_of('/');
                 auto filename_from_path = path.substr(last_slash_pos + 1);
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path));
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
         }
     }

@@ -12,7 +12,7 @@ endif()
 set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (ccache, then sccache), 'ccache', 'sccache', or 'disabled'")
 
 if(COMPILER_CACHE STREQUAL "auto")
-    find_program (CCACHE_EXECUTABLE ccache sccache)
+    find_program (CCACHE_EXECUTABLE NAMES ccache sccache)
 elseif (COMPILER_CACHE STREQUAL "ccache")
     find_program (CCACHE_EXECUTABLE ccache)
 elseif(COMPILER_CACHE STREQUAL "sccache")
