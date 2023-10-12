@@ -517,6 +517,14 @@ BlockIO InterpreterInsertQuery::execute()
                     sink_streams_size = pre_streams_size;
             }
 
+            if (!settings.insert_deduplication_token.value.empty() && (sink_streams_size > 1 || pre_streams_size > 1))
+            {
+                /// We need the order of output chunks to be always the same if the deduplication token is specified by user.
+                sink_streams_size = 1;
+                pre_streams_size = 1;
+                LOG_INFO(&Poco::Logger::get("InterpreterInsertQuery"), "The INSERT query will be executed in a single thread because insert_deduplication_token is not empty");
+            }
+
             pipeline.resize(pre_streams_size);
 
             /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
@@ -615,6 +623,13 @@ BlockIO InterpreterInsertQuery::execute()
             ///
             /// Note, number of threads will be limited by buildPushingToViewsChain() to max_threads.
             pipeline.setMaxThreads(settings.max_threads);
+        }
+
+        if (!settings.insert_deduplication_token.value.empty())
+        {
+            /// We need the order of output chunks to be always the same if the deduplication token is specified by user.
+            LOG_INFO(&Poco::Logger::get("InterpreterInsertQuery"), "The INSERT query will be executed in a single thread because insert_deduplication_token is not empty");
+            pipeline.setMaxThreads(1);
         }
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
