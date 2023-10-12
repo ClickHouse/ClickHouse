@@ -7,14 +7,14 @@
 namespace DB
 {
 
-using FunctionToMillisecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMillisecondImpl>;
+using FunctionToMillisecond = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToMillisecondImpl>;
 
 REGISTER_FUNCTION(ToMillisecond)
 {
     factory.registerFunction<FunctionToMillisecond>();
 
     /// MySQL compatibility alias.
-    factory.registerAlias("MILLISECOND", "toMllisecond", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("MILLISECOND", "toMilliSecond", FunctionFactory::CaseInsensitive);
 }
 
 }
