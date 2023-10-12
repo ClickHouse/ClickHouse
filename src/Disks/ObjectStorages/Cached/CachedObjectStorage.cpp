@@ -42,9 +42,9 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
+ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateBlobNameForPath(path);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const

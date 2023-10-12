@@ -294,9 +294,9 @@ void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
     if (metadata_storage.exists(path))
         metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
     else
-        metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), root_path, path);
+        metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), path);
 
-    metadata->addObject(blob_name, size_in_bytes);
+    metadata->addObject(object_key, size_in_bytes);
 
     write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
 

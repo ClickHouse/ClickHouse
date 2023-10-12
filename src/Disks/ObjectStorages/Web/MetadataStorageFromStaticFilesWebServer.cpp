@@ -28,7 +28,8 @@ MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransactio
 
 const std::string & MetadataStorageFromStaticFilesWebServer::getPath() const
 {
-    return root_path;
+    static const String no_root;
+    return no_root;
 }
 
 bool MetadataStorageFromStaticFilesWebServer::exists(const std::string & path) const
@@ -96,7 +97,7 @@ std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(
     for (const auto & [file_path, _] : object_storage.files)
     {
         if (file_path.starts_with(path))
-            result.push_back(file_path);
+            result.push_back(file_path); /// It looks more like recursive listing, not sure it is right
     }
     return result;
 }
