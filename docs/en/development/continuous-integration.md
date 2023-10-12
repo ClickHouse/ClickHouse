@@ -67,25 +67,22 @@ This check means that the CI system started to process the pull request. When it
 Performs some simple regex-based checks of code style, using the [`utils/check-style/check-style`](https://github.com/ClickHouse/ClickHouse/blob/master/utils/check-style/check-style) binary (note that it can be run locally).
 If it fails, fix the style errors following the [code style guide](style.md).
 
-#### Running localy in docker:
+#### Running style check locally:
 ```sh
-mkdir /tmp/test_output
-
+mkdir -p /tmp/test_output
 # running all checks
 docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE clickhouse/style-test
 
-# run certain check (e.g.: ./check-mypy)
+# run specified check script (e.g.: ./check-mypy)
 docker run --rm --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output -u $(id -u ${USER}):$(id -g ${USER}) --cap-add=SYS_PTRACE --entrypoint= -w/ClickHouse/utils/check-style clickhouse/style-test ./check-mypy
-```
 
-#### Running localy on a host:
-```sh
+# find all style check scripts under the directory:
 cd ./utils/check-style
 
 # Check duplicate includes
 ./check-duplicate-includes.sh
 
-# Check style
+# Check c++ formatiing
 ./check-style
 
 # Check python formatting with black
@@ -94,7 +91,7 @@ cd ./utils/check-style
 # Check python type hinting with mypy
 ./check-mypy
 
-# Check typos
+# Check code with codespell
 ./check-typos
 
 # Check docs spelling
@@ -103,7 +100,7 @@ cd ./utils/check-style
 # Check whitespaces
 ./check-whitespaces
 
-# Check workflows
+# Check github actions workflows
 ./check-workflows
 
 # Check submodules
@@ -120,75 +117,13 @@ some. If it fails, further checks are not started until it is fixed. Look at
 the report to see which tests fail, then reproduce the failure locally as
 described [here](tests.md#functional-test-locally).
 
-Fast test job builds minimal CH, if you for watever reason need the same ClickHouse build, follow the instructions:
+#### Running Fast Test locally:
 ```sh
-git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git
-SUBMODULES_TO_UPDATE=(
-    contrib/sysroot
-    contrib/magic_enum
-    contrib/abseil-cpp
-    contrib/boost
-    contrib/zlib-ng
-    contrib/libxml2
-    contrib/libunwind
-    contrib/fmtlib
-    contrib/aklomp-base64
-    contrib/cctz
-    contrib/libcpuid
-    contrib/libdivide
-    contrib/double-conversion
-    contrib/llvm-project
-    contrib/lz4
-    contrib/zstd
-    contrib/fastops
-    contrib/rapidjson
-    contrib/re2
-    contrib/sparsehash-c11
-    contrib/croaring
-    contrib/miniselect
-    contrib/xz
-    contrib/dragonbox
-    contrib/fast_float
-    contrib/NuRaft
-    contrib/jemalloc
-    contrib/replxx
-    contrib/wyhash
-    contrib/c-ares
-    contrib/morton-nd
-    contrib/xxHash
-    contrib/simdjson
-    contrib/liburing
-    contrib/libfiu
-    contrib/incbin
-    contrib/yaml-cpp
-)
-git submodule sync
-git submodule init
-# --jobs does not work as fast as real parallel running
-printf '%s\0' "${SUBMODULES_TO_UPDATE[@]}" | \
-    xargs --max-procs=100 --null --no-run-if-empty --max-args=1 \
-        git submodule update --depth 1 --single-branch
-
-# configuring build
-LLVM_VERSION=${LLVM_VERSION:-17}
-
-CMAKE_LIBS_CONFIG=(
-    "-DENABLE_LIBRARIES=0"
-    "-DENABLE_TESTS=0"
-    "-DENABLE_UTILS=0"
-    "-DENABLE_EMBEDDED_COMPILER=0"
-    "-DENABLE_THINLTO=0"
-    "-DENABLE_NURAFT=1"
-    "-DENABLE_SIMDJSON=1"
-    "-DENABLE_JEMALLOC=1"
-    "-DENABLE_LIBURING=1"
-    "-DENABLE_YAML_CPP=1"
-)
-mkdir build
-cd build
-cmake  -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" ..
-ninja clickhouse-bundle
-cd ..
+mkdir -p /tmp/test_output
+mkdir -p /tmp/fasttest-workspace
+cd ClickHouse
+# this docker command performs minimal ClickHouse build and run FastTests against it
+docker run --rm --cap-add=SYS_PTRACE -u $(id -u ${USER}):$(id -g ${USER})  --network=host -e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output -e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE -e stage=clone_submodules --volume=/tmp/fasttest-workspace:/fasttest-workspace --volume=.:/ClickHouse --volume=/tmp/test_output:/test_output clickhouse/fasttest
 ```
 
 
@@ -238,25 +173,11 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 ## Special Build Check
 Performs static analysis and code style checks using `clang-tidy`. The report is similar to the [build check](#build-check). Fix the errors found in the build log.
 
-#### Running localy in docker:
+#### Running clang-tidy locally:
+There is a convenience `packager` script that runs the clang-tidy build in docker
 ```sh
 mkdir build_tidy
-
-# configure cmake
-docker run --rm --volume=.:/build -u $(id -u ${USER}):$(id -g ${USER}) --entrypoint=  -w /build/build-tidy clickhouse/binary-builder:latest cmake -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 -LA -DCMAKE_BUILD_TYPE=Debug -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DCOMPILER_CACHE=ccache -DENABLE_CLANG_TIDY=1 -DENABLE_TESTS=1 -DENABLE_EXAMPLES=1 -DENABLE_UTILS=1 -DENABLE_BUILD_PROFILING=1 -DCLICKHOUSE_OFFICIAL_BUILD=1 ..
-
-# build
-docker run --rm --volume=.:/build -u $(id -u ${USER}):$(id -g ${USER}) --entrypoint=  -w /build/build-tidy clickhouse/binary-builder:latest ninja -k0 all
-```
-
-#### Running localy on a host:
-```sh
-# install dependencies if not yet
-# sudo apt-get install clang-tidy-17
-
-mkdir build_tidy && cd build_tidy
-cmake --debug-trycompile -DCMAKE_CXX_COMPILER="clang++-17" -DCMAKE_C_COMPILER="clang-17" -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DCMAKE_C_COMPILER=clang-17 -DCMAKE_CXX_COMPILER=clang++-17 -DCOMPILER_CACHE=ccache -DENABLE_CLANG_TIDY=1 -DENABLE_TESTS=1 -DENABLE_EXAMPLES=1 -DENABLE_UTILS=1 -DENABLE_BUILD_PROFILING=1 -DCLICKHOUSE_OFFICIAL_BUILD=1 ..
-ninja all
+./docker/packager/packager --output-dir=./build_tidy --package-type=binary --compiler=clang-17 --debug-build --clang-tidy
 ```
 
 
