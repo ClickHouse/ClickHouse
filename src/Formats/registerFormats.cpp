@@ -102,6 +102,7 @@ void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
+void registerInputFormatNpy(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -144,6 +145,7 @@ void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
+void registerNpySchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -246,6 +248,7 @@ void registerFormats()
 
     registerInputFormatParquetMetadata(factory);
     registerInputFormatOne(factory);
+    registerInputFormatNpy(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -283,6 +286,7 @@ void registerFormats()
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
     registerOneSchemaReader(factory);
+    registerNpySchemaReader(factory);
 }
 
 }
