@@ -232,10 +232,4 @@ def test_get_all_children_number(client: KeeperClient):
     client.touch("/test_get_all_children_number/2/3")
     client.touch("/test_get_all_children_number/2/4")
 
-    response = client.get_all_children_number("/test_get_all_children_number")
-
-    assert response == TSV(
-        [
-            ["11"]
-        ]
-    )
+    assert client.get_all_children_number("/test_get_all_children_number") == ["11"]
