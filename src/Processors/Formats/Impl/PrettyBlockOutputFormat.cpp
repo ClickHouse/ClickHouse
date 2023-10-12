@@ -1,8 +1,3 @@
-#include <sys/ioctl.h>
-#if defined(OS_SUNOS)
-#  include <sys/termios.h>
-#endif
-#include <unistd.h>
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
@@ -12,6 +7,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 
+
 namespace DB
 {
 
@@ -19,9 +15,6 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), mono_block(mono_block_)
 {
-    struct winsize w;
-    if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
-        terminal_width = w.ws_col;
 }
 
 
@@ -141,7 +134,8 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        total_rows += chunk.getNumRows();
+        if (port_kind != PortKind::PartialResult)
+            total_rows += chunk.getNumRows();
         return;
     }
     if (mono_block)
@@ -322,7 +316,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     writeString(bottom_separator_s, out);
 
-    total_rows += num_rows;
+    if (port_kind != PortKind::PartialResult)
+        total_rows += num_rows;
 }
 
 
@@ -393,6 +388,34 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
     total_rows = 0;
     writeCString("\nExtremes:\n", out);
     write(std::move(chunk), PortKind::Extremes);
+}
+
+void PrettyBlockOutputFormat::clearLastLines(size_t lines_number)
+{
+    /// http://en.wikipedia.org/wiki/ANSI_escape_code
+    #define MOVE_TO_PREV_LINE "\033[A"
+    #define CLEAR_TO_END_OF_LINE "\033[K"
+
+    static const char * clear_prev_line = MOVE_TO_PREV_LINE \
+                                          CLEAR_TO_END_OF_LINE;
+
+    /// Move cursor to the beginning of line
+    writeCString("\r", out);
+
+    for (size_t line = 0; line < lines_number; ++line)
+    {
+        writeCString(clear_prev_line, out);
+    }
+}
+
+void PrettyBlockOutputFormat::consumePartialResult(Chunk chunk)
+{
+    if (prev_partial_block_rows > 0)
+        /// number of rows + header line + footer line
+        clearLastLines(prev_partial_block_rows + 2);
+
+    prev_partial_block_rows = chunk.getNumRows();
+    write(std::move(chunk), PortKind::PartialResult);
 }
 
 

@@ -169,17 +169,17 @@ public:
 
 REGISTER_FUNCTION(ULIDStringToDateTime)
 {
-    factory.registerFunction<FunctionULIDStringToDateTime>(
+    factory.registerFunction<FunctionULIDStringToDateTime>(FunctionDocumentation
         {
-            R"(
+            .description=R"(
 This function extracts the timestamp from a ULID and returns it as a DateTime64(3) typed value.
 The function expects the ULID to be provided as the first argument, which can be either a String or a FixedString(26) data type.
 An optional second argument can be passed to specify a timezone for the timestamp.
 )",
-            Documentation::Examples{
-                {"ulid", "SELECT ULIDStringToDateTime(generateULID())"},
-                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')"}},
-            Documentation::Categories{"ULID"}
+            .examples{
+                {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
+                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
+            .categories{"ULID"}
         },
         FunctionFactory::CaseSensitive);
 }

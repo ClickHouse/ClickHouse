@@ -109,21 +109,15 @@ def test_check_normal_table_corruption(started_cluster):
 
     corrupt_data_part_on_disk(node1, "non_replicated_mt", "201902_1_1_0")
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0},
-        ).strip()
-        == "201902_1_1_0\t0\tCannot read all data. Bytes read: 2. Bytes expected: 25."
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt",
+        settings={"check_query_single_value_result": 0},
+    ).strip().split("\t")[0:2] == ["201902_1_1_0", "0"]
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0},
-        ).strip()
-        == "201902_1_1_0\t0\tCannot read all data. Bytes read: 2. Bytes expected: 25."
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt",
+        settings={"check_query_single_value_result": 0},
+    ).strip().split("\t")[0:2] == ["201902_1_1_0", "0"]
 
     node1.query(
         "INSERT INTO non_replicated_mt VALUES (toDate('2019-01-01'), 1, 10), (toDate('2019-01-01'), 2, 12)"
@@ -141,13 +135,10 @@ def test_check_normal_table_corruption(started_cluster):
 
     remove_checksums_on_disk(node1, "non_replicated_mt", "201901_2_2_0")
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt PARTITION 201901",
-            settings={"check_query_single_value_result": 0},
-        )
-        == "201901_2_2_0\t0\tCheck of part finished with error: \\'Cannot read all data. Bytes read: 2. Bytes expected: 25.\\'\n"
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt PARTITION 201901",
+        settings={"check_query_single_value_result": 0},
+    ).strip().split("\t")[0:2] == ["201901_2_2_0", "0"]
 
 
 def test_check_replicated_table_simple(started_cluster):

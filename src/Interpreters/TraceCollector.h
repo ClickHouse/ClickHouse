@@ -23,8 +23,9 @@ private:
     std::shared_ptr<TraceLog> trace_log;
     ThreadFromGlobalPool thread;
 
+    void tryClosePipe();
+
     void run();
-    void stop();
 };
 
 }

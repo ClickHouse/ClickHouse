@@ -1,14 +1,34 @@
 #include <IO/S3/URI.h>
-
+#include <Poco/URI.h>
+#include "Common/Macros.h"
+#include <Interpreters/Context.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
+
+struct URIConverter
+{
+    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
+    {
+        Macros macros({{"bucket", uri.getHost()}});
+        uri = macros.expand(mapper[uri.getScheme()]).empty()? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
+    }
+};
 
 namespace ErrorCodes
 {
@@ -38,6 +58,29 @@ URI::URI(const std::string & uri_)
 
     uri = Poco::URI(uri_);
 
+    std::unordered_map<std::string, std::string> mapper;
+    auto context = Context::getGlobalContextInstance();
+    if (context)
+    {
+        const auto *config = &context->getConfigRef();
+        if (config->has("url_scheme_mappers"))
+        {
+            std::vector<String> config_keys;
+            config->keys("url_scheme_mappers", config_keys);
+            for (const std::string & config_key : config_keys)
+                mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");
+        }
+        else
+        {
+            mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
+            mapper["gs"] = "https://{bucket}.storage.googleapis.com";
+            mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
+        }
+
+        if (!mapper.empty())
+            URIConverter::modifyURI(uri, mapper);
+    }
+
     storage_name = S3;
 
     if (uri.getHost().empty())
@@ -52,9 +95,9 @@ URI::URI(const std::string & uri_)
             has_version_id = true;
         }
 
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter,
+    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "vertionId" in the http parameter, '?' can be used as a wildcard.
+    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
     /// It is necessary to encode '?' to avoid deletion during parsing path.
     if (!has_version_id && uri_.find('?') != String::npos)
     {

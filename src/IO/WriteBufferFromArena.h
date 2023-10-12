@@ -63,6 +63,10 @@ private:
         internalBuffer() = Buffer(const_cast<char *>(begin), end);
         buffer() = Buffer(continuation, end);
     }
+
+    /// it is super strange,
+    /// but addition next call changes the data in serializeValueIntoArena result
+    virtual void finalizeImpl() override { /* no op */ }
 };
 
 }

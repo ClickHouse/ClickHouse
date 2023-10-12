@@ -22,6 +22,10 @@ toMonday;toDate32;true	1920-02-02
 type;toMonday;toDate32;true	Date32
 toMonday;toDateTime64;true	1920-02-02
 type;toMonday;toDateTime64;true	Date32
+toLastDayOfWeek;toDate32;true	1920-02-07
+type;toLastDayOfWeek;toDate32;true	Date32
+toLastDayOfWeek;toDateTime64;true	1920-02-07
+type;toLastDayOfWeek;toDateTime64;true	Date32
 toLastDayOfMonth;toDate32;true	1920-02-29
 type;toLastDayOfMonth;toDate32;true	Date32
 toLastDayOfMonth;toDateTime64;true	1920-02-29
@@ -66,6 +70,10 @@ toMonday;toDate32;false	2099-07-08
 type;toMonday;toDate32;false	Date
 toMonday;toDateTime64;false	2099-07-08
 type;toMonday;toDateTime64;false	Date
+toLastDayOfWeek;toDate32;false	2099-07-13
+type;toLastDayOfWeek;toDate32;false	Date
+toLastDayOfWeek;toDateTime64;false	2099-07-13
+type;toLastDayOfWeek;toDateTime64;false	Date
 toLastDayOfMonth;toDate32;false	2099-08-04
 type;toLastDayOfMonth;toDate32;false	Date
 toLastDayOfMonth;toDateTime64;false	2099-08-04

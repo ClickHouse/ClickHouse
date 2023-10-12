@@ -8,6 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <base/types.h>
 
@@ -35,7 +36,11 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     Columns columns;
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
-        columns.push_back(all_cols.at(index));
+    {
+        auto col = recursiveRemoveSparse(all_cols.at(index));
+        columns.push_back(std::move(col));
+    }
+
     return columns;
 }
 
@@ -106,7 +111,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     if (chunk.getNumRows())
     {
         Columns key_columns = getColumnsByIndices(chunk, key_column_indices);
-        bool limit_exceeded = !set->insertFromBlock(key_columns);
+        bool limit_exceeded = !set->insertFromColumns(key_columns);
         if (limit_exceeded)
         {
             auto prev_state = set->state.exchange(SetWithState::State::Suspended);
@@ -149,7 +154,7 @@ IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
             LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {:.2f}% filtered",
                 Poco::toLower(getDescription()), fmt::join(column_names, ", "),
                 stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
-                100 - 100.0 * stat.result_rows / stat.consumed_rows);
+                stat.consumed_rows > 0 ? (100 - 100.0 * stat.result_rows / stat.consumed_rows) : 0);
         }
         else
         {

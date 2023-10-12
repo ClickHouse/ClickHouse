@@ -18,7 +18,8 @@
 namespace
 {
 
-template <typename T, typename = std::enable_if_t<std::is_fundamental_v<std::decay_t<T>>>>
+template <typename T>
+requires std::is_fundamental_v<std::decay_t<T>>
 void updateHash(SipHash & hash, const T & value)
 {
     hash.update(value);
@@ -92,7 +93,7 @@ namespace
 
         for (auto ch : src)
         {
-            switch (ch)
+            switch (ch) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case ',':
                 case '\\':
@@ -449,7 +450,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
          msg = ldap_next_message(handle, msg)
     )
     {
-        switch (ldap_msgtype(msg))
+        switch (ldap_msgtype(msg)) // NOLINT(bugprone-switch-missing-default-case)
         {
             case LDAP_RES_SEARCH_ENTRY:
             {
@@ -548,7 +549,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                 if (rc != LDAP_SUCCESS)
                 {
-                    String message = "LDAP search failed";
+                    String message;
 
                     const char * raw_err_str = ldap_err2string(rc);
                     if (raw_err_str && *raw_err_str != '\0')
@@ -569,7 +570,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         message += matched_msg;
                     }
 
-                    throw Exception::createDeprecated(message, ErrorCodes::LDAP_ERROR);
+                    throw Exception(ErrorCodes::LDAP_ERROR, "LDAP search failed{}", message);
                 }
 
                 break;

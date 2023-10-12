@@ -23,6 +23,9 @@ namespace Nested
     /// 2) For an Array with named Tuple element column, a Array(Tuple(x ..., y ..., ...)), replace it with multiple Array Columns, a.x ..., a.y ..., ...
     Block flatten(const Block & block);
 
+    /// Same as flatten but only for Array with named Tuple element column.
+    Block flattenArrayOfTuples(const Block & block);
+
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
 

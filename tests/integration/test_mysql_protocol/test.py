@@ -10,7 +10,6 @@ import logging
 import docker
 import pymysql.connections
 import pytest
-from docker.models.containers import Container
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -150,7 +149,6 @@ def java_container():
 
 
 def test_mysql_client(started_cluster):
-    # type: (ClickHouseCluster) -> None
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
         mysql --protocol tcp -h {host} -P {port} default -u user_with_double_sha1 --password=abacaba
@@ -207,7 +205,7 @@ def test_mysql_client(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 doesn't exist",
+            "ERROR 81 (00000) at line 1: Code: 81. DB::Exception: Database system2 does not exist",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -251,7 +249,7 @@ def test_mysql_client_exception(started_cluster):
     expected_msg = "\n".join(
         [
             "mysql: [Warning] Using a password on the command line interface can be insecure.",
-            "ERROR 1000 (00000) at line 1: Poco::Exception. Code: 1000, e.code() = 0, Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
+            "ERROR 279 (00000) at line 1: Code: 279. DB::Exception: Connections to mysql failed: default@127.0.0.1:10086 as user default",
         ]
     )
     assert stderr[: len(expected_msg)].decode() == expected_msg
@@ -369,6 +367,22 @@ def test_mysql_replacement_query(started_cluster):
     assert stdout.decode().lower() in [
         "currentdatabase()\ndefault\n",
         "database()\ndefault\n",
+    ]
+
+    # SELECT SCHEMA().
+    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
+        """
+        mysql --protocol tcp -h {host} -P {port} default -u default
+        --password=123 -e "select schema();"
+    """.format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    assert code == 0
+    assert stdout.decode().lower() in [
+        "currentdatabase()\ndefault\n",
+        "schema()\ndefault\n",
     ]
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
@@ -621,7 +635,7 @@ def test_python_client(started_cluster):
         client.select_db("system2")
 
     assert exc_info.value.args[1].startswith(
-        "Code: 81. DB::Exception: Database system2 doesn't exist"
+        "Code: 81. DB::Exception: Database system2 does not exist"
     ), exc_info.value.args[1]
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
@@ -635,7 +649,6 @@ def test_python_client(started_cluster):
 
 
 def test_golang_client(started_cluster, golang_container):
-    # type: (str, Container) -> None
     with open(os.path.join(SCRIPT_DIR, "golang.reference"), "rb") as fp:
         reference = fp.read()
 
@@ -646,7 +659,7 @@ def test_golang_client(started_cluster, golang_container):
     )
 
     assert code == 1
-    assert stderr.decode() == "Error 81: Database abc doesn't exist\n"
+    assert stderr.decode() == "Error 81: Database abc does not exist\n"
 
     code, (stdout, stderr) = golang_container.exec_run(
         "./main --host {host} --port {port} --user default --password 123 --database "
@@ -671,7 +684,6 @@ def test_golang_client(started_cluster, golang_container):
 
 
 def test_php_client(started_cluster, php_container):
-    # type: (str, Container) -> None
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test.php {host} {port} default 123".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
@@ -679,7 +691,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\n"
+    assert stdout.decode() == "tables\ntables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test_ssl.php {host} {port} default 123".format(
@@ -688,7 +700,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\n"
+    assert stdout.decode() == "tables\ntables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test.php {host} {port} user_with_double_sha1 abacaba".format(
@@ -697,7 +709,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\n"
+    assert stdout.decode() == "tables\ntables\ntables\n"
 
     code, (stdout, stderr) = php_container.exec_run(
         "php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba".format(
@@ -706,7 +718,7 @@ def test_php_client(started_cluster, php_container):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "tables\ntables\n"
+    assert stdout.decode() == "tables\ntables\ntables\n"
 
 
 def test_mysqljs_client(started_cluster, nodejs_container):
@@ -748,7 +760,6 @@ def test_mysqljs_client(started_cluster, nodejs_container):
 
 
 def test_java_client(started_cluster, java_container):
-    # type: (str, Container) -> None
     with open(os.path.join(SCRIPT_DIR, "java.reference")) as fp:
         reference = fp.read()
 
@@ -785,6 +796,35 @@ def test_java_client(started_cluster, java_container):
     # double-sha1 password passed.
     code, (stdout, stderr) = java_container.exec_run(
         "java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database "
+        "default".format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    assert code == 0
+    assert stdout.decode() == reference
+
+
+def test_prepared_statements(started_cluster, java_container):
+    with open(os.path.join(SCRIPT_DIR, "prepared_statements.reference")) as fp:
+        reference = fp.read()
+
+    with open(os.path.join(SCRIPT_DIR, "prepared_statements_test.sql")) as sql:
+        statements = list(
+            filter(
+                lambda s: s != "",
+                map(lambda s: s.strip().replace("\n", " "), sql.read().split(";")),
+            )
+        )
+
+    for statement in statements:
+        node.query(
+            statement,
+            settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
+        )
+
+    code, (stdout, stderr) = java_container.exec_run(
+        "java PreparedStatementsTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database "
         "default".format(
             host=started_cluster.get_instance_ip("node"), port=server_port
         ),

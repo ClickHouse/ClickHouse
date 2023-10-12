@@ -96,8 +96,10 @@ using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
 class SerializationInfoByName : public std::map<String, MutableSerializationInfoPtr>
 {
 public:
+    using Settings = SerializationInfo::Settings;
+
     SerializationInfoByName() = default;
-    SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings);
+    SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings);
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
@@ -108,7 +110,9 @@ public:
     void replaceData(const SerializationInfoByName & other);
 
     void writeJSON(WriteBuffer & out) const;
-    void readJSON(ReadBuffer & in);
+
+    static SerializationInfoByName readJSON(
+        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
 };
 
 }

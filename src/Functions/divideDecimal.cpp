@@ -58,69 +58,54 @@ struct DivideDecimalsImpl
 
 REGISTER_FUNCTION(DivideDecimals)
 {
-    factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(Documentation(
-        R"(
+    factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(FunctionDocumentation{
+            .description = R"(
 Performs division on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
 :::note
 These function work significantly slower than usual `divide`.
 In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide).
-:::
-
-**Syntax**
-
-```sql
-divideDecimal(a, b[, result_scale])
-```
-
-**Arguments**
-
--   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   The result of division with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
-
-**Example**
-
-```text
+:::)",
+            .syntax = "divideDecimal(a, b[, result_scale])",
+            .arguments = {
+                {"a", "First value: [Decimal](../../sql-reference/data-types/decimal.md)"},
+                {"b", "Second value: [Decimal](../../sql-reference/data-types/decimal.md)."}
+            },
+            .returned_value = "The result of division with given scale. Type: [Decimal256](../../sql-reference/data-types/decimal.md).",
+            .examples = {
+                {"", "divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)",
+R"(
 ┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
 │                                                -5.7142857142 │
 └──────────────────────────────────────────────────────────────┘
-```
+)"}, {"Difference to regular division",
 
-**Difference from regular division:**
-```sql
+R"(
 SELECT toDecimal64(-12, 1) / toDecimal32(2.1, 1);
 SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
-```
-
-```text
+)",
+R"(
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
 ┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-```sql
+)"
+},
+                {"",
+R"(
 SELECT toDecimal64(-12, 0) / toDecimal32(2.1, 1);
 SELECT toDecimal64(-12, 0) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
-```
-
-```text
+)",
+R"(
 DB::Exception: Decimal result's scale is less than argument's one: While processing toDecimal64(-12, 0) / toDecimal32(2.1, 1). (ARGUMENT_OUT_OF_BOUND)
 ┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-)"));
+)"}
+    }});
 }
 
 }

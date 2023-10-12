@@ -724,7 +724,7 @@ void StorageRabbitMQ::read(
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
+        : static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms.totalMilliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
@@ -764,7 +764,7 @@ void StorageRabbitMQ::read(
 }
 
 
-SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto producer = std::make_unique<RabbitMQProducer>(
         configuration, routing_keys, exchange_name, exchange_type, producer_id.fetch_add(1), persistent, shutdown_called, log);
@@ -959,70 +959,88 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    chassert(initialized);
-    if (initialized)
+    try
     {
-        try
-        {
-            auto table_id = getStorageID();
-
-            // Check if at least one direct dependency is attached
-            size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-            bool rabbit_connected = connection->isConnected() || connection->reconnect();
-
-            if (num_views && rabbit_connected)
-            {
-                auto start_time = std::chrono::steady_clock::now();
-
-                mv_attached.store(true);
-
-                // Keep streaming as long as there are attached views and streaming is not cancelled
-                while (!shutdown_called && num_created_consumers > 0)
-                {
-                    if (!hasDependencies(table_id))
-                        break;
-
-                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
-
-                    bool continue_reading = tryStreamToViews();
-                    if (!continue_reading)
-                        break;
-
-                    auto end_time = std::chrono::steady_clock::now();
-                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-                    if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-                    {
-                        LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
-                        break;
-                    }
-
-                    milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
-                }
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        streamToViewsImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     mv_attached.store(false);
 
-    /// If there is no running select, stop the loop which was
-    /// activated by previous select.
-    if (connection->getHandler().loopRunning())
-        stopLoopIfNoReaders();
+    try
+    {
+        /// If there is no running select, stop the loop which was
+        /// activated by previous select.
+        if (connection->getHandler().loopRunning())
+            stopLoopIfNoReaders();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
-    if (!shutdown_called)
+    if (shutdown_called)
+    {
+        LOG_DEBUG(log, "Shutdown called, stopping background streaming process");
+    }
+    else
     {
         /// Reschedule with backoff.
         if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
             milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
 
+        LOG_DEBUG(log, "Rescheduling background streaming process in {}", milliseconds_to_wait);
         streaming_task->scheduleAfter(milliseconds_to_wait);
     }
 }
 
+void StorageRabbitMQ::streamToViewsImpl()
+{
+    if (!initialized)
+    {
+        chassert(false);
+        return;
+    }
+
+    auto table_id = getStorageID();
+
+    // Check if at least one direct dependency is attached
+    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+    bool rabbit_connected = connection->isConnected() || connection->reconnect();
+
+    if (num_views && rabbit_connected)
+    {
+        auto start_time = std::chrono::steady_clock::now();
+
+        mv_attached.store(true);
+
+        // Keep streaming as long as there are attached views and streaming is not cancelled
+        while (!shutdown_called && num_created_consumers > 0)
+        {
+            if (!hasDependencies(table_id))
+                break;
+
+            LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+            bool continue_reading = tryStreamToViews();
+            if (!continue_reading)
+                break;
+
+            auto end_time = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+            {
+                LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                break;
+            }
+
+            milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
+        }
+    }
+}
 
 bool StorageRabbitMQ::tryStreamToViews()
 {
@@ -1053,7 +1071,7 @@ bool StorageRabbitMQ::tryStreamToViews()
 
     uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
         ? rabbitmq_settings->rabbitmq_flush_interval_ms
-        : static_cast<UInt64>(Poco::Timespan(getContext()->getSettingsRef().stream_flush_interval_ms).milliseconds());
+        : static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms.totalMilliseconds());
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {

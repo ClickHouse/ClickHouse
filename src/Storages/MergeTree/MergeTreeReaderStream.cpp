@@ -2,6 +2,7 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 
 #include <base/getThreadId.h>
+#include <base/range.h>
 #include <utility>
 
 

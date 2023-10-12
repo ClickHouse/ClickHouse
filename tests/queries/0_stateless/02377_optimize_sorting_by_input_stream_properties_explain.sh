@@ -17,9 +17,12 @@ function explain_sorting {
     echo "-- QUERY: "$1
     $CLICKHOUSE_CLIENT -nq "$1" | eval $FIND_SORTING
 }
+
 function explain_sortmode {
     echo "-- QUERY: "$1
-    $CLICKHOUSE_CLIENT -nq "$1" | eval $FIND_SORTMODE
+    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=0 -nq "$1" | eval $FIND_SORTMODE
+    echo "-- QUERY (analyzer): "$1
+    $CLICKHOUSE_CLIENT --allow_experimental_analyzer=1 -nq "$1" | eval $FIND_SORTMODE
 }
 
 $CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"

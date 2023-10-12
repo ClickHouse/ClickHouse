@@ -63,39 +63,39 @@ $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'CSVWithNames')"
 echo "JSONCompactEachRow"
 
 echo -e "[42.42, [[1, \"String\"], [2, \"abcd\"]], {\"key\" : 42, \"key2\" : 24}, true]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
 
-echo -e "[null, [[1, \"String\"], [2, null]], {\"key\" : null, \"key2\" : 24}, null]
-[32, [[2, \"String 2\"], [3, \"hello\"]], {\"key3\" : 4242, \"key4\" : 2424}, true]"  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow')"
+echo -e "[null, [[1, \"String\"], [2, null]], {\"key1\" : null, \"key2\" : 24}, null]
+[32, [[2, \"String 2\"], [3, \"hello\"]], {\"key1\" : 4242, \"key2\" : 2424}, true]"  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRow') settings input_format_json_read_numbers_as_strings=0"
 
 echo "JSONCompactEachRowWithNames"
 
 echo -e "[\"a\", \"b\", \"c\", \"d\"]
 [42.42, [[1, \"String\"], [2, \"abcd\"]], {\"key\" : 42, \"key2\" : 24}, true]" > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRowWithNames')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRowWithNames')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONCompactEachRowWithNames') settings input_format_json_read_numbers_as_strings=0"
 
 
 echo "JSONEachRow"
 echo -e '{"a" : 42.42, "b" : [[1, "String"], [2, "abcd"]], "c" : {"key" : 42, "key2" : 24}, "d" : true}' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
 
-echo -e '{"a" : null, "b" : [[1, "String"], [2, null]], "c" : {"key" : null, "key2" : 24}, "d" : null}
-{"a" : 32, "b" : [[2, "String 2"], [3, "hello"]], "c" : {"key3" : 4242, "key4" : 2424}, "d" : true}'  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+echo -e '{"a" : null, "b" : [[1, "String"], [2, null]], "c" : {"key1" : null, "key2" : 24}, "d" : null}
+{"a" : 32, "b" : [[2, "String 2"], [3, "hello"]], "c" : {"key1" : 4242, "key2" : 2424}, "d" : true}'  > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
 
 echo -e '{"a" : 1, "b" : "s1", "c" : null}
 {"c" : [2], "a" : 2, "b" : null}
 {}
 {"a" : null}
 {"c" : [3], "a" : null}'  > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
+$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow') settings input_format_json_read_numbers_as_strings=0"
 
 
 echo "TSKV"

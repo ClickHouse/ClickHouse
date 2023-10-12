@@ -37,8 +37,7 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 }
 
 
-void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
+void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
     iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
     {
