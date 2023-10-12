@@ -149,7 +149,7 @@ void IStorage::read(
     if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
-    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, getName());
 }
 
 void IStorage::readFromPipe(
@@ -158,13 +158,12 @@ void IStorage::readFromPipe(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
     std::string storage_name)
 {
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
     {

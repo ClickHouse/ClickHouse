@@ -73,7 +73,7 @@ void StorageExternalDistributed::read(
     if (plans.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
 
     if (plans.size() == 1)

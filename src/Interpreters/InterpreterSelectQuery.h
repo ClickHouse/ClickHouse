@@ -117,7 +117,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
     Names getRequiredColumns() { return required_columns; }
 

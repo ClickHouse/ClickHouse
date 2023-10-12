@@ -34,7 +34,6 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 

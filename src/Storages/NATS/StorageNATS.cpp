@@ -342,7 +342,7 @@ void StorageNATS::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
     {

@@ -6596,11 +6596,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
             return QueryProcessingStage::Enum::WithMergeableState;
     }
 
-    if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
-    {
-        query_info.projection = std::nullopt;
-    }
-
     return QueryProcessingStage::Enum::FetchColumns;
 }
 

@@ -695,7 +695,7 @@ void StorageRabbitMQ::read(
     if (num_created_consumers == 0)
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
         return;
     }
 
@@ -753,7 +753,7 @@ void StorageRabbitMQ::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
     }
     else
     {
