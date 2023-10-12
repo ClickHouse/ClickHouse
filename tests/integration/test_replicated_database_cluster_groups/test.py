@@ -72,15 +72,15 @@ def test_cluster_groups(started_cluster):
 
     # 1. system.clusters
 
-    query = "SELECT host_name from system.clusters WHERE cluster = 'cluster_groups' ORDER BY host_name"
+    cluster_query = "SELECT host_name from system.clusters WHERE cluster = 'cluster_groups' ORDER BY host_name"
     expected_main = "main_node_1\nmain_node_2\n"
     expected_backup = "backup_node_1\nbackup_node_2\n"
 
     for node in [main_node_1, main_node_2]:
-        assert_eq_with_retry(node, query, expected_main)
+        assert_eq_with_retry(node, cluster_query, expected_main)
 
     for node in [backup_node_1, backup_node_2]:
-        assert_eq_with_retry(node, query, expected_backup)
+        assert_eq_with_retry(node, cluster_query, expected_backup)
 
     # 2. Query execution depends only on your cluster group
 
@@ -114,3 +114,16 @@ def test_cluster_groups(started_cluster):
 
     assert_create_query(all_nodes, "cluster_groups.table_1", expected_1)
     assert_create_query(all_nodes, "cluster_groups.table_2", expected_2)
+
+    # 4. SYSTEM DROP DATABASE REPLICA
+    backup_node_2.stop_clickhouse()
+    backup_node_1.query(
+        "SYSTEM DROP DATABASE REPLICA '4' FROM SHARD '1' FROM GROUP 'backups' FROM DATABASE cluster_groups"
+    )
+
+    assert_eq_with_retry(backup_node_1, cluster_query, "backup_node_1\n")
+
+    main_node_2.stop_clickhouse()
+    main_node_1.query("SYSTEM DROP DATABASE REPLICA '1|2' FROM DATABASE cluster_groups")
+
+    assert_eq_with_retry(main_node_1, cluster_query, "main_node_1\n")
