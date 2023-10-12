@@ -44,8 +44,6 @@ static inline auto createHandlersFactoryFromConfig(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
 
-    bool enable_default_handlers = false;
-
     for (const auto & key : keys)
     {
         if (key == "defaults")
