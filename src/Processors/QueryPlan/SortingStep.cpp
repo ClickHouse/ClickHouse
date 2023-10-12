@@ -193,7 +193,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
                 for (size_t i = 0; i < threads; ++i)
                 {
                     size_t output_it = i;
-                    auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
+                    auto resize = std::make_shared<ResizeProcessor>(stream_header, streams, 1);
                     auto & inputs = resize->getInputs();
 
                     for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
@@ -367,11 +367,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (type == Type::FinishSorting)
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
-
-        if (partition_by_description.empty())
-            mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
-
-        scatterByPartitionIfNeeded(pipeline);
+        mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
         if (need_finish_sorting)
         {
