@@ -252,7 +252,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);                           /// Stores auxiliary zookeepers configs
 
-    /// TODO: add TSA annotations
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_scheme;                              /// http or https
@@ -296,11 +295,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
 
-    /// Without lock. Intended?
     String default_profile_name;                                /// Default profile name used for default values.
-    /// Without lock. Intended?
     String system_profile_name;                                 /// Profile used by system processes
-    /// Without lock. Intended?
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
@@ -368,7 +364,6 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
                                                                    ///
-    /// Without lock. Intended?
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
@@ -388,7 +383,6 @@ struct ContextSharedPart : boost::noncopyable
     RemoteHostFilter remote_host_filter TSA_GUARDED_BY(mutex);                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
 
-    /// Without lock. Intended?
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
     /// Clusters for distributed tables
@@ -400,27 +394,20 @@ struct ContextSharedPart : boost::noncopyable
 
     /// NO LOCK INITIALIZATION
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
-
-    /// TODO: Add TSA annotations
     std::map<String, UInt16> server_ports;
 
-    /// TODO: Add TSA annotations
     bool shutdown_called = false;
 
     Stopwatch uptime_watch TSA_GUARDED_BY(mutex);
 
-    /// Without lock. Intended?
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
     std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
 
-    /// Without lock. Intended?
     Context::ConfigReloadCallback config_reload_callback;
 
-    /// Without lock. Intended?
     Context::StartStopServersCallback start_servers_callback;
-    /// Without lock. Intended?
     Context::StartStopServersCallback stop_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
