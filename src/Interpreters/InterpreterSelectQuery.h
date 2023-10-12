@@ -123,8 +123,6 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
-
     RowPolicyFilterPtr getRowPolicyFilter() const;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;

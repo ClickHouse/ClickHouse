@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import os
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
@@ -18,10 +17,6 @@ import docker_server as ds
 
 
 class TestDockerImageCheck(unittest.TestCase):
-    docker_images_path = os.path.join(
-        os.path.dirname(__file__), "tests/docker_images_for_tests.json"
-    )
-
     def test_get_changed_docker_images(self):
         pr_info = PRInfo(PRInfo.default_event.copy())
         pr_info.changed_files = {
@@ -32,7 +27,11 @@ class TestDockerImageCheck(unittest.TestCase):
         images = sorted(
             list(
                 di.get_changed_docker_images(
-                    pr_info, get_images_dict("/", self.docker_images_path)
+                    pr_info,
+                    get_images_dict(
+                        Path(__file__).parent,
+                        Path("tests/docker_images_for_tests.json"),
+                    ),
                 )
             )
         )
@@ -127,7 +126,7 @@ class TestDockerImageCheck(unittest.TestCase):
     @patch("platform.machine")
     def test_build_and_push_one_image(self, mock_machine, mock_popen):
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
-        image = di.DockerImage("path", "name", False, gh_repo_path="")
+        image = di.DockerImage("path", "name", False, gh_repo="")
 
         result, _ = di.build_and_push_one_image(image, "version", [], True, True)
         mock_popen.assert_called_once()
