@@ -83,15 +83,17 @@ def get_gh_api(
         except requests.HTTPError as e:
             exc = e
             ratelimit_exceeded = (
-                e.response.status_code == 403 and b"rate limit exceeded"
+                e.response.status_code == 403
+                and b"rate limit exceeded"
                 in e.response._content  # pylint:disable=protected-access
             )
             try_auth = e.response.status_code == 404
             if (ratelimit_exceeded or try_auth) and not token_is_set:
                 logging.warning(
-                    "Received rate limit exception, re-setting the auth header and retry"
+                    "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
+                token_is_set = True
                 try_cnt = 0
                 continue
         except Exception as e:
