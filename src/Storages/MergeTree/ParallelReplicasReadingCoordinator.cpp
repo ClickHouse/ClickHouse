@@ -244,10 +244,11 @@ void DefaultCoordinator::finalizeReadingState()
     if (progress_callback)
     {
         size_t total_rows_to_read = 0;
-        for(const auto & part : all_parts_to_read)
+        for (const auto & part : all_parts_to_read)
             total_rows_to_read += part.description.rows;
 
-        Progress progress; progress.total_rows_to_read = total_rows_to_read;
+        Progress progress;
+        progress.total_rows_to_read = total_rows_to_read;
         progress_callback(progress);
     }
 
