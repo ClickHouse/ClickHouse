@@ -63,20 +63,11 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     if (shutdown_called)
         return;
 
-    String replication_identifier;
-    if (settings->materialized_postgresql_use_unique_replication_consumer_identifier)
-    {
-        replication_identifier = fmt::format("{}_{}", getUUID(), TSA_SUPPRESS_WARNING_FOR_READ(database_name));
-    }
-    else
-    {
-        replication_identifier = TSA_SUPPRESS_WARNING_FOR_READ(database_name);
-    }
-
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            replication_identifier,
             remote_database_name,
+            /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
+            toString(getUUID()),
             connection_info,
             getContext(),
             is_attach,
