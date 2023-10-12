@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 
 #include <Common/logger_useful.h>
+#include <iomanip>
 
 
 namespace DB
@@ -17,25 +18,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
-CreatingSetsTransform::~CreatingSetsTransform()
-{
-    if (promise_to_build)
-    {
-        /// set_exception can also throw
-        try
-        {
-            promise_to_build->set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to build set, most likely pipeline executor was stopped")));
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to set_exception for promise");
-        }
-    }
-}
+CreatingSetsTransform::~CreatingSetsTransform() = default;
 
 CreatingSetsTransform::CreatingSetsTransform(
     Block in_header_,
@@ -54,35 +39,16 @@ CreatingSetsTransform::CreatingSetsTransform(
 
 void CreatingSetsTransform::work()
 {
-    try
-    {
-        if (!is_initialized)
-            init();
+    if (!is_initialized)
+        init();
 
-        if (done_with_set && done_with_table)
-        {
-            finishConsume();
-            input.close();
-        }
-
-        IAccumulatingTransform::work();
-    }
-    catch (...)
+    if (done_with_set && done_with_table)
     {
-        if (promise_to_build)
-        {
-            /// set_exception can also throw
-            try
-            {
-                promise_to_build->set_exception(std::current_exception());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to set_exception for promise");
-            }
-        }
-        throw;
+        finishConsume();
+        input.close();
     }
+
+    IAccumulatingTransform::work();
 }
 
 void CreatingSetsTransform::startSubquery()
@@ -102,27 +68,18 @@ void CreatingSetsTransform::startSubquery()
             }
             else
             {
-                LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
+                LOG_TRACE(log, "Waiting for set to be build by another thread, key: {}", set_and_key->key);
                 SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
-                try
+                const SetPtr & ready_set = set_built_by_another_thread.get();
+                if (!ready_set)
                 {
-                    const SetPtr & ready_set = set_built_by_another_thread.get();
-                    if (!ready_set)
-                    {
-                        LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
-                        continue;
-                    }
+                    LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
+                    continue;
+                }
 
-                    set_and_key->set = ready_set;
-                    done_with_set = true;
-                    set_from_cache = true;
-                }
-                catch (const Exception & e)
-                {
-                    /// Exception that is thrown by the future::get() is shared across all waiters and cannot be modified from multiple threads.
-                    /// Re-create exception to allow later multiple modify (i.e. addMessage() during pipeline execution)
-                    throw Exception(e);
-                }
+                set_and_key->set = ready_set;
+                done_with_set = true;
+                set_from_cache = true;
             }
             break;
         }
@@ -213,10 +170,7 @@ Chunk CreatingSetsTransform::generate()
     {
         set_and_key->set->finishInsert();
         if (promise_to_build)
-        {
             promise_to_build->set_value(set_and_key->set);
-            promise_to_build.reset();
-        }
     }
 
     if (table_out.initialized())

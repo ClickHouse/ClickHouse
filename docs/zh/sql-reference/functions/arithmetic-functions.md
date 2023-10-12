@@ -125,7 +125,7 @@ SELECT max2(-1, 2);
 **语法**
 
 ```sql
-min2(value1, value2)
+max2(value1, value2)
 ```
 
 **参数**

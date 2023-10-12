@@ -21,7 +21,6 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 ## DROP TABLE
 
 Deletes the table.
-In case when `IF EMPTY` clause is specified server will check if table is empty only on replica that received initial query.  
 
 :::tip
 Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
@@ -30,7 +29,7 @@ Also see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
 Syntax:
 
 ``` sql
-DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY] [db.]name [ON CLUSTER cluster] [SYNC]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 ```
 
 ## DROP DICTIONARY
@@ -50,7 +49,7 @@ Deletes a user.
 Syntax:
 
 ``` sql
-DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ## DROP ROLE
@@ -60,7 +59,7 @@ Deletes a role. The deleted role is revoked from all the entities where it was a
 Syntax:
 
 ``` sql
-DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ## DROP ROW POLICY
@@ -70,7 +69,7 @@ Deletes a row policy. Deleted row policy is revoked from all the entities where 
 Syntax:
 
 ``` sql
-DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
 ```
 
 ## DROP QUOTA
@@ -80,7 +79,7 @@ Deletes a quota. The deleted quota is revoked from all the entities where it was
 Syntax:
 
 ``` sql
-DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ## DROP SETTINGS PROFILE
@@ -90,7 +89,7 @@ Deletes a settings profile. The deleted settings profile is revoked from all the
 Syntax:
 
 ``` sql
-DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ## DROP VIEW

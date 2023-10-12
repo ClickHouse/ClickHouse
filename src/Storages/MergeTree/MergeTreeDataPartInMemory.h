@@ -40,10 +40,9 @@ public:
     bool isStoredOnRemoteDisk() const override { return false; }
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override { return false; }
     bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
-    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
+    String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) override;
-    DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
-                                           const DiskTransactionPtr & disk_transaction) const override;
+    DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;
     std::optional<time_t> getColumnModificationTime(const String & /* column_name */) const override { return {}; }
 
     MutableDataPartStoragePtr flushToDisk(const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const;

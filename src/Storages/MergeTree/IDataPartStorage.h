@@ -55,6 +55,8 @@ struct MergeTreeDataPartChecksums;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
+class IStoragePolicy;
+
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
@@ -219,7 +221,6 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
-        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const = 0;
@@ -240,7 +241,7 @@ public:
         MergeTreeTransactionPtr txn = NO_TRANSACTION_PTR;
         HardlinkedFiles * hardlinked_files = nullptr;
         bool copy_instead_of_hardlink = false;
-        NameSet files_to_copy_instead_of_hardlinks = {};
+        NameSet files_to_copy_instead_of_hardlinks;
         bool keep_metadata_version = false;
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
@@ -250,8 +251,6 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
 
@@ -260,8 +259,6 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings,
         Poco::Logger * log) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.

@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 import subprocess
 import logging
+import json
+import os
 import sys
 import time
 
 from ci_config import CI_CONFIG, BuildConfig
-from ccache_utils import CargoCache
+from commit_status_helper import (
+    NotSet,
+    get_commit_filtered_statuses,
+    get_commit,
+    post_commit_status,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB,
@@ -18,9 +25,10 @@ from env_helper import (
     S3_DOWNLOAD,
     TEMP_PATH,
 )
+from get_robot_token import get_best_robot_token
 from git_helper import Git, git_runner
+from github_helper import GitHub
 from pr_info import PRInfo
-from report import BuildResult, FAILURE, StatusType, SUCCESS
 from s3_helper import S3Helper
 from tee_popen import TeePopen
 from version_helper import (
@@ -30,10 +38,8 @@ from version_helper import (
 )
 from clickhouse_helper import (
     ClickHouseHelper,
-    CiLogsCredentials,
     prepare_tests_results_for_clickhouse,
     get_instance_type,
-    get_instance_id,
 )
 from stopwatch import Stopwatch
 
@@ -42,45 +48,43 @@ BUILD_LOG_NAME = "build_log.log"
 
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
-    if build_config.package_type != "deb":
+    if build_config["package_type"] != "deb":
         return False
-    if build_config.sanitizer != "":
+    if build_config["sanitizer"] != "":
         return True
-    if build_config.debug_build:
+    if build_config["build_type"] != "":
         return True
     return False
 
 
 def get_packager_cmd(
     build_config: BuildConfig,
-    packager_path: Path,
+    packager_path: str,
     output_path: Path,
-    cargo_cache_dir: Path,
     build_version: str,
     image_version: str,
     official: bool,
 ) -> str:
-    package_type = build_config.package_type
-    comp = build_config.compiler
+    package_type = build_config["package_type"]
+    comp = build_config["compiler"]
     cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
         f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager "
         f"--output-dir={output_path} --package-type={package_type} --compiler={comp}"
     )
 
-    if build_config.debug_build:
-        cmd += " --debug-build"
-    if build_config.sanitizer:
-        cmd += f" --sanitizer={build_config.sanitizer}"
-    if build_config.tidy:
+    if build_config["build_type"]:
+        cmd += f" --build-type={build_config['build_type']}"
+    if build_config["sanitizer"]:
+        cmd += f" --sanitizer={build_config['sanitizer']}"
+    if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
     cmd += " --cache=sccache"
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
-    cmd += f" --cargo-cache-dir={cargo_cache_dir}"
 
-    if build_config.additional_pkgs:
+    if "additional_pkgs" in build_config and build_config["additional_pkgs"]:
         cmd += " --additional-pkgs"
 
     cmd += f" --docker-image-version={image_version}"
@@ -98,18 +102,18 @@ def get_packager_cmd(
 
 def build_clickhouse(
     packager_cmd: str, logs_path: Path, build_output_path: Path
-) -> Tuple[Path, StatusType]:
+) -> Tuple[Path, bool]:
     build_log_path = logs_path / BUILD_LOG_NAME
     success = False
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
         if build_output_path.exists():
-            results_exists = any(build_output_path.iterdir())
+            build_results = os.listdir(build_output_path)
         else:
-            results_exists = False
+            build_results = []
 
         if retcode == 0:
-            if results_exists:
+            if len(build_results) > 0:
                 success = True
                 logging.info("Built successfully")
             else:
@@ -118,18 +122,17 @@ def build_clickhouse(
                 )
         else:
             logging.info("Build failed")
-    return build_log_path, SUCCESS if success else FAILURE
+    return build_log_path, success
 
 
 def check_for_success_run(
     s3_helper: S3Helper,
     s3_prefix: str,
     build_name: str,
-    version: ClickHouseVersion,
+    build_config: BuildConfig,
 ) -> None:
-    # TODO: Remove after S3 artifacts
     # the final empty argument is necessary for distinguish build and build_suffix
-    logged_prefix = "/".join((S3_BUILDS_BUCKET, s3_prefix, ""))
+    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
         # Performance artifacts are now part of regular build, so we're safe
@@ -156,21 +159,50 @@ def check_for_success_run(
         return
 
     success = len(build_urls) > 0
-    build_result = BuildResult(
+    create_json_artifact(
+        TEMP_PATH,
         build_name,
         log_url,
         build_urls,
-        version.describe,
-        SUCCESS if success else FAILURE,
+        build_config,
         0,
-        GITHUB_JOB,
+        success,
     )
-    build_result.write_json(Path(TEMP_PATH))
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
     else:
         sys.exit(0)
+
+
+def create_json_artifact(
+    temp_path: str,
+    build_name: str,
+    log_url: str,
+    build_urls: List[str],
+    build_config: BuildConfig,
+    elapsed: int,
+    success: bool,
+) -> None:
+    subprocess.check_call(
+        f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
+    )
+
+    result = {
+        "log_url": log_url,
+        "build_urls": build_urls,
+        "build_config": build_config,
+        "elapsed_seconds": elapsed,
+        "status": success,
+        "job_name": GITHUB_JOB,
+    }
+
+    json_name = "build_urls_" + build_name + ".json"
+
+    print(f"Dump json report {result} to {json_name} with env build_urls_{build_name}")
+
+    with open(os.path.join(temp_path, json_name), "w", encoding="utf-8") as build_links:
+        json.dump(result, build_links)
 
 
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
@@ -199,7 +231,7 @@ def upload_master_static_binaries(
     build_output_path: Path,
 ) -> None:
     """Upload binary artifacts to a static S3 links"""
-    static_binary_name = build_config.static_binary_name
+    static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
         return
     elif not static_binary_name:
@@ -213,21 +245,48 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL: {url}")
 
 
+def mark_failed_reports_pending(build_name: str, pr_info: PRInfo) -> None:
+    try:
+        gh = GitHub(get_best_robot_token())
+        commit = get_commit(gh, pr_info.sha)
+        statuses = get_commit_filtered_statuses(commit)
+        report_status = [
+            name
+            for name, builds in CI_CONFIG["builds_report_config"].items()
+            if build_name in builds
+        ][0]
+        for status in statuses:
+            if status.context == report_status and status.state in ["failure", "error"]:
+                logging.info(
+                    "Commit already have failed status for '%s', setting it to 'pending'",
+                    report_status,
+                )
+                post_commit_status(
+                    commit,
+                    "pending",
+                    status.target_url or NotSet,
+                    "Set to pending on rerun",
+                    report_status,
+                    pr_info,
+                )
+    except:  # we do not care about any exception here
+        logging.info("Failed to get or mark the reports status as pending, continue")
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
     build_name = sys.argv[1]
 
-    build_config = CI_CONFIG.build_config[build_name]
+    build_config = CI_CONFIG["build_config"][build_name]
 
     temp_path = Path(TEMP_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
-    repo_path = Path(REPO_COPY)
+    os.makedirs(temp_path, exist_ok=True)
 
     pr_info = PRInfo()
 
-    logging.info("Repo copy path %s", repo_path)
+    logging.info("Repo copy path %s", REPO_COPY)
 
     s3_helper = S3Helper()
 
@@ -242,7 +301,10 @@ def main():
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
-    check_for_success_run(s3_helper, s3_path_prefix, build_name, version)
+    check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
+
+    # If it's a latter running, we need to mark possible failed status
+    mark_failed_reports_pending(build_name, pr_info)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -250,6 +312,8 @@ def main():
     logging.info("Got version from repo %s", version.string)
 
     official_flag = pr_info.number == 0
+    if "official" in build_config:
+        official_flag = build_config["official"]
 
     version_type = "testing"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
@@ -263,17 +327,12 @@ def main():
     logging.info("Build short name %s", build_name)
 
     build_output_path = temp_path / build_name
-    build_output_path.mkdir(parents=True, exist_ok=True)
-    cargo_cache = CargoCache(
-        temp_path / "cargo_cache" / "registry", temp_path, s3_helper
-    )
-    cargo_cache.download()
+    os.makedirs(build_output_path, exist_ok=True)
 
     packager_cmd = get_packager_cmd(
         build_config,
-        repo_path / "docker" / "packager",
+        os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
-        cargo_cache.directory,
         version.string,
         image_version,
         official_flag,
@@ -282,20 +341,16 @@ def main():
     logging.info("Going to run packager with %s", packager_cmd)
 
     logs_path = temp_path / "build_log"
-    logs_path.mkdir(parents=True, exist_ok=True)
+    os.makedirs(logs_path, exist_ok=True)
 
     start = time.time()
-    log_path, build_status = build_clickhouse(
-        packager_cmd, logs_path, build_output_path
-    )
+    log_path, success = build_clickhouse(packager_cmd, logs_path, build_output_path)
     elapsed = int(time.time() - start)
     subprocess.check_call(
         f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True
     )
-    logging.info("Build finished as %s, log path %s", build_status, log_path)
-    if build_status == SUCCESS:
-        cargo_cache.upload()
-    else:
+    logging.info("Build finished with %s, log path %s", success, log_path)
+    if not success:
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
@@ -316,10 +371,10 @@ def main():
             "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
             performance_urls[0],
         )
-        performance_path.unlink()
+        os.remove(performance_path)
 
     build_urls = (
-        s3_helper.upload_build_directory_to_s3(
+        s3_helper.upload_build_folder_to_s3(
             build_output_path,
             s3_path_prefix,
             keep_dirs_in_s3_path=False,
@@ -341,20 +396,8 @@ def main():
 
     print(f"::notice ::Log URL: {log_url}")
 
-    build_result = BuildResult(
-        build_name,
-        log_url,
-        build_urls,
-        version.describe,
-        build_status,
-        elapsed,
-        GITHUB_JOB,
-    )
-    result_json_path = build_result.write_json(temp_path)
-    logging.info(
-        "Build result file %s is written, content:\n %s",
-        result_json_path,
-        result_json_path.read_text(encoding="utf-8"),
+    create_json_artifact(
+        TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success
     )
 
     upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
@@ -362,10 +405,9 @@ def main():
     # Upload profile data
     ch_helper = ClickHouseHelper()
 
-    ci_logs_credentials = CiLogsCredentials(Path("/dev/null"))
-    if ci_logs_credentials.host:
+    clickhouse_ci_logs_host = os.getenv("CLICKHOUSE_CI_LOGS_HOST", "")
+    if clickhouse_ci_logs_host:
         instance_type = get_instance_type()
-        instance_id = get_instance_id()
         query = f"""INSERT INTO build_time_trace
 (
     pull_request_number,
@@ -373,7 +415,6 @@ def main():
     check_start_time,
     check_name,
     instance_type,
-    instance_id,
     file,
     library,
     time,
@@ -389,7 +430,7 @@ def main():
     avgMs,
     args_name
 )
-SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', *
+SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', *
 FROM input('
     file String,
     library String,
@@ -409,11 +450,11 @@ FORMAT JSONCompactEachRow"""
 
         auth = {
             "X-ClickHouse-User": "ci",
-            "X-ClickHouse-Key": ci_logs_credentials.password,
+            "X-ClickHouse-Key": os.getenv("CLICKHOUSE_CI_LOGS_PASSWORD", ""),
         }
-        url = f"https://{ci_logs_credentials.host}/"
+        url = f"https://{clickhouse_ci_logs_host}/"
         profiles_dir = temp_path / "profiles_source"
-        profiles_dir.mkdir(parents=True, exist_ok=True)
+        os.makedirs(profiles_dir, exist_ok=True)
         logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
         git_runner(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
@@ -421,7 +462,7 @@ FORMAT JSONCompactEachRow"""
         )
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
-            for profile_sourse in profiles_dir.iterdir():
+            for profile_sourse in os.listdir(profiles_dir):
                 with open(profiles_dir / profile_sourse, "rb") as ps_fd:
                     profile_fd.write(ps_fd.read())
 
@@ -437,7 +478,7 @@ FORMAT JSONCompactEachRow"""
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         [],
-        build_status,
+        "success" if success else "failure",
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         log_url,
@@ -446,7 +487,7 @@ FORMAT JSONCompactEachRow"""
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     # Fail the build job if it didn't succeed
-    if build_status != SUCCESS:
+    if not success:
         sys.exit(1)
 
 

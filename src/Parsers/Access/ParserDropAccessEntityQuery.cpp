@@ -1,4 +1,3 @@
-#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
@@ -54,7 +53,6 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     Strings names;
     std::shared_ptr<ASTRowPolicyNames> row_policy_names;
-    String storage_name;
     String cluster;
 
     if ((type == AccessEntityType::USER) || (type == AccessEntityType::ROLE))
@@ -78,9 +76,6 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    if (ParserKeyword{"FROM"}.ignore(pos, expected))
-        parseAccessStorageName(pos, expected, storage_name);
-
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
@@ -92,7 +87,6 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->row_policy_names = std::move(row_policy_names);
-    query->storage_name = std::move(storage_name);
 
     return true;
 }

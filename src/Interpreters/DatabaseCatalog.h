@@ -6,10 +6,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include "Common/NamePrompter.h"
 #include <Common/SharedMutex.h>
-#include "Storages/IStorage.h"
-#include "Databases/IDatabase.h"
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -29,29 +26,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-class TableNameHints : public IHints<>
-{
-public:
-    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
-        : context(context_),
-        database(database_)
-    {
-    }
-    Names getAllRegisteredNames() const override
-    {
-        Names result;
-        if (database)
-        {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-                result.emplace_back(table_it->name());
-        }
-        return result;
-    }
-private:
-    ContextPtr context;
-    ConstDatabasePtr database;
-};
 
 class IDatabase;
 class Exception;
@@ -174,11 +148,6 @@ public:
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
-    /// We need special synchronization between DROP/DETACH DATABASE and SYSTEM RESTART REPLICA
-    /// because IStorage::flushAndPrepareForShutdown cannot be protected by DDLGuard (and a race with IStorage::startup is possible)
-    std::unique_lock<SharedMutex> getLockForDropDatabase(const String & database);
-    std::optional<std::shared_lock<SharedMutex>> tryGetLockForRestartReplica(const String & database);
-
 
     void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
@@ -293,6 +262,7 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
+    void assertDatabaseExistsUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
 
     void shutdownImpl();
@@ -310,7 +280,7 @@ private:
 
     static inline size_t getFirstLevelIdx(const UUID & uuid)
     {
-        return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
+        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
 
     void dropTableDataTask();
@@ -346,15 +316,7 @@ private:
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
-    struct DatabaseGuard
-    {
-        SharedMutex database_ddl_mutex;
-        SharedMutex restart_replica_mutex;
-
-        DDLGuard::Map table_guards;
-    };
-    DatabaseGuard & getDatabaseGuard(const String & database);
-
+    using DatabaseGuard = std::pair<DDLGuard::Map, SharedMutex>;
     using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.

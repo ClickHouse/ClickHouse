@@ -3,8 +3,8 @@ import argparse
 import atexit
 import logging
 import subprocess
+import os
 import sys
-from pathlib import Path
 
 from github import Github
 
@@ -30,7 +30,7 @@ from upload_result_helper import upload_results
 NAME = "Docs Check"
 
 
-def parse_args() -> argparse.Namespace:
+def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Script to check the docs integrity",
@@ -45,19 +45,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="check the docs even if there no changes",
     )
-    return parser.parse_args()
-
-
-def main():
-    args = parse_args()
+    args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
-    temp_path = Path(TEMP_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
-    repo_path = Path(REPO_COPY)
+    temp_path = TEMP_PATH
+    repo_path = REPO_COPY
 
     pr_info = PRInfo(need_changed_files=True)
 
@@ -82,10 +77,14 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
+
     docker_image = get_image_with_version(temp_path, "clickhouse/docs-builder")
 
-    test_output = temp_path / "docs_check_log"
-    test_output.mkdir(parents=True, exist_ok=True)
+    test_output = os.path.join(temp_path, "docs_check_log")
+    if not os.path.exists(test_output):
+        os.makedirs(test_output)
 
     cmd = (
         f"docker run --cap-add=SYS_PTRACE -e GIT_DOCS_BRANCH={args.docs_branch} "
@@ -93,7 +92,7 @@ def main():
         f"{docker_image}"
     )
 
-    run_log_path = test_output / "run.log"
+    run_log_path = os.path.join(test_output, "run.log")
     logging.info("Running command: '%s'", cmd)
 
     with TeePopen(cmd, run_log_path) as process:
@@ -108,16 +107,18 @@ def main():
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    files = os.listdir(test_output)
     test_results = []  # type: TestResults
     additional_files = []
-    if not any(test_output.iterdir()):
+    if not files:
         logging.error("No output files after docs check")
         description = "No output files after docs check"
         status = "failure"
     else:
-        for p in test_output.iterdir():
-            additional_files.append(p)
-            with open(p, "r", encoding="utf-8") as check_file:
+        for f in files:
+            path = os.path.join(test_output, f)
+            additional_files.append(path)
+            with open(path, "r", encoding="utf-8") as check_file:
                 for line in check_file:
                     if "ERROR" in line:
                         test_results.append(TestResult(line.split(":")[-1], "FAIL"))

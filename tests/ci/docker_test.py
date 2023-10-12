@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
@@ -17,6 +18,10 @@ import docker_server as ds
 
 
 class TestDockerImageCheck(unittest.TestCase):
+    docker_images_path = os.path.join(
+        os.path.dirname(__file__), "tests/docker_images_for_tests.json"
+    )
+
     def test_get_changed_docker_images(self):
         pr_info = PRInfo(PRInfo.default_event.copy())
         pr_info.changed_files = {
@@ -27,11 +32,7 @@ class TestDockerImageCheck(unittest.TestCase):
         images = sorted(
             list(
                 di.get_changed_docker_images(
-                    pr_info,
-                    get_images_dict(
-                        Path(__file__).parent,
-                        Path("tests/docker_images_for_tests.json"),
-                    ),
+                    pr_info, get_images_dict("/", self.docker_images_path)
                 )
             )
         )
@@ -40,12 +41,6 @@ class TestDockerImageCheck(unittest.TestCase):
             [
                 di.DockerImage("docker/test/base", "clickhouse/test-base", False),
                 di.DockerImage("docker/docs/builder", "clickhouse/docs-builder", True),
-                di.DockerImage(
-                    "docker/test/sqltest",
-                    "clickhouse/sqltest",
-                    False,
-                    "clickhouse/test-base",  # type: ignore
-                ),
                 di.DockerImage(
                     "docker/test/stateless",
                     "clickhouse/stateless-test",
@@ -126,18 +121,19 @@ class TestDockerImageCheck(unittest.TestCase):
     @patch("platform.machine")
     def test_build_and_push_one_image(self, mock_machine, mock_popen):
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
-        image = di.DockerImage("path", "name", False, gh_repo="")
+        image = di.DockerImage("path", "name", False, gh_repo_path="")
 
         result, _ = di.build_and_push_one_image(image, "version", [], True, True)
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version --cache-from type=registry,ref=name:version "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --push --progress plain path",
+            "--cache-to type=inline,mode=max --push --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -149,12 +145,13 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             "--build-arg FROM_TAG=version2 "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
@@ -166,11 +163,12 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)
@@ -184,13 +182,14 @@ class TestDockerImageCheck(unittest.TestCase):
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
+            "tar -v --exclude-vcs-ignores --show-transformed-names --transform 's#path#./#' --dereference --create path | "
             f"docker buildx build --builder default --label build-url={GITHUB_RUN_URL} "
             f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             "--tag name:version2 --cache-from type=registry,ref=name:version2 "
             "--cache-from type=registry,ref=name:latest "
             "--cache-from type=registry,ref=name:cached-version "
             "--cache-from type=registry,ref=name:another-cached "
-            "--cache-to type=inline,mode=max --progress plain path",
+            "--cache-to type=inline,mode=max --progress plain -",
             mock_popen.call_args.args,
         )
         self.assertFalse(result)

@@ -1,6 +1,7 @@
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -995,11 +996,8 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            if (buffer.data)
-            {
-                min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
-                rows += buffer.data.rows();
-            }
+            min_first_write_time = buffer.first_write_time;
+            rows += buffer.data.rows();
         }
     }
 

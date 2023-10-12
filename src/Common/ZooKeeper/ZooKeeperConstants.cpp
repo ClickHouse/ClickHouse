@@ -22,7 +22,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Reconfig),
     static_cast<int32_t>(OpNum::Multi),
     static_cast<int32_t>(OpNum::MultiRead),
-    static_cast<int32_t>(OpNum::CreateIfNotExists),
     static_cast<int32_t>(OpNum::Auth),
     static_cast<int32_t>(OpNum::SessionID),
     static_cast<int32_t>(OpNum::SetACL),
@@ -34,7 +33,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
 OpNum getOpNum(int32_t raw_op_num)
 {
     if (!VALID_OPERATIONS.contains(raw_op_num))
-        throw Exception(Error::ZUNIMPLEMENTED, "Operation {} is unknown", raw_op_num);
+        throw Exception("Operation " + std::to_string(raw_op_num) + " is unknown", Error::ZUNIMPLEMENTED);
     return static_cast<OpNum>(raw_op_num);
 }
 

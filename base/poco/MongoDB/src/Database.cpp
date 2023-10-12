@@ -356,19 +356,11 @@ Document::Ptr Database::queryBuildInfo(Connection& connection) const
 }
 
 
-Document::Ptr Database::queryServerHello(Connection& connection, bool old) const
+Document::Ptr Database::queryServerHello(Connection& connection) const
 {
 	// hello can be issued on "config" system database
 	Poco::SharedPtr<Poco::MongoDB::QueryRequest> request = createCommand();
-
-	// 'hello' command was previously called 'isMaster'
-	std::string command_name;
-	if (old)
-		command_name = "isMaster";
-	else
-		command_name = "hello";
-
-	request->selector().add(command_name, 1);
+	request->selector().add("hello", 1);
 
 	Poco::MongoDB::ResponseMessage response;
 	connection.sendRequest(*request, response);

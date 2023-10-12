@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""This script is used in docker images for stress tests and upgrade tests"""
 from multiprocessing import cpu_count
-from pathlib import Path
 from subprocess import Popen, call, check_output, STDOUT, PIPE
-from typing import List
+import os
 import argparse
 import logging
-import random
 import time
+import random
 
 
-def get_options(i: int, upgrade_check: bool) -> str:
+def get_options(i, upgrade_check):
     options = []
     client_options = []
     if i > 0:
         options.append("--order=random")
 
     if i % 3 == 2 and not upgrade_check:
-        options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
+        options.append(
+            '''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
+        )
         client_options.append("allow_experimental_database_replicated=1")
         client_options.append("enable_deflate_qpl_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
     if i % 2 == 1:
-        options.append(f" --database=test_{i}")
+        options.append(" --database=test_{}".format(i))
 
     if i % 3 == 1:
         client_options.append("join_use_nulls=1")
@@ -59,12 +59,6 @@ def get_options(i: int, upgrade_check: bool) -> str:
         client_options.append("implicit_transaction=1")
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
-    if random.random() < 0.1:
-        client_options.append("allow_experimental_partial_result=1")
-        client_options.append(
-            f"partial_result_update_duration_ms={random.randint(10, 1000)}"
-        )
-
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
@@ -72,43 +66,45 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
 
 def run_func_test(
-    cmd: str,
-    output_prefix: Path,
-    num_processes: int,
-    skip_tests_option: str,
-    global_time_limit: int,
-    upgrade_check: bool,
-) -> List[Popen]:
+    cmd,
+    output_prefix,
+    num_processes,
+    skip_tests_option,
+    global_time_limit,
+    upgrade_check,
+):
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
-    global_time_limit_option = (
-        f"--global_time_limit={global_time_limit}" if global_time_limit else ""
-    )
+    global_time_limit_option = ""
+    if global_time_limit:
+        global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
 
     output_paths = [
-        output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
+        os.path.join(output_prefix, "stress_test_run_{}.txt".format(i))
+        for i in range(num_processes)
     ]
     pipes = []
     for i, path in enumerate(output_paths):
-        with open(path, "w") as op:
-            full_command = (
-                f"{cmd} {get_options(i, upgrade_check)} {global_time_limit_option} "
-                f"{skip_tests_option} {upgrade_check_option}"
-            )
-            logging.info("Run func tests '%s'", full_command)
-            pipes.append(Popen(full_command, shell=True, stdout=op, stderr=op))
-            time.sleep(0.5)
+        f = open(path, "w")
+        full_command = "{} {} {} {} {}".format(
+            cmd,
+            get_options(i, upgrade_check),
+            global_time_limit_option,
+            skip_tests_option,
+            upgrade_check_option,
+        )
+        logging.info("Run func tests '%s'", full_command)
+        p = Popen(full_command, shell=True, stdout=f, stderr=f)
+        pipes.append(p)
+        time.sleep(0.5)
     return pipes
 
 
-def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
-    cmd = (
-        f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst "
-        f"{files_prefix}* && rm {files_prefix}*"
-    )
+def compress_stress_logs(output_path, files_prefix):
+    cmd = f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst {files_prefix}* && rm {files_prefix}*"
     check_output(cmd, shell=True)
 
 
-def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None:
+def call_with_retry(query, timeout=30, retry_count=5):
     for i in range(retry_count):
         code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
         if code != 0:
@@ -117,14 +113,11 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
             break
 
 
-def make_query_command(query: str) -> str:
-    return (
-        f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
-        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0"
-    )
+def make_query_command(query):
+    return f"""clickhouse client -q "{query}" --max_untracked_memory=1Gi --memory_profiler_step=1Gi --max_memory_usage_for_user=0"""
 
 
-def prepare_for_hung_check(drop_databases: bool) -> bool:
+def prepare_for_hung_check(drop_databases):
     # FIXME this function should not exist, but...
 
     # We attach gdb to clickhouse-server before running tests
@@ -132,8 +125,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-    # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
-    call_with_retry("kill -CONT $(lsof -ti:9000)")
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
@@ -156,33 +147,28 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
 
     # Kill other queries which known to be slow
-    # It's query from 01232_preparing_sets_race_condition_long,
-    # it may take up to 1000 seconds in slow builds
+    # It's query from 01232_preparing_sets_race_condition_long, it may take up to 1000 seconds in slow builds
     call_with_retry(
         make_query_command("KILL QUERY WHERE query LIKE 'insert into tableB select %'")
     )
     # Long query from 00084_external_agregation
     call_with_retry(
         make_query_command(
-            "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM "
-            "test.hits GROUP BY URL ORDER BY u %'"
+            "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'"
         )
     )
     # Long query from 02136_kill_scalar_queries
     call_with_retry(
         make_query_command(
-            "KILL QUERY WHERE query LIKE "
-            "'SELECT (SELECT number FROM system.numbers WHERE number = 1000000000000)%'"
+            "KILL QUERY WHERE query LIKE 'SELECT (SELECT number FROM system.numbers WHERE number = 1000000000000)%'"
         )
     )
 
     if drop_databases:
         for i in range(5):
             try:
-                # Here we try to drop all databases in async mode.
-                # If some queries really hung, than drop will hung too.
-                # Otherwise we will get rid of queries which wait for background pool.
-                # It can take a long time on slow builds (more than 900 seconds).
+                # Here we try to drop all databases in async mode. If some queries really hung, than drop will hung too.
+                # Otherwise we will get rid of queries which wait for background pool. It can take a long time on slow builds (more than 900 seconds).
                 #
                 # Also specify max_untracked_memory to allow 1GiB of memory to overcommit.
                 databases = (
@@ -207,22 +193,20 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                 time.sleep(i)
         else:
             raise Exception(
-                "Cannot drop databases after stress tests. Probably server consumed "
-                "too much memory and cannot execute simple queries"
+                "Cannot drop databases after stress tests. Probably server consumed too much memory and cannot execute simple queries"
             )
 
     # Wait for last queries to finish if any, not longer than 300 seconds
     call(
         make_query_command(
             """
-    SELECT sleepEachRow((
-        SELECT maxOrDefault(300 - elapsed) + 1
-        FROM system.processes
-        WHERE query NOT LIKE '%FROM system.processes%' AND elapsed < 300
+    select sleepEachRow((
+        select maxOrDefault(300 - elapsed) + 1
+        from system.processes
+        where query not like '%from system.processes%' and elapsed < 300
     ) / 300)
-    FROM numbers(300)
-    FORMAT Null
-    SETTINGS function_sleep_max_microseconds_per_block = 0
+    from numbers(300)
+    format Null
     """
         ),
         shell=True,
@@ -233,7 +217,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" '
+        query = """clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" """
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
@@ -246,12 +230,9 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     return True
 
 
-def is_ubsan_build() -> bool:
+def is_ubsan_build():
     try:
-        query = (
-            'clickhouse client -q "SELECT value FROM system.build_options '
-            "WHERE name = 'CXX_FLAGS'\" "
-        )
+        query = """clickhouse client -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
@@ -263,34 +244,27 @@ def is_ubsan_build() -> bool:
         return False
 
 
-def parse_args() -> argparse.Namespace:
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(
         description="ClickHouse script for running stresstest"
     )
     parser.add_argument("--test-cmd", default="/usr/bin/clickhouse-test")
     parser.add_argument("--skip-func-tests", default="")
-    parser.add_argument(
-        "--server-log-folder", default="/var/log/clickhouse-server", type=Path
-    )
-    parser.add_argument("--output-folder", type=Path)
+    parser.add_argument("--server-log-folder", default="/var/log/clickhouse-server")
+    parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
     parser.add_argument("--num-parallel", type=int, default=cpu_count())
     parser.add_argument("--upgrade-check", action="store_true")
     parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
     parser.add_argument("--drop-databases", action="store_true", default=False)
-    return parser.parse_args()
 
-
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    args = parse_args()
-
+    args = parser.parse_args()
     if args.drop_databases and not args.hung_check:
         raise Exception("--drop-databases only used in hung check (--hung-check)")
 
-    # FIXME Hung check with ubsan is temporarily disabled due to
-    # https://github.com/ClickHouse/ClickHouse/issues/45372
+    # FIXME Hung check with ubsan is temporarily disabled due to https://github.com/ClickHouse/ClickHouse/issues/45372
     suppress_hung_check = is_ubsan_build()
 
     func_pipes = []
@@ -325,7 +299,7 @@ def main():
             have_long_running_queries = prepare_for_hung_check(args.drop_databases)
         except Exception as ex:
             have_long_running_queries = True
-            logging.error("Failed to prepare for hung check: %s", str(ex))
+            logging.error("Failed to prepare for hung check %s", str(ex))
         logging.info("Checking if some queries hung")
         cmd = " ".join(
             [
@@ -352,7 +326,7 @@ def main():
                 "00001_select_1",
             ]
         )
-        hung_check_log = args.output_folder / "hung_check.log"  # type: Path
+        hung_check_log = os.path.join(args.output_folder, "hung_check.log")
         tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
         res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
         if tee.stdin is not None:
@@ -361,12 +335,10 @@ def main():
             logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
-            with open(args.output_folder / "test_results.tsv", "w+") as results:
+            with open(
+                os.path.join(args.output_folder, "test_results.tsv"), "w+"
+            ) as results:
                 results.write(hung_check_status)
-                hung_check_log.unlink()
+            os.remove(hung_check_log)
 
     logging.info("Stress test finished")
-
-
-if __name__ == "__main__":
-    main()

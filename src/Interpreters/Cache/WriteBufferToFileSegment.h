@@ -16,7 +16,6 @@ public:
     explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder);
 
     void nextImpl() override;
-    ~WriteBufferToFileSegment() override;
 
 private:
 

@@ -21,34 +21,34 @@ array-join
 lambda
 1
 optimize_read_in_order
-Expression
-  Limit
-    Sorting
-      Expression
-        ReadFromMergeTree
-Expression
-  Limit
-    Sorting
-      Expression
-        ReadFromMergeTree
-Expression
-  Limit
-    Sorting
-      Expression
-        ReadFromMergeTree
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.test_table)
+Expression (Projection)
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.test_table)
+Expression ((Projection + Before ORDER BY [lifted up part]))
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        ReadFromMergeTree (default.test_table)
 optimize_aggregation_in_order
-Expression
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression
-      ReadFromMergeTree
-Expression
+    Expression (Before GROUP BY)
+      ReadFromMergeTree (default.test_table)
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression
-      ReadFromMergeTree
-Expression
+    Expression (Before GROUP BY)
+      ReadFromMergeTree (default.test_table)
+Expression ((Projection + Before ORDER BY))
   Aggregating
-    Expression
-      ReadFromMergeTree
+    Expression (Before GROUP BY)
+      ReadFromMergeTree (default.test_table)
 second-index
 1
 1

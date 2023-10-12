@@ -210,7 +210,7 @@ public:
 
     static UInt64 expand(UInt64 ratio, UInt64 value)
     {
-        switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
+        switch (ratio)
         {
             case 1:
                 return value;

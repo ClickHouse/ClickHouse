@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Access/Common/AuthenticationType.h>
-#include <Common/SSH/Wrappers.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -58,9 +57,6 @@ public:
     const boost::container::flat_set<String> & getSSLCertificateCommonNames() const { return ssl_certificate_common_names; }
     void setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_);
 
-    const std::vector<ssh::SSHKey> & getSSHKeys() const { return ssh_keys; }
-    void setSSHKeys(std::vector<ssh::SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<ssh::SSHKey>>(ssh_keys_); }
-
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
@@ -87,7 +83,6 @@ private:
     String kerberos_realm;
     boost::container::flat_set<String> ssl_certificate_common_names;
     String salt;
-    std::vector<ssh::SSHKey> ssh_keys;
 };
 
 }

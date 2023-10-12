@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
+#include <iostream>
 #include <numeric>
 #include <algorithm>
 
@@ -71,7 +72,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     }
 }
 
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
+UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
 {
     UInt64 written_bytes = 0;
     buffer.write(rowid_lst_length);
@@ -79,7 +80,6 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 
     if (useRoaring())
     {
-        rowid_bitmap.runOptimize();
         auto size = rowid_bitmap.getSizeInBytes();
 
         writeVarUInt(size, buffer);

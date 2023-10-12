@@ -10,8 +10,6 @@
 
 #include <Parsers/ASTWithAlias.h>
 
-#include <boost/functional/hash.hpp>
-
 namespace DB
 {
 
@@ -231,7 +229,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
     }
 
-    return getSipHash128AsPair(hash_state);
+    Hash result;
+    hash_state.get128(result);
+
+    return result;
 }
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
