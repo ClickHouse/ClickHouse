@@ -301,7 +301,6 @@ std::optional<Chain> generateViewChain(
     {
         runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
         query = window_view->getMergeableQuery();
-        getHeader(local_select_context, query);  /// check implicitly that definer has enough rights
         out = buildPushingToViewsChain(
             view, view_metadata_snapshot, local_insert_context, ASTPtr(),
             /* no_destination= */ true,

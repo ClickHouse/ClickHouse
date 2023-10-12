@@ -332,7 +332,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             sql_security->formatImpl(settings, state, frame);
 
         settings.ostr << " ";
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (temporary ? " TEMPORARY " : "")
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (temporary ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")

@@ -1,4 +1,4 @@
-CREATE MATERIALIZED VIEW default.t_mv_00751
+CREATE DEFINER = default SQL SECURITY DEFINER MATERIALIZED VIEW default.t_mv_00751
 (
     `date` Date,
     `platform` Enum8('a' = 0, 'b' = 1),
