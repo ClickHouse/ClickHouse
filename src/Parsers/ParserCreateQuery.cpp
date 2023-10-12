@@ -89,7 +89,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool is_definer_current_user = false;
     ASTPtr definer;
-    ASTSQLSecurity::SQLSecurity type = ASTSQLSecurity::SQLSecurity::INVOKER;
+    std::optional<ASTSQLSecurity::SQLSecurity> type;
 
     if (s_definer.ignore(pos, expected))
     {
