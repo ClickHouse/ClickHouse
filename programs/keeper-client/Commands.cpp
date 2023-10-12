@@ -326,7 +326,6 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
         auto children = client->zookeeper->getChildren(next_path);
         for (auto & child : children)
             child = next_path / child;
-        
         auto response = client->zookeeper->get(children);
 
         for (size_t i = 0; i < response.size(); ++i)
@@ -505,7 +504,6 @@ void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperCl
         auto children = client->zookeeper->getChildren(next_path);
         for (auto & child : children)
             child = next_path / child;
-
         auto response = client->zookeeper->get(children);
 
         for (size_t i = 0; i < response.size(); ++i)

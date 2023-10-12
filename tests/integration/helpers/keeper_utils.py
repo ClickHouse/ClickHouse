@@ -148,7 +148,7 @@ class KeeperClient(object):
     
     def get_all_children_number(self, path: str, timeout: float = 60.0) -> str:
         return self.execute_query(f"get_all_children_number {path}", timeout)
-
+    
     def reconfig(
         self,
         joining: tp.Optional[str],
