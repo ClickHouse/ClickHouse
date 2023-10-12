@@ -55,7 +55,7 @@ detail::SharedChunkPtr ReplacingSortedAlgorithm::insertRow()
     {
         /// We just record the position to be selected in the chunk
         if (!selected_row.owned_chunk->replace_final_selection)
-            selected_row.owned_chunk->replace_final_selection = ColumnUInt32::create();
+            selected_row.owned_chunk->replace_final_selection = ColumnUInt64::create();
         // fmt::print(stderr, "Adding row {} for chunk {}\n", selected_row.row_num, static_cast<void *>(selected_row.owned_chunk.get()));
         selected_row.owned_chunk->replace_final_selection->insert(selected_row.row_num);
         if (selected_row.current_cursor == nullptr) /// This is the "lonely" chunk w/o cursor, we keep and then emit it later

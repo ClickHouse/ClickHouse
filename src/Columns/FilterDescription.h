@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -41,7 +42,7 @@ struct FilterDescription final : public IFilterDescription
 
 struct SparseFilterDescription final : public IFilterDescription
 {
-    const IColumn * filter_indices = nullptr;
+    const ColumnUInt64 * filter_indices = nullptr;
     explicit SparseFilterDescription(const IColumn & column);
 
     ColumnPtr filter(const IColumn & column, ssize_t) const override { return column.index(*filter_indices, 0); }

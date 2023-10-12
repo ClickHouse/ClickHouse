@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -75,8 +76,7 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
             const auto & selected_by_filter = *description->data;
             /// At this point we know that the filter is not constant, just create a new filter
             auto mutable_holder = ColumnUInt8::create(num_rows, 0);
-            ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
-            auto & data = concrete_column->getData();
+            auto & data = mutable_holder->getData();
             for (auto idx : selected_by_indices)
                 data[idx] |= 1;
             for (size_t i = 0; i < num_rows; ++i)
@@ -93,6 +93,16 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
     std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info,
     size_t num_rows)
 {
+    /// Iterator interface to decorate data from output of std::set_intersection
+    struct Iterator
+    {
+        UInt8 * data;
+        explicit Iterator(UInt8 * data_) : data(data_) {}
+        Iterator & operator = (UInt64 index) { data[index] |= 1; return *this; }
+        Iterator & operator ++ () { return *this; }
+        Iterator & operator * () { return *this; }
+    };
+
     if (select_final_indices_info)
     {
         const auto * index_column = select_final_indices_info->select_final_indices;
@@ -101,13 +111,11 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
         {
             std::unique_ptr<FilterDescription> res;
             const auto & selected_by_indices = index_column->getData();
-            const auto & selected_by_filter = typeid_cast<const ColumnUInt64 *>(description->filter_indices)->getData();
+            const auto & selected_by_filter = description->filter_indices->getData();
             auto mutable_holder = ColumnUInt8::create(num_rows, 0);
             auto & data = mutable_holder->getData();
-            for (auto idx : selected_by_indices)
-                data[idx] += 1;
-            for (auto idx : selected_by_filter)
-                data[idx] = (data[idx] + 1) << 1;
+            Iterator decorator(data.data());
+            std::set_intersection(selected_by_indices.begin(), selected_by_indices.end(), selected_by_filter.begin(), selected_by_filter.end(), decorator);
             res->data_holder = std::move(mutable_holder);
             res->data = &data;
             return res;
