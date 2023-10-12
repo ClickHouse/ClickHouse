@@ -168,9 +168,10 @@ void StorageMaterializedView::read(
 
     context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr()->select.select_table_id, column_names);
 
+    auto storage_id = storage->getStorageID();
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table)
-        context->checkAccess(AccessType::SELECT, storage->getStorageID(), column_names);
+    if (!has_inner_table && !storage_id.empty())
+        context->checkAccess(AccessType::SELECT, storage_id, column_names);
 
     storage->read(query_plan, column_names, target_storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
@@ -211,11 +212,12 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
     auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
+    auto storage_id = storage->getStorageID();
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table)
+    if (!has_inner_table && !storage_id.empty())
     {
         auto query_sample_block = InterpreterInsertQuery::getSampleBlock(query->as<ASTInsertQuery &>(), storage, metadata_snapshot, context);
-        context->checkAccess(AccessType::INSERT, storage->getStorageID(), query_sample_block.getNames());
+        context->checkAccess(AccessType::INSERT, storage_id, query_sample_block.getNames());
     }
 
     auto sink = storage->write(query, metadata_snapshot, context, async_insert);
