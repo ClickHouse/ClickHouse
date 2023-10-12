@@ -28,7 +28,6 @@
 
 #include "config.h"
 
-#include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -194,9 +193,6 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
-
-class ParallelReplicasReadingCoordinator;
-using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -444,8 +440,6 @@ public:
     KitchenSink kitchen_sink;
 
 protected:
-    ParallelReplicasReadingCoordinatorPtr parallel_reading_coordinator;
-
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
@@ -571,8 +565,8 @@ public:
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
-    boost::container::flat_set<UUID> getCurrentRoles() const;
-    boost::container::flat_set<UUID> getEnabledRoles() const;
+    std::vector<UUID> getCurrentRoles() const;
+    std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);

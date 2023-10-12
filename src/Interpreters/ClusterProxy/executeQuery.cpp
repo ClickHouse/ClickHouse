@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/ResizeProcessor.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
