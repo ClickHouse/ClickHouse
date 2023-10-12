@@ -211,6 +211,7 @@
     \
     M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
+    M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds") \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.") \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.") \
