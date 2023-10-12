@@ -15,6 +15,7 @@
 #include <Common/thread_local_rng.h>
 #include <base/types.h>
 #include "IO/WriteBufferFromString.h"
+#include <IO/Progress.h>
 #include "Storages/MergeTree/RangesInDataPart.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include <Storages/MergeTree/MarkRange.h>
@@ -78,6 +79,7 @@ public:
     Stats stats;
     size_t replicas_count{0};
     size_t unavailable_replicas_count{0};
+    ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
@@ -88,6 +90,8 @@ public:
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
+
+    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
 
 using Parts = std::set<Part>;
@@ -234,6 +238,17 @@ void DefaultCoordinator::finalizeReadingState()
         auto replica = *(std::next(current_part_it->replicas.begin(), thread_local_rng() % current_part_it->replicas.size()));
         reading_state[replica].emplace_back(current_part_it);
         delayed_parts.pop_front();
+    }
+
+    // update progress with total rows
+    if (progress_callback)
+    {
+        size_t total_rows_to_read = 0;
+        for(const auto & part : all_parts_to_read)
+            total_rows_to_read += part.description.rows;
+
+        Progress progress; progress.total_rows_to_read = total_rows_to_read;
+        progress_callback(progress);
     }
 
     LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
@@ -516,7 +531,6 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
         initialize();
     }
 
-
     return pimpl->handleInitialAllRangesAnnouncement(announcement);
 }
 
@@ -564,5 +578,13 @@ void ParallelReplicasReadingCoordinator::initialize()
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_) {}
 
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
+
+void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
+{
+    if (!pimpl)
+        initialize();
+
+    pimpl->setProgressCallback(std::move(callback));
+}
 
 }
