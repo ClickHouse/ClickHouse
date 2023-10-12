@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 namespace DB
 {
@@ -32,6 +33,87 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
         FilterDescription filter_description_check(*column_elem.column);
         column_elem.column = column_elem.type->createColumnConst(block.rows(), 1u);
     }
+}
+
+static std::shared_ptr<const ChunkSelectFinalIndices> getSelectByFinalIndices(Chunk & chunk)
+{
+    if (auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo()))
+    {
+        chunk.setChunkInfo(nullptr);
+        return select_final_indices_info;
+    }
+    return nullptr;
+}
+
+static void
+executeSelectByIndices(Columns & columns, std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info, size_t & num_rows)
+{
+    if (select_final_indices_info)
+    {
+        const auto & index_column = select_final_indices_info->select_final_indices;
+
+        if (index_column && index_column->size() != num_rows)
+            for (auto & column : columns)
+                column = column->index(*index_column, 0);
+
+        num_rows = index_column->size();
+    }
+}
+
+static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
+    std::unique_ptr<FilterDescription> description,
+    std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info,
+    size_t num_rows)
+{
+    if (select_final_indices_info)
+    {
+        const auto * index_column = select_final_indices_info->select_final_indices;
+
+        if (description->data && index_column && index_column->size() != num_rows)
+        {
+            const auto & selected_by_indices = index_column->getData();
+            const auto & selected_by_filter = *description->data;
+            /// At this point we know that the filter is not constant, just create a new filter
+            auto mutable_holder = ColumnUInt8::create(num_rows, 0);
+            ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
+            auto & data = concrete_column->getData();
+            for (auto idx : selected_by_indices)
+                data[idx] |= 1;
+            for (size_t i = 0; i < num_rows; ++i)
+                data[i] &= selected_by_filter[i];
+            description->data_holder = std::move(mutable_holder);
+            description->data = &data;
+        }
+    }
+    return std::move(description);
+}
+
+static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
+    std::unique_ptr<SparseFilterDescription> description,
+    std::shared_ptr<const ChunkSelectFinalIndices> & select_final_indices_info,
+    size_t num_rows)
+{
+    if (select_final_indices_info)
+    {
+        const auto * index_column = select_final_indices_info->select_final_indices;
+
+        if (description->filter_indices && index_column && index_column->size() != num_rows)
+        {
+            std::unique_ptr<FilterDescription> res;
+            const auto & selected_by_indices = index_column->getData();
+            const auto & selected_by_filter = typeid_cast<const ColumnUInt64 *>(description->filter_indices)->getData();
+            auto mutable_holder = ColumnUInt8::create(num_rows, 0);
+            auto & data = mutable_holder->getData();
+            for (auto idx : selected_by_indices)
+                data[idx] += 1;
+            for (auto idx : selected_by_filter)
+                data[idx] = (data[idx] + 1) << 1;
+            res->data_holder = std::move(mutable_holder);
+            res->data = &data;
+            return res;
+        }
+    }
+    return description;
 }
 
 Block FilterTransform::transformHeader(
@@ -126,6 +208,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
+    auto select_final_indices_info = getSelectByFinalIndices(chunk);
 
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
@@ -139,6 +222,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
+        executeSelectByIndices(columns, select_final_indices_info, num_rows_before_filtration);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
@@ -159,10 +243,19 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true)
     {
+        executeSelectByIndices(columns, select_final_indices_info, num_rows_before_filtration);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
         return;
     }
+
+    std::unique_ptr<IFilterDescription> filter_description;
+    if (filter_column->isSparse())
+        filter_description = combineFilterAndIndices(
+            std::make_unique<SparseFilterDescription>(*filter_column), select_final_indices_info, num_rows_before_filtration);
+    else
+        filter_description = combineFilterAndIndices(
+            std::make_unique<FilterDescription>(*filter_column), select_final_indices_info, num_rows_before_filtration);
 
     /** Let's find out how many rows will be in result.
       * To do this, we filter out the first non-constant column
@@ -177,12 +270,6 @@ void FilterTransform::doTransform(Chunk & chunk)
             break;
         }
     }
-
-    std::unique_ptr<IFilterDescription> filter_description;
-    if (filter_column->isSparse())
-        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
-    else
-        filter_description = std::make_unique<FilterDescription>(*filter_column);
 
     size_t num_filtered_rows = 0;
     if (first_non_constant_column != num_columns)

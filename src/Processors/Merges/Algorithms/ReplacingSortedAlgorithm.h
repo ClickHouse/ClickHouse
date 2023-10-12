@@ -14,8 +14,12 @@ namespace DB
 
 struct ChunkSelectFinalIndices : public ChunkInfo
 {
-    ColumnPtr select_final_indices;
-    explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_) : select_final_indices(std::move(select_final_indices_)) {}
+    ColumnPtr column_holder;
+    const ColumnUInt32 * select_final_indices;
+    explicit ChunkSelectFinalIndices(MutableColumnPtr select_final_indices_) : column_holder(std::move(select_final_indices_))
+    {
+        select_final_indices = typeid_cast<const ColumnUInt32 *>(column_holder.get());
+    }
 };
 
 /** Merges several sorted inputs into one.

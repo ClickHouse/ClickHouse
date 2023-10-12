@@ -986,7 +986,8 @@ static void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
     size_t max_block_size_rows,
-    bool use_skipping_final)
+    bool use_skipping_final,
+    bool query_has_where)
 {
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
@@ -1041,9 +1042,14 @@ static void addMergingFinal(
     };
 
     pipe.addTransform(get_merging_processor());
-    if (use_skipping_final && merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    if (use_skipping_final && !query_has_where)
+    {
+        /// Skipping FINAL algorithm will output the original chunk and a column indices of selected rows
+        /// If query has WHERE, we will merge the indices with the filter in FilterTransform later
+        /// Otherwise, use SelectByIndicesTransform to select rows
         pipe.addSimpleTransform([](const Block & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
+    }
 }
 
 
@@ -1052,6 +1058,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
+    const auto & select_query = query_info.query->as<ASTSelectQuery>();
+    bool query_has_where = select_query && select_query->where();
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
@@ -1184,7 +1192,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 data.merging_params,
                 partition_key_columns,
                 block_size.max_block_size_rows,
-                settings.use_skipping_final);
+                use_skipping_final,
+                query_has_where);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
