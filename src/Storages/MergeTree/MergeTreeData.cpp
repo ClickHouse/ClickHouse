@@ -2893,11 +2893,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                             queryToString(mutation_commands.ast()));
     }
 
+    commands.apply(new_metadata, getContext());
+
     if (commands.hasInvertedIndex(new_metadata) && !settings.allow_experimental_inverted_index)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
-
-    commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
