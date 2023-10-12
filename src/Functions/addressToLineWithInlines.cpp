@@ -59,13 +59,14 @@ protected:
 
     void setResult(StringRefs & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & inline_frames) const override
     {
+
         appendLocationToResult(result, location, nullptr);
         for (const auto & inline_frame : inline_frames)
             appendLocationToResult(result, inline_frame.location, &inline_frame);
     }
-
 private:
-    void appendLocationToResult(StringRefs & result, const Dwarf::LocationInfo & location, const Dwarf::SymbolizedFrame * frame) const
+
+    inline ALWAYS_INLINE void appendLocationToResult(StringRefs & result, const Dwarf::LocationInfo & location, const Dwarf::SymbolizedFrame * frame) const
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);
@@ -82,7 +83,6 @@ private:
         }
 
         result.emplace_back(out.complete());
-        out.finalize();
     }
 
 };

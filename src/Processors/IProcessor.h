@@ -164,8 +164,6 @@ public:
 
     static std::string statusToName(Status status);
 
-    static ProcessorPtr getPartialResultProcessorPtr(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms);
-
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
       * It may access input and output ports,
@@ -237,30 +235,13 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
     }
 
-    enum class PartialResultStatus
-    {
-        /// Processor currently doesn't support work with the partial result pipeline.
-        NotSupported,
-
-        /// Processor can be skipped in the partial result pipeline.
-        SkipSupported,
-
-        /// Processor creates a light-weight copy of itself in the partial result pipeline.
-        /// The copy can create snapshots of the original processor or transform small blocks of data in the same way as the original processor
-        FullSupported,
-    };
-
-    virtual bool isPartialResultProcessor() const { return false; }
-    virtual PartialResultStatus getPartialResultProcessorSupportStatus() const { return PartialResultStatus::NotSupported; }
-
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
-    bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
+    bool isCancelled() const { return is_cancelled; }
     void cancel()
     {
-        bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
-        if (!already_cancelled)
-            onCancel();
+        is_cancelled = true;
+        onCancel();
     }
 
     /// Additional method which is called in case if ports were updated while work() method.
@@ -361,7 +342,6 @@ public:
         uint64_t read_rows = 0;
         uint64_t read_bytes = 0;
         uint64_t total_rows_approx = 0;
-        uint64_t total_bytes = 0;
     };
 
     struct ReadProgress
@@ -386,11 +366,6 @@ public:
 
 protected:
     virtual void onCancel() {}
-
-    virtual ProcessorPtr getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getPartialResultProcessor' is not implemented for {} processor", getName());
-    }
 
 private:
     /// For:

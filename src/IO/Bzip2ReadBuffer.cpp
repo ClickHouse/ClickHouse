@@ -3,7 +3,6 @@
 #if USE_BZIP2
 #    include <IO/Bzip2ReadBuffer.h>
 #    include <bzlib.h>
-#    include <IO/WithFileName.h>
 
 namespace DB
 {
@@ -119,17 +118,13 @@ bool Bzip2ReadBuffer::nextImpl()
     if (ret != BZ_OK)
         throw Exception(
             ErrorCodes::BZIP2_STREAM_DECODER_FAILED,
-            "bzip2 stream decoder failed: error code: {}{}",
-            ret,
-            getExceptionEntryWithFileName(*in));
+            "bzip2 stream decoder failed: error code: {}",
+            ret);
 
     if (in->eof())
     {
         eof_flag = true;
-        throw Exception(
-            ErrorCodes::UNEXPECTED_END_OF_FILE,
-            "Unexpected end of bzip2 archive{}",
-            getExceptionEntryWithFileName(*in));
+        throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of bzip2 archive");
     }
 
     return true;

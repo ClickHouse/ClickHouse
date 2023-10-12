@@ -64,21 +64,6 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     set remote_filesystem_read_method='threadpool';
     """
 
-    query_id=$(clickhouse client --query "select queryID() from ($query) limit 1")
-
-    clickhouse client --multiquery --multiline  --query """
-    SYSTEM FLUSH LOGS;
-    SELECT ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
-           ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
-           ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
-    FROM system.query_log
-    WHERE query_id='$query_id'
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    ORDER BY query_start_time DESC
-    LIMIT 1;
-    """
-
     clickhouse client --multiquery --multiline  --query """
     SELECT * FROM test_02226 WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
 
@@ -92,5 +77,20 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """
 
-    clickhouse client --query "DROP TABLE test_02226"
+    query_id=$(clickhouse client --query "select queryID() from ($query) limit 1")
+
+    clickhouse client --multiquery --multiline  --query """
+    SYSTEM FLUSH LOGS;
+    SELECT ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
+           ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
+           ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
+    FROM system.query_log
+    WHERE query_id='$query_id'
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    ORDER BY query_start_time DESC
+    LIMIT 1;
+
+    DROP TABLE test_02226;
+    """
 done

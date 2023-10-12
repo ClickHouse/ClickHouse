@@ -38,15 +38,15 @@ bool isRightIdentifier(JoinIdentifierPos pos)
 
 }
 
-void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos, bool null_safe_comparison)
+void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos)
 {
     ASTPtr left = left_ast->clone();
     ASTPtr right = right_ast->clone();
 
     if (isLeftIdentifier(table_pos.first) && isRightIdentifier(table_pos.second))
-        analyzed_join.addOnKeys(left, right, null_safe_comparison);
+        analyzed_join.addOnKeys(left, right);
     else if (isRightIdentifier(table_pos.first) && isLeftIdentifier(table_pos.second))
-        analyzed_join.addOnKeys(right, left, null_safe_comparison);
+        analyzed_join.addOnKeys(right, left);
     else
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.");
 }
@@ -78,7 +78,7 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 {
     if (!asof_left_key || !asof_right_key)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "No inequality in ASOF JOIN ON section.");
-    addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right}, false);
+    addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right});
 }
 
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
@@ -96,14 +96,14 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
     ASOFJoinInequality inequality = getASOFJoinInequality(func.name);
 
-    if (func.name == "equals" || func.name == "isNotDistinctFrom" || inequality != ASOFJoinInequality::None)
+    if (func.name == "equals" || inequality != ASOFJoinInequality::None)
     {
         if (func.arguments->children.size() != 2)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Function {} takes two arguments, got '{}' instead",
                             func.name, func.formatForErrorMessage());
     }
 
-    if (func.name == "equals" || func.name == "isNotDistinctFrom")
+    if (func.name == "equals")
     {
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
@@ -121,8 +121,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         if ((isLeftIdentifier(table_numbers.first) && isRightIdentifier(table_numbers.second)) ||
             (isRightIdentifier(table_numbers.first) && isLeftIdentifier(table_numbers.second)))
         {
-            bool null_safe_comparison = func.name == "isNotDistinctFrom";
-            data.addJoinKeys(left, right, table_numbers, null_safe_comparison);
+            data.addJoinKeys(left, right, table_numbers);
             return;
         }
     }

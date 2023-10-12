@@ -21,14 +21,14 @@ REGISTER_FUNCTION(DateTime64ToSnowflake)
 REGISTER_FUNCTION(SnowflakeToDateTime)
 {
     factory.registerFunction("snowflakeToDateTime",
-        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime", context)); });
+        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
+            std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime")); });
 }
 REGISTER_FUNCTION(SnowflakeToDateTime64)
 {
     factory.registerFunction("snowflakeToDateTime64",
-        [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionSnowflakeToDateTime64>("snowflakeToDateTime64", context)); });
+        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
+            std::make_shared<FunctionSnowflakeToDateTime64>("snowflakeToDateTime64")); });
 }
 
 }

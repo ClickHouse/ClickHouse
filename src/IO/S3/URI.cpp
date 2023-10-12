@@ -5,15 +5,7 @@
 #include <Common/quoteString.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
 #include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -60,9 +52,9 @@ URI::URI(const std::string & uri_)
             has_version_id = true;
         }
 
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
+    /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter,
     /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
+    /// If no "vertionId" in the http parameter, '?' can be used as a wildcard.
     /// It is necessary to encode '?' to avoid deletion during parsing path.
     if (!has_version_id && uri_.find('?') != String::npos)
     {

@@ -3,8 +3,8 @@
 #include <base/defines.h>
 #include <base/sort.h>
 
-#include <utility>
 #include <vector>
+#include <utility>
 
 
 namespace DB
@@ -27,15 +27,39 @@ struct Interval
 };
 
 template <typename IntervalStorageType>
-auto operator<=>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+bool operator<(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
-    return std::tie(lhs.left, lhs.right) <=> std::tie(rhs.left, rhs.right);
+    return std::tie(lhs.left, lhs.right) < std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator<=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) <= std::tie(rhs.left, rhs.right);
 }
 
 template <typename IntervalStorageType>
 bool operator==(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
     return std::tie(lhs.left, lhs.right) == std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator!=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) != std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) > std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator>=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) >= std::tie(rhs.left, rhs.right);
 }
 
 struct IntervalTreeVoidValue
@@ -119,8 +143,7 @@ public:
         return true;
     }
 
-    template <typename TValue = Value, typename... Args>
-    requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
+    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename... Args>
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
         assert(!tree_is_built);

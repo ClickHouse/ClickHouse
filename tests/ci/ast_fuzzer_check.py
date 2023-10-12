@@ -2,18 +2,13 @@
 
 import logging
 import subprocess
-import os
 import sys
 from pathlib import Path
 
 from github import Github
 
 from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import (
-    CiLogsCredentials,
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
     RerunHelper,
     format_description,
@@ -39,8 +34,7 @@ IMAGE_NAME = "clickhouse/fuzzer"
 def get_run_command(
     pr_info: PRInfo,
     build_url: str,
-    workspace_path: str,
-    ci_logs_args: str,
+    workspace_path: Path,
     image: DockerImage,
 ) -> str:
     envs = [
@@ -56,7 +50,6 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
-        f"{ci_logs_args}"
         f"--volume={workspace_path}:/workspace "
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
@@ -69,13 +62,11 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
 
     check_name = sys.argv[1]
-
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
 
     pr_info = PRInfo()
 
@@ -90,7 +81,6 @@ def main():
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
-    print(build_name)
     urls = read_build_urls(build_name, reports_path)
     if not urls:
         raise Exception("No build URLs found")
@@ -100,29 +90,23 @@ def main():
             build_url = url
             break
     else:
-        raise Exception("Cannot find the clickhouse binary among build results")
+        raise Exception("Cannot binary clickhouse among build results")
 
     logging.info("Got build url %s", build_url)
 
-    workspace_path = os.path.join(temp_path, "workspace")
-    if not os.path.exists(workspace_path):
-        os.makedirs(workspace_path)
-    ci_logs_credentials = CiLogsCredentials(Path(temp_path) / "export-logs-config.sh")
-    ci_logs_args = ci_logs_credentials.get_docker_arguments(
-        pr_info, stopwatch.start_time_str, check_name
-    )
+    workspace_path = temp_path / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
 
     run_command = get_run_command(
         pr_info,
         build_url,
         workspace_path,
-        ci_logs_args,
         docker_image,
     )
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "run.log")
-    main_log_path = os.path.join(workspace_path, "main.log")
+    run_log_path = temp_path / "run.log"
+    main_log_path = workspace_path / "main.log"
 
     with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
@@ -132,7 +116,6 @@ def main():
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    ci_logs_credentials.clean_ci_logs_from_credentials(Path(run_log_path))
 
     check_name_lower = (
         check_name.lower().replace("(", "").replace(")", "").replace(" ", "")
@@ -141,40 +124,39 @@ def main():
     paths = {
         "run.log": run_log_path,
         "main.log": main_log_path,
-        "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
-        "report.html": os.path.join(workspace_path, "report.html"),
-        "core.zst": os.path.join(workspace_path, "core.zst"),
-        "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
+        "fuzzer.log": workspace_path / "fuzzer.log",
+        "report.html": workspace_path / "report.html",
+        "core.zst": workspace_path / "core.zst",
+        "dmesg.log": workspace_path / "dmesg.log",
     }
 
-    compressed_server_log_path = os.path.join(workspace_path, "server.log.zst")
-    if os.path.exists(compressed_server_log_path):
+    compressed_server_log_path = workspace_path / "server.log.zst"
+    if compressed_server_log_path.exists():
         paths["server.log.zst"] = compressed_server_log_path
 
     # The script can fail before the invocation of `zstd`, but we are still interested in its log:
 
-    not_compressed_server_log_path = os.path.join(workspace_path, "server.log")
-    if os.path.exists(not_compressed_server_log_path):
+    not_compressed_server_log_path = workspace_path / "server.log"
+    if not_compressed_server_log_path.exists():
         paths["server.log"] = not_compressed_server_log_path
 
     s3_helper = S3Helper()
-    for f in paths:
+    urls = []
+    report_url = ""
+    for file, path in paths.items():
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(Path(paths[f]), s3_prefix + f)
+            url = s3_helper.upload_test_report_to_s3(path, s3_prefix + file)
+            report_url = url if file == "report.html" else report_url
+            urls.append(url)
         except Exception as ex:
-            logging.info("Exception uploading file %s text %s", f, ex)
-            paths[f] = ""
+            logging.info("Exception uploading file %s text %s", file, ex)
 
     # Try to get status message saved by the fuzzer
     try:
-        with open(
-            os.path.join(workspace_path, "status.txt"), "r", encoding="utf-8"
-        ) as status_f:
+        with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:
             status = status_f.readline().rstrip("\n")
 
-        with open(
-            os.path.join(workspace_path, "description.txt"), "r", encoding="utf-8"
-        ) as desc_f:
+        with open(workspace_path / "description.txt", "r", encoding="utf-8") as desc_f:
             description = desc_f.readline().rstrip("\n")
     except:
         status = "failure"
@@ -186,9 +168,7 @@ def main():
     if "fail" in status:
         test_result.status = "FAIL"
 
-    if paths["report.html"]:
-        report_url = paths["report.html"]
-    else:
+    if not report_url:
         report_url = upload_results(
             s3_helper,
             pr_info.number,
@@ -196,7 +176,7 @@ def main():
             [test_result],
             [],
             check_name,
-            [url for url in paths.values() if url],
+            urls,
         )
 
     ch_helper = ClickHouseHelper()

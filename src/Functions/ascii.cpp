@@ -82,14 +82,14 @@ using FunctionAscii = FunctionStringOrArrayToT<AsciiImpl, AsciiName, AsciiImpl::
 REGISTER_FUNCTION(Ascii)
 {
     factory.registerFunction<FunctionAscii>(
-        FunctionDocumentation{
-        .description=R"(
+        {
+        R"(
 Returns the ASCII code point of the first character of str.  The result type is Int32.
 
 If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined)
         )",
-        .examples{{"ascii", "SELECT ascii('234')", ""}},
-        .categories{"String"}
+        Documentation::Examples{{"ascii", "SELECT ascii('234')"}},
+        Documentation::Categories{"String"}
         }, FunctionFactory::CaseInsensitive);
 }
 

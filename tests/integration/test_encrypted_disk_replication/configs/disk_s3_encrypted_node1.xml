@@ -1,9 +1,0 @@
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <disk_s3_encrypted_with_diff_keys>
-                <key>1111111111111111</key>
-            </disk_s3_encrypted_with_diff_keys>
-        </disks>
-    </storage_configuration>
-</clickhouse>

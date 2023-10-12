@@ -88,7 +88,6 @@ public:
 
     explicit JoinGetOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
-    bool isDeterministic() const override { return false; }
     String getName() const override { return name; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;

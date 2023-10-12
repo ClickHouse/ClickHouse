@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import csv
-import os
-import time
-from typing import Dict, List, Optional, Union
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+import csv
 import logging
+import time
 
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet
+from github.GithubObject import _NotSetType, NotSet as NotSet  # type: ignore
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
@@ -292,9 +292,9 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
 
 def post_commit_status_to_file(
-    file_path: str, description: str, state: str, report_url: str
+    file_path: Path, description: str, state: str, report_url: str
 ) -> None:
-    if os.path.exists(file_path):
+    if file_path.exists():
         raise Exception(f'File "{file_path}" already exists!')
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
@@ -330,7 +330,6 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.remove_from_labels(label)
-        pr_info.labels.remove(label)
 
 
 def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
@@ -338,7 +337,6 @@ def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.add_to_labels(label)
-        pr_info.labels.add(label)
 
 
 def format_description(description: str) -> str:
@@ -396,6 +394,8 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
 
     if fail:
         description = "failed: " + ", ".join(fail)
+        if success:
+            description += "; succeeded: " + ", ".join(success)
         description = format_description(description)
         if mergeable_status is None or mergeable_status.description != description:
             set_mergeable_check(commit, description, FAILURE)

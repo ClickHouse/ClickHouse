@@ -1,21 +1,13 @@
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
-
+#include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/removeOnClusterClauseIfNeeded.h>
-#include <Parsers/Access/ASTCreateRoleQuery.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-}
-
 namespace
 {
     void updateRoleFromQueryImpl(
@@ -41,9 +33,7 @@ namespace
 
 BlockIO InterpreterCreateRoleQuery::execute()
 {
-    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
-    const auto & query = updated_query_ptr->as<const ASTCreateRoleQuery &>();
-
+    const auto & query = query_ptr->as<const ASTCreateRoleQuery &>();
     auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_ROLE);
@@ -56,20 +46,11 @@ BlockIO InterpreterCreateRoleQuery::execute()
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
         if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::ROLE);
+            getContext()->checkSettingsConstraints(*settings_from_query);
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
-    IAccessStorage * storage = &access_control;
-    MultipleAccessStorage::StoragePtr storage_ptr;
-
-    if (!query.storage_name.empty())
-    {
-        storage_ptr = access_control.getStorageByName(query.storage_name);
-        storage = storage_ptr.get();
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext());
 
     if (query.alter)
     {
@@ -81,11 +62,11 @@ BlockIO InterpreterCreateRoleQuery::execute()
         };
         if (query.if_exists)
         {
-            auto ids = storage->find<Role>(query.names);
-            storage->tryUpdate(ids, update_func);
+            auto ids = access_control.find<Role>(query.names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<Role>(query.names), update_func);
+            access_control.update(access_control.getIDs<Role>(query.names), update_func);
     }
     else
     {
@@ -97,21 +78,12 @@ BlockIO InterpreterCreateRoleQuery::execute()
             new_roles.emplace_back(std::move(new_role));
         }
 
-        if (!query.storage_name.empty())
-        {
-            for (const auto & name : query.names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::ROLE, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Role {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
-        }
-
         if (query.if_not_exists)
-            storage->tryInsert(new_roles);
+            access_control.tryInsert(new_roles);
         else if (query.or_replace)
-            storage->insertOrReplace(new_roles);
+            access_control.insertOrReplace(new_roles);
         else
-            storage->insert(new_roles);
+            access_control.insert(new_roles);
     }
 
     return {};

@@ -35,7 +35,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -222,25 +221,10 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 
     std::lock_guard lock(handler_mutex);
 
-    ASTPtr ast_storage;
-    try
-    {
-        auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
-        ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
-    }
-    catch (...)
-    {
-        if (throw_on_error)
-        {
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
-                            "Received error while fetching table structure for table {} from PostgreSQL: {}",
-                            backQuote(table_name), getCurrentExceptionMessage(true));
-        }
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
+    /// FIXME TSA
+    auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
+    auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
+    assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
     return ast_storage;
 }
 
