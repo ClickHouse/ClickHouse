@@ -837,8 +837,7 @@ void HTTPHandler::processQuery(
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
     append_callback([&used_output](const Progress & progress)
     {
-        const auto& thread_group = CurrentThread::getGroup();
-        used_output.out->onProgress(progress, thread_group->memory_tracker.getPeak());
+        used_output.out->onProgress(progress);
     });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
@@ -1263,8 +1262,12 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     if (config.has(config_prefix + ".handler.content_type"))
         content_type_override = config.getString(config_prefix + ".handler.content_type");
 
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
-        server, std::move(query_param_name), std::move(content_type_override));
+    auto creator = [&server, query_param_name, content_type_override] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, query_param_name, content_type_override);
+    };
+
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
 
     factory->addFiltersFromConfig(config, config_prefix);
 
@@ -1335,25 +1338,40 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         auto regex = getCompiledRegex(url_expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
         {
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-                server,
-                std::move(analyze_receive_params),
-                std::move(predefined_query),
-                std::move(regex),
-                std::move(headers_name_with_regex),
-                std::move(content_type_override));
+            auto creator = [
+                &server,
+                analyze_receive_params,
+                predefined_query,
+                regex,
+                headers_name_with_regex,
+                content_type_override]
+                -> std::unique_ptr<PredefinedQueryHandler>
+            {
+                return std::make_unique<PredefinedQueryHandler>(
+                    server, analyze_receive_params, predefined_query, regex,
+                    headers_name_with_regex, content_type_override);
+            };
+            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
             factory->addFiltersFromConfig(config, config_prefix);
             return factory;
         }
     }
 
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-        server,
-        std::move(analyze_receive_params),
-        std::move(predefined_query),
-        CompiledRegexPtr{},
-        std::move(headers_name_with_regex),
-        std::move(content_type_override));
+    auto creator = [
+        &server,
+        analyze_receive_params,
+        predefined_query,
+        headers_name_with_regex,
+        content_type_override]
+        -> std::unique_ptr<PredefinedQueryHandler>
+    {
+        return std::make_unique<PredefinedQueryHandler>(
+            server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
+            headers_name_with_regex, content_type_override);
+    };
+
+    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
+
     factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;

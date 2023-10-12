@@ -209,7 +209,6 @@ enum class Dialect
 {
     clickhouse,
     kusto,
-    kusto_auto,
     prql,
 };
 
