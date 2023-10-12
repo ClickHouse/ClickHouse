@@ -1274,6 +1274,10 @@ public:
         return !buf[place_value].isZero(*this);
     }
 
+    bool ALWAYS_INLINE contains(const Key & x) const
+    {
+        return has(x);
+    }
 
     void write(DB::WriteBuffer & wb) const
     {
