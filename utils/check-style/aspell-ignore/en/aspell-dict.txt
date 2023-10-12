@@ -1047,6 +1047,7 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
+arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1184,6 +1185,7 @@ editDistance
 byteHammingDistance
 jaccardIndex
 levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1510,6 +1512,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting

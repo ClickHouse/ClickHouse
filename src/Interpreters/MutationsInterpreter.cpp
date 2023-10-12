@@ -40,6 +40,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 namespace DB
 {
@@ -305,6 +306,11 @@ bool MutationsInterpreter::Source::hasProjection(const String & name) const
     return part && part->hasProjection(name);
 }
 
+bool MutationsInterpreter::Source::isCompactPart() const
+{
+    return part && part->getType() == MergeTreeDataPartType::Compact;
+}
+
 static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
 {
     auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
@@ -563,7 +569,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (settings.recalculate_dependencies_of_updated_columns)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
 
-    bool has_alter_delete = false;
+    bool need_rebuild_indexes = false;
+    bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
     /// First, break a sequence of commands into stages.
@@ -584,7 +591,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
-            has_alter_delete = true;
+            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
+            need_rebuild_indexes = true;
+            need_rebuild_projections = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -688,6 +697,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
             }
+
+            /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
+            /// the part granularity, so we need to rebuild indexes
+            if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
+                need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
         {
@@ -912,7 +926,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (!source.hasSecondaryIndex(index.name))
             continue;
 
-        if (has_alter_delete)
+        if (need_rebuild_indexes)
         {
             materialized_indices.insert(index.name);
             continue;
@@ -933,7 +947,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (!source.hasProjection(projection.name))
             continue;
 
-        if (has_alter_delete)
+        if (need_rebuild_projections)
         {
             materialized_projections.insert(projection.name);
             continue;
