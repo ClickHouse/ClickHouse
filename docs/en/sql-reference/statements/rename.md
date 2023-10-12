@@ -16,7 +16,7 @@ The `RENAME` query is supported by the [Atomic](../../engines/database-engines/a
 **Syntax**
 
 ```sql
-RENAME DATABASE|[TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
+RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 ```
 
 ## RENAME DATABASE
