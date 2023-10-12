@@ -20,7 +20,9 @@ function insert()
             -H "tracestate: $4" \
             "${CLICKHOUSE_URL}" \
             --data @-
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH DISTRIBUTED ${CLICKHOUSE_DATABASE}.dist_opentelemetry"
+
+    # disable probabilistic tracing to avoid stealing the trace context
+    ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=0 -q "SYSTEM FLUSH DISTRIBUTED ${CLICKHOUSE_DATABASE}.dist_opentelemetry"
 }
 
 function check_span()
@@ -69,6 +71,8 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry  (key UInt64) Engine=Distributed('test_cluster_two_shards_localhost', ${CLICKHOUSE_DATABASE}, local_opentelemetry, key % 2);
 CREATE TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry (key UInt64) Engine=MergeTree ORDER BY key;
+
+SYSTEM STOP DISTRIBUTED SENDS ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 "
 
 #

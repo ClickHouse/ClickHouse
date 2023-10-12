@@ -193,8 +193,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, object_columns);
+
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
+    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
     extractMergingAndGatheringColumns(
         global_ctx->storage_columns,
@@ -209,9 +210,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
+
+    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
+    {
+        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
+        global_ctx->gathering_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn::name);
+    }
 
     SerializationInfo::Settings info_settings =
     {
@@ -246,11 +259,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         }
     }
 
-    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
-
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
+
+    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
     {
@@ -326,6 +339,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (!ctx->need_remove_expired_values)
     {
         size_t expired_columns = 0;
+        auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
 
         for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
         {
@@ -335,6 +349,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
                 LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
                 std::erase(global_ctx->gathering_column_names, column_name);
                 std::erase(global_ctx->merging_column_names, column_name);
+                std::erase(global_ctx->all_column_names, column_name);
+                part_serialization_infos.erase(column_name);
                 ++expired_columns;
             }
         }
@@ -343,6 +359,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         {
             global_ctx->gathering_columns = global_ctx->gathering_columns.filter(global_ctx->gathering_column_names);
             global_ctx->merging_columns = global_ctx->merging_columns.filter(global_ctx->merging_column_names);
+            global_ctx->storage_columns = global_ctx->storage_columns.filter(global_ctx->all_column_names);
+
+            global_ctx->new_data_part->setColumns(
+                global_ctx->storage_columns,
+                part_serialization_infos,
+                global_ctx->metadata_snapshot->getMetadataVersion());
         }
     }
 
@@ -473,6 +495,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->rows_read;
     size_t input_rows_filtered = *global_ctx->input_rows_filtered;
+    size_t cleanedup_rows_count = global_ctx->cleanedup_rows_count;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_column_names.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
@@ -485,12 +508,13 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     /// In special case, when there is only one source part, and no rows were skipped, we may have
     /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
     /// number of input rows.
-    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
+    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1)
+        && sum_input_rows_exact != rows_sources_count + input_rows_filtered + cleanedup_rows_count)
         throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
-                        "of bytes written to rows_sources file ({}). It is a bug.",
-                        sum_input_rows_exact, input_rows_filtered, rows_sources_count);
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of rows in source parts ({}) excluding filtered rows ({}) and cleaned up rows ({}) differs from number "
+            "of bytes written to rows_sources file ({}). It is a bug.",
+            sum_input_rows_exact, input_rows_filtered, cleanedup_rows_count, rows_sources_count);
 
     ctx->rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(ctx->tmp_disk->readFile(fileName(ctx->rows_sources_file->path())));
 
@@ -531,8 +555,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             global_ctx->future_part->parts[part_num],
             column_names,
             ctx->read_with_direct_io,
-            true,
-            false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
             global_ctx->input_rows_filtered);
 
         pipes.emplace_back(std::move(pipe));
@@ -883,8 +907,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             part,
             global_ctx->merging_column_names,
             ctx->read_with_direct_io,
-            true,
-            false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
             global_ctx->input_rows_filtered);
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
@@ -961,7 +985,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             merged_transform = std::make_shared<ReplacingSortedTransform>(
                 header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
                 merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
-                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup);
+                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup, &global_ctx->cleanedup_rows_count);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -982,6 +1006,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
+        /// We don't want to deduplicate by block number column
+        /// so if deduplicate_by_columns is empty, add all columns except _block_number
+        if (supportsBlockNumberColumn(global_ctx) && global_ctx->deduplicate_by_columns.empty())
+        {
+            for (const auto & col : global_ctx->merging_column_names)
+            {
+                if (col != BlockNumberColumn::name)
+                    global_ctx->deduplicate_by_columns.emplace_back(col);
+            }
+        }
+
         if (DistinctSortedTransform::isApplicable(header, sort_description, global_ctx->deduplicate_by_columns))
             res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
                 res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));

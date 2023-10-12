@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 
 #include <Core/MySQL/PacketEndpoint.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -39,6 +39,7 @@ private:
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
     DataTypes data_types;
     Serializations serializations;
+    bool use_binary_result_set = false;
 };
 
 }

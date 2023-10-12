@@ -11,7 +11,7 @@ import os
 import sys
 
 
-# Very simple tee logic implementation. You can specify shell command, output
+# Very simple tee logic implementation. You can specify a shell command, output
 # logfile and env variables. After TeePopen is created you can only wait until
 # it finishes. stderr and stdout will be redirected both to specified file and
 # stdout.
@@ -55,6 +55,7 @@ class TeePopen:
             stderr=STDOUT,
             stdout=PIPE,
             bufsize=1,
+            errors="backslashreplace",
         )
         if self.timeout is not None and self.timeout > 0:
             t = Thread(target=self._check_timeout)

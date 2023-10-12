@@ -31,6 +31,8 @@ class ConstantExpressionTemplate : boost::noncopyable
         static size_t getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
                                       const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
 
+        String dumpTemplate() const;
+
         String result_column_name;
 
         std::vector<String> tokens;

@@ -63,6 +63,18 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
             process_list_elem->updateProgressIn(total_rows_progress);
     }
 
+    size_t bytes = 0;
+    if ((bytes = total_bytes.exchange(0)) != 0)
+    {
+        Progress total_bytes_progress = {0, 0, 0, bytes};
+
+        if (progress_callback)
+            progress_callback(total_bytes_progress);
+
+        if (process_list_elem)
+            process_list_elem->updateProgressIn(total_bytes_progress);
+    }
+
     Progress value {read_rows, read_bytes};
 
     if (progress_callback)

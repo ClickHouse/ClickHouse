@@ -14,9 +14,9 @@ class ASTSettingsProfileElement : public IAST
 public:
     String parent_profile;
     String setting_name;
-    Field value;
-    Field min_value;
-    Field max_value;
+    std::optional<Field> value;
+    std::optional<Field> min_value;
+    std::optional<Field> max_value;
     std::optional<SettingConstraintWritability> writability;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.

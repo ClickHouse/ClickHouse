@@ -1,9 +1,9 @@
-#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 
 
 namespace DB
@@ -19,7 +19,7 @@ NamesAndTypesList FilesystemReadPrefetchesLogElement::getNamesAndTypes()
         {"offset", std::make_shared<DataTypeUInt64>()},
         {"size", std::make_shared<DataTypeInt64>()},
         {"prefetch_submit_time", std::make_shared<DataTypeDateTime64>(6)},
-        {"priority", std::make_shared<DataTypeUInt64>()},
+        {"priority", std::make_shared<DataTypeInt64>()},
         {"prefetch_execution_start_time", std::make_shared<DataTypeDateTime64>(6)},
         {"prefetch_execution_end_time", std::make_shared<DataTypeDateTime64>(6)},
         {"prefetch_execution_time_us", std::make_shared<DataTypeUInt64>()},
@@ -39,12 +39,12 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
     columns[i++]->insert(path);
     columns[i++]->insert(offset);
     columns[i++]->insert(size);
-    columns[i++]->insert(prefetch_submit_time);
-    columns[i++]->insert(priority);
+    columns[i++]->insert(std::chrono::duration_cast<std::chrono::microseconds>(prefetch_submit_time.time_since_epoch()).count());
+    columns[i++]->insert(priority.value);
     if (execution_watch)
     {
-        columns[i++]->insert(execution_watch->getStart());
-        columns[i++]->insert(execution_watch->getEnd());
+        columns[i++]->insert(execution_watch->getStart() / 1000);
+        columns[i++]->insert(execution_watch->getEnd() / 1000);
         columns[i++]->insert(execution_watch->elapsedMicroseconds());
     }
     else

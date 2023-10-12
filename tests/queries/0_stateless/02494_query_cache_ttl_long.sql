@@ -3,8 +3,6 @@
 -- Tag long: Test runtime is > 6 sec
 -- Tag no-parallel: Messes with internal cache
 
-SET allow_experimental_query_cache = true;
-
 SYSTEM DROP QUERY CACHE;
 
 -- Cache query result into query cache with a TTL of 3 sec

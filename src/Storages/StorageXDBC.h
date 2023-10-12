@@ -38,7 +38,7 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::string getName() const override;
 private:
@@ -68,7 +68,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr &) const override;
 };
 
 }

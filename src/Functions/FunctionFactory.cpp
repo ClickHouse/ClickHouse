@@ -29,7 +29,7 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
 void FunctionFactory::registerFunction(
     const std::string & name,
     FunctionCreator creator,
-    Documentation doc,
+    FunctionDocumentation doc,
     CaseSensitiveness case_sensitiveness)
 {
     if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
@@ -141,7 +141,7 @@ FunctionFactory & FunctionFactory::instance()
     return ret;
 }
 
-Documentation FunctionFactory::getDocumentation(const std::string & name) const
+FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name) const
 {
     auto it = functions.find(name);
     if (it == functions.end())

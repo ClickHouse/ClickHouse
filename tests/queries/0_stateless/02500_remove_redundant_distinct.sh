@@ -264,3 +264,15 @@ run_query "$query"
 echo "-- DISTINCT COUNT() with GROUP BY => do _not_ remove DISTINCT"
 query="select distinct count() from numbers(10) group by number"
 run_query "$query"
+
+echo "-- UNION ALL with DISTINCT => do _not_ remove DISTINCT"
+query="SELECT DISTINCT number
+FROM
+(
+    SELECT DISTINCT number
+    FROM numbers(1)
+    UNION ALL
+    SELECT DISTINCT number
+    FROM numbers(2)
+)"
+run_query "$query"

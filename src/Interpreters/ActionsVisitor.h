@@ -25,9 +25,8 @@ class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 /// The case of an explicit enumeration of values.
-SetPtr makeExplicitSet(
-    const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
-    ContextPtr context, const SizeLimits & limits, PreparedSets & prepared_sets);
+FutureSetPtr makeExplicitSet(
+    const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets);
 
 /** For ActionsVisitor
   * A stack of ExpressionActions corresponding to nested lambda expressions.
@@ -217,7 +216,7 @@ private:
     static void visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data);
     static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
-    static FutureSet makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
+    static FutureSetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
     static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
     static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };

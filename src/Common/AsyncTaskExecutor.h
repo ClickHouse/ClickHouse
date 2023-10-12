@@ -22,8 +22,13 @@ enum class AsyncEventTimeoutType
 };
 
 using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
-using ResumeCallback = std::function<void()>;
+using SuspendCallback = std::function<void()>;
 
+struct FiberInfo
+{
+    const Fiber * fiber = nullptr;
+    const FiberInfo * parent_fiber_info = nullptr;
+};
 
 /// Base class for a task that will be executed in a fiber.
 /// It has only one method - run, that takes 2 callbacks:
@@ -33,7 +38,7 @@ using ResumeCallback = std::function<void()>;
 struct AsyncTask
 {
 public:
-    virtual void run(AsyncCallback async_callback, ResumeCallback suspend_callback) = 0;
+    virtual void run(AsyncCallback async_callback, SuspendCallback suspend_callback) = 0;
     virtual ~AsyncTask() = default;
 };
 
@@ -107,8 +112,8 @@ private:
     void createFiber();
     void destroyFiber();
 
-    Fiber fiber;
     FiberStack fiber_stack;
+    Fiber fiber;
     std::mutex fiber_lock;
     std::exception_ptr exception;
 

@@ -14,7 +14,6 @@
 
 #include "Poco/JSON/Object.h"
 #include <iostream>
-#include <sstream>
 
 
 using Poco::Dynamic::Var;

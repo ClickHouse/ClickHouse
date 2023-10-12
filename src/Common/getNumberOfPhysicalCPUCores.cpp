@@ -1,4 +1,5 @@
 #include "getNumberOfPhysicalCPUCores.h"
+#include <filesystem>
 
 #include "config.h"
 #if defined(OS_LINUX)
@@ -7,6 +8,8 @@
 #endif
 
 #include <boost/algorithm/string/trim.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <base/range.h>
 
 #include <thread>
 #include <set>
@@ -15,7 +18,7 @@ namespace
 {
 
 #if defined(OS_LINUX)
-int32_t readFrom(const char * filename, int default_value)
+int32_t readFrom(const std::filesystem::path & filename, int default_value)
 {
     std::ifstream infile(filename);
     if (!infile.is_open())
@@ -31,10 +34,87 @@ int32_t readFrom(const char * filename, int default_value)
 uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 {
     uint32_t quota_count = default_cpu_count;
+    std::filesystem::path prefix = "/sys/fs/cgroup";
+    /// cgroupsv2
+    std::ifstream contr_file(prefix / "cgroup.controllers");
+    if (contr_file.is_open())
+    {
+        /// First, we identify the cgroup the process belongs
+        std::ifstream cgroup_name_file("/proc/self/cgroup");
+        if (!cgroup_name_file.is_open())
+            return default_cpu_count;
+
+        // cgroup_name_file always starts with '0::/' for v2
+        cgroup_name_file.ignore(4);
+        std::string cgroup_name;
+        cgroup_name_file >> cgroup_name;
+
+        std::filesystem::path current_cgroup;
+        if (cgroup_name.empty())
+            current_cgroup = prefix;
+        else
+            current_cgroup = prefix / cgroup_name;
+
+        // Looking for cpu.max in directories from the current cgroup to the top level
+        // It does not stop on the first time since the child could have a greater value than parent
+        while (current_cgroup != prefix.parent_path())
+        {
+            std::ifstream cpu_max_file(current_cgroup / "cpu.max");
+            current_cgroup = current_cgroup.parent_path();
+            if (cpu_max_file.is_open())
+            {
+                std::string cpu_limit_str;
+                float cpu_period;
+                cpu_max_file >> cpu_limit_str >> cpu_period;
+                if (cpu_limit_str != "max" && cpu_period != 0)
+                {
+                    float cpu_limit = std::stof(cpu_limit_str);
+                    quota_count = std::min(static_cast<uint32_t>(ceil(cpu_limit / cpu_period)), quota_count);
+                }
+            }
+        }
+        current_cgroup = prefix / cgroup_name;
+        // Looking for cpuset.cpus.effective in directories from the current cgroup to the top level
+        while (current_cgroup != prefix.parent_path())
+        {
+            std::ifstream cpuset_cpus_file(current_cgroup / "cpuset.cpus.effective");
+            current_cgroup = current_cgroup.parent_path();
+            if (cpuset_cpus_file.is_open())
+            {
+                // The line in the file is "0,2-4,6,9-14" cpu numbers
+                // It's always grouped and ordered
+                std::vector<std::string> cpu_ranges;
+                std::string cpuset_line;
+                cpuset_cpus_file >> cpuset_line;
+                if (cpuset_line.empty())
+                    continue;
+                boost::split(cpu_ranges, cpuset_line, boost::is_any_of(","));
+                uint32_t cpus_count = 0;
+                for (const std::string& cpu_number_or_range : cpu_ranges)
+                {
+                    std::vector<std::string> cpu_range;
+                    boost::split(cpu_range, cpu_number_or_range, boost::is_any_of("-"));
+
+                    if (cpu_range.size() == 2)
+                    {
+                        int start = std::stoi(cpu_range[0]);
+                        int end = std::stoi(cpu_range[1]);
+                        cpus_count += (end - start) + 1;
+                    }
+                    else
+                        cpus_count++;
+                }
+                quota_count = std::min(cpus_count, quota_count);
+                break;
+            }
+        }
+        return quota_count;
+    }
+    /// cgroupsv1
     /// Return the number of milliseconds per period process is guaranteed to run.
     /// -1 for no quota
-    int cgroup_quota = readFrom("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", -1);
-    int cgroup_period = readFrom("/sys/fs/cgroup/cpu/cpu.cfs_period_us", -1);
+    int cgroup_quota = readFrom(prefix / "cpu/cpu.cfs_quota_us", -1);
+    int cgroup_period = readFrom(prefix / "cpu/cpu.cfs_period_us", -1);
     if (cgroup_quota > -1 && cgroup_period > 0)
         quota_count = static_cast<uint32_t>(ceil(static_cast<float>(cgroup_quota) / static_cast<float>(cgroup_period)));
 

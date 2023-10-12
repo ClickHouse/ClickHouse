@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <functional>
 
@@ -60,6 +61,10 @@ namespace
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<String>>(argument_types, params);
             else if (which.isUUID())
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeUUID::FieldType>>(argument_types, params);
+            else if (which.isIPv4())
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv4::FieldType>>(argument_types, params);
+            else if (which.isIPv6())
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeIPv6::FieldType>>(argument_types, params);
             else if (which.isTuple())
             {
                 if (use_exact_hash_function)
@@ -109,7 +114,7 @@ namespace
         if (argument_types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments for aggregate function {}", name);
 
-        switch (precision)
+        switch (precision) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 12:
                 return createAggregateFunctionWithHashType<12>(use_64_bit_hash, argument_types, params);

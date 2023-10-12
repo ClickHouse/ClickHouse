@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <vector>
 #include <unordered_map>
-#include <iostream>
 #include <numeric>
 #include <algorithm>
 
@@ -72,7 +71,7 @@ void GinIndexPostingsBuilder::add(UInt32 row_id)
     }
 }
 
-UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
+UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer)
 {
     UInt64 written_bytes = 0;
     buffer.write(rowid_lst_length);
@@ -80,6 +79,7 @@ UInt64 GinIndexPostingsBuilder::serialize(WriteBuffer & buffer) const
 
     if (useRoaring())
     {
+        rowid_bitmap.runOptimize();
         auto size = rowid_bitmap.getSizeInBytes();
 
         writeVarUInt(size, buffer);
@@ -166,6 +166,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
         /// Write segment ID 1
         writeVarUInt(1, *ostr);
         ostr->sync();
+        ostr->finalize();
     }
 
     /// Read id in file
@@ -188,6 +189,7 @@ UInt32 GinIndexStore::getNextSegmentIDRange(const String & file_name, size_t n)
 
         writeVarUInt(result + n, *ostr);
         ostr->sync();
+        ostr->finalize();
     }
     return result;
 }
@@ -241,6 +243,15 @@ void GinIndexStore::finalize()
 {
     if (!current_postings.empty())
         writeSegment();
+
+    if (metadata_file_stream)
+        metadata_file_stream->finalize();
+
+    if (dict_file_stream)
+        dict_file_stream->finalize();
+
+    if (postings_file_stream)
+        postings_file_stream->finalize();
 }
 
 void GinIndexStore::initFileStreams()

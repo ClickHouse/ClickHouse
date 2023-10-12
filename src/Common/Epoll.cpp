@@ -2,6 +2,7 @@
 
 #include "Epoll.h"
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <unistd.h>
 
@@ -57,21 +58,35 @@ void Epoll::remove(int fd)
         throwFromErrno("Cannot remove descriptor from epoll", DB::ErrorCodes::EPOLL_ERROR);
 }
 
-size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
+size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout) const
 {
     if (events_count == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
+    Stopwatch watch;
     int ready_size;
-    int timeout = blocking ? -1 : 0;
-    do
+    while (true)
     {
         ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);
 
-        if (ready_size == -1 && errno != EINTR)
-            throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
+        /// If `ready_size` = 0, it's timeout.
+        if (ready_size < 0)
+        {
+            if (errno == EINTR)
+            {
+                if (timeout >= 0)
+                {
+                    timeout = std::max(0, static_cast<int>(timeout - watch.elapsedMilliseconds()));
+                    watch.restart();
+                }
+                continue;
+            }
+            else
+                throwFromErrno("Error in epoll_wait", DB::ErrorCodes::EPOLL_ERROR);
+        }
+        else
+            break;
     }
-    while (ready_size <= 0 && (ready_size != 0 || blocking));
 
     return ready_size;
 }

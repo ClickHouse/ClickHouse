@@ -332,7 +332,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         parseOnCluster(pos, expected, cluster);
 
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
-    if (!parseToGrantees(pos, expected, is_revoke, grantees))
+    if (!parseToGrantees(pos, expected, is_revoke, grantees) && !allow_no_grantees)
         return false;
 
     if (cluster.empty())

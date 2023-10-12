@@ -49,6 +49,9 @@ struct CountSubstringsImpl
         /// FIXME: suboptimal
         memset(&res[0], 0, res.size() * sizeof(res[0]));
 
+        if (needle.empty())
+            return; // Return all zeros
+
         /// Current index in the array of strings.
         size_t i = 0;
 
@@ -223,16 +226,19 @@ struct CountSubstringsImpl
                 const char * needle_beg = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
                 size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
-                typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(needle_beg, needle_size);
-
-                const UInt8 * end = reinterpret_cast<const UInt8 *>(haystack.data() + haystack.size());
-                const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start - 1));
-
-                const UInt8 * pos;
-                while ((pos = searcher.search(beg, end)) < end)
+                if (needle_size > 0)
                 {
-                    ++res[i];
-                    beg = pos + needle_size;
+                    typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(needle_beg, needle_size);
+
+                    const UInt8 * end = reinterpret_cast<const UInt8 *>(haystack.data() + haystack.size());
+                    const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start - 1));
+
+                    const UInt8 * pos;
+                    while ((pos = searcher.search(beg, end)) < end)
+                    {
+                        ++res[i];
+                        beg = pos + needle_size;
+                    }
                 }
             }
 
