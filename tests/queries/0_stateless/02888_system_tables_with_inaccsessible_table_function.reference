@@ -1,0 +1,4 @@
+tablefunc01	StorageProxy		CREATE TABLE default.tablefunc01 (`x` Int32) AS postgresql(\'127.121.0.1:5432\', \'postgres_db\', \'postgres_table\', \'postgres_user\', \'[HIDDEN]\')	[]	1	967e329f-e10a-4a5e-8c27-1ece57daa6a9
+tablefunc02	StorageProxy		CREATE TABLE default.tablefunc02 (`x` Int32) AS mysql(\'127.123.0.1:3306\', \'mysql_db\', \'mysql_table\', \'mysql_user\', \'[HIDDEN]\')	[]	1	997be33d-087b-432b-b90d-c7dc398addf7
+tablefunc01	StorageProxy		CREATE TABLE default.tablefunc01 (`x` Int32) AS postgresql(\'127.121.0.1:5432\', \'postgres_db\', \'postgres_table\', \'postgres_user\', \'[HIDDEN]\')	[]	1	967e329f-e10a-4a5e-8c27-1ece57daa6a9
+tablefunc02	StorageProxy		CREATE TABLE default.tablefunc02 (`x` Int32) AS mysql(\'127.123.0.1:3306\', \'mysql_db\', \'mysql_table\', \'mysql_user\', \'[HIDDEN]\')	[]	1	997be33d-087b-432b-b90d-c7dc398addf7

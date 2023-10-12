@@ -152,7 +152,7 @@ public:
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override { return getNested()->checkData(query, context); }
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
-    Strings getDataPaths() const override { return getNested()->getDataPaths(); }
+    Strings getDataPaths() const override { return {}; }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(const Settings & settings) const override { return getNested()->totalRows(settings); }
     std::optional<UInt64> totalBytes(const Settings & settings) const override { return getNested()->totalBytes(settings); }
