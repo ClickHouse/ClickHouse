@@ -13,7 +13,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
-#include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -173,6 +172,54 @@ namespace ErrorCodes
     }                                                   \
 } while (false)                                         \
 
+
+/// Locks a mutex non-exclusively (shared) + updates events/metrics.
+template <typename Mutex>
+class TSA_SCOPED_CAPABILITY SharedLockGuard
+{
+public:
+    explicit SharedLockGuard(Mutex & mutex) TSA_ACQUIRE_SHARED(mutex)
+        : lock(mutex)
+    {
+        ProfileEvents::increment(ProfileEvents::ContextLock);
+        CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
+    }
+
+    ~SharedLockGuard() TSA_RELEASE()
+    {
+        ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
+    }
+
+private:
+    std::shared_lock<Mutex> lock;
+    Stopwatch watch;
+};
+
+
+/// Locks a mutex exclusively + updates events/metrics.
+template <typename Mutex>
+class TSA_SCOPED_CAPABILITY LockGuard
+{
+public:
+    explicit LockGuard(Mutex & mutex) TSA_ACQUIRE(mutex)
+        : lock(mutex)
+    {
+        ProfileEvents::increment(ProfileEvents::ContextLock);
+        CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
+    }
+
+    ~LockGuard() TSA_RELEASE()
+    {
+        ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
+    }
+
+private:
+    std::unique_lock<Mutex> lock;
+    /// std::lock_guard<Mutex> lock_guard;
+    Stopwatch watch;
+};
+
+
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
@@ -181,7 +228,7 @@ struct ContextSharedPart : boost::noncopyable
     Poco::Logger * log = &Poco::Logger::get("Context");
 
     /// For access of most of shared objects.
-    mutable ContextSharedMutex mutex;
+    mutable SharedMutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
@@ -202,9 +249,9 @@ struct ContextSharedPart : boost::noncopyable
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
-    ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
+    ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);                           /// Stores auxiliary zookeepers configs
 
-    /// TODO: Guards
+    /// TODO: add TSA annotations
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_scheme;                              /// http or https
@@ -248,11 +295,11 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
 
-    /// NO LOCK
+    /// Without lock. Intended?
     String default_profile_name;                                /// Default profile name used for default values.
-    /// NO LOCK
+    /// Without lock. Intended?
     String system_profile_name;                                 /// Profile used by system processes
-    /// NO LOCK
+    /// Without lock. Intended?
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
@@ -260,20 +307,20 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
     mutable OnceFlag load_marks_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> load_marks_threadpool;                        /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> prefetch_threadpool;                          /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    ProcessList process_list;                                   /// Executing queries at the moment.
+    ProcessList process_list;                                                         /// Executing queries at the moment.
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
-    ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
+    ConfigurationPtr users_config TSA_GUARDED_BY(mutex);        /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
     OnceFlag buffer_flush_schedule_pool_initialized;
@@ -304,7 +351,7 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
-    MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
+    MultiVersion<Macros> macros;                                                  /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex);                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
@@ -319,7 +366,8 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
-    /// NO LOCK INITIALIZATION
+                                                                   ///
+    /// Without lock. Intended?
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     mutable OnceFlag action_locks_manager_initialized;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
@@ -329,8 +377,7 @@ struct ContextSharedPart : boost::noncopyable
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
 
     /// Background executors for *MergeTree tables
-    /// Has background executors for MergeTree tables been initialized?
-    mutable ContextSharedMutex background_executors_mutex;
+    mutable SharedMutex background_executors_mutex;
     bool are_background_executors_initialized TSA_GUARDED_BY(background_executors_mutex) = false;
     MergeMutateBackgroundExecutorPtr merge_mutate_executor TSA_GUARDED_BY(background_executors_mutex);
     OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
@@ -340,12 +387,12 @@ struct ContextSharedPart : boost::noncopyable
     RemoteHostFilter remote_host_filter TSA_GUARDED_BY(mutex);                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
 
-    /// NO LOCK INITIALIZATION
+    /// Without lock. Intended?
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
-    mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
+    mutable std::mutex clusters_mutex;                                                      /// Guards clusters, clusters_config and cluster_discovery
     std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
     ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
     std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
@@ -353,26 +400,26 @@ struct ContextSharedPart : boost::noncopyable
     /// NO LOCK INITIALIZATION
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
 
-    /// TODO: CHECK
+    /// TODO: Add TSA annotations
     std::map<String, UInt16> server_ports;
 
-    /// TODO: CHECK
+    /// TODO: Add TSA annotations
     bool shutdown_called = false;
 
     Stopwatch uptime_watch TSA_GUARDED_BY(mutex);
 
-    /// NO LOCK INITIALIZATION
+    /// Without lock. Intended?
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
     std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
 
-    /// NO LOCK INITIALIZATION
+    /// Without lock. Intended?
     Context::ConfigReloadCallback config_reload_callback;
 
-    /// NO LOCK INITIALIZATION
+    /// Without lock. Intended?
     Context::StartStopServersCallback start_servers_callback;
-    /// NO LOCK INITIALIZATION
+    /// Without lock. Intended?
     Context::StartStopServersCallback stop_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
@@ -501,7 +548,7 @@ struct ContextSharedPart : boost::noncopyable
         access_control->setExternalAuthenticatorsConfig(*config_value);
     }
 
-    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<ContextSharedMutex> &) const TSA_REQUIRES(this->mutex)
+    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<SharedMutex> &) const TSA_REQUIRES(this->mutex)
     {
         return config ? *config : Poco::Util::Application::instance().config();
     }
@@ -690,23 +737,6 @@ struct ContextSharedPart : boost::noncopyable
     }
 };
 
-void ContextSharedMutex::lockImpl()
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    Base::lockImpl();
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-}
-
-void ContextSharedMutex::lockSharedImpl()
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    Base::lockSharedImpl();
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-}
 
 ContextData::ContextData() = default;
 ContextData::ContextData(const ContextData &) = default;
@@ -1103,8 +1133,7 @@ AccessControl & Context::getAccessControl()
 
 const AccessControl & Context::getAccessControl() const
 {
-    SharedLockGuard lock(shared->mutex);
-    return *shared->access_control;
+    return const_cast<Context *>(this)->getAccessControl();
 }
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
@@ -1173,7 +1202,7 @@ String Context::getUserName() const
     return getAccess()->getUserName();
 }
 
-void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> &)
+void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<SharedMutex> &)
 {
     user_id = user_id_;
     need_recalculate_access = true;
@@ -1191,7 +1220,7 @@ std::optional<UUID> Context::getUserID() const
     return user_id;
 }
 
-void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<SharedMutex> &)
 {
     if (current_roles_.empty())
         current_roles = nullptr;
@@ -1310,7 +1339,7 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
     return getAccess()->getQuotaUsage();
 }
 
-void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<SharedMutex> & lock)
 {
     try
     {
@@ -1324,13 +1353,13 @@ void Context::setCurrentProfileWithLock(const String & profile_name, bool check_
     }
 }
 
-void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<SharedMutex> & lock)
 {
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
     setCurrentProfilesWithLock(*profile_info, check_constraints, lock);
 }
 
-void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<SharedMutex> & lock)
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
@@ -1868,7 +1897,7 @@ void Context::setSettings(const Settings & settings_)
     need_recalculate_access = true;
 }
 
-void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<SharedMutex> & lock)
 {
     if (name == "profile")
     {
@@ -1880,7 +1909,7 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
         need_recalculate_access = true;
 }
 
-void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<SharedMutex> & lock)
 {
     if (name == "profile")
     {
@@ -1892,7 +1921,7 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         need_recalculate_access = true;
 }
 
-void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<SharedMutex> & lock)
 {
     try
     {
@@ -1907,7 +1936,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     }
 }
 
-void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
+void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<SharedMutex>& lock)
 {
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
@@ -2062,7 +2091,7 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     current_database = name;
 }
 
-void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<SharedMutex> &)
 {
     DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;

@@ -11,7 +11,6 @@
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
-#include <Common/MutexUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -232,16 +231,6 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-class ContextSharedMutex : public SharedMutexHelper<ContextSharedMutex>
-{
-private:
-    using Base = SharedMutexHelper<ContextSharedMutex, SharedMutex>;
-    friend class SharedMutexHelper<ContextSharedMutex, SharedMutex>;
-
-    void lockImpl();
-
-    void lockSharedImpl();
-};
 
 class ContextData
 {
@@ -505,7 +494,7 @@ class Context: public ContextData, public std::enable_shared_from_this<Context>
 {
 private:
     /// ContextData mutex
-    mutable ContextSharedMutex mutex;
+    mutable SharedMutex mutex;
 
     Context();
     Context(const Context &);
@@ -1231,25 +1220,25 @@ public:
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
-    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<SharedMutex> & lock);
 
-    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<SharedMutex> & lock);
 
-    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<SharedMutex> & lock);
 
-    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<SharedMutex> & lock);
 
-    void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
+    void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<SharedMutex> & lock);
 
-    void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock);
+    void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<SharedMutex> & lock);
 
-    void applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock);
+    void applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<SharedMutex> & lock);
 
-    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
+    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<SharedMutex> & lock);
 
-    void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
+    void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<SharedMutex> & lock);
 
-    void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<SharedMutex> & lock);
 
     void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
 
