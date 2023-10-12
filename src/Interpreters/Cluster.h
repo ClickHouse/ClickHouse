@@ -35,6 +35,7 @@ struct DatabaseReplicaInfo
     String hostname;
     String shard_name;
     String replica_name;
+    String replica_group_name;
 };
 
 struct ClusterConnectionParameters
@@ -111,6 +112,7 @@ public:
         String host_name;
         String database_shard_name;
         String database_replica_name;
+        String database_replica_group_name;
         UInt16 port{0};
         String user;
         String password;
