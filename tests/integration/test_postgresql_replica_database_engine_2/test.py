@@ -728,7 +728,7 @@ def test_replica_consumer(started_cluster):
         cluster.postgres_ip,
         cluster.postgres_port,
         default_database="postgres_database",
-        postgres_db_exists=True
+        postgres_db_exists=True,
     )
 
     for pm in [pg_manager, pg_manager_replica]:
@@ -740,14 +740,16 @@ def test_replica_consumer(started_cluster):
                 f"materialized_postgresql_tables_list = '{table}'",
                 "materialized_postgresql_backoff_min_ms = 100",
                 "materialized_postgresql_backoff_max_ms = 100",
-                "materialized_postgresql_use_unique_replication_consumer_identifier = 1"
+                "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
             ],
         )
 
     assert 50 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
     assert 50 == int(instance2.query(f"SELECT count() FROM test_database.{table}"))
 
-    instance.query(f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(1000, 1000)")
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(1000, 1000)"
+    )
 
     check_tables_are_synchronized(
         instance, table, postgres_database=pg_manager.get_default_database()
