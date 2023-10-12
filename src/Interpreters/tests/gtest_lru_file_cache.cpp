@@ -1,30 +1,37 @@
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
-#include <gtest/gtest.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Common/CurrentThread.h>
-#include <Common/filesystemHelpers.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <Common/tests/gtest_global_context.h>
-#include <Common/SipHash.h>
-#include <base/hex.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <filesystem>
+#include <memory>
 #include <thread>
 #include <DataTypes/DataTypesNumber.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Poco/DOM/DOMParser.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <base/hex.h>
 #include <base/sleep.h>
+#include <gtest/gtest.h>
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
+
+#include <Disks/SingleDiskVolume.h>
+#include <Disks/tests/gtest_disk.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <base/scope_guard.h>
 
 namespace fs = std::filesystem;
 using namespace DB;
@@ -946,5 +953,52 @@ TEST_F(FileCacheTest, CachedReadBuffer)
         cached_buffer->position() = cached_buffer->buffer().end();
         cached_buffer->next();
         assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9) });
+    }
+}
+
+TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
+{
+    /// Temporary data stored in cache
+    {
+        DB::FileCacheSettings settings;
+        settings.max_size = 10_KiB;
+        settings.max_file_segment_size = 1_KiB;
+        settings.base_path = cache_base_path;
+
+        DB::FileCache file_cache("cache", settings);
+        file_cache.initialize();
+
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*limit=*/0);
+
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+
+        auto block = generateBlock(/*size=*/3);
+        auto & stream = tmp_data->createStream(block);
+        stream.write(block);
+        stream.finishWriting();
+
+        /// We allocate buffer of size min(getSize(), DBMS_DEFAULT_BUFFER_SIZE)
+        /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
+        ASSERT_EQ(stream.getSize(), 62);
+    }
+
+    /// Temporary data stored on disk
+    {
+        DiskPtr disk;
+        SCOPE_EXIT_SAFE(destroyDisk(disk));
+
+        disk = createDisk("temporary_data_read_buffer_size_test_dir");
+        VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
+
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*limit=*/0);
+
+        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+
+        auto block = generateBlock(/*size=*/3);
+        auto & stream = tmp_data->createStream(block);
+        stream.write(block);
+        stream.finishWriting();
+
+        ASSERT_EQ(stream.getSize(), 62);
     }
 }

@@ -40,6 +40,7 @@ odbc_max_field_size
 optimize_duplicate_order_by_and_distinct
 optimize_fuse_sum_count_avg
 partial_merge_join_optimizations
+query_plan_optimize_projection
 replication_alter_columns_timeout
 restore_threads
 temporary_live_view_timeout
