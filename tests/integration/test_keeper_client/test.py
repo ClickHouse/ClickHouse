@@ -217,6 +217,7 @@ def test_quoted_argument_parsing(client: KeeperClient):
     client.execute_query(f"set '{node_path}' \"value4 with some whitespace\" 3")
     assert client.get(node_path) == "value4 with some whitespace"
 
+
 def test_get_all_children_number(client: KeeperClient):
     client.touch("/test_get_all_children_number")
     client.touch("/test_get_all_children_number/1")
@@ -232,6 +233,7 @@ def test_get_all_children_number(client: KeeperClient):
     client.touch("/test_get_all_children_number/2/4")
 
     response = client.get_all_children_number("/test_get_all_children_number")
+
     assert response == TSV(
         [
             ["11"]
