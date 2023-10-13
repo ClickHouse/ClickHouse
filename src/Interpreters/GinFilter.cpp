@@ -21,14 +21,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-GinFilterParameters::GinFilterParameters(size_t ngrams_, Float64 density_)
+GinFilterParameters::GinFilterParameters(size_t ngrams_, UInt64 max_rows_)
     : ngrams(ngrams_)
-    , density(density_)
+    , max_rows_in_postings_list(max_rows_)
 {
+    /// 0 indicates no limitation of postings list's size
+    if (max_rows_in_postings_list == 0)
+        max_rows_in_postings_list = std::numeric_limits<UInt64>::max();
+
     if (ngrams > 8)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of inverted index filter cannot be greater than 8");
-    if (density <= 0 || density > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The density inverted index gin filter must be between 0 and 1");
+    if (max_rows_in_postings_list < MIN_ROWS_IN_POSTINGS_LIST)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The maximum rows in postings list must be no less than {}", MIN_ROWS_IN_POSTINGS_LIST);
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)
@@ -36,7 +40,7 @@ GinFilter::GinFilter(const GinFilterParameters & params_)
 {
 }
 
-void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store, UInt64 limit) const
+void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const
 {
     if (len > FST::MAX_TERM_LENGTH)
         return;
@@ -51,8 +55,7 @@ void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePt
     }
     else
     {
-        UInt64 size_limit = std::lround(limit * params.density);
-        auto builder = std::make_shared<GinIndexPostingsBuilder>(size_limit);
+        auto builder = std::make_shared<GinIndexPostingsBuilder>(params.max_rows_in_postings_list);
         builder->add(rowID);
 
         store->setPostingsBuilder(term, builder);
