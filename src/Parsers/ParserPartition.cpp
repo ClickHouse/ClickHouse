@@ -47,7 +47,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool surrounded_by_parens = false;
         ASTPtr value;
-        std::optional<size_t> fields_count;
+        size_t fields_count;
         if (literal_parser.parse(pos, value, expected))
         {
             auto * literal = value->as<ASTLiteral>();
@@ -64,20 +64,23 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (function_parser.parse(pos, value, expected))
         {
             const auto * tuple_ast = value->as<ASTFunction>();
-            if (tuple_ast)
+            if (tuple_ast && tuple_ast->name == "tuple")
             {
-                if (tuple_ast->name == "tuple")
-                {
-                    surrounded_by_parens = true;
-                    const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                    if (arguments_ast)
-                        fields_count = arguments_ast->children.size();
-                    else
-                        fields_count = 0;
-                }
+                surrounded_by_parens = true;
+                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                if (arguments_ast)
+                    fields_count = arguments_ast->children.size();
+                else
+                    fields_count = 0;
             }
+            else
+                return false;
         }
-        else if (!parser_substitution.parse(pos, value, expected))
+        else if (parser_substitution.parse(pos, value, expected))
+        {
+            fields_count = 1;
+        }
+        else
         {
             return false;
         }
