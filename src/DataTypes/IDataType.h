@@ -65,18 +65,24 @@ public:
     /// Name of data type (examples: UInt64, Array(String)).
     String getName() const
     {
-      if (custom_name)
-          return custom_name->getName();
-      else
-          return doGetName();
+        if (custom_name)
+            return custom_name->getName();
+        else
+            return doGetName();
+    }
+
+    String getPrettyName(size_t indent = 0) const
+    {
+        if (custom_name)
+            return custom_name->getName();
+        else
+            return doGetPrettyName(indent);
     }
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
-    /// Name of corresponding data type in MySQL (exampe: Bigint, Blob, etc)
-    virtual String getSQLCompatibleName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
@@ -130,6 +136,8 @@ public:
 protected:
     virtual String doGetName() const { return getFamilyName(); }
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
+
+    virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }
 
 public:
     /** Create empty column for corresponding type and default serialization.

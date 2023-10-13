@@ -21,6 +21,7 @@
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 
 namespace ProfileEvents

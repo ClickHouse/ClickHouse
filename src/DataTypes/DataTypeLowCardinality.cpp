@@ -176,4 +176,8 @@ DataTypePtr removeLowCardinality(const DataTypePtr & type)
     return type;
 }
 
+DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
+{
+    return removeNullable(removeLowCardinality(type));
+};
 }
