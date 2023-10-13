@@ -145,11 +145,11 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}'", catalog_name, table_name);
-                while (tables.next())
-                {
-                    /// drain the iterator before next operation to avoid "Invalid cursor state"
-                }
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
 
@@ -157,11 +157,11 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}.{}'", catalog_name, schema_name, table_name);
-                while (tables.next())
-                {
-                    /// drain the iterator before next operation to avoid "Invalid cursor state"
-                }
                 return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
             }
 
