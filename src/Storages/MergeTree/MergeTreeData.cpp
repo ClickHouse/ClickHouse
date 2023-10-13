@@ -2969,7 +2969,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// Just validate partition expression
         if (command.partition)
         {
-            getPartitionIDFromQuery(command.partition, getContext());
+            getPartitionIDFromQuery(command.partition, local_context);
         }
 
         if (command.column_name == merging_params.version_column)
@@ -4637,7 +4637,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 }
 
 void MergeTreeData::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
+    const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
     for (const auto & command : commands)
     {
@@ -4665,7 +4665,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                         throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH PARTITION ALL currently");
                 }
                 else
-                    getPartitionIDFromQuery(command.partition, getContext());
+                    getPartitionIDFromQuery(command.partition, local_context);
             }
         }
     }
@@ -5338,25 +5338,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
-    ASTPtr partition_value_ast = partition_ast.value;
 
     if (partition_ast.all)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only Support DETACH PARTITION ALL currently");
 
-    if (!partition_value_ast)
+    if (!partition_ast.value)
     {
-        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
-        return partition_ast.id;
+        MergeTreePartInfo::validatePartitionID(partition_ast.id->clone(), format_version);
+        return partition_ast.id->as<ASTLiteral>()->value.safeGet<String>();
     }
 
+    ASTPtr partition_value_ast = partition_ast.value->clone();
+
     size_t partition_ast_fields_count;
-    if (partition_value_ast->as<ASTQueryParameter>())
+    /// It was query parameter and we didn't know exact parameters
+    if (!partition_ast.fields_count)
     {
-        assert(!partition_ast.fields_count);
-
-        ReplaceQueryParameterVisitor param_visitor(local_context->getQueryParameters());
-        param_visitor.visit(partition_value_ast);
-
         if (partition_value_ast->as<ASTLiteral>())
         {
             partition_ast_fields_count = 1;
@@ -5381,20 +5378,15 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
     else
     {
-        assert(partition_ast.fields_count);
         partition_ast_fields_count = partition_ast.fields_count.value();
     }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
+        MergeTreePartInfo::validatePartitionID(partition_value_ast, format_version);
         const auto * partition_lit = partition_value_ast->as<ASTLiteral>();
-        if (partition_lit && partition_lit->value.getType() == Field::Types::String)
-        {
-            String partition_id = partition_lit->value.get<String>();
-            MergeTreePartInfo::validatePartitionID(partition_id, format_version);
-            return partition_id;
-        }
+        return partition_lit->value.get<String>();
     }
 
     /// Re-parse partition key fields using the information about expected field types.
