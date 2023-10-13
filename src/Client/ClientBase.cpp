@@ -15,7 +15,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
