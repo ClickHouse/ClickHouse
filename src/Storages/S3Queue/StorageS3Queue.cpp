@@ -70,6 +70,32 @@ namespace
         }
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
+
+    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings, Poco::Logger * log)
+    {
+        if (s3queue_settings.mode == S3QueueMode::ORDERED && s3queue_settings.s3queue_processing_threads_num > 1)
+        {
+            LOG_WARNING(log, "Parallel processing is not yet supported for Ordered mode");
+            s3queue_settings.s3queue_processing_threads_num = 1;
+        }
+
+        if (!s3queue_settings.s3queue_processing_threads_num)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `s3queue_processing_threads_num` cannot be set to zero");
+        }
+
+        if (!s3queue_settings.s3queue_enable_logging_to_s3queue_log.changed)
+        {
+            s3queue_settings.s3queue_enable_logging_to_s3queue_log = settings.s3queue_enable_logging_to_s3queue_log;
+        }
+
+        if (s3queue_settings.s3queue_cleanup_interval_min_ms > s3queue_settings.s3queue_cleanup_interval_max_ms)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting `s3queue_cleanup_interval_min_ms` ({}) must be less or equal to `s3queue_cleanup_interval_max_ms` ({})",
+                            s3queue_settings.s3queue_cleanup_interval_min_ms, s3queue_settings.s3queue_cleanup_interval_max_ms);
+        }
+    }
 }
 
 StorageS3Queue::StorageS3Queue(
@@ -101,11 +127,7 @@ StorageS3Queue::StorageS3Queue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
     }
 
-    if (s3queue_settings->mode == S3QueueMode::ORDERED && s3queue_settings->s3queue_processing_threads_num > 1)
-    {
-        LOG_WARNING(log, "Parallel processing is not yet supported for Ordered mode");
-        s3queue_settings->s3queue_processing_threads_num = 1;
-    }
+    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), log);
 
     configuration.update(context_);
     FormatFactory::instance().checkFormatName(configuration.format);
