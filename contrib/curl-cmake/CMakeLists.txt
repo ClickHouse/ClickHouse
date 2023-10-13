@@ -64,6 +64,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/hostsyn.c"
     "${LIBRARY_DIR}/lib/hsts.c"
     "${LIBRARY_DIR}/lib/http.c"
+    "${LIBRARY_DIR}/lib/http1.c"
     "${LIBRARY_DIR}/lib/http2.c"
     "${LIBRARY_DIR}/lib/http_aws_sigv4.c"
     "${LIBRARY_DIR}/lib/http_chunks.c"
