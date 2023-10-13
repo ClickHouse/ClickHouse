@@ -4,7 +4,7 @@
 #include <Common/BitHelpers.h>
 #include <base/defines.h>
 #include <array>
-#include <iostream>
+#include <set>
 
 
 namespace
@@ -62,14 +62,6 @@ void intervalBinaryPartition(UInt64 first, UInt64 last, F && callback)
     /// first ^ last: 00010000
     /// mask:         00001111
     /// split = 15:   00001111
-
-    /// Another example:
-
-    /// first = 6:    00000110
-    /// last = 7:     00000111
-    /// first ^ last: 00000001
-    /// mask:         00000000
-    /// split = 11:   00001011
 
     UInt64 diff = first ^ last;
     UInt64 mask = toMask(diff) >> 1;
@@ -152,19 +144,23 @@ void mortonIntervalToParallelograms(UInt64 first, UInt64 last, F && callback)
 /** Given a parallelogram, find intervals of Morton curve that cover this parallelogram.
   * Note: to avoid returning too many intervals, the intervals can be returned larger than exactly needed
   * (covering some other points, not belonging to the parallelogram).
+  * We do it by extending parallelograms to cubes.
   */
 template <size_t N, typename F>
 void parallelogramToPossibleMortonIntervals(
     std::array<std::pair<UInt64, UInt64>, N> parallelogram,
     F && callback)
 {
+    /// Due to extension to cubes, there could be duplicates. Filter them.
+    std::set<std::pair<UInt64, UInt64>> found_intervals;
+
     parallelogramBinaryPartition<N>(parallelogram, [&](auto part)
     {
         size_t suffix_size = 0;
         for (size_t i = 0; i < N; ++i)
             if (part[i].second != part[i].first)
                 suffix_size = std::max<size_t>(suffix_size,
-                    bitScanReverse(part[i].second - part[i].first));
+                    1 + bitScanReverse(part[i].second ^ part[i].first));
 
         UInt64 first = 0;
         UInt64 last = 0;
@@ -176,7 +172,7 @@ void parallelogramToPossibleMortonIntervals(
         {
             for (size_t i = 0; i < N; ++i)
             {
-                if (source_bit_idx <= suffix_size)
+                if (source_bit_idx < suffix_size)
                 {
                     last |= (1 << result_bit_idx);
                 }
@@ -194,6 +190,7 @@ void parallelogramToPossibleMortonIntervals(
             ++source_bit_idx;
         }
 
-        callback(first, last);
+        if (found_intervals.insert({first, last}).second)
+            callback(first, last);
     });
 }
