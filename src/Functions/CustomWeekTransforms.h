@@ -1,15 +1,19 @@
 #pragma once
 
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <base/types.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/IFunction.h>
-#include <Common/Exception.h>
-#include <Common/DateLUTImpl.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -66,7 +70,29 @@ struct CustomWeekTransformImpl
 
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         const ColumnPtr source_col = arguments[0].column;
-        if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
+
+        if constexpr (std::is_same_v<FromDataType, DataTypeString>)
+        {
+            /// TODO: remove this entire if constexpr branch, move the parsing code into DateTimeTransforms (yes, even if that will
+            /// duplicate a few lines of code)
+
+            static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+            const auto * sources = checkAndGetColumn<DataTypeString::ColumnType>(source_col.get());
+
+            auto col_to = ToDataType::ColumnType::create();
+            col_to->getData().resize(sources->size());
+
+            for (size_t i = 0; i < sources->size(); ++i)
+            {
+                DateTime64 dt64;
+                ReadBufferFromString buf(sources->getDataAt(i).toView());
+                parseDateTime64BestEffort(dt64, 0, buf, time_zone, utc_time_zone);
+                col_to->getData()[i] = static_cast<ToDataType::FieldType>(transform.execute(dt64, week_mode, time_zone));
+            }
+
+            return col_to;
+        }
+        else if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
             auto col_to = ToDataType::ColumnType::create();
             op.vector(sources->getData(), col_to->getData(), week_mode, time_zone);

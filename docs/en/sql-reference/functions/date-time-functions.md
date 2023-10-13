@@ -601,6 +601,8 @@ toDayOfWeek(t[, mode[, timezone]])
 - `mode` - determines what the first day of the week is. Possible values are 0, 1, 2 or 3. See the table above for the differences.
 - `timezone` - optional parameter, it behaves like any other conversion function
 
+The first argument can also be specified as [String](../data-types/string.md) in a format supported by [parseDateTime64BestEffort()](type-conversion-functions.md#parsedatetime64besteffort). This was implemented for reasons of compatibility with MySQL which certain 3rd party tools expect. Because string parsing is slow, it is generally recommended to not use string arguments.
+
 **Returned value**
 
 - The day of the month (1 - 31) of the given date/time
@@ -1495,6 +1497,8 @@ toWeek(t[, mode[, time_zone]])
 - `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
 - `Timezone` – Optional parameter, it behaves like any other conversion function.
 
+The first argument can also be specified as [String](../data-types/string.md) in a format supported by [parseDateTime64BestEffort()](type-conversion-functions.md#parsedatetime64besteffort). This was implemented for reasons of compatibility with MySQL which certain 3rd party tools expect. Because string parsing is slow, it is generally recommended to not use string arguments.
+
 **Example**
 
 ``` sql
@@ -1524,6 +1528,8 @@ The week number returned by `toYearWeek()` can be different from what the `toWee
 ``` sql
 toYearWeek(t[, mode[, timezone]])
 ```
+
+The first argument can also be specified as [String](../data-types/string.md) in a format supported by [parseDateTime64BestEffort()](type-conversion-functions.md#parsedatetime64besteffort). This was implemented for reasons of compatibility with MySQL which certain 3rd party tools expect. Because string parsing is slow, it is generally recommended to not use string arguments.
 
 **Example**
 

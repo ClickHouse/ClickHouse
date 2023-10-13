@@ -65,12 +65,12 @@ public:
     }
 
 protected:
-    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
+    void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32, bool value_may_be_string) const
     {
         if (arguments.size() == 1)
         {
             auto type0 = arguments[0].type;
-            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0))
+            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}. Must be Date, Date32, DateTime or DateTime64.",
                     type0->getName(), getName());
@@ -79,7 +79,7 @@ protected:
         {
             auto type0 = arguments[0].type;
             auto type1 = arguments[1].type;
-            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0))
+            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of 1st argument of function {}. Must be Date, Date32, DateTime or DateTime64.",
                     type0->getName(), getName());
@@ -93,7 +93,7 @@ protected:
             auto type0 = arguments[0].type;
             auto type1 = arguments[1].type;
             auto type2 = arguments[2].type;
-            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0))
+            if (!isDate(type0) && !isDate32(type0) && !isDateTime(type0) && !isDateTime64(type0) && !(value_may_be_string && isString(type0)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}. Must be Date, Date32, DateTime or DateTime64",
                     type0->getName(), getName());
