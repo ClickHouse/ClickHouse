@@ -56,7 +56,7 @@ private:
 
     std::unordered_map<String, String> header;
     DataTypePtr data_type;
-    Tuple shape;
+    std::vector<int> shape;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     std::vector<UInt8> read_columns;
