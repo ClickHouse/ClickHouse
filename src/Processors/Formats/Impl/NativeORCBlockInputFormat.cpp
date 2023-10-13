@@ -97,13 +97,12 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name)
+static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool case_insensitive_column_matching)
 {
     for (uint64_t i = 0; i != schema.getSubtypeCount(); ++i)
-    {
-        if (boost::iequals(schema.getFieldName(i), name))
+        if (boost::equals(schema.getFieldName(i), name)
+            || (case_insensitive_column_matching && boost::iequals(schema.getFieldName(i), name)))
             return schema.getSubtype(i);
-    }
     return nullptr;
 }
 
@@ -255,17 +254,12 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
     }
 }
 
-static std::optional<orc::Literal>
-convertFieldRefToORCLiteral(const orc::Type & orc_type, const FieldRef & field, DataTypePtr type_hint = nullptr)
-{
-    if (!field.isExplicit())
-        return std::nullopt;
-
-    return convertFieldToORCLiteral(orc_type, field, type_hint);
-}
-
 static void buildORCSearchArgumentImpl(
-    const KeyCondition & key_condition, const orc::Type & schema, KeyCondition::RPN & rpn_stack, orc::SearchArgumentBuilder & builder)
+    const KeyCondition & key_condition,
+    const orc::Type & schema,
+    KeyCondition::RPN & rpn_stack,
+    orc::SearchArgumentBuilder & builder,
+    bool case_insensitive_column_matching)
 {
     if (rpn_stack.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
@@ -311,7 +305,8 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            const auto * type = getORCTypeByName(schema, getColumnNameFromKeyCondition(key_condition, curr.key_column));
+            const auto * type
+                = getORCTypeByName(schema, getColumnNameFromKeyCondition(key_condition, curr.key_column), case_insensitive_column_matching);
             if (!type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -339,13 +334,13 @@ static void buildORCSearchArgumentImpl(
                 bool has_right_bound = !range.right.isPositiveInfinity();
                 if (!has_left_bound && !has_right_bound)
                 {
-                    /// Transform whole range to orc::TruthValue::YES or orc::TruthValue::YES_NULL
-                    builder.literal(range.left_included && range.right_included ? orc::TruthValue::YES : orc::TruthValue::YES_NULL);
+                    /// Transform whole range orc::TruthValue::YES_NULL
+                    builder.literal(orc::TruthValue::YES_NULL);
                 }
                 else if (has_left_bound && has_right_bound && range.left_included && range.right_included && range.left == range.right)
                 {
                     /// Transform range with the same left bound and right bound to equal, which could utilize bloom filters in ORC
-                    auto literal = convertFieldRefToORCLiteral(*type, range.left);
+                    auto literal = convertFieldToORCLiteral(*type, range.left);
                     if (literal.has_value())
                         builder.equals(type->getColumnId(), *predicate_type, *literal);
                     else
@@ -355,11 +350,11 @@ static void buildORCSearchArgumentImpl(
                 {
                     std::optional<orc::Literal> left_literal;
                     if (has_left_bound)
-                        left_literal = convertFieldRefToORCLiteral(*type, range.left);
+                        left_literal = convertFieldToORCLiteral(*type, range.left);
 
                     std::optional<orc::Literal> right_literal;
                     if (has_right_bound)
-                        right_literal = convertFieldRefToORCLiteral(*type, range.right);
+                        right_literal = convertFieldToORCLiteral(*type, range.right);
 
                     if (has_left_bound && has_right_bound)
                         builder.startAnd();
@@ -437,23 +432,23 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_NOT: {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder);
+            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
             builder.end();
             break;
         }
         case KeyCondition::RPNElement::FUNCTION_AND: {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder);
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder);
+            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
+            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
             builder.end();
             break;
         }
         case KeyCondition::RPNElement::FUNCTION_OR: {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder);
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder);
+            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
+            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
             builder.end();
             break;
         }
@@ -470,14 +465,15 @@ static void buildORCSearchArgumentImpl(
     }
 }
 
-std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(const KeyCondition & key_condition, const orc::Type & schema)
+std::unique_ptr<orc::SearchArgument>
+buildORCSearchArgument(const KeyCondition & key_condition, const orc::Type & schema, bool case_insensitive_column_matching)
 {
     auto rpn_stack = key_condition.getRPN();
     if (rpn_stack.empty())
         return nullptr;
 
     auto builder = orc::SearchArgumentFactory::newBuilder();
-    buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, *builder);
+    buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, *builder, case_insensitive_column_matching);
     return builder->build();
 }
 
@@ -643,7 +639,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (format_settings.orc.filter_push_down && key_condition && !sarg)
     {
         // std::cout << "key_condition:" << key_condition->toString() << std::endl;
-        sarg = buildORCSearchArgument(*key_condition, file_reader->getType());
+        sarg = buildORCSearchArgument(*key_condition, file_reader->getType(), format_settings.orc.case_insensitive_column_matching);
         // std::cout << "sarg:" << sarg->toString() << std::endl;
     }
 }
