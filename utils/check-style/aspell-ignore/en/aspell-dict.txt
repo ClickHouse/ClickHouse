@@ -1178,6 +1178,7 @@ buildId
 buildable
 builtins
 byteSize
+byteSwap
 bytebase
 bytesToCutForIPv
 editDistance
@@ -1421,6 +1422,7 @@ encodeXMLComponent
 encodings
 encryptions
 endian
+endianness
 endsWith
 endsWithUTF
 enum
