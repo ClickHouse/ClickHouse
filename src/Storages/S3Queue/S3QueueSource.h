@@ -22,6 +22,7 @@ public:
     using GlobIterator = StorageS3Source::DisclosedGlobIterator;
     using ZooKeeperGetter = std::function<zkutil::ZooKeeperPtr()>;
     using RemoveFileFunc = std::function<void(std::string)>;
+    using FileStatusPtr = S3QueueFilesMetadata::FileStatusPtr;
     using Metadata = S3QueueFilesMetadata;
 
     struct S3QueueKeyWithInfo : public StorageS3Source::KeyWithInfo
@@ -29,9 +30,11 @@ public:
         S3QueueKeyWithInfo(
                 const std::string & key_,
                 std::optional<S3::ObjectInfo> info_,
-                Metadata::ProcessingNodeHolderPtr processing_holder_);
+                Metadata::ProcessingNodeHolderPtr processing_holder_,
+                FileStatusPtr file_status_);
 
         Metadata::ProcessingNodeHolderPtr processing_holder;
+        FileStatusPtr file_status;
     };
 
     class FileIterator : public IIterator
@@ -91,7 +94,6 @@ private:
     ReaderHolder reader;
     std::future<ReaderHolder> reader_future;
     size_t processed_rows_from_file = 0;
-    std::shared_ptr<S3QueueFilesMetadata::FileStatus> file_status;
 
     void applyActionAfterProcessing(const String & path);
     void appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
