@@ -1951,7 +1951,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     if (is_interactive)
     {
         std::cout << std::endl;
-        if (!server_exception)
+        if (!server_exception || processed_rows != 0)
             std::cout << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
         std::cout << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
