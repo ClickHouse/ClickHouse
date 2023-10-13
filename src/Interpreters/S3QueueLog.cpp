@@ -42,12 +42,13 @@ void S3QueueLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(table_uuid);
     columns[i++]->insert(file_name);
     columns[i++]->insert(rows_processed);
-    columns[i++]->insert(magic_enum::enum_name(status));
+    columns[i++]->insert(status);
 
     if (processing_start_time)
         columns[i++]->insert(processing_start_time);
     else
         columns[i++]->insertDefault();
+
     if (processing_end_time)
         columns[i++]->insert(processing_end_time);
     else
