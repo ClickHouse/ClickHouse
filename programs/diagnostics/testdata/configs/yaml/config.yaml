@@ -638,7 +638,6 @@ default_session_timeout: 60
 # metrics - send data from table system.metrics
 # events - send data from table system.events
 # asynchronous_metrics - send data from table system.asynchronous_metrics
-# status_info - send data from different component from CH, ex: Dictionaries status
 
 # prometheus:
 #     endpoint: /metrics
@@ -647,7 +646,6 @@ default_session_timeout: 60
 #     metrics: true
 #     events: true
 #     asynchronous_metrics: true
-#     status_info: true
 
 # Query log. Used only for queries with setting log_queries = 1.
 query_log:

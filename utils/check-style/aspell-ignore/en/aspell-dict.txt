@@ -432,6 +432,7 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
+Levenshtein
 LGPL
 LLDB
 LLVM's
@@ -958,7 +959,6 @@ WikiStat
 WindowView
 WithNames
 WithNamesAndTypes
-Woboq
 WordNet
 WriteBuffer
 WriteBuffers
@@ -969,6 +969,8 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDDToDate
+YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -987,6 +989,7 @@ acos
 acosh
 activecube
 activerecord
+addDate
 addDays
 addHours
 addMinutes
@@ -1044,6 +1047,7 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
+arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1059,6 +1063,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1174,8 +1179,14 @@ buildId
 buildable
 builtins
 byteSize
+byteSwap
 bytebase
 bytesToCutForIPv
+editDistance
+byteHammingDistance
+jaccardIndex
+levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1329,6 +1340,7 @@ ddl
 deallocation
 deallocations
 debian
+decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -1345,17 +1357,18 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltaLake
-deltaSum
-deltaSumTimestamp
 deltalake
+deltaLake
 deltasum
+deltaSum
 deltasumtimestamp
+deltaSumTimestamp
 demangle
 denormalize
 denormalized
 denormalizing
 denormals
+dequeued
 deserialization
 deserialized
 deserializing
@@ -1410,6 +1423,7 @@ encodeXMLComponent
 encodings
 encryptions
 endian
+endianness
 endsWith
 endsWithUTF
 enum
@@ -1440,6 +1454,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fifo
 filesystem
 filesystemAvailable
 filesystemCapacity
@@ -1499,6 +1514,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1557,6 +1573,7 @@ gzipped
 hadoop
 halfMD
 halfday
+hardlink
 hardlinks
 hasAll
 hasAny
@@ -1606,6 +1623,7 @@ incrementing
 indexHint
 indexOf
 infi
+inflight
 initcap
 initcapUTF
 initialQueryID
@@ -1636,6 +1654,7 @@ isNotNull
 isNull
 isValidJSON
 isValidUTF
+isZeroOrNull
 iteratively
 jaccard
 javaHash
@@ -1696,6 +1715,7 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+levenshtein
 lexicographically
 lgamma
 libFuzzer
@@ -1802,6 +1822,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1897,6 +1918,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overparallelization
 packetpool
 packetsize
 pageviews
@@ -1996,6 +2018,7 @@ privateKeyPassphraseHandler
 prlimit
 procfs
 profiler
+proleptic
 prometheus
 proto
 protobuf
@@ -2204,6 +2227,8 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
+splitBy
+splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -2248,6 +2273,7 @@ structureToProtobufSchema
 studentTTest
 studentttest
 subBitmap
+subDate
 subarray
 subarrays
 subcolumn
@@ -2352,6 +2378,7 @@ toDateTimeOrZero
 toDayOfMonth
 toDayOfWeek
 toDayOfYear
+toDaysSinceYearZero
 toDecimal
 toDecimalString
 toFixedString
@@ -2535,6 +2562,7 @@ visitParamExtractRaw
 visitParamExtractString
 visitParamExtractUInt
 visitParamHas
+vruntime
 wchc
 wchs
 webpage

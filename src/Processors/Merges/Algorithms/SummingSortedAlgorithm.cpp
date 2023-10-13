@@ -12,6 +12,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -222,6 +223,12 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName());
+        if (column.name == BlockNumberColumn::name)
+        {
+            def.column_numbers_not_to_aggregate.push_back(i);
+            continue;
+        }
+
         /// Discover nested Maps and find columns for summation
         if (typeid_cast<const DataTypeArray *>(column.type.get()) && !simple)
         {

@@ -21,20 +21,21 @@ expect ":) "
 send -- "DROP TABLE IF EXISTS test_01179\r"
 expect "Ok."
 
-send -- "CREATE TABLE test_01179 (date DateTime64(3)) ENGINE=Memory()\r"
+send -- "CREATE TABLE test_01179 (val String) ENGINE=Memory()\r"
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('2020-01-01')\r"
+send -- "INSERT INTO test_01179 values ('foo')\r"
+
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('2020-01-01'); \r"
+send -- "INSERT INTO test_01179 values ('foo'); \r"
 expect "Ok."
 
-send -- "INSERT INTO test_01179 values ('2020-01-01 0'); (1) \r"
+send -- "INSERT INTO test_01179 values ('foo'); ('bar') \r"
 expect "Cannot read data after semicolon"
 
-send -- "SELECT date, count() FROM test_01179 GROUP BY date FORMAT TSV\r"
-expect "2020-01-01 00:00:00.000\t2"
+send -- "SELECT val, count() FROM test_01179 GROUP BY val FORMAT TSV\r"
+expect "foo\t2"
 
 send -- "DROP TABLE test_01179\r"
 expect "Ok."
