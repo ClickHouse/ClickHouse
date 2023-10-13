@@ -248,7 +248,7 @@ If the listing of files contains number ranges with leading zeros, use the const
 
 For introspection use `system.s3queue` stateless table and `system.s3queue_log` persistent table.
 
-The `s3queue` system table has the following structure:
+1. `system.s3queue`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
 ``` sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -262,9 +262,59 @@ The `s3queue` system table has the following structure:
     `processing_start_time` Nullable(DateTime),
     `processing_end_time` Nullable(DateTime),
     `ProfileEvents` Map(String, UInt64)
+    `exception` String
 )
 ENGINE = SystemS3Queue
 COMMENT 'SYSTEM TABLE is built on the fly.' │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Example:
+
+``` sql
+
+SELECT *
+FROM system.s3queue
+
+Row 1:
+──────
+zookeeper_path:        /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
+file_name:             wikistat/original/pageviews-20150501-030000.gz
+rows_processed:        5068534
+status:                Processed
+processing_start_time: 2023-10-13 13:09:48
+processing_end_time:   2023-10-13 13:10:31
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5068534,'SelectedBytes':198132283,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':2480,'S3QueueSetFileProcessedMicroseconds':9985,'S3QueuePullMicroseconds':273776,'LogTest':17}
+exception:
+```
+
+2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue`, but for `processed` and `failed` files.
+
+The table has the following structure:
+
+``` sql
+SHOW CREATE TABLE system.s3queue_log
+
+Query id: 0ad619c3-0f2a-4ee4-8b40-c73d86e04314
+
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE system.s3queue_log
+(
+    `event_date` Date,
+    `event_time` DateTime,
+    `table_uuid` String,
+    `file_name` String,
+    `rows_processed` UInt64,
+    `status` Enum8('Processed' = 0, 'Failed' = 1),
+    `processing_start_time` Nullable(DateTime),
+    `processing_end_time` Nullable(DateTime),
+    `ProfileEvents` Map(String, UInt64),
+    `exception` String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (event_date, event_time)
+SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -280,18 +330,19 @@ In order to use `system.s3queue_log` define its configuration in server config f
 Example:
 
 ``` sql
-:) select * from system.s3queue
-
 SELECT *
-FROM system.s3queue
+FROM system.s3queue_log
 
-Query id: bb41964e-c947-4112-be3a-0f01770a1e84
-
-┌─database─┬─table───┬─file_name──────────────────────────────────────────┬─rows_processed─┬─status─────┬─processing_start_time─┬─processing_end_time─┬─ProfileEvents──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ default  │ s3queue │ hits_compatible/athena_partitioned/hits_60.parquet │              0 │ Processing │   2023-09-25 19:56:51 │                ᴺᵁᴸᴸ │ {'S3QueueSetFileProcessingMicroseconds':516}                                                                                                                                                                                                               │
-│ default  │ s3queue │ hits_compatible/athena_partitioned/hits_54.parquet │        1000000 │ Processing │   2023-09-25 19:56:50 │                ᴺᵁᴸᴸ │ {'SelectedRows':1000000,'SelectedBytes':1284181126,'S3ReadMicroseconds':385274,'S3ReadRequestsCount':3,'S3ReadRequestsErrors':1,'S3GetObject':1,'ReadBufferFromS3Microseconds':405970,'ReadBufferFromS3InitMicroseconds':385790,'ReadBufferFromS3Bytes':65536,'ReadBufferFromS3PreservedSessions':1,'S3QueueSetFileProcessingMicroseconds':567,'S3QueuePullMicroseconds':2475045} │
-└──────────┴─────────┴────────────────────────────────────────────────────┴────────────────┴────────────┴───────────────────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-
-SELECT * FROM system.s3_queue_log;
+Row 1:
+──────
+event_date:            2023-10-13
+event_time:            2023-10-13 13:10:12
+table_uuid:
+file_name:             wikistat/original/pageviews-20150501-020000.gz
+rows_processed:        5112621
+status:                Processed
+processing_start_time: 2023-10-13 13:09:48
+processing_end_time:   2023-10-13 13:10:12
+ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMulti':1,'SelectedRows':5112621,'SelectedBytes':198577687,'ContextLock':1,'S3QueueSetFileProcessingMicroseconds':1934,'S3QueueSetFileProcessedMicroseconds':17063,'S3QueuePullMicroseconds':5841972,'LogTest':17}
+exception:
 ```

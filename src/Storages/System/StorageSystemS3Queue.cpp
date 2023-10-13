@@ -30,6 +30,7 @@ NamesAndTypesList StorageSystemS3Queue::getNamesAndTypes()
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"exception", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -63,6 +64,8 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
                 res_columns[i++]->insertDefault();
 
             ProfileEvents::dumpToMapColumn(file_status->profile_counters.getPartiallyAtomicSnapshot(), res_columns[i++].get(), true);
+
+            res_columns[i++]->insert(file_status->last_exception);
         }
     }
 }
