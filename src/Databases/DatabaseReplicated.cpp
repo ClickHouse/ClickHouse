@@ -301,7 +301,7 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
     {
         for (const auto & replica : addresses_with_failover[shard_index])
         {
-            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name, replica.database_replica_group_name);
+            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name, replica.database_replica_name);
             paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
         }
     }
