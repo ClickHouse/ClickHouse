@@ -315,7 +315,7 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
-    use_skipping_final = context->getSettingsRef().use_skipping_final && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+    use_skipping_final = query_info.isFinal() && context->getSettingsRef().use_skipping_final && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
     updateSortDescriptionForOutputStream(
         *output_stream,
@@ -1666,6 +1666,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (direction != 1 && query_info.isFinal())
         return false;
 
+    /// All *InOrder optimization rely on an assumption that output stream is sorted, but skipping FINAL breaks this rule
+    if (use_skipping_final)
+        return false;
+
     auto order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
     if (query_info.projection)
         query_info.projection->input_order_info = order_info;
@@ -1697,7 +1701,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         if (sort_description.size() > used_prefix_of_sorting_key_size)
             sort_description.resize(used_prefix_of_sorting_key_size);
         output_stream->sort_description = std::move(sort_description);
-        output_stream->sort_scope = useSkippingFinal() ? DataStream::SortScope::Chunk : DataStream::SortScope::Stream;
+        output_stream->sort_scope = DataStream::SortScope::Stream;
     }
 
     return true;

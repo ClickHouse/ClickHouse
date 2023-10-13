@@ -36,9 +36,6 @@ public:
         }
         chunk.setChunkInfo(nullptr);
     }
-
-private:
-    String index_column_name;
 };
 
 }

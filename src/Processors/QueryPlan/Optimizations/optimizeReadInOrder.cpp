@@ -798,8 +798,6 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        if (reading->useSkippingFinal())
-            return nullptr;
         auto order_info = buildInputOrderInfo(
             reading,
             fixed_columns,
