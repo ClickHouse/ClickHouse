@@ -9,6 +9,7 @@
 
 namespace
 {
+    /// After the most significant bit 1, set all subsequent less significant bits to 1 as well.
     inline UInt64 toMask(UInt64 n)
     {
         n |= n >> 1;
@@ -86,42 +87,42 @@ void intervalBinaryPartition(UInt64 first, UInt64 last, F && callback)
 
 
 /** Multidimensional version of binary space partitioning.
-  * It takes a parallelogram - a direct product of intervals (in each dimension),
-  * and splits it into smaller parallelograms - a direct product of partitions across each dimension.
+  * It takes a hyperrectangle - a direct product of intervals (in each dimension),
+  * and splits it into smaller hyperrectangles - a direct product of partitions across each dimension.
   */
 template <size_t N, size_t start_idx, typename F>
-void parallelogramBinaryPartitionImpl(
-    std::array<std::pair<UInt64, UInt64>, N> parallelogram,
+void hyperrectangleBinaryPartitionImpl(
+    std::array<std::pair<UInt64, UInt64>, N> hyperrectangle,
     F && callback)
 {
-    intervalBinaryPartition(parallelogram[start_idx].first, parallelogram[start_idx].second,
+    intervalBinaryPartition(hyperrectangle[start_idx].first, hyperrectangle[start_idx].second,
         [&](UInt64 a, UInt64 b) mutable
         {
-            auto new_parallelogram = parallelogram;
-            new_parallelogram[start_idx].first = a;
-            new_parallelogram[start_idx].second = b;
+            auto new_hyperrectangle = hyperrectangle;
+            new_hyperrectangle[start_idx].first = a;
+            new_hyperrectangle[start_idx].second = b;
 
             if constexpr (start_idx + 1 < N)
-                parallelogramBinaryPartitionImpl<N, start_idx + 1>(new_parallelogram, std::forward<F>(callback));
+                hyperrectangleBinaryPartitionImpl<N, start_idx + 1>(new_hyperrectangle, std::forward<F>(callback));
             else
-                callback(new_parallelogram);
+                callback(new_hyperrectangle);
         });
 }
 
 
 template <size_t N, typename F>
-void parallelogramBinaryPartition(
-    std::array<std::pair<UInt64, UInt64>, N> parallelogram,
+void hyperrectangleBinaryPartition(
+    std::array<std::pair<UInt64, UInt64>, N> hyperrectangle,
     F && callback)
 {
-    parallelogramBinaryPartitionImpl<N, 0>(parallelogram, std::forward<F>(callback));
+    hyperrectangleBinaryPartitionImpl<N, 0>(hyperrectangle, std::forward<F>(callback));
 }
 
 
-/** Unpack an interval of Morton curve to parallelograms covered by it across N dimensions.
+/** Unpack an interval of Morton curve to hyperrectangles covered by it across N dimensions.
   */
 template <size_t N, typename F>
-void mortonIntervalToParallelograms(UInt64 first, UInt64 last, F && callback)
+void mortonIntervalToHyperrectangles(UInt64 first, UInt64 last, F && callback)
 {
     intervalBinaryPartition(first, last, [&](UInt64 a, UInt64 b)
     {
@@ -141,20 +142,20 @@ void mortonIntervalToParallelograms(UInt64 first, UInt64 last, F && callback)
 }
 
 
-/** Given a parallelogram, find intervals of Morton curve that cover this parallelogram.
+/** Given a hyperrectangle, find intervals of Morton curve that cover this hyperrectangle.
   * Note: to avoid returning too many intervals, the intervals can be returned larger than exactly needed
-  * (covering some other points, not belonging to the parallelogram).
-  * We do it by extending parallelograms to cubes.
+  * (covering some other points, not belonging to the hyperrectangle).
+  * We do it by extending hyperrectangles to hypercubes.
   */
 template <size_t N, typename F>
-void parallelogramToPossibleMortonIntervals(
-    std::array<std::pair<UInt64, UInt64>, N> parallelogram,
+void hyperrectangleToPossibleMortonIntervals(
+    std::array<std::pair<UInt64, UInt64>, N> hyperrectangle,
     F && callback)
 {
     /// Due to extension to cubes, there could be duplicates. Filter them.
     std::set<std::pair<UInt64, UInt64>> found_intervals;
 
-    parallelogramBinaryPartition<N>(parallelogram, [&](auto part)
+    hyperrectangleBinaryPartition<N>(hyperrectangle, [&](auto part)
     {
         size_t suffix_size = 0;
         for (size_t i = 0; i < N; ++i)

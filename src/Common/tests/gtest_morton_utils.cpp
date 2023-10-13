@@ -45,10 +45,10 @@ GTEST_TEST(MortonUtils, Intervals)
         std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{6, 13}, std::pair{15, 31}};
 
         std::stringstream res;
-        parallelogramBinaryPartition<2>(input, [&](auto parallelogram)
+        hyperrectangleBinaryPartition<2>(input, [&](auto hyperrectangle)
         {
-            res << "[" << parallelogram[0].first << ", " << parallelogram[0].second
-                << "] x [" << parallelogram[1].first << ", " << parallelogram[1].second
+            res << "[" << hyperrectangle[0].first << ", " << hyperrectangle[0].second
+                << "] x [" << hyperrectangle[1].first << ", " << hyperrectangle[1].second
                 << "]; ";
         });
 
@@ -59,10 +59,10 @@ GTEST_TEST(MortonUtils, Intervals)
         std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{23, 24}, std::pair{15, 16}};
 
         std::stringstream res;
-        parallelogramBinaryPartition<2>(input, [&](auto parallelogram)
+        hyperrectangleBinaryPartition<2>(input, [&](auto hyperrectangle)
         {
-            res << "[" << parallelogram[0].first << ", " << parallelogram[0].second
-                << "] x [" << parallelogram[1].first << ", " << parallelogram[1].second
+            res << "[" << hyperrectangle[0].first << ", " << hyperrectangle[0].second
+                << "] x [" << hyperrectangle[1].first << ", " << hyperrectangle[1].second
                 << "]; ";
         });
 
@@ -71,10 +71,10 @@ GTEST_TEST(MortonUtils, Intervals)
 
     {
         std::stringstream res;
-        mortonIntervalToParallelograms<2>(191, 769, [&](auto parallelogram)
+        mortonIntervalToHyperrectangles<2>(191, 769, [&](auto hyperrectangle)
         {
-            res << "[" << parallelogram[0].first << ", " << parallelogram[0].second
-                << "] x [" << parallelogram[1].first << ", " << parallelogram[1].second
+            res << "[" << hyperrectangle[0].first << ", " << hyperrectangle[0].second
+                << "] x [" << hyperrectangle[1].first << ", " << hyperrectangle[1].second
                 << "]; ";
         });
 
@@ -85,7 +85,7 @@ GTEST_TEST(MortonUtils, Intervals)
         std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{23, 24}, std::pair{15, 16}};
 
         std::stringstream res;
-        parallelogramToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
+        hyperrectangleToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
         {
             res << first << ", " << last << "; ";
         });
@@ -97,7 +97,7 @@ GTEST_TEST(MortonUtils, Intervals)
         std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{6, 7}, std::pair{16, 31}};
 
         std::stringstream res;
-        parallelogramToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
+        hyperrectangleToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
         {
             res << first << ", " << last << "; ";
         });
@@ -109,7 +109,7 @@ GTEST_TEST(MortonUtils, Intervals)
         std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{6, 13}, std::pair{15, 31}};
 
         std::stringstream res;
-        parallelogramToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
+        hyperrectangleToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
         {
             res << first << ", " << last << "; ";
         });
