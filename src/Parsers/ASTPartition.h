@@ -11,7 +11,7 @@ class ASTPartition : public IAST
 {
 public:
     IAST * value{nullptr};
-    size_t fields_count;
+    std::optional<size_t> fields_count;
 
     IAST * id{nullptr};
     bool all = false;
