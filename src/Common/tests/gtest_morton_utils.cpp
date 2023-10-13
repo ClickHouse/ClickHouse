@@ -90,7 +90,19 @@ GTEST_TEST(MortonUtils, Intervals)
             res << first << ", " << last << "; ";
         });
 
-        std::cerr << res.str() << "\n";
+        ASSERT_EQ(res.str(), "447, 447; 789, 789; 490, 490; 832, 832; ");
+    }
+
+    {
+        std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{6, 7}, std::pair{16, 31}};
+
+        std::stringstream res;
+        parallelogramToPossibleMortonIntervals<2>(input, [&](UInt64 first, UInt64 last)
+        {
+            res << first << ", " << last << "; ";
+        });
+
+        ASSERT_EQ(res.str(), "512, 767; ");
     }
 
     {
@@ -102,6 +114,6 @@ GTEST_TEST(MortonUtils, Intervals)
             res << first << ", " << last << "; ";
         });
 
-        std::cerr << res.str() << "\n";
+        ASSERT_EQ(res.str(), "188, 191; 512, 767; 224, 239; 248, 251; ");
     }
 }
