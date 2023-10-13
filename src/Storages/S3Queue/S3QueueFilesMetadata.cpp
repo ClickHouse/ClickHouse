@@ -64,8 +64,7 @@ S3QueueFilesMetadata::FileStatuses S3QueueFilesMetadata::LocalFileStatuses::getA
     return file_statuses;
 }
 
-std::shared_ptr<S3QueueFilesMetadata::FileStatus>
-S3QueueFilesMetadata::LocalFileStatuses::get(const std::string & filename, bool create)
+S3QueueFilesMetadata::FileStatusPtr S3QueueFilesMetadata::LocalFileStatuses::get(const std::string & filename, bool create)
 {
     auto lk = lock();
     auto it = file_statuses.find(filename);
@@ -161,7 +160,7 @@ zkutil::ZooKeeperPtr S3QueueFilesMetadata::getZooKeeper() const
     return Context::getGlobalContextInstance()->getZooKeeper();
 }
 
-std::shared_ptr<S3QueueFilesMetadata::FileStatus> S3QueueFilesMetadata::getFileStatus(const std::string & path)
+S3QueueFilesMetadata::FileStatusPtr S3QueueFilesMetadata::getFileStatus(const std::string & path)
 {
     /// Return a locally cached file status.
     return local_file_statuses.get(path, /* create */false);
@@ -198,7 +197,8 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
-S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
+std::pair<S3QueueFilesMetadata::ProcessingNodeHolderPtr,
+          S3QueueFilesMetadata::FileStatusPtr> S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessingMicroseconds);
     auto file_status = local_file_statuses.get(path, /* create */true);
@@ -216,13 +216,13 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
             case FileStatus::State::Processing: [[fallthrough]];
             case FileStatus::State::Processed:
             {
-                return nullptr;
+                return {};
             }
             case FileStatus::State::Failed:
             {
                 /// If max_loading_retries == 0, file is not retriable.
                 if (max_loading_retries == 0)
-                    return nullptr;
+                    return {};
 
                 /// Otherwise file_status->retries is also cached.
                 /// In case file_status->retries >= max_loading_retries we can fully rely that it is true
@@ -231,7 +231,7 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
                 /// (another server could have done a try after we cached retries value),
                 /// so check with zookeeper here.
                 if (file_status->retries >= max_loading_retries)
-                    return nullptr;
+                    return {};
 
                 break;
             }
@@ -249,7 +249,7 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
     std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
     if (!processing_lock.try_lock())
     {
-        return nullptr;
+        return {};
     }
 
     /// Let's go and check metadata in zookeeper and try to create a /processing ephemeral node.
@@ -306,7 +306,10 @@ S3QueueFilesMetadata::ProcessingNodeHolderPtr S3QueueFilesMetadata::trySetFileAs
         }
     }
 
-    return result == SetFileProcessingResult::Success ? processing_node_holder : nullptr;
+    if (result == SetFileProcessingResult::Success)
+        return std::pair(processing_node_holder, file_status);
+
+    return {};
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,

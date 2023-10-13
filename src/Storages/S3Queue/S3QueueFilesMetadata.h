@@ -41,9 +41,6 @@ public:
 
     ~S3QueueFilesMetadata();
 
-    /// Set file as processing, if it is not alreaty processed, failed or processing.
-    ProcessingNodeHolderPtr trySetFileAsProcessing(const std::string & path);
-
     void setFileProcessed(ProcessingNodeHolderPtr holder);
 
     void setFileFailed(ProcessingNodeHolderPtr holder, const std::string & exception_message);
@@ -69,9 +66,13 @@ public:
         std::mutex processing_lock;
         std::mutex metadata_lock;
     };
-    using FileStatuses = std::unordered_map<std::string, std::shared_ptr<FileStatus>>;
+    using FileStatusPtr = std::shared_ptr<FileStatus>;
+    using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
 
-    std::shared_ptr<FileStatus> getFileStatus(const std::string & path);
+    /// Set file as processing, if it is not alreaty processed, failed or processing.
+    std::pair<ProcessingNodeHolderPtr, FileStatusPtr> trySetFileAsProcessing(const std::string & path);
+
+    FileStatusPtr getFileStatus(const std::string & path);
 
     FileStatuses getFileStateses() const { return local_file_statuses.getAll(); }
 
@@ -137,7 +138,7 @@ private:
         mutable std::mutex mutex;
 
         FileStatuses getAll() const;
-        std::shared_ptr<FileStatus> get(const std::string & filename, bool create);
+        FileStatusPtr get(const std::string & filename, bool create);
         bool remove(const std::string & filename, bool if_exists);
         std::unique_lock<std::mutex> lock() const;
     };

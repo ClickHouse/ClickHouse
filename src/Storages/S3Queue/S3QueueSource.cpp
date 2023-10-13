@@ -33,9 +33,11 @@ namespace ErrorCodes
 StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
         const std::string & key_,
         std::optional<S3::ObjectInfo> info_,
-        Metadata::ProcessingNodeHolderPtr processing_holder_)
+        Metadata::ProcessingNodeHolderPtr processing_holder_,
+        FileStatusPtr file_status_)
     : StorageS3Source::KeyWithInfo(key_, info_)
     , processing_holder(processing_holder_)
+    , file_status(file_status_)
 {
 }
 
@@ -58,9 +60,10 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
         if (!val || shutdown_called)
             return {};
 
-        if (auto processing_holder = metadata->trySetFileAsProcessing(val->key); processing_holder && !shutdown_called)
+        if (auto [processing_holder, processing_file_status] = metadata->trySetFileAsProcessing(val->key);
+            processing_holder && !shutdown_called)
         {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
+            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder, processing_file_status);
         }
     }
     return {};
@@ -100,7 +103,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     if (reader)
     {
         reader_future = std::move(internal_source->reader_future);
-        file_status = files_metadata->getFileStatus(reader.getFile());
     }
 }
 
@@ -142,10 +144,11 @@ Chunk StorageS3QueueSource::generate()
             break;
         }
 
+        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+        auto file_status = key_with_info->file_status;
+
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
-
-        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
 
         try
         {
