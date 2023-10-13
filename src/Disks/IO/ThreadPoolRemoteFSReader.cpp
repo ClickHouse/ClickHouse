@@ -1,17 +1,18 @@
 #include "ThreadPoolRemoteFSReader.h"
 
-#include "config.h"
-#include <Common/ThreadPool_fwd.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
+#include <IO/AsyncReadCounters.h>
+#include <IO/SeekableReadBuffer.h>
+#include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <IO/SeekableReadBuffer.h>
-#include <IO/AsyncReadCounters.h>
-#include <base/getThreadId.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/assert_cast.h>
+#include "Parsers/IAST.h"
+#include "config.h"
 
 #include <future>
 #include <memory>
@@ -22,6 +23,7 @@ namespace ProfileEvents
     extern const Event ThreadpoolReaderTaskMicroseconds;
     extern const Event ThreadpoolReaderReadBytes;
     extern const Event ThreadpoolReaderSubmit;
+    extern const Event ThreadpoolReaderIgnoredBytes;
 }
 
 namespace CurrentMetrics
@@ -66,6 +68,15 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
+    auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
+    if (fd->getReader().contentIsCached())
+    {
+        std::promise<Result> promise;
+        std::future<Result> future = promise.get_future();
+        promise.set_value(execute(request));
+        return future;
+    }
+
     ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
     return scheduleFromThreadPool<Result>([request, this]() -> Result { return execute(request); },
                                           *pool,
@@ -88,7 +99,10 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
     reader.set(request.buf, request.size);
     reader.seek(request.offset, SEEK_SET);
     if (request.ignore)
+    {
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderIgnoredBytes, request.ignore);
         reader.ignore(request.ignore);
+    }
 
     bool result = reader.available();
     if (!result)

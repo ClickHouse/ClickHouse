@@ -2,15 +2,15 @@
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <IO/ReadBufferFromFile.h>
-#include <base/scope_guard.h>
-#include <Common/assert_cast.h>
 #include <IO/BoundedReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Interpreters/Context.h>
+#include <base/hex.h>
+#include <base/scope_guard.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/assert_cast.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <base/hex.h>
-#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -799,8 +799,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     SCOPE_EXIT({
         try
         {
-            /// Save state of current file segment before it is completed.
-            nextimpl_step_log_info = getInfoForLog();
+            /// Save state of current file segment before it is completed. But we'll use it only if exception happened.
+            if (std::uncaught_exceptions() > 0)
+                nextimpl_step_log_info = getInfoForLog();
 
             if (file_segments->empty())
                 return;
@@ -852,14 +853,25 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     if (use_external_buffer && read_type == ReadType::CACHED && settings.local_fs_buffer_size < internal_buffer.size())
         internal_buffer.resize(settings.local_fs_buffer_size);
 
+    auto & file_segment = file_segments->front();
+    const auto & current_read_range = file_segment.range();
+
+    /// The requested right boundary could be
+    /// segment->range().left < requested_right_boundary < segment->range().right
+    /// therefore need to resize to a smaller size.
+    if (file_segments->size() == 1) // We're reading the last segment
+    {
+        const size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+        const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
+        chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
+        internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
+    }
+
     // Pass a valid external buffer for implementation_buffer to read into.
     // We then take it back with another swap() after reading is done.
     // (If we get an exception in between, we'll be left with an invalid internal_buffer. That's ok, as long as
     // the caller doesn't try to use this CachedOnDiskReadBufferFromFile after it threw an exception.)
     swap(*implementation_buffer);
-
-    auto & file_segment = file_segments->front();
-    const auto & current_read_range = file_segment.range();
 
     LOG_TEST(
         log,
@@ -988,21 +1000,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
-        }
-
-        /// - If last file segment was read from remote fs, then we read up to segment->range().right,
-        /// but the requested right boundary could be
-        /// segment->range().left < requested_right_boundary <  segment->range().right.
-        /// Therefore need to resize to a smaller size. And resize must be done after write into cache.
-        /// - If last file segment was read from local fs, then we could read more than
-        /// file_segemnt->range().right, so resize is also needed.
-        if (file_segments->size() == 1)
-        {
-            size_t remaining_size_to_read
-                = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
-            size = std::min(size, remaining_size_to_read);
-            chassert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
-            implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
         }
 
         file_offset_of_buffer_end += size;
@@ -1226,4 +1223,16 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         current_file_segment_info);
 }
 
+bool CachedOnDiskReadBufferFromFile::seekIsCheap()
+{
+    return !initialized || read_type == ReadType::CACHED;
+}
+
+bool CachedOnDiskReadBufferFromFile::contentIsCached()
+{
+    if (!initialized)
+        initialize(file_offset_of_buffer_end, getTotalSizeToRead());
+
+    return canStartFromCache(file_offset_of_buffer_end, file_segments->front());
+}
 }

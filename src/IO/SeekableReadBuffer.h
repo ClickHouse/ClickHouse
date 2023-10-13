@@ -91,6 +91,9 @@ public:
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
     virtual bool seekIsCheap() { return false; }
+
+    /// If content is cached it makes sense to read it synchronously on the current thread, otherwise it makes sense to read on thread pool.
+    virtual bool contentIsCached() { return false; }
 };
 
 
