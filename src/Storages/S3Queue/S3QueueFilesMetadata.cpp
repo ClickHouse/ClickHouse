@@ -591,11 +591,11 @@ void S3QueueFilesMetadata::setFileFailed(ProcessingNodeHolderPtr holder, const S
     const auto node_name_with_retriable_suffix = node_name + ".retriable";
     Coordination::Stat stat;
     std::string res;
-    auto failed_node_metadata = NodeMetadata::fromString(res);
 
     /// Extract the number of already done retries from node_hash.retriable node if it exists.
     if (zk_client->tryGet(zookeeper_failed_path / node_name_with_retriable_suffix, res, &stat))
     {
+        auto failed_node_metadata = NodeMetadata::fromString(res);
         node_metadata.retries = failed_node_metadata.retries + 1;
 
         std::lock_guard lock(file_status->metadata_lock);
