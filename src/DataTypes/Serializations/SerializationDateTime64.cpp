@@ -4,7 +4,6 @@
 #include <Common/assert_cast.h>
 #include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

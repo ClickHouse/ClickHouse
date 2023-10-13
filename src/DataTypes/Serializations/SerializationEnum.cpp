@@ -4,8 +4,6 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 
 namespace DB
 {
