@@ -7,6 +7,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTQueryParameter.h>
 
 namespace DB
 {
@@ -16,7 +17,10 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_id("ID");
     ParserKeyword s_all("ALL");
     ParserStringLiteral parser_string_literal;
-    ParserExpression parser_expr;
+    ParserSubstitution parser_substitution;
+    ParserLiteral literal_parser;
+    ParserFunction function_parser(false, false);
+
 
     Pos begin = pos;
 
@@ -25,10 +29,15 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_id.ignore(pos, expected))
     {
         ASTPtr partition_id;
-        if (!parser_string_literal.parse(pos, partition_id, expected))
+        if (!parser_string_literal.parse(pos, partition_id, expected) && !parser_substitution.parse(pos, partition_id, expected))
             return false;
 
-        partition->id = partition_id->as<ASTLiteral &>().value.get<String>();
+        if (auto * partition_id_literal = partition_id->as<ASTLiteral>(); partition_id_literal != nullptr)
+            partition->setPartitionID(partition_id);
+        else if (auto * partition_id_query_parameter = partition_id->as<ASTQueryParameter>(); partition_id_query_parameter != nullptr)
+            partition->setPartitionID(partition_id);
+        else
+            return false;
     }
     else if (s_all.ignore(pos, expected))
     {
@@ -36,25 +45,12 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        ASTPtr value;
-        if (!parser_expr.parse(pos, value, expected))
-            return false;
-
-        std::optional<size_t> fields_count;
-
-        const auto * tuple_ast = value->as<ASTFunction>();
         bool surrounded_by_parens = false;
-        if (tuple_ast && tuple_ast->name == "tuple")
+        ASTPtr value;
+        std::optional<size_t> fields_count;
+        if (literal_parser.parse(pos, value, expected))
         {
-            surrounded_by_parens = true;
-            const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-            if (arguments_ast)
-                fields_count = arguments_ast->children.size();
-            else
-                fields_count = 0;
-        }
-        else if (const auto * literal = value->as<ASTLiteral>())
-        {
+            auto * literal = value->as<ASTLiteral>();
             if (literal->value.getType() == Field::Types::Tuple)
             {
                 surrounded_by_parens = true;
@@ -65,8 +61,26 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 fields_count = 1;
             }
         }
-        else if (!value->as<ASTQueryParameter>())
+        else if (function_parser.parse(pos, value, expected))
+        {
+            const auto * tuple_ast = value->as<ASTFunction>();
+            if (tuple_ast)
+            {
+                if (tuple_ast->name == "tuple")
+                {
+                    surrounded_by_parens = true;
+                    const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                    if (arguments_ast)
+                        fields_count = arguments_ast->children.size();
+                    else
+                        fields_count = 0;
+                }
+            }
+        }
+        else if (!parser_substitution.parse(pos, value, expected))
+        {
             return false;
+        }
 
         if (surrounded_by_parens)
         {
@@ -84,8 +98,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        partition->value = value;
-        partition->children.push_back(value);
+        partition->setPartitionValue(value);
         partition->fields_count = fields_count;
     }
 
