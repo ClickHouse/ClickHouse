@@ -20,7 +20,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSubstitution parser_substitution;
     ParserLiteral literal_parser;
     ParserTupleOfLiterals tuple_of_literals;
-    ParserFunction function_parser(false, false);
+    ParserExpression parser_expr;
 
     auto partition = std::make_shared<ASTPartition>();
 
@@ -50,7 +50,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto * literal = value->as<ASTLiteral>();
             if (literal->value.getType() == Field::Types::Tuple)
             {
-                //surrounded_by_parens = true;
                 fields_count = literal->value.get<const Tuple &>().size();
             }
             else
@@ -58,12 +57,15 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 fields_count = 1;
             }
         }
-        else if (function_parser.parse(pos, value, expected))
+        else if (parser_substitution.parse(pos, value, expected))
+        {
+            fields_count = 1;
+        }
+        else if (parser_expr.parse(pos, value, expected))
         {
             const auto * tuple_ast = value->as<ASTFunction>();
             if (tuple_ast && tuple_ast->name == "tuple")
             {
-                //surrounded_by_parens = true;
                 const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
                 if (arguments_ast)
                     fields_count = arguments_ast->children.size();
@@ -72,10 +74,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else
                 return false;
-        }
-        else if (parser_substitution.parse(pos, value, expected))
-        {
-            fields_count = 1;
         }
         else
         {

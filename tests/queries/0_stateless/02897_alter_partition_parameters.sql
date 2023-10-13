@@ -92,3 +92,26 @@ ALTER TABLE test4 ON CLUSTER 'test_shard_localhost' DROP PARTITION {partition:St
 SELECT count() FROM test4;
 
 DROP TABLE IF EXISTS test4;
+
+
+DROP TABLE IF EXISTS test5;
+
+CREATE TABLE test5
+(
+  a UInt32,
+  b Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+PARTITION BY (a, b);
+
+INSERT INTO test5 VALUES(1, 2);
+
+SET param_f='1';
+SET param_s='2';
+
+ALTER TABLE test5 DROP PARTITION ({f:UInt32}, 2);
+
+SELECT count() FROM test5;
+
+DROP TABLE IF EXISTS test5;
