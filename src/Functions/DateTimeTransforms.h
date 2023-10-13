@@ -308,6 +308,7 @@ struct ToStartOfYearImpl
 struct ToYearWeekImpl
 {
     static constexpr auto name = "toYearWeek";
+    static constexpr bool value_may_be_string = true;
 
     static UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -338,6 +339,7 @@ struct ToYearWeekImpl
 struct ToStartOfWeekImpl
 {
     static constexpr auto name = "toStartOfWeek";
+    static constexpr bool value_may_be_string = false;
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -370,6 +372,7 @@ struct ToStartOfWeekImpl
 struct ToLastDayOfWeekImpl
 {
     static constexpr auto name = "toLastDayOfWeek";
+    static constexpr bool value_may_be_string = false;
 
     static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -402,6 +405,7 @@ struct ToLastDayOfWeekImpl
 struct ToWeekImpl
 {
     static constexpr auto name = "toWeek";
+    static constexpr bool value_may_be_string = true;
 
     static UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -1298,6 +1302,7 @@ struct ToDayOfMonthImpl
 struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
+    static constexpr bool value_may_be_string = true;
 
     static UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
