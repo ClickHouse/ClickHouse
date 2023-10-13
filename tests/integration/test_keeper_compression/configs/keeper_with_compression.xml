@@ -6,21 +6,4 @@
             <port>9181</port>
         </node>
     </zookeeper>
-<!--    <zookeeper>-->
-<!--        &lt;!&ndash;<zookeeper_load_balancing> random / in_order / nearest_hostname / first_or_random / round_robin </zookeeper_load_balancing>&ndash;&gt;-->
-<!--        <zookeeper_load_balancing>random</zookeeper_load_balancing>-->
-<!--        <node index="1">-->
-<!--            <host>zoo1</host>-->
-<!--            <port>2181</port>-->
-<!--        </node>-->
-<!--        <node index="2">-->
-<!--            <host>zoo2</host>-->
-<!--            <port>2181</port>-->
-<!--        </node>-->
-<!--        <node index="3">-->
-<!--            <host>zoo3</host>-->
-<!--            <port>2181</port>-->
-<!--        </node>-->
-<!--        <session_timeout_ms>3000</session_timeout_ms>-->
-<!--    </zookeeper>-->
 </clickhouse>
