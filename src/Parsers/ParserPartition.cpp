@@ -19,10 +19,8 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserStringLiteral parser_string_literal;
     ParserSubstitution parser_substitution;
     ParserLiteral literal_parser;
+    ParserTupleOfLiterals tuple_of_literals;
     ParserFunction function_parser(false, false);
-
-
-    Pos begin = pos;
 
     auto partition = std::make_shared<ASTPartition>();
 
@@ -45,15 +43,14 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        bool surrounded_by_parens = false;
         ASTPtr value;
         size_t fields_count;
-        if (literal_parser.parse(pos, value, expected))
+        if (literal_parser.parse(pos, value, expected) || tuple_of_literals.parse(pos, value, expected))
         {
             auto * literal = value->as<ASTLiteral>();
             if (literal->value.getType() == Field::Types::Tuple)
             {
-                surrounded_by_parens = true;
+                //surrounded_by_parens = true;
                 fields_count = literal->value.get<const Tuple &>().size();
             }
             else
@@ -66,7 +63,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             const auto * tuple_ast = value->as<ASTFunction>();
             if (tuple_ast && tuple_ast->name == "tuple")
             {
-                surrounded_by_parens = true;
+                //surrounded_by_parens = true;
                 const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
                 if (arguments_ast)
                     fields_count = arguments_ast->children.size();
@@ -83,22 +80,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             return false;
-        }
-
-        if (surrounded_by_parens)
-        {
-            Pos left_paren = begin;
-            Pos right_paren = pos;
-
-            while (left_paren != right_paren && left_paren->type != TokenType::OpeningRoundBracket)
-                ++left_paren;
-            if (left_paren->type != TokenType::OpeningRoundBracket)
-                return false;
-
-            while (right_paren != left_paren && right_paren->type != TokenType::ClosingRoundBracket)
-                --right_paren;
-            if (right_paren->type != TokenType::ClosingRoundBracket)
-                return false;
         }
 
         partition->setPartitionValue(value);

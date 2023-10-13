@@ -81,14 +81,14 @@ DROP TABLE IF EXISTS test3;
 
 DROP TABLE IF EXISTS test4 ON CLUSTER 'test_shard_localhost';
 
-CREATE TABLE test4 ON CLUSTER 'test_shard_localhost' (EventDate Date) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY EventDate;
+CREATE TABLE test4 (EventDate Date) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY EventDate;
 
 INSERT INTO test4 VALUES(toDate('2023-10-09'));
 
 SET param_partition='2023-10-09';
 
-ALTER TABLE test4 ON CLUSTER 'test_shard_localhost' DROP PARTITION {partition:String};
+ALTER TABLE test4 ON CLUSTER 'test_shard_localhost' DROP PARTITION {partition:String} FORMAT Null;
 
 SELECT count() FROM test4;
 
-DROP TABLE IF EXISTS test4 ON CLUSTER 'test_shard_localhost';
+DROP TABLE IF EXISTS test4;
