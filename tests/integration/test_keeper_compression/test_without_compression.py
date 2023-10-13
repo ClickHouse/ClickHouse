@@ -7,7 +7,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/keeper.xml", "configs/keeper_without_compression.xml"], stay_alive=True
+    "node1",
+    main_configs=["configs/keeper.xml", "configs/keeper_without_compression.xml"],
+    stay_alive=True,
 )
 
 
