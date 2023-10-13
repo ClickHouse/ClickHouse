@@ -1,9 +1,9 @@
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
 
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <ranges>
 
