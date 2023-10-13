@@ -436,7 +436,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         query_info.input_order_info = input_sorting_info;
     }
 
-    auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
+    auto sample_block = merge_storage_snapshot->metadata->getSampleBlock();
 
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
     QueryPlanResourceHolder resources;

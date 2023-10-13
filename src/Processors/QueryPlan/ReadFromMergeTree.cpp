@@ -260,7 +260,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , prewhere_info(query_info_.prewhere_info)
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , storage_snapshot(std::move(storage_snapshot_))
-    , metadata_for_reading(storage_snapshot->getMetadataForQuery())
+    , metadata_for_reading(storage_snapshot->metadata)
     , context(std::move(context_))
     , block_size{
         .max_block_size_rows = max_block_size_,
@@ -310,7 +310,7 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     updateSortDescriptionForOutputStream(
         *output_stream,
-        storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
+        storage_snapshot->metadata->getSortingKeyColumns(),
         getSortDirection(),
         query_info.input_order_info,
         prewhere_info);
@@ -1681,7 +1681,7 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     updateSortDescriptionForOutputStream(
         *output_stream,
-        storage_snapshot->getMetadataForQuery()->getSortingKeyColumns(),
+        storage_snapshot->metadata->getSortingKeyColumns(),
         getSortDirection(),
         query_info.input_order_info,
         prewhere_info);
@@ -1884,11 +1884,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             partition_names.emplace_back(
                 fmt::format("{}.{}", data.getStorageID().getFullNameNotQuoted(), part.data_part->info.partition_id));
         }
-        context->getQueryContext()->addQueryAccessInfo(partition_names);
 
-        if (storage_snapshot->projection)
-            context->getQueryContext()->addQueryAccessInfo(
-                Context::QualifiedProjectionName{.storage_id = data.getStorageID(), .projection_name = storage_snapshot->projection->name});
+        context->getQueryContext()->addQueryAccessInfo(partition_names);
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);

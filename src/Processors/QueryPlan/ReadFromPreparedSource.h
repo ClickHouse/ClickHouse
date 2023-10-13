@@ -11,8 +11,7 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(
-        Pipe pipe_, ContextPtr context_ = nullptr, Context::QualifiedProjectionName qualified_projection_name_ = {});
+    explicit ReadFromPreparedSource(Pipe pipe_);
 
     String getName() const override { return "ReadFromPreparedSource"; }
 

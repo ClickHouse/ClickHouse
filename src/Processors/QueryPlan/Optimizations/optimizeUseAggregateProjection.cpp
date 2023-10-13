@@ -612,6 +612,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         return false;
     }
 
+    Context::QualifiedProjectionName projection_name;
     QueryPlanStepPtr projection_reading;
     bool has_ordinary_parts;
 
@@ -622,26 +623,21 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         //           candidates.minmax_projection->block.dumpStructure());
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(
-            std::move(pipe),
-            context,
-            query_info.is_internal
-                ? Context::QualifiedProjectionName{}
-                : Context::QualifiedProjectionName
-                  {
-                      .storage_id = reading->getMergeTreeData().getStorageID(),
-                      .projection_name = candidates.minmax_projection->candidate.projection->name,
-                  });
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_ordinary_parts = !candidates.minmax_projection->normal_parts.empty();
         if (has_ordinary_parts)
             reading->resetParts(std::move(candidates.minmax_projection->normal_parts));
+
+        projection_name = Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = candidates.minmax_projection->candidate.projection->name,
+        };
     }
     else
     {
         auto storage_snapshot = reading->getStorageSnapshot();
-        auto proj_snapshot = std::make_shared<StorageSnapshot>(
-            storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns);
-        proj_snapshot->addProjection(best_candidate->projection);
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
 
         auto query_info_copy = query_info;
         query_info_copy.prewhere_info = nullptr;
@@ -663,22 +659,22 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         {
             auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
-            projection_reading = std::make_unique<ReadFromPreparedSource>(
-                std::move(pipe),
-                context,
-                query_info.is_internal
-                    ? Context::QualifiedProjectionName{}
-                    : Context::QualifiedProjectionName
-                      {
-                          .storage_id = reading->getMergeTreeData().getStorageID(),
-                          .projection_name = best_candidate->projection->name,
-                      });
+            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
         if (has_ordinary_parts)
             reading->setAnalyzedResult(std::move(best_candidate->merge_tree_ordinary_select_result_ptr));
+
+        projection_name = Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        };
     }
+
+    if (!query_info.is_internal && context->hasQueryContext())
+        context->getQueryContext()->addQueryAccessInfo(projection_name);
 
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection reading header {}",
     //           projection_reading->getOutputStream().header.dumpStructure());
