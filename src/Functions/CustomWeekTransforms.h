@@ -11,9 +11,6 @@
 #include <Common/Exception.h>
 #include <Common/DateLUTImpl.h>
 
-/// The default mode value to use for the WEEK() function
-#define DEFAULT_WEEK_MODE 0
-
 
 namespace DB
 {
@@ -22,132 +19,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-/**
- * CustomWeek Transformations.
-  */
-
-struct ToYearWeekImpl
-{
-    static constexpr auto name = "toYearWeek";
-
-    static inline UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        // TODO: ditch toDayNum()
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
-    }
-
-    static inline UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
-    }
-    static inline UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum (d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
-    }
-    static inline UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
-        return yw.first * 100 + yw.second;
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToStartOfWeekImpl
-{
-    static constexpr auto name = "toStartOfWeek";
-
-    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-    static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
-    }
-    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToLastDayOfWeekImpl
-{
-    static constexpr auto name = "toLastDayOfWeek";
-
-    static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-    static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(DayNum(d), week_mode);
-    }
-    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-    }
-    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToWeekImpl
-{
-    static constexpr auto name = "toWeek";
-
-    static inline UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        // TODO: ditch conversion to DayNum, since it doesn't support extended range.
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
-        return yw.second;
-    }
-    static inline UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
-        return yw.second;
-    }
-    static inline UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), week_mode);
-        return yw.second;
-    }
-    static inline UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
-    {
-        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
-        return yw.second;
-    }
-
-    using FactorTransform = ToStartOfYearImpl;
-};
 
 template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
 struct WeekTransformer
@@ -157,8 +28,7 @@ struct WeekTransformer
     {}
 
     template <typename FromVectorType, typename ToVectorType>
-    void
-    vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
+    void vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
         using ValueType = typename ToVectorType::value_type;
         size_t size = vec_from.size();
@@ -186,7 +56,8 @@ struct CustomWeekTransformImpl
     {
         const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>{std::move(transform)};
 
-        UInt8 week_mode = DEFAULT_WEEK_MODE;
+        static constexpr UInt8 default_week_mode = 0;
+        UInt8 week_mode = default_week_mode;
         if (arguments.size() > 1)
         {
             if (const auto * week_mode_column = checkAndGetColumnConst<ColumnUInt8>(arguments[1].column.get()))
