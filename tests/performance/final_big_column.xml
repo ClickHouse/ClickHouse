@@ -1,0 +1,18 @@
+<test>
+    <create_query>
+        CREATE TABLE optimized_select_final (d Date, key UInt64, value String)
+        ENGINE = ReplacingMergeTree()
+        PARTITION BY toYYYYMM(d) ORDER BY key
+    </create_query>
+
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2000-01-01'), number, randomPrintableASCII(1000) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2020-01-01'), number, randomPrintableASCII(1000) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2021-01-01'), number, randomPrintableASCII(1000) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO optimized_select_final SELECT toDate('2022-01-01'), number, randomPrintableASCII(1000) FROM numbers(5000000)</fill_query>
+
+    <query>SELECT * FROM optimized_select_final FINAL FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT * FROM optimized_select_final FINAL WHERE key % 1000 = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS optimized_select_final</drop_query>
+
+</test>
