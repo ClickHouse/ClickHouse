@@ -61,17 +61,17 @@ FROM table
 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
 ```
 
-For maximum control, it is generally recommended to provide settings "use_query_cache", "enable_writes_to_query_cache" and
-"enable_reads_from_query_cache" only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
+For maximum control, it is generally recommended to provide settings `use_query_cache`, `enable_writes_to_query_cache` and
+`enable_reads_from_query_cache` only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
 use_query_cache = true`) but one should keep in mind that all `SELECT` queries including monitoring or debugging queries to system tables
 may return cached results then.
 
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
-`system.query_cache`. The number of query cache hits and misses since database start are shown as events "QueryCacheHits" and
-"QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for `SELECT` queries which run
-with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage` in system table
-[system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or read from the
-query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
+[system.query_cache](system-tables/query_cache.md). The number of query cache hits and misses since database start are shown as events
+"QueryCacheHits" and "QueryCacheMisses" in system table [system.events](system-tables/events.md). Both counters are only updated for
+`SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage`
+in system table [system.query_log](system-tables/query_log.md) shows for each executed query whether the query result was written into or
+read from the query cache. Asynchronous metrics "QueryCacheEntries" and "QueryCacheBytes" in system table
 [system.asynchronous_metrics](system-tables/asynchronous_metrics.md) show how many entries / bytes the query cache currently contains.
 
 The query cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can be
@@ -86,9 +86,18 @@ If the query was aborted due to an exception or user cancellation, no entry is w
 The size of the query cache in bytes, the maximum number of cache entries and the maximum size of individual cache entries (in bytes and in
 records) can be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
 
+```xml
+<query_cache>
+    <max_size_in_bytes>1073741824</max_size_in_bytes>
+    <max_entries>1024</max_entries>
+    <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+    <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+</query_cache>
+```
+
 It is also possible to limit the cache usage of individual users using [settings profiles](settings/settings-profiles.md) and [settings
 constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
-allocate in the query cache and the the maximum number of stored query results. For that, first provide configurations
+allocate in the query cache and the maximum number of stored query results. For that, first provide configurations
 [query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
 [query_cache_max_entries](settings/settings.md#query-cache-size-max-entries) in a user profile in `users.xml`, then make both settings
 readonly:
@@ -158,6 +167,7 @@ Also, results of queries with non-deterministic functions are not cached by defa
 - functions which depend on the environment: [`currentUser()`](../sql-reference/functions/other-functions.md#currentUser),
   [`queryID()`](../sql-reference/functions/other-functions.md#queryID),
   [`getMacro()`](../sql-reference/functions/other-functions.md#getMacro) etc.
+
 To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_store_results_of_queries_with_nondeterministic_functions](settings/settings.md#query-cache-store-results-of-queries-with-nondeterministic-functions).
 
