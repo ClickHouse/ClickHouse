@@ -40,28 +40,30 @@ StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
 }
 
 StorageS3QueueSource::FileIterator::FileIterator(
-    std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_)
-    : metadata(metadata_) , glob_iterator(std::move(glob_iterator_))
+    std::shared_ptr<S3QueueFilesMetadata> metadata_,
+    std::unique_ptr<GlobIterator> glob_iterator_,
+    std::atomic<bool> & shutdown_called_)
+    : metadata(metadata_)
+    , glob_iterator(std::move(glob_iterator_))
+    , shutdown_called(shutdown_called_)
 {
 }
 
 StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
 {
-    /// List results in s3 are always returned in UTF-8 binary order.
-    /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-
-    while (true)
+    while (!shutdown_called)
     {
         KeyWithInfoPtr val = glob_iterator->next();
 
-        if (!val)
+        if (!val || shutdown_called)
             return {};
 
-        if (auto processing_holder = metadata->trySetFileAsProcessing(val->key); processing_holder)
+        if (auto processing_holder = metadata->trySetFileAsProcessing(val->key); processing_holder && !shutdown_called)
         {
             return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
         }
     }
+    return {};
 }
 
 size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
@@ -122,6 +124,21 @@ Chunk StorageS3QueueSource::generate()
         if (isCancelled())
         {
             reader->cancel();
+            break;
+        }
+
+        if (shutdown_called)
+        {
+            if (processed_rows_from_file)
+            {
+                /// We could delay shutdown until files, which already started processing before the shutdown, finished.
+                /// But if files are big and `s3queue_processing_threads_num` is not small, it can take a significant time.
+                /// Anyway we cannot do anything in case of SIGTERM, so destination table must anyway support deduplication,
+                /// so here we will rely on it here as well.
+                LOG_WARNING(
+                    log, "Shutdown called, {} rows are already processed, but file is not fully processed",
+                    processed_rows_from_file);
+            }
             break;
         }
 
