@@ -116,52 +116,28 @@ DatabaseReplicated::DatabaseReplicated(
 
     if (!db_settings.collection_name.value.empty())
         fillClusterAuthInfo(db_settings.collection_name.value, context_->getConfigRef());
-
-    replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
-
-    if (replica_group_name.find('/') != std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica group name should not contain '/': {}", replica_group_name);
-    if (replica_group_name.find('|') != std::string::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica group name should not contain '|': {}", replica_group_name);
 }
 
-String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica, const String & replica_group)
+String DatabaseReplicated::getFullReplicaName(const String & shard, const String & replica)
 {
-    if (replica_group.empty())
-        return shard + '|' + replica;
-    else
-        return shard + '|' + replica + '|' + replica_group;
+    return shard + '|' + replica;
 }
 
 String DatabaseReplicated::getFullReplicaName() const
 {
-    return getFullReplicaName(shard_name, replica_name, replica_group_name);
+    return getFullReplicaName(shard_name, replica_name);
 }
 
-DatabaseReplicated::NameParts DatabaseReplicated::parseFullReplicaName(const String & name)
+std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String & name)
 {
-    NameParts parts;
-
-    auto pos_first = name.find('|');
-    if (pos_first == std::string::npos)
+    String shard;
+    String replica;
+    auto pos = name.find('|');
+    if (pos == std::string::npos || name.find('|', pos + 1) != std::string::npos)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect replica identifier: {}", name);
-
-    parts.shard = name.substr(0, pos_first);
-
-    auto pos_second = name.find('|', pos_first + 1);
-    if (pos_second == std::string::npos)
-    {
-        parts.replica = name.substr(pos_first + 1);
-        return parts;
-    }
-
-    if (name.find('|', pos_second + 1) != std::string::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect replica identifier: {}", name);
-
-    parts.replica = name.substr(pos_first + 1, pos_second - pos_first - 1);
-    parts.replica_group = name.substr(pos_second + 1);
-
-    return parts;
+    shard = name.substr(0, pos);
+    replica = name.substr(pos + 1);
+    return {shard, replica};
 }
 
 ClusterPtr DatabaseReplicated::tryGetCluster() const
@@ -199,7 +175,6 @@ void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
 
 ClusterPtr DatabaseReplicated::getClusterImpl() const
 {
-    Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
 
@@ -211,18 +186,11 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     {
         host_ids.resize(0);
         Coordination::Stat stat;
-        unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
-        if (unfiltered_hosts.empty())
+        hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
+        if (hosts.empty())
             throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
-
-        for (const auto & host : unfiltered_hosts)
-        {
-            if (replica_group_name == parseFullReplicaName(host).replica_group)
-                hosts.push_back(host);
-        }
-
         Int32 cversion = stat.cversion;
         ::sort(hosts.begin(), hosts.end());
 
@@ -253,7 +221,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
 
     assert(!hosts.empty());
     assert(hosts.size() == host_ids.size());
-    String current_shard = parseFullReplicaName(hosts.front()).shard;
+    String current_shard = parseFullReplicaName(hosts.front()).first;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
     shards.emplace_back();
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -261,17 +229,17 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         const auto & id = host_ids[i];
         if (id == DROPPED_MARK)
             continue;
-        auto parts = parseFullReplicaName(hosts[i]);
+        auto [shard, replica] = parseFullReplicaName(hosts[i]);
         auto pos = id.rfind(':');
         String host_port = id.substr(0, pos);
-        if (parts.shard != current_shard)
+        if (shard != current_shard)
         {
-            current_shard = parts.shard;
+            current_shard = shard;
             if (!shards.back().empty())
                 shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(parts.shard), std::move(parts.replica), std::move(parts.replica_group)});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica)});
     }
 
     UInt16 default_port = getContext()->getTCPPort();
@@ -301,7 +269,7 @@ std::vector<UInt8> DatabaseReplicated::tryGetAreReplicasActive(const ClusterPtr 
     {
         for (const auto & replica : addresses_with_failover[shard_index])
         {
-            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name, replica.database_replica_name);
+            String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
             paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
         }
     }
@@ -340,7 +308,6 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secret = config_ref.getString(config_prefix + ".cluster_secret", "");
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
-
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
@@ -497,26 +464,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
     for (int attempts = 10; attempts > 0; --attempts)
     {
-        Coordination::Stat stat_max_log_ptr;
-        Coordination::Stat stat_replicas;
-        String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat_max_log_ptr);
-        Strings replicas = current_zookeeper->getChildren(zookeeper_path + "/replicas", &stat_replicas);
-        for (const auto & replica : replicas)
-        {
-            NameParts parts = parseFullReplicaName(replica);
-            if (parts.shard == shard_name && parts.replica == replica_name)
-            {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica {} of shard {} of replicated database already exists in the replica group {} at {}",
-                    replica_name, shard_name, parts.replica_group, zookeeper_path);
-            }
-        }
-
-        /// This way we make sure that other replica with the same replica_name and shard_name
-        ///  but with a different replica_group_name was not created at the same time.
-        String replica_value = "Last added replica: " + getFullReplicaName();
-
+        Coordination::Stat stat;
+        String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
@@ -524,8 +473,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
         /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
         /// notify other nodes that issued new queries while this node was recovering.
-        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat_max_log_ptr.version));
-        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", replica_value, stat_replicas.version));
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version));
         Coordination::Responses responses;
         const auto code = current_zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZOK)
@@ -756,15 +704,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
-    Strings hosts_to_wait;
-    Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-
-    for (const auto & host : unfiltered_hosts)
-    {
-        if (replica_group_name == parseFullReplicaName(host).replica_group)
-            hosts_to_wait.push_back(host);
-    }
-
+    Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
     return getDistributedDDLStatus(node_path, entry, query_context, &hosts_to_wait);
 }
 
@@ -1172,11 +1112,11 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, const String & replica_group)
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica)
 {
     assert(!database || database_zookeeper_path == database->zookeeper_path);
 
-    String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica, replica_group);
+    String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
 
     if (full_replica_name.find('/') != std::string::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
