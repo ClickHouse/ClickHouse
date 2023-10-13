@@ -5376,10 +5376,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                         else
                             partition_ast_fields_count = 0;
                     }
-                    else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>();
-                             inner_literal_tuple && inner_literal_tuple->value.getType() == Field::Types::Tuple)
+                    else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
                     {
-                        partition_ast_fields_count = inner_literal_tuple->value.safeGet<Tuple>().size();
+                        if (inner_literal_tuple->value.getType() == Field::Types::Tuple)
+                            partition_ast_fields_count = inner_literal_tuple->value.safeGet<Tuple>().size();
+                        else
+                            partition_ast_fields_count = 1;
                     }
                     else
                     {
@@ -5447,12 +5449,26 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
     else if (fields_count == 1)
     {
-        if (auto * tuple = partition_value_ast->as<ASTFunction>())
+        if (auto * tuple = partition_value_ast->as<ASTFunction>(); tuple)
         {
-            assert(tuple->name == "tuple");
-            assert(tuple->arguments);
-            assert(tuple->arguments->children.size() == 1);
-            partition_value_ast = tuple->arguments->children[0];
+            if (tuple->name == "tuple")
+            {
+                assert(tuple->arguments);
+                assert(tuple->arguments->children.size() == 1);
+                partition_value_ast = tuple->arguments->children[0];
+            }
+            else if (isFunctionCast(tuple))
+            {
+                assert(tuple->arguments);
+                assert(tuple->arguments->children.size() == 2);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_PARTITION_VALUE,
+                    "Expected literal or tuple for partition key, got {}",
+                    partition_value_ast->getID());
+            }
         }
         /// Simple partition key, need to evaluate and cast
         Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
