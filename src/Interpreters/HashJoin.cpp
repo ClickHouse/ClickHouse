@@ -1235,7 +1235,7 @@ private:
 };
 
 StreamReplicateBlocks::StreamReplicateBlocks(const Block & block_, std::vector<size_t> right_col_idx_, std::shared_ptr<AddedColumns> added_columns_, std::unique_ptr<IColumn::Offsets> offsets_to_replicate_, const std::vector<size_t> & need_replicate_pos_, size_t max_block_size_)
-    : block(block_), right_col_idx(right_col_idx_), added_columns(added_columns_), offsets_to_replicate(std::move(offsets_to_replicate_)), need_replicate_pos(need_replicate_pos_), max_block_size(max_block_size_)
+    : block(block_), right_col_idx(right_col_idx_), added_columns(added_columns_), offsets_to_replicate(std::move(offsets_to_replicate_)), need_replicate_pos(need_replicate_pos_), max_block_size(max_block_size_ ? max_block_size_ : DEFAULT_BLOCK_SIZE)
 {
 }
 
