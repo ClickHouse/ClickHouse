@@ -1184,6 +1184,7 @@ editDistance
 byteHammingDistance
 jaccardIndex
 levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
