@@ -9755,7 +9755,8 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
 
 bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name)
 {
-    if (disk->supportZeroCopyReplication())
+    auto settings_ptr = getSettings();
+    if (disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         String table_id = getTableSharedID();
         return removeSharedDetachedPart(disk, path, part_name, table_id, replica_name, zookeeper_path, getContext(), current_zookeeper);
