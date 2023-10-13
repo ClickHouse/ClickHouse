@@ -33,6 +33,11 @@ ALTER TABLE test DROP PARTITION ID {partition_id:String};
 
 SELECT count() FROM test;
 
+INSERT INTO test VALUES(toDate('2023-10-09'));
+
+ALTER TABLE test DROP PARTITION {partition:Date};
+SELECT count() FROM test;
+
 DROP TABLE IF EXISTS test;
 
 DROP TABLE IF EXISTS test2;
