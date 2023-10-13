@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
 function were_parallel_replicas_used () {
     # Not using current_database = '$CLICKHOUSE_DATABASE' as nested parallel queries aren't run with it
@@ -36,14 +37,14 @@ $CLICKHOUSE_CLIENT --query "
 "
 
     # $1 -> query_id
-    # $2 -> min rows per replica
+    # $2 -> parallel_replicas_min_number_of_rows_per_replica
     # $3 -> query
 function run_query_with_pure_parallel_replicas () {
     # Note that we look into the logs to know how many parallel replicas were estimated because, although the coordinator
     # might decide to use N replicas, one of them might be fast and do all the work before others start up. This means
     # that those replicas wouldn't log into the system.query_log and the test would be flaky
 
-    $CLICKHOUSE_CLIENT \
+    $CLICKHOUSE_CLIENT_TRACE \
         --query "$3" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
@@ -53,8 +54,7 @@ function run_query_with_pure_parallel_replicas () {
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
-        --send_logs_level "trace" \
-    2>&1 | grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
+    |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 
 query_id_base="02784_automatic_parallel_replicas-$CLICKHOUSE_DATABASE"
