@@ -608,6 +608,7 @@ void ORCBlockOutputFormat::prepareWriter()
     const Block & header = getPort(PortKind::Main).getHeader();
     schema = orc::createStructType();
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
+    options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));

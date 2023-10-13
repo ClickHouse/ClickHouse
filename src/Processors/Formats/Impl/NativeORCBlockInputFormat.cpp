@@ -14,6 +14,7 @@
 #    include <DataTypes/DataTypeFactory.h>
 #    include <DataTypes/DataTypeFixedString.h>
 #    include <DataTypes/DataTypeIPv4andIPv6.h>
+#    include <DataTypes/DataTypeLowCardinality.h>
 #    include <DataTypes/DataTypeMap.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
@@ -106,9 +107,109 @@ static const orc::Type * getORCTypeByName(const orc::Type & schema, const String
     return nullptr;
 }
 
-static std::optional<orc::PredicateDataType> convertORCTypeToPredicateType(const orc::Type & type)
+static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_with_unsupported_types, bool & skipped)
 {
-    switch (type.getKind())
+    assert(orc_type != nullptr);
+
+    const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
+    switch (orc_type->getKind())
+    {
+        case orc::TypeKind::BOOLEAN:
+            return DataTypeFactory::instance().get("Bool");
+        case orc::TypeKind::BYTE:
+            return std::make_shared<DataTypeInt8>();
+        case orc::TypeKind::SHORT:
+            return std::make_shared<DataTypeInt16>();
+        case orc::TypeKind::INT:
+            return std::make_shared<DataTypeInt32>();
+        case orc::TypeKind::LONG:
+            return std::make_shared<DataTypeInt64>();
+        case orc::TypeKind::FLOAT:
+            return std::make_shared<DataTypeFloat32>();
+        case orc::TypeKind::DOUBLE:
+            return std::make_shared<DataTypeFloat64>();
+        case orc::TypeKind::DATE:
+            return std::make_shared<DataTypeDate32>();
+        case orc::TypeKind::TIMESTAMP:
+            return std::make_shared<DataTypeDateTime64>(9);
+        case orc::TypeKind::VARCHAR:
+        case orc::TypeKind::BINARY:
+        case orc::TypeKind::STRING:
+            return std::make_shared<DataTypeString>();
+        case orc::TypeKind::CHAR:
+            return std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
+        case orc::TypeKind::DECIMAL: {
+            UInt64 precision = orc_type->getPrecision();
+            UInt64 scale = orc_type->getScale();
+            if (precision == 0)
+            {
+                // In HIVE 0.11/0.12 precision is set as 0, but means max precision
+                return createDecimal<DataTypeDecimal>(38, 6);
+            }
+            else
+                return createDecimal<DataTypeDecimal>(precision, scale);
+        }
+        case orc::TypeKind::LIST: {
+            if (subtype_count != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
+
+            DataTypePtr nested_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
+            return std::make_shared<DataTypeArray>(nested_type);
+        }
+        case orc::TypeKind::MAP: {
+            if (subtype_count != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
+
+            DataTypePtr key_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
+            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, skipped);
+            if (skipped)
+                return {};
+
+            return std::make_shared<DataTypeMap>(key_type, value_type);
+        }
+        case orc::TypeKind::STRUCT: {
+            DataTypes nested_types;
+            Strings nested_names;
+            nested_types.reserve(subtype_count);
+            nested_names.reserve(subtype_count);
+
+            for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
+            {
+                auto parsed_type = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, skipped);
+                if (skipped)
+                    return {};
+
+                nested_types.push_back(parsed_type);
+                nested_names.push_back(orc_type->getFieldName(i));
+            }
+            return std::make_shared<DataTypeTuple>(nested_types, nested_names);
+        }
+        default: {
+            if (skip_columns_with_unsupported_types)
+            {
+                skipped = true;
+                return {};
+            }
+
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "Unsupported ORC type '{}'."
+                "If you want to skip columns with unsupported types, "
+                "you can enable setting input_format_orc_skip_columns_with_unsupported_types_in_schema_inference",
+                orc_type->toString());
+        }
+    }
+}
+
+static std::optional<orc::PredicateDataType> convertORCTypeToPredicateType(const orc::Type & orc_type)
+{
+    switch (orc_type.getKind())
     {
         case orc::BOOLEAN:
             return orc::PredicateDataType::BOOLEAN;
@@ -256,10 +357,11 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
 
 static void buildORCSearchArgumentImpl(
     const KeyCondition & key_condition,
+    const Block & header,
     const orc::Type & schema,
     KeyCondition::RPN & rpn_stack,
     orc::SearchArgumentBuilder & builder,
-    bool case_insensitive_column_matching)
+    const FormatSettings & format_settings)
 {
     if (rpn_stack.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
@@ -305,15 +407,30 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            const auto * type
-                = getORCTypeByName(schema, getColumnNameFromKeyCondition(key_condition, curr.key_column), case_insensitive_column_matching);
-            if (!type)
+            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
+            const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
+            if (!orc_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
 
-            auto predicate_type = convertORCTypeToPredicateType(*type);
+            /// Make sure key column in header has exactly the same type with key column in ORC file schema
+            /// A counter-example:
+            ///     Column a has type "Nullable(Int64)" in ORC file, but in header column a has type "Int64", which is allowd in CH.
+            ///     For queries with where condition like "a is null", pushing such filter down to ORC file will make CH return wrong results.
+            bool skipped = false;
+            auto expect_type = parseORCType(orc_type, true, skipped);
+            if (format_settings.schema_inference_make_columns_nullable)
+                expect_type = makeNullableRecursively(expect_type);
+            const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
+            if (!expect_type || !column || !removeLowCardinality(column->type)->equals(*expect_type))
+            {
+                builder.literal(orc::TruthValue::YES_NO_NULL);
+                break;
+            }
+
+            auto predicate_type = convertORCTypeToPredicateType(*orc_type);
             if (!predicate_type.has_value())
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -325,7 +442,7 @@ static void buildORCSearchArgumentImpl(
 
             if (contains_is_null)
             {
-                builder.isNull(type->getColumnId(), *predicate_type);
+                builder.isNull(orc_type->getColumnId(), *predicate_type);
             }
             else if (contains_in_range)
             {
@@ -340,9 +457,9 @@ static void buildORCSearchArgumentImpl(
                 else if (has_left_bound && has_right_bound && range.left_included && range.right_included && range.left == range.right)
                 {
                     /// Transform range with the same left bound and right bound to equal, which could utilize bloom filters in ORC
-                    auto literal = convertFieldToORCLiteral(*type, range.left);
+                    auto literal = convertFieldToORCLiteral(*orc_type, range.left);
                     if (literal.has_value())
-                        builder.equals(type->getColumnId(), *predicate_type, *literal);
+                        builder.equals(orc_type->getColumnId(), *predicate_type, *literal);
                     else
                         builder.literal(orc::TruthValue::YES_NO_NULL);
                 }
@@ -350,11 +467,11 @@ static void buildORCSearchArgumentImpl(
                 {
                     std::optional<orc::Literal> left_literal;
                     if (has_left_bound)
-                        left_literal = convertFieldToORCLiteral(*type, range.left);
+                        left_literal = convertFieldToORCLiteral(*orc_type, range.left);
 
                     std::optional<orc::Literal> right_literal;
                     if (has_right_bound)
-                        right_literal = convertFieldToORCLiteral(*type, range.right);
+                        right_literal = convertFieldToORCLiteral(*orc_type, range.right);
 
                     if (has_left_bound && has_right_bound)
                         builder.startAnd();
@@ -366,9 +483,9 @@ static void buildORCSearchArgumentImpl(
                             /// >= is transformed to not < and > is transformed to not <=
                             builder.startNot();
                             if (range.left_included)
-                                builder.lessThan(type->getColumnId(), *predicate_type, *left_literal);
+                                builder.lessThan(orc_type->getColumnId(), *predicate_type, *left_literal);
                             else
-                                builder.lessThanEquals(type->getColumnId(), *predicate_type, *left_literal);
+                                builder.lessThanEquals(orc_type->getColumnId(), *predicate_type, *left_literal);
                             builder.end();
                         }
                         else
@@ -380,9 +497,9 @@ static void buildORCSearchArgumentImpl(
                         if (right_literal.has_value())
                         {
                             if (range.right_included)
-                                builder.lessThanEquals(type->getColumnId(), *predicate_type, *right_literal);
+                                builder.lessThanEquals(orc_type->getColumnId(), *predicate_type, *right_literal);
                             else
-                                builder.lessThan(type->getColumnId(), *predicate_type, *right_literal);
+                                builder.lessThan(orc_type->getColumnId(), *predicate_type, *right_literal);
                         }
                         else
                             builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -403,7 +520,7 @@ static void buildORCSearchArgumentImpl(
                 literals.reserve(set_column->size());
                 for (size_t i = 0; i < set_column->size(); ++i)
                 {
-                    auto literal = convertFieldToORCLiteral(*type, (*set_column)[i]);
+                    auto literal = convertFieldToORCLiteral(*orc_type, (*set_column)[i]);
                     if (!literal.has_value())
                     {
                         fail = true;
@@ -414,7 +531,7 @@ static void buildORCSearchArgumentImpl(
                 }
 
                 if (!fail)
-                    builder.in(type->getColumnId(), *predicate_type, literals);
+                    builder.in(orc_type->getColumnId(), *predicate_type, literals);
                 else
                     builder.literal(orc::TruthValue::YES_NO_NULL);
             }
@@ -432,23 +549,23 @@ static void buildORCSearchArgumentImpl(
         case KeyCondition::RPNElement::FUNCTION_NOT: {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
         case KeyCondition::RPNElement::FUNCTION_AND: {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
         case KeyCondition::RPNElement::FUNCTION_OR: {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
-            buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, builder, case_insensitive_column_matching);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
             builder.end();
             break;
         }
@@ -466,115 +583,15 @@ static void buildORCSearchArgumentImpl(
 }
 
 std::unique_ptr<orc::SearchArgument>
-buildORCSearchArgument(const KeyCondition & key_condition, const orc::Type & schema, bool case_insensitive_column_matching)
+buildORCSearchArgument(const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings)
 {
     auto rpn_stack = key_condition.getRPN();
     if (rpn_stack.empty())
         return nullptr;
 
     auto builder = orc::SearchArgumentFactory::newBuilder();
-    buildORCSearchArgumentImpl(key_condition, schema, rpn_stack, *builder, case_insensitive_column_matching);
+    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
     return builder->build();
-}
-
-static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_with_unsupported_types, bool & skipped)
-{
-    assert(orc_type != nullptr);
-
-    const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
-    switch (orc_type->getKind())
-    {
-        case orc::TypeKind::BOOLEAN:
-            return DataTypeFactory::instance().get("Bool");
-        case orc::TypeKind::BYTE:
-            return std::make_shared<DataTypeInt8>();
-        case orc::TypeKind::SHORT:
-            return std::make_shared<DataTypeInt16>();
-        case orc::TypeKind::INT:
-            return std::make_shared<DataTypeInt32>();
-        case orc::TypeKind::LONG:
-            return std::make_shared<DataTypeInt64>();
-        case orc::TypeKind::FLOAT:
-            return std::make_shared<DataTypeFloat32>();
-        case orc::TypeKind::DOUBLE:
-            return std::make_shared<DataTypeFloat64>();
-        case orc::TypeKind::DATE:
-            return std::make_shared<DataTypeDate32>();
-        case orc::TypeKind::TIMESTAMP:
-            return std::make_shared<DataTypeDateTime64>(9);
-        case orc::TypeKind::VARCHAR:
-        case orc::TypeKind::BINARY:
-        case orc::TypeKind::STRING:
-            return std::make_shared<DataTypeString>();
-        case orc::TypeKind::CHAR:
-            return std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
-        case orc::TypeKind::DECIMAL: {
-            UInt64 precision = orc_type->getPrecision();
-            UInt64 scale = orc_type->getScale();
-            if (precision == 0)
-            {
-                // In HIVE 0.11/0.12 precision is set as 0, but means max precision
-                return createDecimal<DataTypeDecimal>(38, 6);
-            }
-            else
-                return createDecimal<DataTypeDecimal>(precision, scale);
-        }
-        case orc::TypeKind::LIST: {
-            if (subtype_count != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc List type {}", orc_type->toString());
-
-            DataTypePtr nested_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
-            if (skipped)
-                return {};
-
-            return std::make_shared<DataTypeArray>(nested_type);
-        }
-        case orc::TypeKind::MAP: {
-            if (subtype_count != 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Orc Map type {}", orc_type->toString());
-
-            DataTypePtr key_type = parseORCType(orc_type->getSubtype(0), skip_columns_with_unsupported_types, skipped);
-            if (skipped)
-                return {};
-
-            DataTypePtr value_type = parseORCType(orc_type->getSubtype(1), skip_columns_with_unsupported_types, skipped);
-            if (skipped)
-                return {};
-
-            return std::make_shared<DataTypeMap>(key_type, value_type);
-        }
-        case orc::TypeKind::STRUCT: {
-            DataTypes nested_types;
-            Strings nested_names;
-            nested_types.reserve(subtype_count);
-            nested_names.reserve(subtype_count);
-
-            for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
-            {
-                auto parsed_type = parseORCType(orc_type->getSubtype(i), skip_columns_with_unsupported_types, skipped);
-                if (skipped)
-                    return {};
-
-                nested_types.push_back(parsed_type);
-                nested_names.push_back(orc_type->getFieldName(i));
-            }
-            return std::make_shared<DataTypeTuple>(nested_types, nested_names);
-        }
-        default: {
-            if (skip_columns_with_unsupported_types)
-            {
-                skipped = true;
-                return {};
-            }
-
-            throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported ORC type '{}'."
-                "If you want to skip columns with unsupported types, "
-                "you can enable setting input_format_orc_skip_columns_with_unsupported_types_in_schema_inference",
-                orc_type->toString());
-        }
-    }
 }
 
 
@@ -638,9 +655,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     if (format_settings.orc.filter_push_down && key_condition && !sarg)
     {
-        // std::cout << "key_condition:" << key_condition->toString() << std::endl;
-        sarg = buildORCSearchArgument(*key_condition, file_reader->getType(), format_settings.orc.case_insensitive_column_matching);
-        // std::cout << "sarg:" << sarg->toString() << std::endl;
+        sarg = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
     }
 }
 
@@ -656,7 +671,6 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     if (current_stripe >= total_stripes)
         return false;
 
-    // std::cout << "current_stripe:" << current_stripe << std::endl;
     current_stripe_info = file_reader->getStripe(current_stripe);
     if (!current_stripe_info->getNumberOfRows())
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
@@ -666,7 +680,6 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
     if (format_settings.orc.filter_push_down && sarg)
     {
-        // std::cout << "orc filter push down applied" << std::endl;
         row_reader_options.searchArgument(sarg);
     }
 

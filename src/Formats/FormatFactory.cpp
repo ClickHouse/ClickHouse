@@ -192,6 +192,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.orc.output_compression_method = settings.output_format_orc_compression_method;
+    format_settings.orc.output_row_index_stride = settings.output_format_orc_row_index_stride;
     format_settings.orc.use_fast_decoder = settings.input_format_orc_use_fast_decoder;
     format_settings.orc.filter_push_down = settings.input_format_orc_filter_push_down;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
