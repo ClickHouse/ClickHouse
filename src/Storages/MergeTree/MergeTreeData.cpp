@@ -5354,9 +5354,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
-        MergeTreePartInfo::validatePartitionID(partition_value_ast, format_version);
-        const auto * partition_lit = partition_value_ast->as<ASTLiteral>();
-        return partition_lit->value.get<String>();
+        const auto * partition_lit = partition_ast.value->as<ASTLiteral>();
+        if (partition_lit && partition_lit->value.getType() == Field::Types::String)
+        {
+            MergeTreePartInfo::validatePartitionID(partition_ast.value->clone(), format_version);
+            return partition_lit->value.get<String>();
+        }
     }
 
     /// Re-parse partition key fields using the information about expected field types.

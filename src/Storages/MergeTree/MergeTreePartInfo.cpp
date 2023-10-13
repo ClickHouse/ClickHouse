@@ -29,6 +29,7 @@ void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, Mer
     std::string partition_id;
     if (auto * literal = partition_id_ast->as<ASTLiteral>(); literal != nullptr && literal->value.getType() == Field::Types::String)
         partition_id = literal->value.safeGet<String>();
+
     else
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id must be string literal");
 
