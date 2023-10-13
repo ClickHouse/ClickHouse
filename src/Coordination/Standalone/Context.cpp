@@ -41,7 +41,7 @@ struct ContextSharedPart : boost::noncopyable
         : macros(std::make_unique<Macros>())
     {}
 
-    /// For access of most of shared objects. Recursive mutex.
+    /// For access of most of shared objects.
     mutable SharedMutex mutex;
 
     mutable std::mutex keeper_dispatcher_mutex;
