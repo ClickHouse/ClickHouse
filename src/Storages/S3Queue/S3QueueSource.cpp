@@ -148,7 +148,7 @@ Chunk StorageS3QueueSource::generate()
         }
         catch (const Exception & e)
         {
-            LOG_ERROR(log, "Exception in chunk pulling: {} ", e.displayText());
+            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getFile(), e.displayText());
 
             files_metadata->setFileFailed(key_with_info->processing_holder, e.message());
 
