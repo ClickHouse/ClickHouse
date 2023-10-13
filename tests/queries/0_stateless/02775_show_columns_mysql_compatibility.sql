@@ -78,4 +78,13 @@ SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0;
 SELECT '-- SHOW COLUMNS with use_mysql_types_in_show_columns = 1';
 SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1;
 
+SELECT '-- SHOW COLUMNS with mysql_remap_string_as_text_in_show_columns = 1';
+SHOW COLUMNS FROM tab SETTINGS mysql_remap_string_as_text_in_show_columns=1;
+
+SELECT '-- SHOW COLUMNS with mysql_remap_fixed_string_as_text_in_show_columns = 1';
+SHOW COLUMNS FROM tab SETTINGS mysql_remap_fixed_string_as_text_in_show_columns=1;
+
+SELECT '-- SHOW COLUMNS with both mysql_remap_string_as_text_in_show_columns = 1 and mysql_remap_fixed_string_as_text_in_show_columns = 1';
+SHOW COLUMNS FROM tab SETTINGS mysql_remap_string_as_text_in_show_columns=1, mysql_remap_fixed_string_as_text_in_show_columns=1;
+
 DROP TABLE tab;

@@ -84,6 +84,128 @@ dt_tz2	DATETIME	NO		\N
 enm	TEXT	NO		\N	
 f32	FLOAT	NO		\N	
 f64	DOUBLE	NO		\N	
+fs	BLOB	NO		\N	
+i128	TEXT	NO		\N	
+i16	SMALLINT	NO		\N	
+i256	TEXT	NO		\N	
+i32	INTEGER	NO		\N	
+i64	BIGINT	NO		\N	
+i8	TINYINT	NO		\N	
+ip4	TEXT	NO		\N	
+ip6	TEXT	NO		\N	
+lfs	BLOB	NO		\N	
+lnfs	BLOB	YES		\N	
+lns	BLOB	YES		\N	
+ls	BLOB	NO		\N	
+m	JSON	NO		\N	
+m_complex	JSON	NO		\N	
+mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
+ndt64_tz	DATETIME	YES		\N	
+nested.col1	TEXT	NO		\N	
+nested.col2	TEXT	NO		\N	
+nfs	BLOB	YES		\N	
+ns	BLOB	YES		\N	
+o	JSON	NO		\N	
+p	TEXT	NO		\N	
+pg	TEXT	NO		\N	
+r	TEXT	NO		\N	
+s	BLOB	NO		\N	
+sagg	TEXT	NO		\N	
+t	JSON	NO		\N	
+ui128	TEXT	NO		\N	
+ui16	SMALLINT UNSIGNED	NO		\N	
+ui256	TEXT	NO		\N	
+ui32	INTEGER UNSIGNED	NO		\N	
+ui64	BIGINT UNSIGNED	NO		\N	
+ui8	TINYINT UNSIGNED	NO		\N	
+uuid	CHAR	NO		\N	
+-- SHOW COLUMNS with mysql_remap_string_as_text_in_show_columns = 1
+a	TEXT	NO		\N	
+agg	TEXT	NO		\N	
+b	TINYINT	NO		\N	
+d	DATE	NO		\N	
+d32	DATE	NO		\N	
+dec128	DECIMAL(38, 2)	NO		\N	
+dec128_native	DECIMAL(35, 30)	NO		\N	
+dec128_text	TEXT	NO		\N	
+dec256	TEXT	NO		\N	
+dec256_native	DECIMAL(65, 2)	NO		\N	
+dec256_text	TEXT	NO		\N	
+dec32	DECIMAL(9, 2)	NO		\N	
+dec64	DECIMAL(18, 2)	NO		\N	
+dt	DATETIME	NO		\N	
+dt64	DATETIME	NO		\N	
+dt64_3_tz1	DATETIME	NO		\N	
+dt64_3_tz2	DATETIME	NO		\N	
+dt64_6	DATETIME	NO		\N	
+dt64_9	DATETIME	NO		\N	
+dt_tz1	DATETIME	NO		\N	
+dt_tz2	DATETIME	NO		\N	
+enm	TEXT	NO		\N	
+f32	FLOAT	NO		\N	
+f64	DOUBLE	NO		\N	
+fs	BLOB	NO		\N	
+i128	TEXT	NO		\N	
+i16	SMALLINT	NO		\N	
+i256	TEXT	NO		\N	
+i32	INTEGER	NO		\N	
+i64	BIGINT	NO		\N	
+i8	TINYINT	NO		\N	
+ip4	TEXT	NO		\N	
+ip6	TEXT	NO		\N	
+lfs	BLOB	NO		\N	
+lnfs	BLOB	YES		\N	
+lns	TEXT	YES		\N	
+ls	TEXT	NO		\N	
+m	JSON	NO		\N	
+m_complex	JSON	NO		\N	
+mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
+ndt64_tz	DATETIME	YES		\N	
+nested.col1	TEXT	NO		\N	
+nested.col2	TEXT	NO		\N	
+nfs	BLOB	YES		\N	
+ns	TEXT	YES		\N	
+o	JSON	NO		\N	
+p	TEXT	NO		\N	
+pg	TEXT	NO		\N	
+r	TEXT	NO		\N	
+s	TEXT	NO		\N	
+sagg	TEXT	NO		\N	
+t	JSON	NO		\N	
+ui128	TEXT	NO		\N	
+ui16	SMALLINT UNSIGNED	NO		\N	
+ui256	TEXT	NO		\N	
+ui32	INTEGER UNSIGNED	NO		\N	
+ui64	BIGINT UNSIGNED	NO		\N	
+ui8	TINYINT UNSIGNED	NO		\N	
+uuid	CHAR	NO		\N	
+-- SHOW COLUMNS with mysql_remap_fixed_string_as_text_in_show_columns = 1
+a	TEXT	NO		\N	
+agg	TEXT	NO		\N	
+b	TINYINT	NO		\N	
+d	DATE	NO		\N	
+d32	DATE	NO		\N	
+dec128	DECIMAL(38, 2)	NO		\N	
+dec128_native	DECIMAL(35, 30)	NO		\N	
+dec128_text	TEXT	NO		\N	
+dec256	TEXT	NO		\N	
+dec256_native	DECIMAL(65, 2)	NO		\N	
+dec256_text	TEXT	NO		\N	
+dec32	DECIMAL(9, 2)	NO		\N	
+dec64	DECIMAL(18, 2)	NO		\N	
+dt	DATETIME	NO		\N	
+dt64	DATETIME	NO		\N	
+dt64_3_tz1	DATETIME	NO		\N	
+dt64_3_tz2	DATETIME	NO		\N	
+dt64_6	DATETIME	NO		\N	
+dt64_9	DATETIME	NO		\N	
+dt_tz1	DATETIME	NO		\N	
+dt_tz2	DATETIME	NO		\N	
+enm	TEXT	NO		\N	
+f32	FLOAT	NO		\N	
+f64	DOUBLE	NO		\N	
 fs	TEXT	NO		\N	
 i128	TEXT	NO		\N	
 i16	SMALLINT	NO		\N	
@@ -111,6 +233,67 @@ p	TEXT	NO		\N
 pg	TEXT	NO		\N	
 r	TEXT	NO		\N	
 s	BLOB	NO		\N	
+sagg	TEXT	NO		\N	
+t	JSON	NO		\N	
+ui128	TEXT	NO		\N	
+ui16	SMALLINT UNSIGNED	NO		\N	
+ui256	TEXT	NO		\N	
+ui32	INTEGER UNSIGNED	NO		\N	
+ui64	BIGINT UNSIGNED	NO		\N	
+ui8	TINYINT UNSIGNED	NO		\N	
+uuid	CHAR	NO		\N	
+-- SHOW COLUMNS with both mysql_remap_string_as_text_in_show_columns = 1 and mysql_remap_fixed_string_as_text_in_show_columns = 1
+a	TEXT	NO		\N	
+agg	TEXT	NO		\N	
+b	TINYINT	NO		\N	
+d	DATE	NO		\N	
+d32	DATE	NO		\N	
+dec128	DECIMAL(38, 2)	NO		\N	
+dec128_native	DECIMAL(35, 30)	NO		\N	
+dec128_text	TEXT	NO		\N	
+dec256	TEXT	NO		\N	
+dec256_native	DECIMAL(65, 2)	NO		\N	
+dec256_text	TEXT	NO		\N	
+dec32	DECIMAL(9, 2)	NO		\N	
+dec64	DECIMAL(18, 2)	NO		\N	
+dt	DATETIME	NO		\N	
+dt64	DATETIME	NO		\N	
+dt64_3_tz1	DATETIME	NO		\N	
+dt64_3_tz2	DATETIME	NO		\N	
+dt64_6	DATETIME	NO		\N	
+dt64_9	DATETIME	NO		\N	
+dt_tz1	DATETIME	NO		\N	
+dt_tz2	DATETIME	NO		\N	
+enm	TEXT	NO		\N	
+f32	FLOAT	NO		\N	
+f64	DOUBLE	NO		\N	
+fs	TEXT	NO		\N	
+i128	TEXT	NO		\N	
+i16	SMALLINT	NO		\N	
+i256	TEXT	NO		\N	
+i32	INTEGER	NO		\N	
+i64	BIGINT	NO		\N	
+i8	TINYINT	NO		\N	
+ip4	TEXT	NO		\N	
+ip6	TEXT	NO		\N	
+lfs	TEXT	NO		\N	
+lnfs	TEXT	YES		\N	
+lns	TEXT	YES		\N	
+ls	TEXT	NO		\N	
+m	JSON	NO		\N	
+m_complex	JSON	NO		\N	
+mpg	TEXT	NO		\N	
+ndt64	DATETIME	YES		\N	
+ndt64_tz	DATETIME	YES		\N	
+nested.col1	TEXT	NO		\N	
+nested.col2	TEXT	NO		\N	
+nfs	TEXT	YES		\N	
+ns	TEXT	YES		\N	
+o	JSON	NO		\N	
+p	TEXT	NO		\N	
+pg	TEXT	NO		\N	
+r	TEXT	NO		\N	
+s	TEXT	NO		\N	
 sagg	TEXT	NO		\N	
 t	JSON	NO		\N	
 ui128	TEXT	NO		\N	

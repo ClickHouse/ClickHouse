@@ -24,7 +24,10 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
-    const bool use_mysql_types = getContext()->getSettingsRef().use_mysql_types_in_show_columns;
+    const auto & settings = getContext()->getSettingsRef();
+    const bool use_mysql_types = settings.use_mysql_types_in_show_columns;
+    const bool remap_string_as_text = settings.mysql_remap_string_as_text_in_show_columns;
+    const bool remap_fixed_string_as_text = settings.mysql_remap_fixed_string_as_text_in_show_columns;
 
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
@@ -41,28 +44,29 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
         /// Only used with setting 'use_mysql_types_in_show_columns = 1'
         /// Known issues:
         /// - Enums are translated to TEXT
-        rewritten_query += R"(
+        rewritten_query += fmt::format(R"(
 WITH map(
-        'Int8',       'TINYINT',
-        'Int16',      'SMALLINT',
-        'Int32',      'INTEGER',
-        'Int64',      'BIGINT',
-        'UInt8',      'TINYINT UNSIGNED',
-        'UInt16',     'SMALLINT UNSIGNED',
-        'UInt32',     'INTEGER UNSIGNED',
-        'UInt64',     'BIGINT UNSIGNED',
-        'Float32',    'FLOAT',
-        'Float64',    'DOUBLE',
-        'String',     'BLOB',
-        'UUID',       'CHAR',
-        'Bool',       'TINYINT',
-        'Date',       'DATE',
-        'Date32',     'DATE',
-        'DateTime',   'DATETIME',
-        'DateTime64', 'DATETIME',
-        'Map',        'JSON',
-        'Tuple',      'JSON',
-        'Object',     'JSON') AS native_to_mysql_mapping,
+        'Int8',        'TINYINT',
+        'Int16',       'SMALLINT',
+        'Int32',       'INTEGER',
+        'Int64',       'BIGINT',
+        'UInt8',       'TINYINT UNSIGNED',
+        'UInt16',      'SMALLINT UNSIGNED',
+        'UInt32',      'INTEGER UNSIGNED',
+        'UInt64',      'BIGINT UNSIGNED',
+        'Float32',     'FLOAT',
+        'Float64',     'DOUBLE',
+        'String',      '{}',
+        'FixedString', '{}',
+        'UUID',        'CHAR',
+        'Bool',        'TINYINT',
+        'Date',        'DATE',
+        'Date32',      'DATE',
+        'DateTime',    'DATETIME',
+        'DateTime64',  'DATETIME',
+        'Map',         'JSON',
+        'Tuple',       'JSON',
+        'Object',      'JSON') AS native_to_mysql_mapping,
     splitByRegexp('\(|\)', type_) AS split,
     multiIf(startsWith(type_, 'LowCardinality(Nullable'), split[3],
              startsWith(type_, 'LowCardinality'), split[2],
@@ -72,7 +76,9 @@ WITH map(
      multiIf(inner_type = 'Decimal' AND toInt8(decimal_scale_and_precision[1]) <= 65 AND toInt8(decimal_scale_and_precision[2]) <= 30, concat('DECIMAL(', decimal_scale_and_precision[1], ', ', decimal_scale_and_precision[2], ')'),
              mapContains(native_to_mysql_mapping, inner_type) = true, native_to_mysql_mapping[inner_type],
              'TEXT') AS mysql_type
-        )";
+        )",
+        remap_string_as_text ? "TEXT" : "BLOB",
+        remap_fixed_string_as_text ? "TEXT" : "BLOB");
 
     rewritten_query += R"(
 SELECT
