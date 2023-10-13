@@ -5349,37 +5349,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
 
     ASTPtr partition_value_ast = partition_ast.value->clone();
-
-    size_t partition_ast_fields_count;
-    /// It was query parameter and we didn't know exact parameters
-    if (!partition_ast.fields_count)
-    {
-        if (partition_value_ast->as<ASTLiteral>())
-        {
-            partition_ast_fields_count = 1;
-        }
-        else if (const auto * tuple_ast = partition_value_ast->as<ASTFunction>())
-        {
-            if (tuple_ast->name != "tuple")
-                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
-                                "Expected tuple for complex partition key, got {}", tuple_ast->name);
-
-            const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-            if (arguments_ast)
-                partition_ast_fields_count = arguments_ast->children.size();
-            else
-                partition_ast_fields_count = 0;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
-                            "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
-        }
-    }
-    else
-    {
-        partition_ast_fields_count = partition_ast.fields_count.value();
-    }
+    size_t partition_ast_fields_count = partition_ast.fields_count;
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
