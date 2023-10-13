@@ -68,6 +68,10 @@ private:
 
 void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 {
+    /// We do handle cycles via tracking current_asts
+    /// but in case of bug in that tricky logic we need to prevent stack overflow
+    checkStackSize();
+
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
@@ -116,6 +120,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
                 /// Check size of the alias before cloning too large alias AST
                 alias_node->checkSize(data.settings.max_expanded_ast_elements);
+                current_asts.insert(alias_node.get());
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
 
@@ -134,6 +139,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             /// Check size of the alias before cloning too large alias AST
             alias_node->checkSize(data.settings.max_expanded_ast_elements);
             auto alias_name = ast->getAliasOrColumnName();
+            current_asts.insert(alias_node.get());
             ast = alias_node->clone();
             ast->setAlias(alias_name);
 
