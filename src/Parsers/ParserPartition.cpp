@@ -44,7 +44,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
     {
         ASTPtr value;
-        size_t fields_count;
+        std::optional<size_t> fields_count;
         if (literal_parser.parse(pos, value, expected) || tuple_of_literals.parse(pos, value, expected))
         {
             auto * literal = value->as<ASTLiteral>();
@@ -59,7 +59,8 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (parser_substitution.parse(pos, value, expected))
         {
-            fields_count = 1;
+            /// It can be tuple substitution
+            fields_count = std::nullopt;
         }
         else if (parser_expr.parse(pos, value, expected))
         {

@@ -113,3 +113,24 @@ ALTER TABLE test5 DROP PARTITION ({f:UInt32}, 2);
 SELECT count() FROM test5;
 
 DROP TABLE IF EXISTS test5;
+
+DROP TABLE IF EXISTS test6;
+
+CREATE TABLE test6
+(
+  a UInt32,
+  b Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+PARTITION BY (a, b);
+
+INSERT INTO test6 VALUES(1, 2);
+
+SET param_tuple=(1, 2);
+
+ALTER TABLE test6 DROP PARTITION {tuple:Tuple(UInt32, Int64)};
+
+SELECT count() FROM test6;
+
+DROP TABLE IF EXISTS test6;
