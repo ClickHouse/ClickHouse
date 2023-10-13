@@ -78,8 +78,7 @@ SELECT count() FROM test3;
 
 DROP TABLE IF EXISTS test3;
 
-
-DROP TABLE IF EXISTS test4 ON CLUSTER 'test_shard_localhost';
+DROP TABLE IF EXISTS test4;
 
 CREATE TABLE test4 (EventDate Date) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY EventDate;
 
@@ -92,7 +91,6 @@ ALTER TABLE test4 ON CLUSTER 'test_shard_localhost' DROP PARTITION {partition:St
 SELECT count() FROM test4;
 
 DROP TABLE IF EXISTS test4;
-
 
 DROP TABLE IF EXISTS test5;
 
