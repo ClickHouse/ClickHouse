@@ -15,9 +15,14 @@ std::function<Priority(size_t index)> GetPriorityForLoadBalancing::getPriorityFu
     switch (load_balance)
     {
         case LoadBalancing::NEAREST_HOSTNAME:
-            if (hostname_differences.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_differences is not initialized");
-            get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_differences[i])}; };
+            if (hostname_prefix_distance.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_prefix_distance is not initialized");
+            get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_prefix_distance[i])}; };
+            break;
+        case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
+            if (hostname_levenshtein_distance.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_levenshtein_distance is not initialized");
+            get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_levenshtein_distance[i])}; };
             break;
         case LoadBalancing::IN_ORDER:
             get_priority = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
