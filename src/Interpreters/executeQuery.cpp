@@ -77,6 +77,7 @@
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -174,7 +175,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         elem.stack_trace = getExceptionStackTraceString(e);
     }
-    catch (...) {}
+    catch (...) {} // NOLINT(bugprone-empty-catch)
 }
 
 
@@ -708,7 +709,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
 
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -1098,7 +1099,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
                             throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting query_cache_store_results_of_queries_with_nondeterministic_functions = 1 to store the query result regardless.");
+                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting `query_cache_store_results_of_queries_with_nondeterministic_functions = 1` to cache the query result regardless");
 
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
@@ -1107,7 +1108,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             settings.query_cache_compress_entries);
 
                         const size_t num_query_runs = query_cache->recordQueryRun(key);
-                        if (num_query_runs > settings.query_cache_min_query_runs)
+                        if (num_query_runs <= settings.query_cache_min_query_runs)
+                        {
+                            LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}", num_query_runs, settings.query_cache_min_query_runs);
+                        }
+                        else
                         {
                             auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
                                              key,
@@ -1266,7 +1271,8 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
-    const std::optional<FormatSettings> & output_format_settings)
+    const std::optional<FormatSettings> & output_format_settings,
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1324,6 +1330,7 @@ void executeQuery(
 
     ASTPtr ast;
     BlockIO streams;
+    OutputFormatPtr output_format;
 
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
@@ -1366,30 +1373,30 @@ void executeQuery(
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
-            auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(
+            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
                 compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
 
-            out->setAutoFlush();
+            output_format->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
 
             /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+            pipeline.setProgressCallback([output_format, previous_progress_callback] (const Progress & progress)
             {
                 if (previous_progress_callback)
                     previous_progress_callback(progress);
-                out->onProgress(progress);
+                output_format->onProgress(progress);
             });
 
-            result_details.content_type = out->getContentType();
+            result_details.content_type = output_format->getContentType();
             result_details.format = format_name;
 
-            pipeline.complete(std::move(out));
+            pipeline.complete(output_format);
         }
         else
         {
@@ -1419,6 +1426,8 @@ void executeQuery(
     }
     catch (...)
     {
+        if (handle_exception_in_output_format && output_format)
+            handle_exception_in_output_format(*output_format);
         streams.onException();
         throw;
     }

@@ -853,7 +853,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
-        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c)
+        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))

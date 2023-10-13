@@ -64,6 +64,10 @@
 #include <algorithm>
 #include <unistd.h>
 
+#if USE_PROTOBUF
+#include <Formats/ProtobufSchemas.h>
+#endif
+
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
 #endif
@@ -462,6 +466,20 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_AZURE_BLOB_STORAGE
             if (caches_to_drop.contains("AZURE"))
                 StorageAzureBlob::getSchemaCache(getContext()).clear();
+#endif
+            break;
+        }
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_format.empty())
+                caches_to_drop = {"Protobuf"};
+            else
+                caches_to_drop = {query.schema_cache_format};
+#if USE_PROTOBUF
+            if (caches_to_drop.contains("Protobuf"))
+                ProtobufSchemas::instance().clear();
 #endif
             break;
         }
@@ -909,7 +927,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         if (!query_.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query_.replica_zk_path))
             return;
         String full_replica_name = query_.shard.empty() ? query_.replica
-                                                        : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
+                                                        : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica, query_.replica_group);
         if (replicated->getFullReplicaName() != full_replica_name)
             return;
 
@@ -925,7 +943,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, query.replica_group);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -950,7 +968,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
 
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, query.replica_group);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -963,7 +981,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, query);
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica);
+        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, query.replica_group);
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
     else
@@ -1082,6 +1100,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
 #endif
