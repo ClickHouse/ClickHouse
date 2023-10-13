@@ -51,7 +51,7 @@ WindowStep::WindowStep(
     : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!preserve_num_streams_))
     , window_description(window_description_)
     , window_functions(window_functions_)
-    , preserve_num_streams(preserve_num_streams_)
+    , streams_fan_out(preserve_num_streams_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -62,7 +62,7 @@ WindowStep::WindowStep(
 
 void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto num_streams = pipeline.getNumThreads();
+    auto num_threads = pipeline.getNumThreads();
 
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
@@ -76,9 +76,9 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 input_streams.front().header, output_stream->header, window_description, window_functions);
         });
 
-    if (preserve_num_streams)
+    if (streams_fan_out)
     {
-        pipeline.resize(num_streams);
+        pipeline.resize(num_threads);
     }
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,

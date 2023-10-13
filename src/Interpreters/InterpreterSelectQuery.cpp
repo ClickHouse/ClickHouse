@@ -2852,11 +2852,11 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             query_plan.addStep(std::move(sorting_step));
         }
 
-        // Restore the number of streams only for the last window to preserve the ordering between windows,
+        // Fan out streams only for the last window to preserve the ordering between windows,
         // and WindowTransform works on single stream anyway.
-        const bool preserve_num_streams = settings.query_plan_preserve_num_streams_after_window_functions && ((i + 1) == windows_sorted.size());
+        const bool streams_fan_out = settings.query_plan_enable_multithreading_after_window_functions && ((i + 1) == windows_sorted.size());
 
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions, preserve_num_streams);
+        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), window, window.window_functions, streams_fan_out);
         window_step->setStepDescription("Window step for window '" + window.window_name + "'");
 
         query_plan.addStep(std::move(window_step));
