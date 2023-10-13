@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <sys/types.h>
 
 
@@ -28,6 +27,8 @@ struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 class RemoteQueryExecutorReadContext;
+
+class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<String()>;
