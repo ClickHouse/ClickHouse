@@ -1065,7 +1065,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
-    processSQLSecurityOption(create.sql_security, create.is_materialized_view);
+    processSQLSecurityOption(create.sql_security, create.is_materialized_view, create.attach);
 
     DDLGuardPtr ddl_guard;
 
@@ -1801,7 +1801,7 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(std::shared_ptr<ASTSQLSecurity> sql_security, bool is_materialized_view) const
+void InterpreterCreateQuery::processSQLSecurityOption(std::shared_ptr<ASTSQLSecurity> sql_security, bool is_materialized_view, bool is_attach) const
 {
     if (!sql_security)
         return;
@@ -1830,17 +1830,26 @@ void InterpreterCreateQuery::processSQLSecurityOption(std::shared_ptr<ASTSQLSecu
         }
     }
 
+    const auto current_user_name = getContext()->getUserName();
     if (sql_security->is_definer_current_user)
     {
-        const String name = getContext()->getUserName();
-        if (sql_security->definer)
-            sql_security->definer->replace(name);
+        if (current_user_name.empty())
+            /// This can happen only when attaching a view for the first time after migration and with `CURRENT_USER` default.
+            sql_security->type = ASTSQLSecurity::SQLSecurity::NONE;
+        else if (sql_security->definer)
+            sql_security->definer->replace(current_user_name);
         else
-            sql_security->definer = std::make_shared<ASTUserNameWithHost>(name);
+            sql_security->definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
     }
-    else if (sql_security->definer)
+    else if (sql_security->definer && !is_attach)
+    {
+        const auto definer_name = sql_security->definer->toString();
+
         /// Validate that definer exists.
-        getContext()->getAccessControl().getID<User>(sql_security->definer->toString());
+        getContext()->getAccessControl().getID<User>(definer_name);
+        if (definer_name != current_user_name)
+            getContext()->checkAccess(AccessType::DEFINER, definer_name);
+    }
 }
 
 }

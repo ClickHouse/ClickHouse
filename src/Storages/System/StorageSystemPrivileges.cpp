@@ -29,6 +29,7 @@ namespace
         VIEW,
         COLUMN,
         NAMED_COLLECTION,
+        DEFINER,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -41,6 +42,7 @@ namespace
         enum_values.emplace_back("VIEW", static_cast<Int8>(VIEW));
         enum_values.emplace_back("COLUMN", static_cast<Int8>(COLUMN));
         enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
+        enum_values.emplace_back("DEFINER", static_cast<Int8>(DEFINER));
         return enum_values;
     }
 }
