@@ -83,12 +83,12 @@ size_t MarkRanges::getNumberOfMarks() const
 
 void MarkRanges::serialize(WriteBuffer & out) const
 {
-    writeBinaryLittleEndian(this->size(), out);
+    writeIntBinary(this->size(), out);
 
     for (const auto & [begin, end] : *this)
     {
-        writeBinaryLittleEndian(begin, out);
-        writeBinaryLittleEndian(end, out);
+        writeIntBinary(begin, out);
+        writeIntBinary(end, out);
     }
 }
 
@@ -100,13 +100,13 @@ String MarkRanges::describe() const
 void MarkRanges::deserialize(ReadBuffer & in)
 {
     size_t size = 0;
-    readBinaryLittleEndian(size, in);
+    readIntBinary(size, in);
 
     this->resize(size);
     for (size_t i = 0; i < size; ++i)
     {
-        readBinaryLittleEndian((*this)[i].begin, in);
-        readBinaryLittleEndian((*this)[i].end, in);
+        readIntBinary((*this)[i].begin, in);
+        readIntBinary((*this)[i].end, in);
     }
 }
 

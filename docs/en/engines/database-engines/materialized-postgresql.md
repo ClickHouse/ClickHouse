@@ -26,10 +26,10 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 
 **Engine Parameters**
 
-- `host:port` — PostgreSQL server endpoint.
-- `database` — PostgreSQL database name.
-- `user` — PostgreSQL user.
-- `password` — User password.
+-   `host:port` — PostgreSQL server endpoint.
+-   `database` — PostgreSQL database name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
 
 ## Example of Use {#example-of-use}
 
@@ -55,7 +55,7 @@ ATTACH TABLE postgres_database.new_table;
 ```
 
 :::warning
-Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
+Before version 22.1, adding a table to replication left an unremoved temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
 :::
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
@@ -120,9 +120,9 @@ Warning: for this case dots in table name are not allowed.
 
 2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
-- primary key (by default)
+-   primary key (by default)
 
-- index
+-   index
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -171,7 +171,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
     Possible values:
 
-    - Positive integer.
+    -   Positive integer.
 
     Default value: `65536`.
 
@@ -257,7 +257,7 @@ Please note that this should be used only if it is actually needed. If there is 
 
 1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
+2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privelege.
 
 3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
 

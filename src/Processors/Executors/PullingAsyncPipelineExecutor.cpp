@@ -41,13 +41,12 @@ struct PullingAsyncPipelineExecutor::Data
     }
 };
 
-PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool has_partial_result_setting) : pipeline(pipeline_)
+PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
     if (!pipeline.pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
 
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader(), /*is_partial_result_protocol_active*/ has_partial_result_setting);
-
+    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
     pipeline.complete(lazy_format);
 }
 
@@ -68,8 +67,7 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
     return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-static void threadFunction(
-    PullingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
+static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -82,7 +80,7 @@ static void threadFunction(
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads, concurrency_control);
+        data.executor->execute(num_threads);
     }
     catch (...)
     {
@@ -104,13 +102,13 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.partial_result_duration_ms);
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+            threadFunction(*data, thread_group, pipeline.getNumThreads());
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));

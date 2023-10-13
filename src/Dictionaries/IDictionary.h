@@ -207,51 +207,6 @@ public:
         return result;
     }
 
-    /**
-     * Analogous to getColumn, but for dictGetAll
-     */
-    virtual ColumnPtr getColumnAllValues(
-        const std::string & attribute_name [[maybe_unused]],
-        const DataTypePtr & result_type [[maybe_unused]],
-        const Columns & key_columns [[maybe_unused]],
-        const DataTypes & key_types [[maybe_unused]],
-        const ColumnPtr & default_values_column [[maybe_unused]],
-        size_t limit [[maybe_unused]]) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getColumnAllValues is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
-    }
-
-    /**
-     * Analogous to getColumns, but for dictGetAll
-     */
-    virtual Columns getColumnsAllValues(
-        const Strings & attribute_names,
-        const DataTypes & result_types,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const Columns & default_values_columns,
-        size_t limit) const
-    {
-        size_t attribute_names_size = attribute_names.size();
-
-        Columns result;
-        result.reserve(attribute_names_size);
-
-        for (size_t i = 0; i < attribute_names_size; ++i)
-        {
-            const auto & attribute_name = attribute_names[i];
-            const auto & result_type = result_types[i];
-            const auto & default_values_column = default_values_columns[i];
-
-            result.emplace_back(getColumnAllValues(
-                attribute_name, result_type, key_columns, key_types, default_values_column, limit));
-        }
-
-        return result;
-    }
-
     /** Subclass must validate key columns and key types and return ColumnUInt8 that
       * is bitmask representation of is key in dictionary or not.
       * If key is in dictionary then value of associated row will be 1, otherwise 0.

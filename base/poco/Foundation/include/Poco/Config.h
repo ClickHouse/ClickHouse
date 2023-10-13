@@ -53,7 +53,7 @@
 
 
 // Define if no <locale> header is available (such as on WinCE)
-#define POCO_NO_LOCALE
+// #define POCO_NO_LOCALE
 
 
 // Define to desired default thread stack size

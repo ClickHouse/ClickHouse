@@ -32,8 +32,11 @@ public:
 
     void onFinish() override
     {
-        const auto key = new_hash->get128();
-        const auto key_str = getHexUIntLowercase(key);
+        UInt128 key;
+        String key_str;
+
+        new_hash->get128(key);
+        key_str = getHexUIntLowercase(key);
 
         std::lock_guard lock(storage.mutex);
 

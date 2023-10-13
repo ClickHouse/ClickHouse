@@ -118,10 +118,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
             if (table_element->table_join && isLeft(table_element->table_join->as<ASTTableJoin>()->kind))
                 continue;  /// Skip right table optimization
 
-            if (table_element->table_join && (
-                    isFull(table_element->table_join->as<ASTTableJoin>()->kind)
-                    || table_element->table_join->as<ASTTableJoin>()->strictness == JoinStrictness::Asof
-                    || table_element->table_join->as<ASTTableJoin>()->strictness == JoinStrictness::Anti))
+            if (table_element->table_join && isFull(table_element->table_join->as<ASTTableJoin>()->kind))
                 break;  /// Skip left and right table optimization
 
             is_rewrite_tables |= tryRewritePredicatesToTable(tables_element[table_pos], tables_predicates[table_pos],

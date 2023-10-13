@@ -19,7 +19,8 @@ template <typename A>
 struct BitWrapperFuncImpl
 {
     using ResultType = UInt8;
-    static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType NO_SANITIZE_UNDEFINED apply(A a [[maybe_unused]])
     {

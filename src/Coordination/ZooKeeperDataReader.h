@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <Coordination/KeeperStorage.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

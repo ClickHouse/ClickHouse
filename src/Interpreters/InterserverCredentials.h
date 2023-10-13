@@ -2,6 +2,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <unordered_set>
 
 namespace DB

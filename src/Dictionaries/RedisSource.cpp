@@ -1,12 +1,20 @@
 #include "RedisSource.h"
 
+#include <string>
 #include <vector>
+
+#include <Poco/Redis/Array.h>
+#include <Poco/Redis/Client.h>
+#include <Poco/Redis/Command.h>
+#include <Poco/Redis/Type.h>
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
+
+#include "DictionaryStructure.h"
 
 
 namespace DB
@@ -22,7 +30,7 @@ namespace DB
 
 
     RedisSource::RedisSource(
-        RedisConnectionPtr connection_,
+        ConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,

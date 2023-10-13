@@ -3,8 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Core/Block.h>
-#include <Core/TypeId.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -22,7 +20,10 @@
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    include <llvm/IR/IRBuilder.h>
+#    pragma GCC diagnostic pop
 #endif
 
 
@@ -311,10 +312,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
 ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
-    bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
-    /// DataTypeFunction does not support obtaining default (isDefaultAt())
-    /// ColumnFunction does not support getting specific values
-    if (result_type->getTypeId() != TypeIndex::Function && use_default_implementation_for_sparse_columns)
+    if (useDefaultImplementationForSparseColumns())
     {
         size_t num_sparse_columns = 0;
         size_t num_full_columns = 0;
@@ -377,14 +375,8 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
         convertSparseColumnsToFull(columns_without_sparse);
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
-    else if (use_default_implementation_for_sparse_columns)
-    {
-        auto columns_without_sparse = arguments;
-        convertSparseColumnsToFull(columns_without_sparse);
-        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
-    }
-    else
-        return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
@@ -494,74 +486,59 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 
 static std::optional<DataTypes> removeNullables(const DataTypes & types)
 {
-    bool has_nullable = false;
     for (const auto & type : types)
     {
         if (!typeid_cast<const DataTypeNullable *>(type.get()))
             continue;
-
-        has_nullable = true;
-        break;
-    }
-
-    if (has_nullable)
-    {
         DataTypes filtered;
-        filtered.reserve(types.size());
-
         for (const auto & sub_type : types)
             filtered.emplace_back(removeNullable(sub_type));
-
         return filtered;
     }
-
     return {};
 }
 
-bool IFunction::isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const
+bool IFunction::isCompilable(const DataTypes & arguments) const
 {
-    if (useDefaultImplementationForNulls())
-        if (auto denulled_arguments = removeNullables(arguments))
-            return isCompilableImpl(*denulled_arguments, result_type);
 
-    return isCompilableImpl(arguments, result_type);
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return isCompilableImpl(*denulled);
+    return isCompilableImpl(arguments);
 }
 
-llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const
 {
-    DataTypes arguments_types;
-    arguments_types.reserve(arguments.size());
-
-    for (const auto & argument : arguments)
-        arguments_types.push_back(argument.type);
-
-    auto denulled_arguments_types = removeNullables(arguments_types);
-    if (useDefaultImplementationForNulls() && denulled_arguments_types)
+    auto denulled_arguments = removeNullables(arguments);
+    if (useDefaultImplementationForNulls() && denulled_arguments)
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        ValuesWithType unwrapped_arguments;
-        unwrapped_arguments.reserve(arguments.size());
-
+        std::vector<llvm::Value*> unwrapped_values;
         std::vector<llvm::Value*> is_null_values;
+
+        unwrapped_values.reserve(arguments.size());
+        is_null_values.reserve(arguments.size());
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const auto & argument = arguments[i];
-            llvm::Value * unwrapped_value = argument.value;
+            auto * value = values[i];
 
-            if (argument.type->isNullable())
+            WhichDataType data_type(arguments[i]);
+            if (data_type.isNullable())
             {
-                unwrapped_value = b.CreateExtractValue(argument.value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument.value, {1}));
+                unwrapped_values.emplace_back(b.CreateExtractValue(value, {0}));
+                is_null_values.emplace_back(b.CreateExtractValue(value, {1}));
             }
-
-            unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
+            else
+            {
+                unwrapped_values.emplace_back(value);
+            }
         }
 
-        auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
+        auto * result = compileImpl(builder, *denulled_arguments, unwrapped_values);
 
-        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
+        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments)));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
         auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
@@ -573,7 +550,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
     }
 
-    return compileImpl(builder, arguments, result_type);
+    return compileImpl(builder, arguments, std::move(values));
 }
 
 #endif
