@@ -18,7 +18,7 @@ namespace MySQLProtocol
 namespace ProtocolText
 {
 
-ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_)
     : columns(columns_), row_num(row_num_)
 {
     static FormatSettings format_settings = {.bool_true_representation = "1", .bool_false_representation = "0"};

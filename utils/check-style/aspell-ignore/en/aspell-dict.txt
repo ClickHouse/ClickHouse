@@ -1184,6 +1184,7 @@ editDistance
 byteHammingDistance
 jaccardIndex
 levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1510,6 +1511,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
