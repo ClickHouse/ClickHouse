@@ -51,3 +51,5 @@ function run_archive_test() {
 
     rm ${FILE_PREFIX}_data{0..3}.csv
 }
+
+# vi: ft=bash

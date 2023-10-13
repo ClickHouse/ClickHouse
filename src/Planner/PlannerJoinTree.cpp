@@ -208,6 +208,9 @@ bool applyTrivialCountIfPossible(
     if (row_policy_filter)
         return {};
 
+    if (select_query_info.additional_filter_ast)
+        return false;
+
     /** Transaction check here is necessary because
       * MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
       * But if we have current transaction, then we should return number of rows in current snapshot (that may include parts in Outdated state),
@@ -663,6 +666,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             is_single_table_expression &&
             (table_node || table_function_node) &&
             select_query_info.has_aggregates &&
+            settings.additional_table_filters.value.empty() &&
             applyTrivialCountIfPossible(query_plan, table_expression_query_info, table_node, table_function_node, select_query_info.query_tree, planner_context->getMutableQueryContext(), table_expression_data.getColumnNames());
 
         if (is_trivial_count_applied)
@@ -1244,7 +1248,26 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             const auto & join_clause = table_join->getOnlyClause();
 
             bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
+
+            auto has_non_const = [](const Block & block, const auto & keys)
+            {
+                for (const auto & key : keys)
+                {
+                    const auto & column = block.getByName(key).column;
+                    if (column && !isColumnConst(*column))
+                        return true;
+                }
+                return false;
+            };
+
+            /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
+            /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
+            /// Note: it's also doesn't work with the read-in-order optimization.
+            /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+            bool has_non_const_keys = has_non_const(left_plan.getCurrentDataStream().header, join_clause.key_names_left)
+                && has_non_const(right_plan.getCurrentDataStream().header, join_clause.key_names_right);
+
+            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
             {
                 auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
                 auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);

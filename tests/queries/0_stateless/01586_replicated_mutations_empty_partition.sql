@@ -12,7 +12,7 @@ ORDER BY key
 PARTITION by key;
 
 -- insert_keeper* settings are adjusted since several actual inserts are happening behind one statement due to partitioning i.e. inserts in different partitions
-INSERT INTO replicated_mutations_empty_partitions SETTINGS insert_keeper_max_retries=100, insert_keeper_retry_max_backoff_ms=10 SELECT number, toString(number) FROM numbers(10);
+INSERT INTO replicated_mutations_empty_partitions SETTINGS insert_keeper_fault_injection_probability=0 SELECT number, toString(number) FROM numbers(10);
 
 SELECT count(distinct value) FROM replicated_mutations_empty_partitions;
 

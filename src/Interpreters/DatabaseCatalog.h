@@ -30,7 +30,7 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class TableNameHints : public IHints<1, TableNameHints>
+class TableNameHints : public IHints<>
 {
 public:
     TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
@@ -173,6 +173,11 @@ public:
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
+
+    /// We need special synchronization between DROP/DETACH DATABASE and SYSTEM RESTART REPLICA
+    /// because IStorage::flushAndPrepareForShutdown cannot be protected by DDLGuard (and a race with IStorage::startup is possible)
+    std::unique_lock<SharedMutex> getLockForDropDatabase(const String & database);
+    std::optional<std::shared_lock<SharedMutex>> tryGetLockForRestartReplica(const String & database);
 
 
     void assertDatabaseExists(const String & database_name) const;
@@ -341,7 +346,15 @@ private:
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
-    using DatabaseGuard = std::pair<DDLGuard::Map, SharedMutex>;
+    struct DatabaseGuard
+    {
+        SharedMutex database_ddl_mutex;
+        SharedMutex restart_replica_mutex;
+
+        DDLGuard::Map table_guards;
+    };
+    DatabaseGuard & getDatabaseGuard(const String & database);
+
     using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.

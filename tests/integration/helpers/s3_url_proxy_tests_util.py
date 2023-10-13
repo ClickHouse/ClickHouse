@@ -30,7 +30,7 @@ def wait_resolver(cluster):
             ],
             nothrow=True,
         )
-        if response == "proxy1":
+        if response == "proxy1" or response == "proxy2":
             return
         time.sleep(i)
     else:

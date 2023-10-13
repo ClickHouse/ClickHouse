@@ -989,8 +989,8 @@ template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
 
-template <typename Vector, typename ReturnType>
-ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType, char opening_bracket, char closing_bracket>
+ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1001,8 +1001,8 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
         return ReturnType(false);
     };
 
-    if (buf.eof() || *buf.position() != '{')
-        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
+    if (buf.eof() || *buf.position() != opening_bracket)
+        return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
 
     s.push_back(*buf.position());
     ++buf.position();
@@ -1012,7 +1012,7 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', opening_bracket, closing_bracket, '"'>(buf.position(), buf.buffer().end());
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -1035,22 +1035,37 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
         if (*buf.position() == '"')
             quotes = !quotes;
-        else if (!quotes) // can be only '{' or '}'
-            balance += *buf.position() == '{' ? 1 : -1;
+        else if (!quotes) // can be only opening_bracket or closing_bracket
+            balance += *buf.position() == opening_bracket ? 1 : -1;
 
         ++buf.position();
 
         if (balance == 0)
             return ReturnType(true);
 
-        if (balance <    0)
+        if (balance < 0)
             break;
     }
 
-    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
+    return error("JSON object/array should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
+}
+
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
+{
+    return readJSONObjectOrArrayPossiblyInvalid<Vector, ReturnType, '{', '}'>(s, buf);
 }
 
 template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
+template void readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+
+template <typename Vector>
+void readJSONArrayInto(Vector & s, ReadBuffer & buf)
+{
+    readJSONObjectOrArrayPossiblyInvalid<Vector, void, '[', ']'>(s, buf);
+}
+
+template void readJSONArrayInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)

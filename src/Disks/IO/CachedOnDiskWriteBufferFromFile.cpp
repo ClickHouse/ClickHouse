@@ -108,6 +108,10 @@ bool FileSegmentRangeWriter::write(const char * data, size_t size, size_t offset
         data += size_to_write;
     }
 
+    size_t available_size = file_segment->range().size() - file_segment->getDownloadedSize();
+    if (available_size == 0)
+        completeFileSegment();
+
     return true;
 }
 
@@ -196,15 +200,16 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const String & source_path_,
     const FileCache::Key & key_,
     const String & query_id_,
-    const WriteSettings & settings_)
+    const WriteSettings & settings_,
+    std::shared_ptr<FilesystemCacheLog> cache_log_)
     : WriteBufferFromFileDecorator(std::move(impl_))
     , log(&Poco::Logger::get("CachedOnDiskWriteBufferFromFile"))
     , cache(cache_)
     , source_path(source_path_)
     , key(key_)
     , query_id(query_id_)
-    , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
+    , cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
 }
 
@@ -241,10 +246,6 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     if (!cache_writer)
     {
-        std::shared_ptr<FilesystemCacheLog> cache_log;
-        if (enable_cache_log)
-            cache_log = Context::getGlobalContextInstance()->getFilesystemCacheLog();
-
         cache_writer = std::make_unique<FileSegmentRangeWriter>(cache.get(), key, cache_log, query_id, source_path);
     }
 
