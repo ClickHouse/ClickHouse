@@ -73,9 +73,6 @@ struct CustomWeekTransformImpl
 
         if constexpr (std::is_same_v<FromDataType, DataTypeString>)
         {
-            /// TODO: remove this entire if constexpr branch, move the parsing code into DateTimeTransforms (yes, even if that will
-            /// duplicate a few lines of code)
-
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
             const auto * sources = checkAndGetColumn<DataTypeString::ColumnType>(source_col.get());
 
