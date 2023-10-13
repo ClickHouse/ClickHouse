@@ -20,9 +20,18 @@ RUN apt-get update \
         pv \
         jq \
         zstd \
+        sudo \
     --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas Jinja2
+
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF \
+    && echo "deb https://download.mono-project.com/repo/ubuntu stable-focal main" | sudo tee /etc/apt/sources.list.d/mono-official-stable.list \
+    && apt update \
+    && apt install mono-complete --yes \
+    && apt clean \
+    && rm -rfv /var/lib/apt/lists/*
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
