@@ -14,7 +14,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-
 class StorageS3QueueSource : public ISource, WithContext
 {
 public:
@@ -38,8 +37,11 @@ public:
     class FileIterator : public IIterator
     {
     public:
-        FileIterator(std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_);
+        FileIterator(std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_, std::atomic<bool> & shutdown_called_);
 
+        /// Note:
+        /// List results in s3 are always returned in UTF-8 binary order.
+        /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
         KeyWithInfoPtr next() override;
 
         size_t estimatedKeysCount() override;
@@ -47,6 +49,7 @@ public:
     private:
         const std::shared_ptr<S3QueueFilesMetadata> metadata;
         const std::unique_ptr<GlobIterator> glob_iterator;
+        std::atomic<bool> & shutdown_called;
         std::mutex mutex;
     };
 
