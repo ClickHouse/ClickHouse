@@ -15,7 +15,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
@@ -2020,9 +2019,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2030,6 +2026,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
+    /// Test tags are started with "--" so they are interpreted as comments anyway.
+    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+    /// because we don't want test tags to be echoed.
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
