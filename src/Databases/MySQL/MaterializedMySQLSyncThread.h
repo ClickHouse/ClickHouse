@@ -45,7 +45,7 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
-        MaterializedMySQLSettings * settings_);
+        const MultiVersion<MaterializedMySQLSettings> & settings_holder_);
 
     void stopSynchronization();
 
@@ -61,7 +61,7 @@ private:
 
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
-    MaterializedMySQLSettings * settings;
+    const MultiVersion<MaterializedMySQLSettings> & settings_holder;
     String query_prefix;
     NameSet materialized_tables_list;
 
@@ -114,6 +114,11 @@ private:
     void executeDDLAtomic(const QueryEvent & query_event);
 
     void setSynchronizationThreadException(const std::exception_ptr & exception);
+
+    MaterializedMySQLSettingsPtr getSettings() const
+    {
+        return settings_holder.get();
+    }
 };
 
 }

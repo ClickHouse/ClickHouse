@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -12,6 +13,32 @@ namespace ErrorCodes
 }
 
 IMPLEMENT_SETTINGS_TRAITS(MaterializedMySQLSettingsTraits, LIST_OF_MATERIALIZE_MODE_SETTINGS)
+
+void MaterializedMySQLSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    loadFromConfig("materialized_mysql", config);
+}
+
+void MaterializedMySQLSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has(config_elem))
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_elem, config_keys);
+
+    try
+    {
+        for (const String & key : config_keys)
+            set(key, config.getString(config_elem + "." + key));
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+            e.addMessage("in MaterializedMySQL config");
+        throw;
+    }
+}
 
 void MaterializedMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {

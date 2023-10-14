@@ -11,6 +11,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTTableOverrides.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
 
@@ -107,6 +108,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_remove_ttl("REMOVE TTL");
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
 
+    ParserKeyword s_table_override("TABLE OVERRIDE");
+
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserIdentifier parser_remove_property;
@@ -127,6 +130,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
     ParserTTLExpressionList parser_ttl_list;
+    ParserTableOverrideDeclaration table_override_p;
 
     switch (alter_object)
     {
@@ -142,11 +146,46 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         case ASTAlterQuery::AlterObjectType::DATABASE:
         {
-            if (s_modify_setting.ignore(pos, expected))
+            if (s_add.ignore(pos, expected) && s_table_override.checkWithoutMoving(pos, expected))
             {
-                if (!parser_settings.parse(pos, command->settings_changes, expected))
+                command->type = ASTAlterCommand::ADD_TABLE_OVERRIDE;
+                if (!table_override_p.parse(pos, command->table_override, expected))
+                    return false;
+            }
+            else if (s_drop.ignore(pos, expected) && s_table_override.ignore(pos, expected))
+            {
+                ParserIdentifier table_name_p;
+                ASTPtr table_name;
+                if (!table_name_p.parse(pos, table_name, expected))
+                    return false;
+                if (auto * tn = table_name->as<ASTIdentifier>())
+                {
+                    auto override = std::make_shared<ASTTableOverride>();
+                    override->table_name = tn->name();
+                    override->omit_empty_parens = true;
+                    command->table_override = std::move(override);
+                    command->type = ASTAlterCommand::DROP_TABLE_OVERRIDE;
+                }
+                else
+                    return false;
+            }
+            else if (s_reset_setting.check(pos, expected))
+            {
+                if (!parser_reset_setting.parse(pos, command->database_settings_resets, expected))
+                    return false;
+                command->type = ASTAlterCommand::RESET_DATABASE_SETTING;
+            }
+            else if (s_modify_setting.ignore(pos, expected))
+            {
+                if (!parser_settings.parse(pos, command->database_settings_changes, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_DATABASE_SETTING;
+            }
+            else if (s_modify.ignore(pos, expected) && s_table_override.checkWithoutMoving(pos, expected))
+            {
+                if (!table_override_p.parse(pos, command->table_override, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_TABLE_OVERRIDE;
             }
             else
                 return false;
@@ -805,6 +844,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->select);
     if (command->rename_to)
         command->children.push_back(command->rename_to);
+    if (command->table_override)
+        command->children.push_back(command->table_override);
+    if (command->database_settings_changes)
+        command->children.push_back(command->database_settings_changes);
+    if (command->database_settings_resets)
+        command->children.push_back(command->database_settings_resets);
 
     return true;
 }

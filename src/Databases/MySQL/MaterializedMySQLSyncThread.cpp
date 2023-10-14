@@ -161,21 +161,21 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    MaterializedMySQLSettings * settings_)
+    const MultiVersion<MaterializedMySQLSettings> & settings_holder_)
     : WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get("MaterializedMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_)) /// NOLINT
     , client(std::move(client_))
-    , settings(settings_)
+    , settings_holder(settings_holder_)
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 
-    if (!settings->materialized_mysql_tables_list.value.empty())
+    if (!getSettings()->materialized_mysql_tables_list.value.empty())
     {
         Names tables_list;
-        boost::split(tables_list, settings->materialized_mysql_tables_list.value, [](char c){ return c == ','; });
+        boost::split(tables_list, getSettings()->materialized_mysql_tables_list.value, [](char c){ return c == ','; });
         for (String & table_name: tables_list)
         {
             boost::trim(table_name);
@@ -207,7 +207,7 @@ void MaterializedMySQLSyncThread::synchronization()
             }
 
             /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
-            UInt64 max_flush_time = settings->max_flush_data_time;
+            UInt64 max_flush_time = getSettings()->max_flush_data_time;
 
             try
             {
@@ -221,19 +221,19 @@ void MaterializedMySQLSyncThread::synchronization()
             }
             catch (const Exception & e)
             {
-                if (e.code() != ErrorCodes::CANNOT_READ_ALL_DATA || settings->max_wait_time_when_mysql_unavailable < 0)
+                if (e.code() != ErrorCodes::CANNOT_READ_ALL_DATA || getSettings()->max_wait_time_when_mysql_unavailable < 0)
                     throw;
 
                 flushBuffersData(buffers, metadata);
                 LOG_INFO(log, "Lost connection to MySQL");
                 need_reconnect = true;
                 setSynchronizationThreadException(std::current_exception());
-                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                sleepForMilliseconds(getSettings()->max_wait_time_when_mysql_unavailable);
                 continue;
             }
             if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
-                    settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
-                    settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
+                    getSettings()->max_rows_in_buffer, getSettings()->max_bytes_in_buffer,
+                    getSettings()->max_rows_in_buffers, getSettings()->max_bytes_in_buffers)
                 )
             {
                 watch.restart();
@@ -447,9 +447,9 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             connection = pool.tryGet();
             if (connection.isNull())
             {
-                if (settings->max_wait_time_when_mysql_unavailable < 0)
+                if (getSettings()->max_wait_time_when_mysql_unavailable < 0)
                     throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unable to connect to MySQL");
-                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+                sleepForMilliseconds(getSettings()->max_wait_time_when_mysql_unavailable);
                 continue;
             }
 
@@ -510,13 +510,13 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             catch (const mysqlxx::BadQuery & e)
             {
                 // Lost connection to MySQL server during query
-                if (e.code() != CR_SERVER_LOST || settings->max_wait_time_when_mysql_unavailable < 0)
+                if (e.code() != CR_SERVER_LOST || getSettings()->max_wait_time_when_mysql_unavailable < 0)
                     throw;
             }
 
             setSynchronizationThreadException(std::current_exception());
             /// Avoid busy loop when MySQL is not available.
-            sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
+            sleepForMilliseconds(getSettings()->max_wait_time_when_mysql_unavailable);
         }
     }
 
@@ -813,12 +813,26 @@ void MaterializedMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPt
 
 void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event)
 {
+    String query = query_event.query;
+
+    auto check_query = [&] (const String & query_first_tokens)
+    {
+        Tokens tokens(query.data(), query.data() + query.size());
+        IParser::Pos pos(tokens, 0);
+        Expected expected;
+        return ParserKeyword(query_first_tokens).ignore(pos, expected);
+    };
+
+    if (check_query("CREATE DATABASE") || check_query("FLUSH TABLE") || check_query("ANALYZE TABLE") || check_query("OPTIMIZE TABLE"))
+    {
+        LOG_DEBUG(log, "Skipping MySQL DDL: {}", query);
+        return;
+    }
     try
     {
         auto query_context = createQueryContext(getContext());
         CurrentThread::QueryScope query_scope(query_context);
 
-        String query = query_event.query;
         tryQuoteUnrecognizedTokens(query);
         tryConvertStringLiterals(query);
         if (!materialized_tables_list.empty())

@@ -1,16 +1,11 @@
-import time
-import pymysql.cursors
-import pytest
-from helpers.cluster import (
-    ClickHouseCluster,
-    ClickHouseInstance,
-    get_docker_compose_path,
-)
+import os
 import logging
+import pytest
 
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from . import materialized_with_ddl
+from .utils import MySQLConnection, ReplicationHelper
 
-DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
 cluster = ClickHouseCluster(__file__)
 mysql_node = None
@@ -18,24 +13,10 @@ mysql8_node = None
 
 node_db = cluster.add_instance(
     "node1",
-    main_configs=["configs/timezone_config.xml"],
+    main_configs=["configs/config.xml", "configs/timezone_config.xml"],
     user_configs=["configs/users.xml"],
     with_mysql=True,
     with_mysql8=True,
-    stay_alive=True,
-)
-node_disable_bytes_settings = cluster.add_instance(
-    "node2",
-    main_configs=["configs/timezone_config.xml"],
-    user_configs=["configs/users_disable_bytes_settings.xml"],
-    with_mysql=False,
-    stay_alive=True,
-)
-node_disable_rows_settings = cluster.add_instance(
-    "node3",
-    main_configs=["configs/timezone_config.xml"],
-    user_configs=["configs/users_disable_rows_settings.xml"],
-    with_mysql=False,
     stay_alive=True,
 )
 
@@ -48,77 +29,6 @@ def started_cluster():
     finally:
         node_db.stop_clickhouse()  # ensures that coverage report is written to disk, even if cluster.shutdown() times out.
         cluster.shutdown()
-
-
-class MySQLConnection:
-    def __init__(
-        self,
-        port,
-        user="root",
-        password="clickhouse",
-        ip_address=None,
-    ):
-        self.user = user
-        self.port = port
-        self.ip_address = ip_address
-        self.password = password
-        self.mysql_connection = None  # lazy init
-
-    def alloc_connection(self):
-        errors = []
-        for _ in range(5):
-            try:
-                if self.mysql_connection is None:
-                    self.mysql_connection = pymysql.connect(
-                        user=self.user,
-                        password=self.password,
-                        host=self.ip_address,
-                        port=self.port,
-                        autocommit=True,
-                    )
-                else:
-                    self.mysql_connection.ping(reconnect=True)
-                logging.debug(
-                    "MySQL Connection established: {}:{}".format(
-                        self.ip_address, self.port
-                    )
-                )
-                return self.mysql_connection
-            except Exception as e:
-                errors += [str(e)]
-                time.sleep(1)
-        raise Exception("Connection not established, {}".format(errors))
-
-    def query(self, execution_query):
-        with self.alloc_connection().cursor() as cursor:
-            cursor.execute(execution_query)
-
-    def create_min_priv_user(self, user, password):
-        self.query("CREATE USER '" + user + "'@'%' IDENTIFIED BY '" + password + "'")
-        self.grant_min_priv_for_user(user)
-
-    def grant_min_priv_for_user(self, user, db="priv_err_db"):
-        self.query(
-            "GRANT REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO '"
-            + user
-            + "'@'%'"
-        )
-        self.query("GRANT SELECT ON " + db + ".* TO '" + user + "'@'%'")
-
-    def result(self, execution_query):
-        with self.alloc_connection().cursor() as cursor:
-            result = cursor.execute(execution_query)
-            if result is not None:
-                print(cursor.fetchall())
-
-    def query_and_get_data(self, execution_query):
-        with self.alloc_connection().cursor() as cursor:
-            cursor.execute(execution_query)
-            return cursor.fetchall()
-
-    def close(self):
-        if self.mysql_connection is not None:
-            self.mysql_connection.close()
 
 
 @pytest.fixture(scope="module")
@@ -142,21 +52,20 @@ def clickhouse_node():
     yield node_db
 
 
-def test_materialized_database_dml_with_mysql_5_7(
-    started_cluster, started_mysql_5_7, clickhouse_node: ClickHouseInstance
-):
-    materialized_with_ddl.dml_with_materialized_mysql_database(
-        clickhouse_node, started_mysql_5_7, "mysql57"
-    )
-    materialized_with_ddl.materialized_mysql_database_with_views(
-        clickhouse_node, started_mysql_5_7, "mysql57"
-    )
-    materialized_with_ddl.materialized_mysql_database_with_datetime_and_decimal(
-        clickhouse_node, started_mysql_5_7, "mysql57"
-    )
-    materialized_with_ddl.move_to_prewhere_and_column_filtering(
-        clickhouse_node, started_mysql_5_7, "mysql57"
-    )
+@pytest.fixture(scope="function")
+def replication(started_cluster, started_mysql_8_0, request):
+    try:
+        replication = ReplicationHelper(cluster, node_db, started_mysql_8_0)
+        yield replication
+    finally:
+        if hasattr(request.session, "testsfailed") and request.session.testsfailed:
+            logging.warning("tests failed - not dropping databases")
+        else:
+            # drop databases only if the test succeeds - so we can inspect the database after failed tests
+            try:
+                replication.drop_dbs()
+            except Exception as e:
+                logging.warning("replication.drop_dbs() failed: %s", str(e))
 
 
 def test_materialized_database_dml_with_mysql_8_0(
@@ -455,16 +364,21 @@ def test_materialized_with_enum(
 
 
 @pytest.mark.parametrize(
-    ("clickhouse_node"), [node_disable_bytes_settings, node_disable_rows_settings]
+    "user",
+    [
+        pytest.param("default", id="default"),
+        pytest.param("disable_bytes_settings", id="disable_bytes_settings"),
+        pytest.param("disable_rows_settings", id="disable_rows_settings"),
+    ],
 )
 def test_mysql_settings(
-    started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node
+    started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node, user
 ):
     materialized_with_ddl.mysql_settings_test(
-        clickhouse_node, started_mysql_5_7, "mysql57"
+        clickhouse_node, started_mysql_5_7, "mysql57", user
     )
     materialized_with_ddl.mysql_settings_test(
-        clickhouse_node, started_mysql_8_0, "mysql80"
+        clickhouse_node, started_mysql_8_0, "mysql80", user
     )
 
 
@@ -556,3 +470,11 @@ def test_table_with_indexes(started_cluster, started_mysql_8_0, clickhouse_node)
     materialized_with_ddl.table_with_indexes(
         clickhouse_node, started_mysql_8_0, "mysql80"
     )
+
+
+def test_alter_database_table_overrides(replication):
+    materialized_with_ddl.alter_database_table_overrides(replication)
+
+
+def test_alter_database_settings(replication):
+    materialized_with_ddl.alter_database_settings_test(replication)

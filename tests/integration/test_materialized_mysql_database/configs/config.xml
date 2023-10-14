@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <materialized_mysql>
+        <max_bytes_in_buffers>16777216</max_bytes_in_buffers>
+    </materialized_mysql>
+</clickhouse>

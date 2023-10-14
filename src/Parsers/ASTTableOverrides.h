@@ -24,9 +24,14 @@ public:
     ASTColumns * columns = nullptr;
     ASTStorage * storage = nullptr;
     bool is_standalone = true;
+    bool omit_empty_parens = false;
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    bool modifiesStorage() const;
+    bool modifiesColumn(const String & name) const;
+    bool modifiesIndex(const String & name) const;
+    bool empty() const;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
