@@ -264,7 +264,7 @@ ASTPtr tryParseQuery(
     _out_query_end = last_token.end;
 
     /// Also check on the AST level, because the generated AST depth can be greater than the recursion depth of the parser.
-    if (max_parser_depth)
+    if (res && max_parser_depth)
         res->checkDepth(max_parser_depth);
 
     ASTInsertQuery * insert = nullptr;
