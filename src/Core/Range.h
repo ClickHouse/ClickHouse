@@ -85,4 +85,8 @@ public:
     String toString() const;
 };
 
+/** Hyperrectangle is a product of ranges: each range across each coordinate.
+  */
+using Hyperrectangle = std::vector<Range>;
+
 }
