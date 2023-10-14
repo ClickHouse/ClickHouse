@@ -5,7 +5,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 
 /** Range between fields, used for index analysis
-  * (various arithmetics on intervals of various forms).
+  * (various arithmetic on intervals of various forms).
   */
 
 namespace DB
