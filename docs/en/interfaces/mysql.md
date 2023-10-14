@@ -10,10 +10,6 @@ ClickHouse supports the MySQL wire protocol. This allow tools that are MySQL-com
 
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
-:::note
-The MySQL interface for ClickHouse Cloud is currently in private preview. Please contact support@clickhouse.com to enable this feature for your ClickHouse Cloud service.
-:::
-
 1. After creating your ClickHouse Cloud Service, on the credentials screen, select the MySQL tab
 
 ![Credentials screen - Prompt](./images/mysql1.png)
