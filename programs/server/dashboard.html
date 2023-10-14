@@ -819,6 +819,8 @@ function insertChart(i) {
         
         // dragging
 
+        console.log("inside");  
+
         let move = document.createElement('a');
         let move_text = document.createTextNode('✥');
         move.appendChild(move_text);
@@ -895,6 +897,8 @@ function insertChart(i) {
             document.body.addEventListener('mousemove', mousemove);
         });
 
+
+
         // maximizing 
 
         let maximize = document.createElement('a');
@@ -905,7 +909,11 @@ function insertChart(i) {
             const idx = getCurrentIndex();
             chart.className = (chart.className == 'chart' ? 'chart chart-maximized' : 'chart');
             resize();
+        // maximize.disabled()
         });
+        
+        edit_buttons.appendChild(move);
+        edit_buttons.appendChild(maximize);
     }    
 
 
@@ -941,8 +949,6 @@ function insertChart(i) {
         saveState();
     });
 
-    edit_buttons.appendChild(move);
-    edit_buttons.appendChild(maximize);
     edit_buttons.appendChild(edit);
     edit_buttons.appendChild(trash);
 
