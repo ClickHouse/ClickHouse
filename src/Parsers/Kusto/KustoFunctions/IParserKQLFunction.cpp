@@ -110,7 +110,7 @@ String IParserKQLFunction::generateUniqueIdentifier()
     // This particular random generator hits each number exactly once before looping over.
     // Because of this, it's sufficient for queries consisting of up to 2^16 (= 65536) distinct function calls.
     // Reference: https://www.pcg-random.org/using-pcg-cpp.html#insecure-generators
-    static pcg32_once_insecure random_generator;
+    static thread_local pcg32_once_insecure random_generator;
     return std::to_string(random_generator());
 }
 
