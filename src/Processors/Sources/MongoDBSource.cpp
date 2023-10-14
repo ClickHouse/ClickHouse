@@ -370,9 +370,22 @@ namespace
 bool isMongoDBWireProtocolOld(Poco::MongoDB::Connection & connection_)
 {
     Poco::MongoDB::Database db("config");
-    Poco::MongoDB::Document::Ptr doc = db.queryServerHello(connection_);
-    auto wire_version = doc->getInteger("maxWireVersion");
-    return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
+    Poco::MongoDB::Document::Ptr doc = db.queryServerHello(connection_, false);
+
+    if (doc->exists("maxWireVersion"))
+    {
+        auto wire_version = doc->getInteger("maxWireVersion");
+        return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
+    }
+
+    doc = db.queryServerHello(connection_, true);
+    if (doc->exists("maxWireVersion"))
+    {
+        auto wire_version = doc->getInteger("maxWireVersion");
+        return wire_version < Poco::MongoDB::Database::WireVersion::VER_36;
+    }
+
+    return true;
 }
 
 
