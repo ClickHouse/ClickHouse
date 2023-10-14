@@ -51,11 +51,11 @@
 
     <fill_query>optimize table {replacing} final</fill_query>
 
-    <query>SELECT * FROM {replacing} final SETTINGS max_threads = 4</query>
-    <query>SELECT * FROM {replacing} final</query>
+    <query>SELECT * FROM {replacing} final SETTINGS max_threads = 4 FORMAT Null</query>
+    <query>SELECT * FROM {replacing} final FORMAT Null</query>
 
-    <query>SELECT * FROM {replacing} final WHERE s % 100 = 0 SETTINGS max_threads = 4</query>
-    <query>SELECT * FROM {replacing} final WHERE s % 100 = 0</query>
+    <query>SELECT * FROM {replacing} final WHERE s % 100 = 0 FORMAT Null SETTINGS max_threads = 4</query>
+    <query>SELECT * FROM {replacing} final WHERE s % 100 = 0 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS {replacing}</drop_query>
 </test>
