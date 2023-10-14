@@ -12,6 +12,7 @@
 #include <Formats/FormatSettings.h>
 #include <Common/Elf.h>
 #include <Common/ThreadPool.h>
+#include <Columns/ColumnVector.h>
 
 namespace DB
 {
@@ -52,6 +53,8 @@ private:
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
         size_t filename_table_size = 0;
+        uint64_t addr_base = UINT64_MAX;
+        uint64_t rnglists_base = UINT64_MAX;
 
         uint64_t offset = 0;
         std::vector<StackEntry> stack;
@@ -85,8 +88,11 @@ private:
     PODArray<char> file_contents; // if we couldn't mmap it
 
     std::unique_ptr<llvm::DWARFContext> dwarf_context;
-    std::optional<llvm::DWARFDataExtractor> extractor;
-    std::optional<llvm::DWARFDataExtractor> debug_line_extractor;
+    std::optional<llvm::DWARFDataExtractor> extractor; // .debug_info
+    std::optional<llvm::DWARFDataExtractor> debug_line_extractor; // .debug_line
+    std::optional<std::string_view> debug_addr_section; // .debug_addr
+    std::optional<llvm::DWARFDataExtractor> debug_rnglists_extractor; // .debug_rnglists
+    std::optional<llvm::DWARFDataExtractor> debug_ranges_extractor; // .debug_ranges
 
     std::atomic<size_t> seen_debug_line_warnings {0};
 
@@ -95,6 +101,14 @@ private:
     void stopThreads();
     void parseFilenameTable(UnitState & unit, uint64_t offset);
     Chunk parseEntries(UnitState & unit);
+
+    /// Parse .debug_addr entry.
+    uint64_t fetchFromDebugAddr(uint64_t addr_base, uint64_t idx) const;
+    /// Parse .debug_ranges (DWARF4) or .debug_rnglists (DWARF5) entry.
+    void parseRanges(
+        uint64_t offset, bool form_rnglistx, std::optional<uint64_t> low_pc, const UnitState & unit,
+        const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
+        const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
 };
 
 class DWARFSchemaReader : public ISchemaReader
