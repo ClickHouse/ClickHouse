@@ -83,6 +83,7 @@ add_subdirectory (Formats)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/SSH)
+add_headers_and_sources(clickhouse_common_io Compression)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Resource)
@@ -292,6 +293,7 @@ target_link_libraries (clickhouse_common_io
             common
             ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
+            ch_contrib::libdivide
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
