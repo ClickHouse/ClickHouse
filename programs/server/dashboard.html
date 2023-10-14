@@ -931,8 +931,10 @@ function insertChart(i) {
         saveState();
     });
 
-    edit_buttons.appendChild(move);
-    edit_buttons.appendChild(maximize);
+    if (queries.length > 1) {
+        edit_buttons.appendChild(move);
+        edit_buttons.appendChild(maximize);
+    }
     edit_buttons.appendChild(edit);
     edit_buttons.appendChild(trash);
 
