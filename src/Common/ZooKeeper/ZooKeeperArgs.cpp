@@ -39,12 +39,14 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         throw KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "Timeout cannot be negative");
 
     /// init get_priority_load_balancing
-    get_priority_load_balancing.hostname_differences.resize(hosts.size());
+    get_priority_load_balancing.hostname_prefix_distance.resize(hosts.size());
+    get_priority_load_balancing.hostname_levenshtein_distance.resize(hosts.size());
     const String & local_hostname = getFQDNOrHostName();
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
-        get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
+        get_priority_load_balancing.hostname_prefix_distance[i] = DB::getHostNamePrefixDistance(local_hostname, node_host);
+        get_priority_load_balancing.hostname_levenshtein_distance[i] = DB::getHostNameLevenshteinDistance(local_hostname, node_host);
     }
 }
 
