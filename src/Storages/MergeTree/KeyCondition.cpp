@@ -1493,7 +1493,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(it->first).type;
+        out_key_column_type = sample_block.getByPosition(out_key_column_num).type;
         return true;
     }
 
