@@ -24,12 +24,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
-
 #include <base/defines.h>
 
 #include <algorithm>
@@ -45,17 +42,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
-}
-
-
-String Range::toString() const
-{
-    WriteBufferFromOwnString str;
-
-    str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
-    str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-    return str.str();
 }
 
 
@@ -705,10 +691,6 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
 }
 
 
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
-
-
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
@@ -966,7 +948,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
   * CREATE TABLE (x String) ORDER BY toDate(x)
   * SELECT ... WHERE x LIKE 'Hello%'
   * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparsable values.
+  * but should modify it to pass on un-parsable values.
   */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
