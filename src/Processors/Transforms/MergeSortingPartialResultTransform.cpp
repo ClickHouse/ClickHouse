@@ -21,13 +21,14 @@ PartialResultTransform::ShaphotResult MergeSortingPartialResultTransform::getRea
 
     /// Sort all input data
     merge_sorting_transform->remerge();
-    /// Add a copy of the first `partial_result_limit` rows to a generated_chunk
-    /// to send it later as a partial result in the next prepare stage of the current processor
-    auto generated_columns = merge_sorting_transform->chunks[0].cloneEmptyColumns();
 
     /// It's possible that we had only empty chunks before remerge
     if (merge_sorting_transform->chunks.empty())
         return {{}, SnaphotStatus::NotReady};
+
+    /// Add a copy of the first `partial_result_limit` rows to a generated_chunk
+    /// to send it later as a partial result in the next prepare stage of the current processor
+    auto generated_columns = merge_sorting_transform->chunks[0].cloneEmptyColumns();
 
     size_t total_rows = 0;
     for (const auto & merged_chunk : merge_sorting_transform->chunks)

@@ -42,6 +42,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/MemoryStream.h>
+#include <Poco/Net/NameValueCollection.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
@@ -502,7 +503,7 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request);
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
@@ -837,8 +838,7 @@ void HTTPHandler::processQuery(
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
     append_callback([&used_output](const Progress & progress)
     {
-        const auto& thread_group = CurrentThread::getGroup();
-        used_output.out->onProgress(progress, thread_group->memory_tracker.getPeak());
+        used_output.out->onProgress(progress);
     });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
