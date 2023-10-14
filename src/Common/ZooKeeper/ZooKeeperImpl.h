@@ -15,8 +15,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
