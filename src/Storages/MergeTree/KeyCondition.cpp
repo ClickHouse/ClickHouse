@@ -451,7 +451,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
-static const std::map<std::string, std::string> inverse_relations = {
+static const std::map<std::string, std::string> inverse_relations =
+{
         {"equals", "notEquals"},
         {"notEquals", "equals"},
         {"less", "greaterOrEquals"},
@@ -475,7 +476,7 @@ static const std::map<std::string, std::string> inverse_relations = {
 };
 
 
-bool isLogicalOperator(const String & func_name)
+static bool isLogicalOperator(const String & func_name)
 {
     return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
 }
@@ -954,10 +955,10 @@ static std::set<std::string_view> date_time_parsing_functions = {
     "toDate32",
     "toDateTime",
     "toDateTime64",
-    "ParseDateTimeBestEffort",
-    "ParseDateTimeBestEffortUS",
-    "ParseDateTime32BestEffort",
-    "ParseDateTime64BestEffort",
+    "parseDateTimeBestEffort",
+    "parseDateTimeBestEffortUS",
+    "parseDateTime32BestEffort",
+    "parseDateTime64BestEffort",
     "parseDateTime",
     "parseDateTimeInJodaSyntax",
 };
@@ -1482,7 +1483,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       */
     const auto & sample_block = key_expr->getSampleBlock();
 
-    // Key columns should use canonical names for index analysis
+    /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
 
     if (array_joined_column_names.contains(name))
