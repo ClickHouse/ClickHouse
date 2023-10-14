@@ -116,6 +116,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!shard.empty())
             print_keyword(" FROM SHARD ") << quoteString(shard);
 
+        if (!replica_group.empty())
+            print_keyword(" FROM GROUP ") << quoteString(replica_group);
+
         if (table)
         {
             print_keyword(" FROM TABLE ");
