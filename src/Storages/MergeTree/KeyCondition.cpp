@@ -1579,7 +1579,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
-            /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+            /// We don't look for inverted key transformations when strict is true, which is required for trivial count().
             /// Consider the following test case:
             ///
             /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
