@@ -74,7 +74,7 @@ public:
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
-        const std::vector<Range> & hyperrectangle,
+        const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.

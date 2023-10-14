@@ -14,7 +14,6 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -2083,7 +2082,7 @@ static BoolMask forAnyHyperrectangle(
     const FieldRef * right_keys,
     bool left_bounded,
     bool right_bounded,
-    std::vector<Range> & hyperrectangle,
+    Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
@@ -2186,7 +2185,7 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    std::vector<Range> key_ranges;
+    Hyperrectangle key_ranges;
 
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
@@ -2207,7 +2206,7 @@ BoolMask KeyCondition::checkInRange(
     // std::cerr << "]\n";
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
-        [&] (const std::vector<Range> & key_ranges_hyperrectangle)
+        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
@@ -2342,7 +2341,7 @@ bool KeyCondition::matchesExactContinuousRange() const
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
-    const std::vector<Range> & hyperrectangle,
+    const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
