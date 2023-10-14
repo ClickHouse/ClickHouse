@@ -1025,7 +1025,7 @@ struct ToYearImpl
 
     static constexpr bool hasPreimage() { return true; }
 
-    static RangeOrNull getPreimage(const IDataType & type, const Field & point)
+    static OptionalFieldInterval getPreimage(const IDataType & type, const Field & point)
     {
         if (point.getType() != Field::Types::UInt64) return std::nullopt;
 
@@ -1759,7 +1759,7 @@ struct ToYYYYMMImpl
     }
     static constexpr bool hasPreimage() { return true; }
 
-    static RangeOrNull getPreimage(const IDataType & type, const Field & point)
+    static OptionalFieldInterval getPreimage(const IDataType & type, const Field & point)
     {
         if (point.getType() != Field::Types::UInt64) return std::nullopt;
 
