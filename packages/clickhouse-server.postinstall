@@ -3,15 +3,20 @@ set -e
 # set -x
 
 PROGRAM=clickhouse-server
-CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
-CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+CLICKHOUSE_USER=${CLICKHOUSE_USER:-clickhouse}
+CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:-${CLICKHOUSE_USER}}
 # Please note that we don't support paths with whitespaces. This is rather ignorant.
-CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
-CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
-CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
-CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR:=/usr/bin}
-CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
+CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:-/etc/clickhouse-server}
+CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:-/var/lib/clickhouse}
+CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:-/var/log/clickhouse-server}
+CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR:-/usr/bin}
+CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:-clickhouse}
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
+
+# Provide clickhouse-keeper
+KEEPER_CONFDIR=${KEEPER_CONFDIR:-/etc/clickhouse-keeper}
+KEEPER_DATADIR=${KEEPER_DATADIR:-/var/lib/clickhouse}
+KEEPER_LOGDIR=${KEEPER_LOGDIR:-/var/log/clickhouse-keeper}
 
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
@@ -53,5 +58,21 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
           break
         fi
       done
+    fi
+
+    # Setup clickhouse-keeper directories
+    chown -R "${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}" "${KEEPER_CONFDIR}"
+    chmod 0755 "${KEEPER_CONFDIR}"
+
+    if ! [ -d "${KEEPER_DATADIR}" ]; then
+        mkdir -p "${KEEPER_DATADIR}"
+        chown -R "${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}" "${KEEPER_DATADIR}"
+        chmod 0700 "${KEEPER_DATADIR}"
+    fi
+
+    if ! [ -d "${KEEPER_LOGDIR}" ]; then
+        mkdir -p "${KEEPER_LOGDIR}"
+        chown -R "${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}" "${KEEPER_LOGDIR}"
+        chmod 0770 "${KEEPER_LOGDIR}"
     fi
 fi

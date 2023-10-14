@@ -279,6 +279,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
     auto decimal = [&](Int32 bytes, UInt32 precision, UInt32 scale)
     {
+        /// Currently we encode all decimals as byte arrays, even though Decimal32 and Decimal64
+        /// could be INT32 and INT64 instead. There doesn't seem to be much difference.
         state.column_chunk.meta_data.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
         schema.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
         schema.__set_type_length(bytes);
@@ -303,14 +305,14 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             }
             else
             {
-                types(T::INT32, C::UINT_8 , int_type(8 , false));
+                types(T::INT32, C::UINT_8, int_type(8, false));
             }
             break;
         case TypeIndex::UInt16: types(T::INT32, C::UINT_16, int_type(16, false)); break;
         case TypeIndex::UInt32: types(T::INT32, C::UINT_32, int_type(32, false)); break;
         case TypeIndex::UInt64: types(T::INT64, C::UINT_64, int_type(64, false)); break;
-        case TypeIndex::Int8:   types(T::INT32, C::INT_8  , int_type(8 , true)); break;
-        case TypeIndex::Int16:  types(T::INT32, C::INT_16 , int_type(16, true)); break;
+        case TypeIndex::Int8:   types(T::INT32, C::INT_8,   int_type(8,  true)); break;
+        case TypeIndex::Int16:  types(T::INT32, C::INT_16,  int_type(16, true)); break;
         case TypeIndex::Int32:  types(T::INT32); break;
         case TypeIndex::Int64:  types(T::INT64); break;
         case TypeIndex::Float32: types(T::FLOAT); break;
@@ -319,8 +321,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         /// These don't have suitable parquet logical types, so we write them as plain numbers.
         /// (Parquet has "enums" but they're just strings, with nowhere to declare all possible enum
         /// values in advance as part of the data type.)
-        case TypeIndex::Enum8:    types(T::INT32, C::INT_8  , int_type(8 , true)); break; //  Int8
-        case TypeIndex::Enum16:   types(T::INT32, C::INT_16 , int_type(16, true)); break; //  Int16
+        case TypeIndex::Enum8:    types(T::INT32, C::INT_8,   int_type(8,  true)); break; //  Int8
+        case TypeIndex::Enum16:   types(T::INT32, C::INT_16,  int_type(16, true)); break; //  Int16
         case TypeIndex::IPv4:     types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
         case TypeIndex::Date:     types(T::INT32, C::UINT_16, int_type(16, false)); break; // UInt16
         case TypeIndex::DateTime: types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
@@ -335,32 +337,42 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
         case TypeIndex::DateTime64:
         {
-            std::optional<parq::ConvertedType::type> converted;
-            std::optional<parq::TimeUnit> unit;
-            switch (assert_cast<const DataTypeDateTime64 &>(*type).getScale())
+            parq::ConvertedType::type converted;
+            parq::TimeUnit unit;
+            const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
+            UInt32 scale = dt.getScale();
+            UInt32 converted_scale;
+            if (scale <= 3)
             {
-                case 3:
-                    converted = parq::ConvertedType::TIMESTAMP_MILLIS;
-                    unit.emplace().__set_MILLIS({});
-                    break;
-                case 6:
-                    converted = parq::ConvertedType::TIMESTAMP_MICROS;
-                    unit.emplace().__set_MICROS({});
-                    break;
-                case 9:
-                    unit.emplace().__set_NANOS({});
-                    break;
+                converted = parq::ConvertedType::TIMESTAMP_MILLIS;
+                unit.__set_MILLIS({});
+                converted_scale = 3;
+            }
+            else if (scale <= 6)
+            {
+                converted = parq::ConvertedType::TIMESTAMP_MICROS;
+                unit.__set_MICROS({});
+                converted_scale = 6;
+            }
+            else if (scale <= 9)
+            {
+                unit.__set_NANOS({});
+                converted_scale = 9;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DateTime64 scale: {}", scale);
             }
 
-            std::optional<parq::LogicalType> t;
-            if (unit)
-            {
-                parq::TimestampType tt;
-                tt.__set_isAdjustedToUTC(true);
-                tt.__set_unit(*unit);
-                t.emplace().__set_TIMESTAMP(tt);
-            }
+            parq::TimestampType tt;
+            /// (Shouldn't we check the DateTime64's timezone parameter here? No, the actual number
+            /// in DateTime64 column is always in UTC, regardless of the timezone parameter.)
+            tt.__set_isAdjustedToUTC(true);
+            tt.__set_unit(unit);
+            parq::LogicalType t;
+            t.__set_TIMESTAMP(tt);
             types(T::INT64, converted, t);
+            state.datetime64_multiplier = DataTypeDateTime64::getScaleMultiplier(converted_scale - scale);
             break;
         }
 
@@ -392,8 +404,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Int256:  fixed_string(32); break;
         case TypeIndex::IPv6:    fixed_string(16); break;
 
-        case TypeIndex::Decimal32:  decimal(4 , getDecimalPrecision(*type), getDecimalScale(*type)); break;
-        case TypeIndex::Decimal64:  decimal(8 , getDecimalPrecision(*type), getDecimalScale(*type)); break;
+        case TypeIndex::Decimal32:  decimal(4, getDecimalPrecision(*type), getDecimalScale(*type)); break;
+        case TypeIndex::Decimal64:  decimal(8, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal128: decimal(16, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal256: decimal(32, getDecimalPrecision(*type), getDecimalScale(*type)); break;
 

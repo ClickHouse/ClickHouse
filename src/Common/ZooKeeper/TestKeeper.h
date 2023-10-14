@@ -39,8 +39,8 @@ public:
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
+    bool hasReachedDeadline() const override { return false; }
     int64_t getSessionID() const override { return 0; }
-    Poco::Net::SocketAddress getConnectedAddress() const override { return connected_zk_address; }
 
 
     void create(
@@ -59,12 +59,12 @@ public:
     void exists(
             const String & path,
             ExistsCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void get(
             const String & path,
             GetCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void set(
             const String & path,
@@ -76,7 +76,7 @@ public:
             const String & path,
             ListRequestType list_request_type,
             ListCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void check(
             const String & path,
@@ -117,7 +117,7 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
 private:
@@ -127,15 +127,13 @@ private:
     {
         TestKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 
     Container container;
 
     zkutil::ZooKeeperArgs args;
-
-    Poco::Net::SocketAddress connected_zk_address;
 
     std::mutex push_request_mutex;
     std::atomic<bool> expired{false};

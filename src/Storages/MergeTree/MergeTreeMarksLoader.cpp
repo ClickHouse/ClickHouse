@@ -107,13 +107,14 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     // We first read the marks into a temporary simple array, then compress them into a more compact
     // representation.
     PODArray<MarkInCompressedFile> plain_marks(marks_count * columns_in_mark); // temporary
+    auto full_mark_path = std::string(fs::path(data_part_storage->getFullPath()) / mrk_path);
 
     if (file_size == 0 && marks_count != 0)
     {
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Empty marks file '{}': {}, must be: {}",
-            std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
+            full_mark_path,
             file_size, expected_uncompressed_size);
     }
 
@@ -121,7 +122,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Bad size of marks file '{}': {}, must be: {}",
-            std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
+            full_mark_path,
             file_size,
             expected_uncompressed_size);
 
@@ -142,7 +143,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Cannot read all marks from file {}, is eof: {}, buffer size: {}, file size: {}",
-                mrk_path,
+                full_mark_path,
                 reader->eof(),
                 reader->buffer().size(),
                 file_size);
@@ -155,20 +156,30 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
                     "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
-                    mrk_path, marks_count, expected_uncompressed_size, i, reader->count());
+                    full_mark_path, marks_count, expected_uncompressed_size, i, reader->count());
 
             size_t granularity;
             reader->readStrict(
                 reinterpret_cast<char *>(plain_marks.data() + i * columns_in_mark), columns_in_mark * sizeof(MarkInCompressedFile));
-            readIntBinary(granularity, *reader);
+            readBinaryLittleEndian(granularity, *reader);
         }
 
         if (!reader->eof())
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Too many marks in file {}, marks expected {} (bytes size {})",
-                mrk_path, marks_count, expected_uncompressed_size);
+                full_mark_path, marks_count, expected_uncompressed_size);
     }
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    std::ranges::for_each(
+        plain_marks,
+        [](auto & plain_mark)
+        {
+            plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
+            plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
+        });
+#endif
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 

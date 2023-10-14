@@ -37,8 +37,10 @@ namespace
 template <typename T, typename SourceType>
 struct StatisticsNumeric
 {
-    T min = std::numeric_limits<T>::max();
-    T max = std::numeric_limits<T>::min();
+    T min = std::numeric_limits<T>::has_infinity
+        ? std::numeric_limits<T>::infinity() : std::numeric_limits<T>::max();
+    T max = std::numeric_limits<T>::has_infinity
+        ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::lowest();
 
     void add(SourceType x)
     {
@@ -227,10 +229,10 @@ struct StatisticsStringRef
 /// The Coverter* structs below are responsible for that.
 /// When conversion is not needed, getBatch() will just return pointer into original data.
 
-template <typename Col, typename To, typename MinMaxType = typename std::conditional<
-        std::is_signed<typename Col::Container::value_type>::value,
+template <typename Col, typename To, typename MinMaxType = typename std::conditional_t<
+        std::is_signed_v<typename Col::Container::value_type>,
         To,
-        typename std::make_unsigned<To>::type>::type>
+        typename std::make_unsigned_t<To>>>
 struct ConverterNumeric
 {
     using Statistics = StatisticsNumeric<MinMaxType, To>;
@@ -251,6 +253,28 @@ struct ConverterNumeric
                 buf[i] = static_cast<To>(column.getData()[offset + i]); // NOLINT
             return buf.data();
         }
+    }
+};
+
+struct ConverterDateTime64WithMultiplier
+{
+    using Statistics = StatisticsNumeric<Int64, Int64>;
+
+    using Col = ColumnDecimal<DateTime64>;
+    const Col & column;
+    Int64 multiplier;
+    PODArray<Int64> buf;
+
+    ConverterDateTime64WithMultiplier(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
+
+    const Int64 * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+            /// Not checking overflow because DateTime64 values should already be in the range where
+            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
+            buf[i] = column.getData()[offset + i].value * multiplier;
+        return buf.data();
     }
 };
 
@@ -493,14 +517,14 @@ void writeColumnImpl(
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
-    if constexpr (std::is_same<ParquetDType, parquet::FLBAType>::value)
+    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
     {
         /// This just communicates one number to MakeTypedEncoder(): the fixed string length.
         fixed_string_descr.emplace(parquet::schema::PrimitiveNode::Make(
             "", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY,
             parquet::ConvertedType::NONE, static_cast<int>(converter.fixedStringSize())), 0, 0);
 
-        if constexpr (std::is_same<typename Converter::Statistics, StatisticsFixedStringRef>::value)
+        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringRef>)
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
@@ -581,7 +605,7 @@ void writeColumnImpl(
 
         if (use_dictionary)
         {
-            dict_encoded_pages.push_back({.header = std::move(header)});
+            dict_encoded_pages.push_back({.header = std::move(header), .data = {}});
             std::swap(dict_encoded_pages.back().data, compressed);
         }
         else
@@ -755,20 +779,20 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
                 writeColumnImpl<parquet::BooleanType>(s, options, out,
                     ConverterNumeric<ColumnVector<UInt8>, bool, bool>(s.primitive_column));
             else
-                N(UInt8 , Int32Type);
+                N(UInt8, Int32Type);
          break;
         case TypeIndex::UInt16 : N(UInt16, Int32Type); break;
         case TypeIndex::UInt32 : N(UInt32, Int32Type); break;
         case TypeIndex::UInt64 : N(UInt64, Int64Type); break;
-        case TypeIndex::Int8   : N(Int8  , Int32Type); break;
-        case TypeIndex::Int16  : N(Int16 , Int32Type); break;
-        case TypeIndex::Int32  : N(Int32 , Int32Type); break;
-        case TypeIndex::Int64  : N(Int64 , Int64Type); break;
+        case TypeIndex::Int8   : N(Int8,   Int32Type); break;
+        case TypeIndex::Int16  : N(Int16,  Int32Type); break;
+        case TypeIndex::Int32  : N(Int32,  Int32Type); break;
+        case TypeIndex::Int64  : N(Int64,  Int64Type); break;
 
-        case TypeIndex::Enum8:      N(Int8  , Int32Type); break;
-        case TypeIndex::Enum16:     N(Int16 , Int32Type); break;
+        case TypeIndex::Enum8:      N(Int8,   Int32Type); break;
+        case TypeIndex::Enum16:     N(Int16,  Int32Type); break;
         case TypeIndex::Date:       N(UInt16, Int32Type); break;
-        case TypeIndex::Date32:     N(Int32 , Int32Type); break;
+        case TypeIndex::Date32:     N(Int32,  Int32Type); break;
         case TypeIndex::DateTime:   N(UInt32, Int32Type); break;
 
         #undef N
@@ -786,9 +810,14 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
             break;
 
         case TypeIndex::DateTime64:
-            writeColumnImpl<parquet::Int64Type>(
-                s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
-                    s.primitive_column));
+            if (s.datetime64_multiplier == 1)
+                writeColumnImpl<parquet::Int64Type>(
+                    s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
+                        s.primitive_column));
+            else
+                writeColumnImpl<parquet::Int64Type>(
+                    s, options, out, ConverterDateTime64WithMultiplier(
+                        s.primitive_column, s.datetime64_multiplier));
             break;
 
         case TypeIndex::IPv4:

@@ -9,8 +9,10 @@
 
 #include "config_version.h"
 
+
 namespace DB
 {
+
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 
@@ -43,7 +45,7 @@ public:
     using Commands = std::unordered_map<int32_t, FourLetterCommandPtr>;
     using AllowList = std::vector<int32_t>;
 
-    ///represent '*' which is used in allow list
+    /// Represents '*' which is used in allow list.
     static constexpr int32_t ALLOW_LIST_ALL = 0;
 
     bool isKnown(int32_t code);

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE old_syntax_01071_test (date Date, id UInt8) ENGINE = MergeTree(date, id, 8192);

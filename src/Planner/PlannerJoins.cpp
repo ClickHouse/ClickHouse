@@ -584,13 +584,17 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
     const String & key_name = clauses[0].key_names_right[0];
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-    const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name);
-    if (!table_column_name)
-        return {};
 
-    const auto & storage_primary_key = storage->getPrimaryKey();
-    if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
+    if (const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name))
+    {
+        const auto & storage_primary_key = storage->getPrimaryKey();
+        if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
+            return {};
+    }
+    else
+    {
         return {};
+    }
 
     /** For right table expression during execution columns have unique name.
       * Direct key value join implementation during storage querying must use storage column names.
@@ -608,8 +612,8 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name_ = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name_)
+        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
+        if (!table_column_name)
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
@@ -635,6 +639,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
+        Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
             const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
@@ -644,8 +649,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
             table_join->setRename(*source_column_name, result_column.name);
+            required_column_names.push_back(*source_column_name);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+        return storage->getJoinLocked(table_join, planner_context->getQueryContext(), required_column_names);
     }
 
     /** JOIN with constant.

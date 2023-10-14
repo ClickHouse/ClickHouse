@@ -46,11 +46,12 @@ sudo -H pip install \
     hypothesis \
     pyhdfs \
     pika \
-    meilisearch \
     nats-py
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
+
+Some tests have other dependencies, e.g. spark. See docker/test/integration/runner/Dockerfile for how to install those. See docker/test/integration/runner/dockerd-entrypoint.sh for environment variables that need to be set (e.g. JAVA_PATH).
 
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
@@ -90,7 +91,7 @@ plugins: repeat-0.9.1, xdist-2.5.0, forked-1.4.0, order-1.0.0, timeout-2.1.0
 timeout: 900.0s
 timeout method: signal
 timeout func_only: False
-collected 4 items                                                                                                                                                                                                               
+collected 4 items
 
 test_ssl_cert_authentication/test.py::test_https Copy common default production configuration from /clickhouse-config. Files: config.xml, users.xml
 PASSED
