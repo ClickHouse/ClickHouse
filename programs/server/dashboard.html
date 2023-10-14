@@ -906,6 +906,9 @@ function insertChart(i) {
             chart.className = (chart.className == 'chart' ? 'chart chart-maximized' : 'chart');
             resize();
         });
+        
+        edit_buttons.appendChild(move);
+        edit_buttons.appendChild(maximize);
     }    
 
 
@@ -940,9 +943,6 @@ function insertChart(i) {
         resize();
         saveState();
     });
-
-    edit_buttons.appendChild(move);
-    edit_buttons.appendChild(maximize);
     edit_buttons.appendChild(edit);
     edit_buttons.appendChild(trash);
 
