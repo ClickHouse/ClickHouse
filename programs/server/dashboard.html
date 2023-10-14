@@ -813,101 +813,91 @@ function insertChart(i) {
     let edit_buttons = document.createElement('div');
     edit_buttons.className = 'chart-buttons';
 
-    // dragging and maximizing both be added to chart only, when there are more than 1 chart
-    
-    if (queries.length > 1) {
-        
-        // dragging
+    let move = document.createElement('a');
+    let move_text = document.createTextNode('✥');
+    move.appendChild(move_text);
 
-        let move = document.createElement('a');
-        let move_text = document.createTextNode('✥');
-        move.appendChild(move_text);
-    
-        let is_dragging = false;
-        move.addEventListener('mousedown', e => {
-            const idx = getCurrentIndex();
-            is_dragging = true;
-            chart.className = 'chart chart-moving';
-    
-            let offset_x = e.clientX;
-            let offset_y = e.clientY;
-    
-            let displace_idx = null;
-            let displace_chart = null;
-    
-            function mouseup(e) {
-                is_dragging = false;
-                chart.className = 'chart';
-                chart.style.left = null;
-                chart.style.top = null;
-    
-                if (displace_idx !== null) {
-                    const elem = queries[idx];
-                    queries.splice(idx, 1);
-                    queries.splice(displace_idx, 0, elem);
-    
-                    displace_chart.className = 'chart';
-                    drawAll();
+    let is_dragging = false;
+    move.addEventListener('mousedown', e => {
+        const idx = getCurrentIndex();
+        is_dragging = true;
+        chart.className = 'chart chart-moving';
+
+        let offset_x = e.clientX;
+        let offset_y = e.clientY;
+
+        let displace_idx = null;
+        let displace_chart = null;
+
+        function mouseup(e) {
+            is_dragging = false;
+            chart.className = 'chart';
+            chart.style.left = null;
+            chart.style.top = null;
+
+            if (displace_idx !== null) {
+                const elem = queries[idx];
+                queries.splice(idx, 1);
+                queries.splice(displace_idx, 0, elem);
+
+                displace_chart.className = 'chart';
+                drawAll();
+            }
+        }
+
+        function mousemove(e) {
+            if (!is_dragging) {
+                document.body.removeEventListener('mousemove', mousemove);
+                document.body.removeEventListener('mouseup', mouseup);
+                return;
+            }
+
+            let x = e.clientX - offset_x;
+            let y = e.clientY - offset_y;
+
+            chart.style.left = `${x}px`;
+            chart.style.top = `${y}px`;
+
+            displace_idx = null;
+            displace_chart = null;
+            let current_idx = -1;
+            for (const elem of charts.querySelectorAll('.chart')) {
+                ++current_idx;
+                if (current_idx == idx) {
+                    continue;
+                }
+
+                const this_rect = chart.getBoundingClientRect();
+                const this_center_x = this_rect.left + this_rect.width / 2;
+                const this_center_y = this_rect.top + this_rect.height / 2;
+
+                const elem_rect = elem.getBoundingClientRect();
+
+                if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
+                    && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
+
+                    elem.className = 'chart chart-displaced';
+                    displace_idx = current_idx;
+                    displace_chart = elem;
+                } else {
+                    elem.className = 'chart';
                 }
             }
-    
-            function mousemove(e) {
-                if (!is_dragging) {
-                    document.body.removeEventListener('mousemove', mousemove);
-                    document.body.removeEventListener('mouseup', mouseup);
-                    return;
-                }
-    
-                let x = e.clientX - offset_x;
-                let y = e.clientY - offset_y;
-    
-                chart.style.left = `${x}px`;
-                chart.style.top = `${y}px`;
-    
-                displace_idx = null;
-                displace_chart = null;
-                let current_idx = -1;
-                for (const elem of charts.querySelectorAll('.chart')) {
-                    ++current_idx;
-                    if (current_idx == idx) {
-                        continue;
-                    }
-    
-                    const this_rect = chart.getBoundingClientRect();
-                    const this_center_x = this_rect.left + this_rect.width / 2;
-                    const this_center_y = this_rect.top + this_rect.height / 2;
-    
-                    const elem_rect = elem.getBoundingClientRect();
-    
-                    if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
-                        && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
-    
-                        elem.className = 'chart chart-displaced';
-                        displace_idx = current_idx;
-                        displace_chart = elem;
-                    } else {
-                        elem.className = 'chart';
-                    }
-                }
-            }
-    
-            document.body.addEventListener('mouseup', mouseup);
-            document.body.addEventListener('mousemove', mousemove);
-        });
+        }
 
-        // maximizing 
+        document.body.addEventListener('mouseup', mouseup);
+        document.body.addEventListener('mousemove', mousemove);
+    });
 
-        let maximize = document.createElement('a');
-        let maximize_text = document.createTextNode('🗖');
-        maximize.appendChild(maximize_text);
-    
-        maximize.addEventListener('click', e => {
-            const idx = getCurrentIndex();
-            chart.className = (chart.className == 'chart' ? 'chart chart-maximized' : 'chart');
-            resize();
-        });
-    }    
+    let maximize = document.createElement('a');
+    let maximize_text = document.createTextNode('🗖');
+    maximize.appendChild(maximize_text);
 
+    maximize.addEventListener('click', e => {
+        const idx = getCurrentIndex();
+        chart.className = (chart.className == 'chart' ? 'chart chart-maximized' : 'chart');
+        resize();
+    });
 
     let edit = document.createElement('a');
     let edit_text = document.createTextNode('✎');
