@@ -82,6 +82,18 @@ GTEST_TEST(MortonUtils, Intervals)
     }
 
     {
+        std::stringstream res;
+        mortonIntervalToHyperrectangles<2>(500, 600, [&](auto hyperrectangle)
+        {
+            res << "[" << hyperrectangle[0].first << ", " << hyperrectangle[0].second
+                << "] x [" << hyperrectangle[1].first << ", " << hyperrectangle[1].second
+                << "]; ";
+        });
+
+        ASSERT_EQ(res.str(), "[30, 31] x [12, 13]; [28, 31] x [14, 15]; [0, 7] x [16, 23]; [8, 11] x [16, 19]; [12, 15] x [16, 17]; [12, 12] x [18, 18]; ");
+    }
+
+    {
         std::array<std::pair<UInt64, UInt64>, 2> input = {std::pair{23, 24}, std::pair{15, 16}};
 
         std::stringstream res;
