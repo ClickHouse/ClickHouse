@@ -15,6 +15,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/convertFieldToType.h>
@@ -729,7 +730,6 @@ void KeyCondition::getAllSpaceFillingCurves()
 {
     /// So far the only supported function is mortonEncode (Morton curve).
 
-    size_t key_column_pos = 0;
     for (const auto & action : key_expr->getActions())
     {
         if (action.node->type == ActionsDAG::ActionType::FUNCTION
@@ -738,7 +738,7 @@ void KeyCondition::getAllSpaceFillingCurves()
         {
             SpaceFillingCurveDescription curve;
             curve.function_name = action.node->function_base->getName();
-            curve.key_column_pos = key_column_pos;
+            curve.key_column_pos = key_columns.at(action.node->result_name);
             for (const auto & child : action.node->children)
             {
                 /// All arguments should be regular input columns.
@@ -755,7 +755,6 @@ void KeyCondition::getAllSpaceFillingCurves()
             if (!curve.arguments.empty())
                 key_space_filling_curves.push_back(std::move(curve));
         }
-        ++key_column_pos;
     }
 }
 
@@ -787,7 +786,8 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    getAllSpaceFillingCurves();
+    if (context.getSettingsRef().analyze_index_with_space_filling_curves)
+        getAllSpaceFillingCurves();
 
     ASTPtr filter_node;
     if (query)
@@ -863,7 +863,8 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    getAllSpaceFillingCurves();
+    if (context.getSettingsRef().analyze_index_with_space_filling_curves)
+        getAllSpaceFillingCurves();
 
     if (!filter_dag)
     {
@@ -2158,7 +2159,7 @@ KeyCondition::Description KeyCondition::getDescription() const
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInRange");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::getDescription");
 
     std::vector<String> key_names(key_columns.size());
     std::vector<bool> is_key_used(key_columns.size(), false);
@@ -2383,14 +2384,14 @@ BoolMask KeyCondition::checkInRange(
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
-    std::cerr << "Checking for: [";
+/*    std::cerr << "Checking for: [";
     for (size_t i = 0; i != used_key_size; ++i)
         std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
     std::cerr << " ... ";
 
     for (size_t i = 0; i != used_key_size; ++i)
         std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
-    std::cerr << "]\n";
+    std::cerr << "]\n";*/
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
@@ -2534,7 +2535,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
     std::vector<BoolMask> rpn_stack;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        if (element.argument_num_of_space_filling_curve.has_value())
+        {
+            /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// we cannot process it.
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
         }
@@ -2576,9 +2583,51 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// We unpack the range of a space filling curve into hyperrectangles of their arguments,
             /// and then check the intersection of them with the given hyperrectangle from RPN.
 
-            const Range * key_range = &hyperrectangle[element.key_column];
+            Range key_range = hyperrectangle[element.key_column];
 
-                        
+            /// The only possible result type of a space filling curve is UInt64.
+            /// We also only check bounded ranges.
+            if (key_range.left.getType() == Field::Types::UInt64
+                && key_range.right.getType() == Field::Types::UInt64)
+            {
+                key_range.shrinkToIncludedIfPossible();
+
+                size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
+
+                /// Let's support only the case of 2d, because I'm not confident in other cases.
+                if (num_dimensions == 2)
+                {
+                    UInt64 left = key_range.left.get<UInt64>();
+                    UInt64 right = key_range.right.get<UInt64>();
+
+                    BoolMask mask(false, true);
+                    mortonIntervalToHyperrectangles<2>(left, right,
+                        [&](std::array<std::pair<UInt64, UInt64>, 2> morton_hyperrectangle)
+                        {
+                            BoolMask current_intersection(true, false);
+                            for (size_t dim = 0; dim < num_dimensions; ++dim)
+                            {
+                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+                                const Range morton_arg_range(
+                                    morton_hyperrectangle[dim].first, true,
+                                    morton_hyperrectangle[dim].second, true);
+
+                                bool intersects = condition_arg_range.intersectsRange(morton_arg_range);
+                                bool contains = condition_arg_range.containsRange(morton_arg_range);
+
+                                current_intersection = current_intersection & BoolMask(intersects, !contains);
+                            }
+
+                            mask = mask | current_intersection;
+                        });
+
+                    rpn_stack.emplace_back(mask);
+                }
+                else
+                    rpn_stack.emplace_back(true, true);
+            }
+            else
+                rpn_stack.emplace_back(true, true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -2642,7 +2691,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInRange");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
     return rpn_stack[0];
 }
