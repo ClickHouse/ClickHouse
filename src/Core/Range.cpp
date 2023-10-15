@@ -186,7 +186,7 @@ Range intersect(const Range & a, const Range & b)
     if (less(a.right, b.right))
     {
         res.right = a.right;
-        res.right = a.right_included;
+        res.right_included = a.right_included;
     }
     else if (equals(a.right, b.right))
     {
@@ -215,6 +215,35 @@ String Range::toString() const
 
     str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
     str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
+
+    return str.str();
+}
+
+Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b)
+{
+    size_t result_size = std::min(a.size(), b.size());
+
+    Hyperrectangle res;
+    res.reserve(result_size);
+
+    for (size_t i = 0; i < result_size; ++i)
+        res.push_back(intersect(a[i], b[i]));
+
+    return res;
+}
+
+String toString(const Hyperrectangle & x)
+{
+    WriteBufferFromOwnString str;
+
+    bool first = true;
+    for (const auto & range : x)
+    {
+        if (!first)
+            str << " × ";
+        str << range.toString();
+        first = false;
+    }
 
     return str.str();
 }

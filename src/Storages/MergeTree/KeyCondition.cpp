@@ -1898,90 +1898,93 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
 
 void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 {
-    bool processing_chain = false;
-    size_t current_chain_start = 0;
-    size_t current_key_column = 0;
-    Hyperrectangle current_hyperrectangle;
-
     /// Traverse chains of AND with conditions on arguments of a space filling curve, and construct hyperrectangles from them.
     /// For example, a chain:
-    //    x >= 10 AND x <= 20 AND y >= 20 AND y <= 30
+    ///   x >= 10 AND x <= 20 AND y >= 20 AND y <= 30
     /// will be transformed to a single atom:
     ///   args in [10, 20] × [20, 30]
 
-    auto start_chain = [&](size_t i)
-    {
-        processing_chain = true;
-        current_chain_start = i;
-        current_key_column = rpn[i].key_column;
+    RPN new_rpn;
+    new_rpn.reserve(rpn.size());
 
-        size_t num_arguments = 0;
+    auto num_arguments_of_a_curve = [&](size_t key_column_pos)
+    {
         for (const auto & curve : key_space_filling_curves)
-        {
-            if (curve.key_column_pos == current_key_column)
-            {
-                num_arguments = curve.arguments.size();
-                break;
-            }
-        }
-        if (!num_arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A space filling curve was not found after analysis: this is a bug");
-
-        current_hyperrectangle.assign(num_arguments, Range::createWholeUniverseWithoutNull());
+            if (curve.key_column_pos == key_column_pos)
+                return curve.arguments.size();
+        return 0uz;
     };
 
-    auto update_chain = [&](size_t i)
+    for (const auto & elem : rpn)
     {
-        size_t arg_num = *rpn[i].argument_num_of_space_filling_curve;
-        chassert(arg_num < current_hyperrectangle.size());
-        current_hyperrectangle[arg_num] = intersect(current_hyperrectangle[arg_num], rpn[i].range);
-    };
-
-    auto finish_current_chain = [&](size_t i)
-    {
-        processing_chain = false;
-
-        RPNElement collapsed_elem;
-        collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
-        collapsed_elem.key_column = current_key_column;
-        collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(current_hyperrectangle);
-
-        rpn[current_chain_start] = std::move(collapsed_elem);
-        rpn.erase(rpn.begin() + current_chain_start + 1, rpn.begin() + i);
-        return current_chain_start;
-    };
-
-    for (size_t i = 0; i < rpn.size(); ++i)
-    {
-        auto & elem = rpn[i];
-
-        if (elem.argument_num_of_space_filling_curve.has_value() && elem.function == RPNElement::FUNCTION_IN_RANGE)
+        if (elem.function == RPNElement::FUNCTION_IN_RANGE && elem.argument_num_of_space_filling_curve.has_value())
         {
-            if (!processing_chain)
+            /// A range of an argument of a space-filling curve
+
+            size_t arg_num = *elem.argument_num_of_space_filling_curve;
+            size_t curve_total_args = num_arguments_of_a_curve(elem.key_column);
+
+            if (!curve_total_args)
             {
-                start_chain(i);
-                update_chain(i);
+                /// If we didn't find a space-filling curve - replace the condition to unknown.
+                new_rpn.emplace_back();
+                continue;
             }
-            else if (current_key_column == elem.key_column)
+
+            chassert(arg_num < curve_total_args);
+
+            /// Replace the condition to a hyperrectangle
+
+            Hyperrectangle hyperrectangle(curve_total_args, Range::createWholeUniverseWithoutNull());
+            hyperrectangle[arg_num] = elem.range;
+
+            RPNElement collapsed_elem;
+            collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+            collapsed_elem.key_column = elem.key_column;
+            collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
+
+            new_rpn.push_back(std::move(collapsed_elem));
+            continue;
+        }
+        else if (elem.function == RPNElement::FUNCTION_AND && new_rpn.size() >= 2)
+        {
+            /// AND of two conditions
+
+            const auto & cond1 = new_rpn[new_rpn.size() - 2];
+            const auto & cond2 = new_rpn[new_rpn.size() - 1];
+
+            /// Related to the same column of the key, represented by a space-filling curve
+
+            if (cond1.key_column == cond2.key_column
+                && cond1.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE
+                && cond2.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
             {
-                update_chain(i);
-            }
-            else if (processing_chain)
-            {
-                i = finish_current_chain(i);
+                 /// Intersect these two conditions (applying AND)
+
+                RPNElement collapsed_elem;
+                collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+                collapsed_elem.key_column = cond1.key_column;
+                collapsed_elem.space_filling_curve_args_hyperrectangle = intersect(
+                    cond1.space_filling_curve_args_hyperrectangle,
+                    cond2.space_filling_curve_args_hyperrectangle);
+
+                /*std::cerr << DB::toString(cond1.space_filling_curve_args_hyperrectangle) << "\n";
+                std::cerr << DB::toString(cond2.space_filling_curve_args_hyperrectangle) << "\n";
+                std::cerr << DB::toString(collapsed_elem.space_filling_curve_args_hyperrectangle) << "\n";*/
+
+                /// Replace the AND operation with its arguments to the collapsed condition
+
+                new_rpn.pop_back();
+                new_rpn.pop_back();
+                new_rpn.push_back(std::move(collapsed_elem));
+                continue;
             }
         }
-        else if (elem.function != RPNElement::FUNCTION_AND)
-        {
-            if (processing_chain)
-            {
-                i = finish_current_chain(i);
-            }
-        }
+
+        new_rpn.push_back(elem);
     }
 
-    if (processing_chain)
-        finish_current_chain(rpn.size());
+    rpn = std::move(new_rpn);
 }
 
 
@@ -2817,14 +2820,7 @@ String KeyCondition::RPNElement::toString(String column_name, bool print_constan
             buf << "(";
             print_wrapped_column(buf);
             buf << " has args in ";
-            bool first = true;
-            for (const auto & dim_range : space_filling_curve_args_hyperrectangle)
-            {
-                if (!first)
-                    buf << " × ";
-                buf << dim_range.toString();
-                first = false;
-            }
+            buf << DB::toString(space_filling_curve_args_hyperrectangle);
             buf << ")";
             return buf.str();
         }
