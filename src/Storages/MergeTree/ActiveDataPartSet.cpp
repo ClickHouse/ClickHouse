@@ -32,7 +32,7 @@ bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & 
     AddPartOutcome outcome = addImpl(part_info, name, out_replaced_parts, &out_reason);
     if (outcome == AddPartOutcome::HasIntersectingPart)
     {
-        chassert(out_reason.empty());
+        chassert(!out_reason.empty());
         throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(out_reason));
     }
 
