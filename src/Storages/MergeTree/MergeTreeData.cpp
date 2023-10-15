@@ -73,6 +73,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -3912,23 +3913,15 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         return;
     }
 
+    /// Let's restore some parts covered by unexpected to avoid partial data
     if (restore_covered)
     {
         Strings restored;
-        bool error = false;
-        String error_parts;
-
-        Int64 pos = part->info.min_block;
+        Strings error_parts;
 
         auto is_appropriate_state = [] (DataPartState state)
         {
             return state == DataPartState::Active || state == DataPartState::Outdated;
-        };
-
-        auto update_error = [&] (DataPartIteratorByInfo it)
-        {
-            error = true;
-            error_parts += (*it)->getNameWithState() + " ";
         };
 
         auto activate_part = [this, &restored_active_part](auto it)
@@ -3948,68 +3941,73 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
             restored_active_part = true;
         };
 
-        auto it_middle = data_parts_by_info.lower_bound(part->info);
-
-        /// Restore the leftmost part covered by the part
-        if (it_middle != data_parts_by_info.begin())
+        /// ActiveDataPartSet allows to restore most top-level parts instead of unexpected.
+        /// It can be important in case of assigned merges. If unexpected part is result of some
+        /// finished, but not committed merge we should restore closest ancestors for the
+        /// unexpected part to be able to execute it.
+        ActiveDataPartSet parts_for_replacement(format_version);
+        for (const auto & part_candidate_in_partition : getDataPartsPartitionRange(part->info.partition_id))
         {
-            auto it = std::prev(it_middle);
-
-            if (part->contains(**it) && is_appropriate_state((*it)->getState()))
+            if (part->info.contains(part_candidate_in_partition->info)
+                && is_appropriate_state(part_candidate_in_partition->getState()))
             {
-                /// Maybe, we must consider part level somehow
-                if ((*it)->info.min_block != part->info.min_block)
-                    update_error(it);
-
-                if ((*it)->getState() != DataPartState::Active)
-                    activate_part(it);
-
-                pos = (*it)->info.max_block + 1;
-                restored.push_back((*it)->name);
+                String out_reason;
+                /// Outdated parts can itersect legally (because of DROP_PART) here it's okay, we
+                /// are trying to do out best to restore covered parts.
+                auto outcome = parts_for_replacement.tryAddPart(part_candidate_in_partition->info, &out_reason);
+                if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
+                {
+                    error_parts.push_back(part->name);
+                    LOG_ERROR(log, "Failed to restore part {}, because of intersection reason '{}'", part->name, out_reason);
+                }
             }
-            else if ((*it)->info.partition_id == part->info.partition_id)
-                update_error(it);
-            else
-                error = true;
+        }
+
+        if (parts_for_replacement.size() > 0)
+        {
+            std::vector<std::pair<uint64_t, uint64_t>> holes_list;
+            auto part_infos = parts_for_replacement.getPartInfos();
+            int64_t current_right_block = part_infos[0].min_block;
+            for (const auto & top_level_part_to_replace : part_infos)
+            {
+                auto data_part_it = data_parts_by_info.find(top_level_part_to_replace);
+                if (data_part_it == data_parts_by_info.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find part {} in own set", top_level_part_to_replace.getPartNameForLogs());
+                activate_part(data_part_it);
+                restored.push_back((*data_part_it)->name);
+                if (top_level_part_to_replace.min_block - current_right_block > 1)
+                    holes_list.emplace_back(current_right_block, top_level_part_to_replace.min_block);
+                current_right_block = top_level_part_to_replace.max_block;
+            }
+            if (part->info.max_block != current_right_block)
+                holes_list.emplace_back(current_right_block, part->info.max_block);
+
+            for (const String & name : restored)
+                LOG_INFO(log, "Activated part {} in place of unexpected {}", name, part->name);
+
+            if (!error_parts.empty() || !holes_list.empty())
+            {
+                std::string error_parts_message, holes_list_message;
+                if (!error_parts.empty())
+                    error_parts_message = fmt::format(" Parts failed to restore because of intersection: [{}]", fmt::join(error_parts, ", "));
+                if (!holes_list.empty())
+                {
+                    if (!error_parts.empty())
+                        holes_list_message = ".";
+
+                    Strings holes_list_pairs;
+                    for (const auto & [left_side, right_side] : holes_list)
+                        holes_list_pairs.push_back(fmt::format("({}, {})", left_side + 1, right_side - 1));
+                    holes_list_message += fmt::format(" Block ranges failed to restore: [{}]", fmt::join(holes_list_pairs, ", "));
+                }
+                LOG_WARNING(log, "The set of parts restored in place of {} looks incomplete. "
+                                 "SELECT queries may observe gaps in data until this replica is synchronized with other replicas.{}{}",
+                            part->name, error_parts_message, holes_list_message);
+            }
         }
         else
-            error = true;
-
-        /// Restore "right" parts
-        for (auto it = it_middle; it != data_parts_by_info.end() && part->contains(**it); ++it)
         {
-            if ((*it)->info.min_block < pos)
-                continue;
-
-            if (!is_appropriate_state((*it)->getState()))
-            {
-                update_error(it);
-                continue;
-            }
-
-            if ((*it)->info.min_block > pos)
-                update_error(it);
-
-            if ((*it)->getState() != DataPartState::Active)
-                activate_part(it);
-
-            pos = (*it)->info.max_block + 1;
-            restored.push_back((*it)->name);
-        }
-
-        if (pos != part->info.max_block + 1)
-            error = true;
-
-        for (const String & name : restored)
-        {
-            LOG_INFO(log, "Activated part {}", name);
-        }
-
-        if (error)
-        {
-            LOG_WARNING(log, "The set of parts restored in place of {} looks incomplete. "
-                             "SELECT queries may observe gaps in data until this replica is synchronized with other replicas.{}",
-                        part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
+            LOG_INFO(log, "Don't find any parts for replacement instead of unexpected {}", part->name);
         }
     }
 
