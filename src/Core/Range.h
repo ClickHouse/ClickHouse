@@ -91,4 +91,7 @@ Range intersect(const Range & a, const Range & b);
   */
 using Hyperrectangle = std::vector<Range>;
 
+Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
+String toString(const Hyperrectangle & x);
+
 }
