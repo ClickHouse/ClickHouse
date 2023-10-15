@@ -210,7 +210,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
         std::lock_guard lock(mutex);
         current_set = set;
     }
-    return current_set->getTotalRowCount();
+    return current_set->getTotalByteCount();
 }
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
