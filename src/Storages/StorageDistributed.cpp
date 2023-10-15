@@ -1368,9 +1368,12 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    if (!node_data.directory_queue)
+    Cluster::Addresses addresses = parseAddresses(name);
+    /// If the node changes, you need to recreate the DistributedAsyncInsertDirectoryQueue
+    if (!node_data.directory_monitor  || node_data.addresses != addresses)
     {
-        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(name, *this);
+        node_data.addresses = addresses;
+        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
         node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
@@ -1388,6 +1391,60 @@ std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::ge
     for (const auto & node : cluster_nodes_data)
         statuses.push_back(node.second.directory_queue->getStatus());
     return statuses;
+}
+
+Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) const
+{
+    Cluster::Addresses addresses;
+
+    const auto & cluster = getCluster();
+    const auto & shards_info = cluster->getShardsInfo();
+    const auto & shards_addresses = cluster->getShardsAddresses();
+
+    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+    {
+        const std::string & dirname = boost::copy_range<std::string>(*it);
+        Cluster::Address address = Cluster::Address::fromFullString(dirname);
+
+        /// Check new format shard{shard_index}_replica{replica_index}
+        /// (shard_index and replica_index starts from 1).
+        if (address.shard_index)
+        {
+            if (address.shard_index > shards_info.size())
+            {
+                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
+                continue;
+            }
+
+            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
+            size_t replicas = replicas_addresses.size();
+            if (dirname.ends_with("_all_replicas"))
+            {
+                for (size_t replica_index = 0; replica_index < replicas; ++replica_index)
+                {
+                    Cluster::Address replica_address = replicas_addresses[replica_index];
+                    replica_address.shard_index = address.shard_index;
+                    replica_address.replica_index = address.replica_index;
+                    addresses.emplace_back(std::move(replica_address));
+                }
+                continue;
+            }
+
+            if (address.replica_index > replicas)
+            {
+                LOG_ERROR(log, "No shard with replica_index={} ({})", address.replica_index, name);
+                continue;
+            }
+
+            Cluster::Address replica_address = replicas_addresses[address.replica_index];
+            replica_address.shard_index = address.shard_index;
+            replica_address.replica_index = address.replica_index;
+            addresses.emplace_back(std::move(replica_address));
+        }
+        else
+            addresses.push_back(address);
+    }
+    return addresses;
 }
 
 std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const

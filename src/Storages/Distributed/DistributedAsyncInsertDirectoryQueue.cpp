@@ -7,7 +7,6 @@
 #include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cluster.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
@@ -55,7 +54,7 @@ namespace
 {
 
 template <typename PoolFactory>
-ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory, const Cluster::ShardsInfo & shards_info, Poco::Logger * log)
+ConnectionPoolPtrs createPoolsForAddresses(const Cluster::Addresses & addresses, PoolFactory && factory, Poco::Logger * log)
 {
     ConnectionPoolPtrs pools;
 
@@ -76,30 +75,32 @@ ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory
         }
     };
 
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-    {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-        if (address.shard_index && dirname.ends_with("_all_replicas"))
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & shard_info = shards_info[address.shard_index - 1];
-            size_t replicas = shard_info.per_replica_pools.size();
-
-            for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
-            {
-                address.replica_index = static_cast<UInt32>(replica_index);
-                make_connection(address);
-            }
-        }
-        else
-            make_connection(address);
-    }
+//    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+//    {
+//        const std::string & dirname = boost::copy_range<std::string>(*it);
+//        Cluster::Address address = Cluster::Address::fromFullString(dirname);
+//        if (address.shard_index && dirname.ends_with("_all_replicas"))
+//        {
+//            if (address.shard_index > shards_info.size())
+//            {
+//                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
+//                continue;
+//            }
+//
+//            const auto & shard_info = shards_info[address.shard_index - 1];
+//            size_t replicas = shard_info.per_replica_pools.size();
+//
+//            for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
+//            {
+//                address.replica_index = static_cast<UInt32>(replica_index);
+//                make_connection(address);
+//            }
+//        }
+//        else
+//            make_connection(address);
+//    }
+    for (const auto & address : addresses)
+        make_connection(address);
 
     return pools;
 }
@@ -254,9 +255,9 @@ void DistributedAsyncInsertDirectoryQueue::run()
 }
 
 
-ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const std::string & name, const StorageDistributed & storage)
+ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const Cluster::Addresses & addresses, const StorageDistributed & storage)
 {
-    const auto pool_factory = [&storage, &name] (const Cluster::Address & address) -> ConnectionPoolPtr
+    const auto pool_factory = [&storage] (const Cluster::Address & address) -> ConnectionPoolPtr
     {
         const auto & cluster = storage.getCluster();
         const auto & shards_info = cluster->getShardsInfo();
@@ -268,16 +269,16 @@ ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const std::st
         {
             if (!address.replica_index)
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "Wrong replica_index={} ({})", address.replica_index, name);
+                    "Wrong replica_index={}", address.replica_index);
 
             if (address.shard_index > shards_info.size())
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "No shard with shard_index={} ({})", address.shard_index, name);
+                    "No shard with shard_index={}", address.shard_index);
 
             const auto & shard_info = shards_info[address.shard_index - 1];
             if (address.replica_index > shard_info.per_replica_pools.size())
                 throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
-                    "No shard with replica_index={} ({})", address.replica_index, name);
+                    "No shard with replica_index={}", address.replica_index);
 
             return shard_info.per_replica_pools[address.replica_index - 1];
         }
@@ -318,7 +319,7 @@ ConnectionPoolPtr DistributedAsyncInsertDirectoryQueue::createPool(const std::st
             address.secure);
     };
 
-    auto pools = createPoolsForAddresses(name, pool_factory, storage.getCluster()->getShardsInfo(), storage.log);
+    auto pools = createPoolsForAddresses(addresses, pool_factory, storage.log);
 
     const auto settings = storage.getContext()->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
