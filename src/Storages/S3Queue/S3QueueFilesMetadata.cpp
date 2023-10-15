@@ -326,8 +326,13 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
     node_metadata.processing_id = getRandomASCIIString(10);
 
     Coordination::Requests requests;
-    zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_processed_path / node_name);
-    zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
+
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, "", zkutil::CreateMode::Persistent));
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_processed_path / node_name, -1));
+
+    requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, "", zkutil::CreateMode::Persistent));
+    requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name, -1));
+
     requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
 
     Coordination::Responses responses;
@@ -340,13 +345,21 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
     }
 
     if (responses[0]->error != Coordination::Error::ZOK)
+    {
         return std::pair{SetFileProcessingResult::AlreadyProcessed, nullptr};
-
-    if (responses[1]->error != Coordination::Error::ZOK)
+    }
+    else if (responses[2]->error != Coordination::Error::ZOK)
+    {
         return std::pair{SetFileProcessingResult::AlreadyFailed, nullptr};
-
-    chassert(responses[2]->error != Coordination::Error::ZOK);
-    return std::pair{SetFileProcessingResult::ProcessingByOtherNode, nullptr};
+    }
+    else if (responses[4]->error != Coordination::Error::ZOK)
+    {
+        return std::pair{SetFileProcessingResult::ProcessingByOtherNode, nullptr};
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", magic_enum::enum_name(code));
+    }
 }
 
 std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
@@ -384,7 +397,9 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
             return std::pair{SetFileProcessingResult::AlreadyProcessed, nullptr};
 
         Coordination::Requests requests;
-        zkutil::addCheckNotExistsRequest(requests, *zk_client, zookeeper_failed_path / node_name);
+        requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, "", zkutil::CreateMode::Persistent));
+        requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name, -1));
+
         requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
         requests.push_back(zkutil::makeCheckRequest(zookeeper_processed_path, processed_node_stat.version));
 
@@ -401,7 +416,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
             LOG_TEST(log, "Skipping file `{}`: failed", path);
             return std::pair{SetFileProcessingResult::AlreadyFailed, nullptr};
         }
-        else if (responses[1]->error != Coordination::Error::ZOK)
+        else if (responses[2]->error != Coordination::Error::ZOK)
         {
             LOG_TEST(log, "Skipping file `{}`: already processing", path);
             return std::pair{SetFileProcessingResult::ProcessingByOtherNode, nullptr};
