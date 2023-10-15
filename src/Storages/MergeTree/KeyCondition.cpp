@@ -2639,7 +2639,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             BoolMask current_intersection(true, false);
                             for (size_t dim = 0; dim < num_dimensions; ++dim)
                             {
-                                const Range condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
 
                                 const Range morton_arg_range(
                                     morton_hyperrectangle[dim].first, true,
