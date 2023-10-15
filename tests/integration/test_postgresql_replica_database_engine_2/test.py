@@ -798,6 +798,8 @@ def test_replica_consumer(started_cluster):
     assert 1050 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
     assert 1050 == int(instance2.query(f"SELECT count() FROM test_database.{table}"))
 
+    for pm in [pg_manager, pg_manager_replica]:
+        pm.drop_materialized_db()
     pg_manager_replica.clear()
 
 
