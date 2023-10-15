@@ -178,7 +178,7 @@ private:
             /// and the condition contains its arguments, e.g.:
             ///   x >= 10 AND x <= 20 AND y >= 20 AND y <= 30,
             /// this expression will be analyzed and then represented by following:
-            ///   args in hyperrectangle [10, 20] x [20, 30].
+            ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
             /// Can take any value.
             FUNCTION_UNKNOWN,
