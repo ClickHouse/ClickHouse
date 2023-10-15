@@ -32,6 +32,8 @@ namespace ErrorCodes
 template <typename Configuration, typename MetadataReadHelper>
 struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
 {
+    Poco::Logger * log = &Poco::Logger::get("IcebergMetadataParser");
+
     /**
      * Useful links:
      * - https://iceberg.apache.org/spec/
@@ -299,7 +301,10 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", configuration.url.key, data_path);
 
                 if (status == 2)
-                    keys.erase(file_path);
+                {
+                    LOG_TEST(log, "Got delete file for {}", file_path);
+                    chassert(!keys.contains(file_path));
+                }
                 else
                     keys.insert(file_path);
             }
