@@ -195,4 +195,4 @@ public:
                                std::make_unique<DenseStore>(), 0.0) {}
 };
 
-} // namespace DB
+}
