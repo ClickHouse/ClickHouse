@@ -1540,7 +1540,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByPosition(out_key_column_num).type;
+        out_key_column_type = sample_block.getByName(name).type;
         return true;
     }
 
@@ -1559,7 +1559,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
             {
                 out_key_column_num = curve.key_column_pos;
                 out_argument_num_of_space_filling_curve = i;
-                out_key_column_type = sample_block.getByPosition(out_key_column_num).type;
+                out_key_column_type = sample_block.getByName(name).type;
                 return true;
             }
         }
