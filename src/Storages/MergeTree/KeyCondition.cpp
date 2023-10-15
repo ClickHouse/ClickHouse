@@ -752,7 +752,9 @@ void KeyCondition::getAllSpaceFillingCurves()
                     break;
                 }
             }
-            if (!curve.arguments.empty())
+
+            /// So far we only support the case of two arguments.
+            if (2 == curve.arguments.size())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -1912,13 +1914,26 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
         processing_chain = true;
         current_chain_start = i;
         current_key_column = rpn[i].key_column;
+
+        size_t num_arguments = 0;
+        for (const auto & curve : key_space_filling_curves)
+        {
+            if (curve.key_column_pos == current_key_column)
+            {
+                num_arguments = curve.arguments.size();
+                break;
+            }
+        }
+        if (!num_arguments)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A space filling curve was not found after analysis: this is a bug");
+
+        current_hyperrectangle.assign(num_arguments, Range::createWholeUniverseWithoutNull());
     };
 
     auto update_chain = [&](size_t i)
     {
         size_t arg_num = *rpn[i].argument_num_of_space_filling_curve;
-        if (current_hyperrectangle.size() <= arg_num)
-            current_hyperrectangle.resize(arg_num + 1, Range::createWholeUniverseWithoutNull());
+        chassert(arg_num < current_hyperrectangle.size());
         current_hyperrectangle[arg_num] = intersect(current_hyperrectangle[arg_num], rpn[i].range);
     };
 
@@ -2574,7 +2589,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         {
             /** The case of space-filling curves.
               * We unpack the range of a space filling curve into hyperrectangles of their arguments,
-              * and then check the intersection of them with the given hyperrectangle from RPN.
+              * and then check the intersection of them with the given hyperrectangle from the key condition.
               *
               * Note: you might find this code hard to understand,
               * because there are three different hyperrectangles involved:
@@ -2624,7 +2639,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             BoolMask current_intersection(true, false);
                             for (size_t dim = 0; dim < num_dimensions; ++dim)
                             {
-                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+                                const Range condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+
                                 const Range morton_arg_range(
                                     morton_hyperrectangle[dim].first, true,
                                     morton_hyperrectangle[dim].second, true);
