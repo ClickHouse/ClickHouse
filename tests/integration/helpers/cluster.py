@@ -32,7 +32,6 @@ try:
     import nats
     import ssl
     import meilisearch
-    import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -631,6 +630,7 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
 
         if with_spark:
+            import pyspark
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
