@@ -149,6 +149,7 @@ Chunk StorageS3QueueSource::generate()
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
+        /// FIXME:  if files are compressed, profile counters update does not work fully (s3 related counters are not saved). Why?
 
         try
         {
