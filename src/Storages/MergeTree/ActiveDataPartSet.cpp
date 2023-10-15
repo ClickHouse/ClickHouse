@@ -47,7 +47,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     AddPartOutcome outcome = addImpl(part_info, name, out_replaced_parts, &out_reason);
     if (outcome == AddPartOutcome::HasIntersectingPart)
     {
-        chassert(out_reason.empty());
+        chassert(!out_reason.empty());
         throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(out_reason));
     }
 
