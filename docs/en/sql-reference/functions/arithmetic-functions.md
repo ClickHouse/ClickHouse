@@ -444,7 +444,7 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 
 ## byteSwap
 
-Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness). Currently, integers of up to 64 bit are supported.
+Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
 
 **Syntax**
 
