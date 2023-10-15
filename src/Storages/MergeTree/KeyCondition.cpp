@@ -786,7 +786,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    if (context.getSettingsRef().analyze_index_with_space_filling_curves)
+    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
         getAllSpaceFillingCurves();
 
     ASTPtr filter_node;
@@ -863,7 +863,7 @@ KeyCondition::KeyCondition(
         ++key_index;
     }
 
-    if (context.getSettingsRef().analyze_index_with_space_filling_curves)
+    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
         getAllSpaceFillingCurves();
 
     if (!filter_dag)
@@ -1901,8 +1901,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
     size_t current_key_column = 0;
     Hyperrectangle current_hyperrectangle;
 
-    std::cerr << toString() << "\n";
-
     /// Traverse chains of AND with conditions on arguments of a space filling curve, and construct hyperrectangles from them.
     /// For example, a chain:
     //    x >= 10 AND x <= 20 AND y >= 20 AND y <= 30
@@ -1911,7 +1909,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
     auto start_chain = [&](size_t i)
     {
-        std::cerr << "start chain\n";
         processing_chain = true;
         current_chain_start = i;
         current_key_column = rpn[i].key_column;
@@ -1919,7 +1916,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
     auto update_chain = [&](size_t i)
     {
-        std::cerr << "update chain\n";
         size_t arg_num = *rpn[i].argument_num_of_space_filling_curve;
         if (current_hyperrectangle.size() <= arg_num)
             current_hyperrectangle.resize(arg_num + 1, Range::createWholeUniverseWithoutNull());
@@ -1928,7 +1924,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
     auto finish_current_chain = [&](size_t i)
     {
-        std::cerr << "finish chain\n";
         processing_chain = false;
 
         RPNElement collapsed_elem;
@@ -1944,8 +1939,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
     for (size_t i = 0; i < rpn.size(); ++i)
     {
         auto & elem = rpn[i];
-
-        std::cerr << elem.toString() << "\n";
 
         if (elem.argument_num_of_space_filling_curve.has_value() && elem.function == RPNElement::FUNCTION_IN_RANGE)
         {
@@ -2579,9 +2572,33 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
-            /// The case of space-filling curves.
-            /// We unpack the range of a space filling curve into hyperrectangles of their arguments,
-            /// and then check the intersection of them with the given hyperrectangle from RPN.
+            /** The case of space-filling curves.
+              * We unpack the range of a space filling curve into hyperrectangles of their arguments,
+              * and then check the intersection of them with the given hyperrectangle from RPN.
+              *
+              * Note: you might find this code hard to understand,
+              * because there are three different hyperrectangles involved:
+              *
+              * 1. A hyperrectangle derived from the range of the table's sparse index (marks granule): `hyperrectangle`
+              *    We analyze its dimension `key_range`, corresponding to the `key_column`.
+              *    For example, the table's key is a single column `mortonEncode(x, y)`,
+              *    the current granule is [500, 600], and it means that
+              *    mortonEncode(x, y) in [500, 600]
+              *
+              * 2. A hyperrectangle derived from the key condition, e.g.
+              *    `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30` defines: (x, y) in [10, 20] × [20, 30]
+              *
+              * 3. A set of hyperrectangles that we obtain by inverting the space-filling curve on the range:
+              *    From mortonEncode(x, y) in [500, 600]
+              *    We get (x, y) in [30, 31] × [12, 13]
+              *        or (x, y) in [28, 31] × [14, 15];
+              *        or (x, y) in [0, 7] × [16, 23];
+              *        or (x, y) in [8, 11] × [16, 19];
+              *        or (x, y) in [12, 15] × [16, 17];
+              *        or (x, y) in [12, 12] × [18, 18];
+              *
+              *  And we analyze the intersection of (2) and (3).
+              */
 
             Range key_range = hyperrectangle[element.key_column];
 
