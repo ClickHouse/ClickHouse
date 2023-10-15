@@ -285,8 +285,9 @@ set_source_files_properties(
         Common/SymbolIndex.cpp
         PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
 
-target_link_libraries (clickhouse_common_io
+target_link_libraries (clickhouse_common_iog
         PRIVATE
+            clickhouse_parsers
             string_utils
             widechar_width
             ${LINK_LIBRARIES_ONLY_ON_X86_64}

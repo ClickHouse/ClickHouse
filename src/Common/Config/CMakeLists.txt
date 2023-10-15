@@ -21,6 +21,8 @@ add_library(clickhouse_common_config_no_zookeeper_log ${SRCS})
 target_link_libraries(clickhouse_common_config_no_zookeeper_log
     PUBLIC
         clickhouse_common_zookeeper_no_log
+        clickhouse_common_io
+        clickhouse_parsers
         common
         Poco::XML
     PRIVATE
