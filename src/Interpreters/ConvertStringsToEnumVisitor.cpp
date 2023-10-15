@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-/// @note We place strings in ascending order here under the assumption it colud speed up String to Enum conversion.
+/// @note We place strings in ascending order here under the assumption it could speed up String to Enum conversion.
 String makeStringsEnum(const std::set<String> & values)
 {
     String enum_string = "Enum8(";

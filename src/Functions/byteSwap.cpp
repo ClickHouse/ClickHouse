@@ -18,6 +18,15 @@ T byteSwap(T x)
 }
 
 template <typename T>
+requires std::is_same_v<T, UInt128> || std::is_same_v<T, Int128> || std::is_same_v<T, UInt256> || std::is_same_v<T, Int256>
+T byteSwap(T x)
+{
+    T dest;
+    reverseMemcpy(&dest, &x, sizeof(T));
+    return dest;
+}
+
+template <typename T>
 T byteSwap(T)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap() is not implemented for {} datatype", demangle(typeid(T).name()));
@@ -55,7 +64,7 @@ REGISTER_FUNCTION(ByteSwap)
     factory.registerFunction<FunctionByteSwap>(
         FunctionDocumentation{
             .description = R"(
-Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness). Currently, integers of up to 64 bit are supported.
+Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
 
 **Example**
 
