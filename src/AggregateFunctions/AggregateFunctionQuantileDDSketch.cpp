@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/QuantileSketch.h>
+#include <AggregateFunctions/QuantileDDSketch.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -19,8 +19,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool float_return> using FuncQuantileSketch = AggregateFunctionQuantile<Value, QuantileSketch<Value>, NameQuantileSketch, false, std::conditional_t<float_return, Float64, void>, false>;
-template <typename Value, bool float_return> using FuncQuantilesSketch = AggregateFunctionQuantile<Value, QuantileSketch<Value>, NameQuantilesSketch, false, std::conditional_t<float_return, Float64, void>, true>;
+template <typename Value, bool float_return> using FuncQuantileDDSketch = AggregateFunctionQuantile<Value, QuantileDDSketch<Value>, NameQuantileDDSketch, false, std::conditional_t<float_return, Float64, void>, false>;
+template <typename Value, bool float_return> using FuncQuantilesDDSketch = AggregateFunctionQuantile<Value, QuantileDDSketch<Value>, NameQuantilesDDSketch, false, std::conditional_t<float_return, Float64, void>, true>;
 
 
 template <template <typename, bool> class Function>
@@ -46,16 +46,16 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileSketch(AggregateFunctionFactory & factory)
+void registerAggregateFunctionsQuantileDDSketch(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileSketch::name, createAggregateFunctionQuantile<FuncQuantileSketch>);
-    factory.registerFunction(NameQuantilesSketch::name, { createAggregateFunctionQuantile<FuncQuantilesSketch>, properties });
+    factory.registerFunction(NameQuantileDDSketch::name, createAggregateFunctionQuantile<FuncQuantileDDSketch>);
+    factory.registerFunction(NameQuantilesDDSketch::name, { createAggregateFunctionQuantile<FuncQuantilesDDSketch>, properties });
 
     /// 'median' is an alias for 'quantile'
-    factory.registerAlias("medianSketch", NameQuantileSketch::name);
+    factory.registerAlias("medianDDSketch", NameQuantileDDSketch::name);
 }
 
 }

@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
-template <typename> class QuantileSketch;
+template <typename> class QuantileDDSketch;
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -63,7 +63,7 @@ private:
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
-    static constexpr bool is_quantile_sketch = std::is_same_v<Data, QuantileSketch<Value>>;
+    static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDDSketch<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -83,7 +83,7 @@ public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels((is_quantile_gk || is_quantile_sketch) && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
+        , levels((is_quantile_gk || is_quantile_ddsketch) && !params.empty() ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
@@ -121,7 +121,7 @@ public:
     {
         if constexpr (is_quantile_gk)
             new (place) Data(accuracy);
-        else if constexpr (is_quantile_sketch)
+        else if constexpr (is_quantile_ddsketch)
             new (place) Data(relative_accuracy);
         else
             new (place) Data;
@@ -152,6 +152,10 @@ public:
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
+        if constexpr (is_quantile_gk)
+            params = {accuracy, 1};
+        else if constexpr (is_quantile_ddsketch)
+            params = {relative_accuracy, 1};
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(
@@ -300,7 +304,7 @@ struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBF
 struct NameQuantileGK { static constexpr auto name = "quantileGK"; };
 struct NameQuantilesGK { static constexpr auto name = "quantilesGK"; };
 
-struct NameQuantileSketch { static constexpr auto name = "quantileSketch"; };
-struct NameQuantilesSketch { static constexpr auto name = "quantilesSketch"; };
+struct NameQuantileDDSketch { static constexpr auto name = "quantileDDSketch"; };
+struct NameQuantilesDDSketch { static constexpr auto name = "quantilesDDSketch"; };
 
 }

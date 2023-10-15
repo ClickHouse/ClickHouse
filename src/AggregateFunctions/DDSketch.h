@@ -15,10 +15,15 @@
 
 namespace DB {
 
-class BaseQuantileSketch {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+class BaseQuantileDDSketch {
 public:
-    BaseQuantileSketch(std::unique_ptr<KeyMapping> mapping_, std::unique_ptr<DenseStore> store_,
-                       std::unique_ptr<DenseStore> negative_store_, Float64 zero_count_)
+    BaseQuantileDDSketch(std::unique_ptr<KeyMapping> mapping_, std::unique_ptr<DenseStore> store_,
+                         std::unique_ptr<DenseStore> negative_store_, Float64 zero_count_)
         : mapping(std::move(mapping_)), store(std::move(store_)), negative_store(std::move(negative_store_)),
           zero_count(zero_count_),
           count(static_cast<Float64>(negative_store->count + zero_count_ + store->count)) {}
@@ -59,7 +64,7 @@ public:
         return quantile_value;
     }
 
-    void copy(const BaseQuantileSketch& other) {
+    void copy(const BaseQuantileDDSketch& other) {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
         mapping = std::make_unique<LogarithmicMapping>(rel_acc);
         store = std::make_unique<DenseStore>();
@@ -70,12 +75,11 @@ public:
         count = other.count;
     }
 
-    void merge(const BaseQuantileSketch& other) {
+    void merge(const BaseQuantileDDSketch& other) {
         if (mapping->getGamma() != other.mapping->getGamma()) {
             // modify the one with higher precision to match the one with lower precision
             if (mapping->getGamma() > other.mapping->getGamma()) {
-                // other = other.changeMapping(mapping->getGamma());
-                BaseQuantileSketch new_sketch = other.changeMapping(mapping->getGamma());
+                BaseQuantileDDSketch new_sketch = other.changeMapping(mapping->getGamma());
                 this->merge(new_sketch);
                 return;
             } else {
@@ -106,7 +110,6 @@ public:
         store->serialize(buf);
         negative_store->serialize(buf);
         writeBinary(zero_count, buf);
-        writeBinary(count, buf);
     }
 
     void deserialize(ReadBuffer& buf) {
@@ -114,7 +117,7 @@ public:
         store->deserialize(buf);
         negative_store->deserialize(buf);
         readBinary(zero_count, buf);
-        readBinary(count, buf);
+        count = static_cast<Float64>(negative_store->count + zero_count + store->count);
     }
 
 private:
@@ -123,8 +126,10 @@ private:
     std::unique_ptr<DenseStore> negative_store;
     Float64 zero_count;
     Float64 count;
+    Poco::Logger * log = &Poco::Logger::get("DDSketch");
 
-    BaseQuantileSketch changeMapping(Float64 new_gamma) const {
+
+    BaseQuantileDDSketch changeMapping(Float64 new_gamma) const {
         Float64 old_gamma = mapping->getGamma();
 
         // Create new Stores to hold the remapped bins
@@ -147,18 +152,17 @@ private:
 
         auto new_mapping = std::make_unique<LogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 
-        // Construct a new BaseQuantileSketch object with the new components
-        return BaseQuantileSketch(std::move(new_mapping), std::move(new_store), std::move(new_negative_store), zero_count);
+        // Construct a new BaseQuantileDDSketch object with the new components
+        return BaseQuantileDDSketch(std::move(new_mapping), std::move(new_store), std::move(new_negative_store), zero_count);
     }
-
 };
 
-class Sketch : public BaseQuantileSketch {
+class DDSketch : public BaseQuantileDDSketch {
 public:
-    Sketch(Float64 relative_accuracy = 0.01)
-        : BaseQuantileSketch(std::make_unique<LogarithmicMapping>(relative_accuracy),
-                             std::make_unique<DenseStore>(),
-                             std::make_unique<DenseStore>(), 0.0) {}
+    DDSketch(Float64 relative_accuracy = 0.01)
+        : BaseQuantileDDSketch(std::make_unique<LogarithmicMapping>(relative_accuracy),
+                               std::make_unique<DenseStore>(),
+                               std::make_unique<DenseStore>(), 0.0) {}
 };
 
-}
+} // namespace DB

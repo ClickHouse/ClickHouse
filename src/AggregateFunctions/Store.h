@@ -9,8 +9,9 @@
 #include <IO/WriteBuffer.h>
 
 
-// We start with 128 bins and grow the number of bins by 128 each time we need to extend the range
-// of the bins. This is done to avoid reallocating the bins vector too often.
+// We start with 128 bins and grow the number of bins by 128
+// each time we need to extend the range of the bins.
+// This is done to avoid reallocating the bins vector too often.
 constexpr int CHUNK_SIZE = 128;
 
 namespace DB {
@@ -84,19 +85,86 @@ public:
     }
 
     void serialize(WriteBuffer& buf) const {
-        writeBinary(min_key, buf);
-        writeBinary(max_key, buf);
-        writeBinary(offset, buf);
-        writeBinary(count, buf);
-        writeBinary(bins, buf);
+
+        // Calculate the size of the dense and sparse encodings to choose the smallest one
+        size_t dense_encoding_size = 0, sparse_encoding_size = 0;
+        UInt64 num_bins = max_key - min_key + 1, num_non_empty_bins = 0;
+
+        dense_encoding_size += estimatedVarIntSize(num_bins);
+        dense_encoding_size += estimatedVarIntSize(min_key);
+        dense_encoding_size += estimatedVarIntSize(1); // indexDelta in dense encoding
+
+        int previous_index = min_key;
+        for (int index = min_key; index <= max_key; ++index) {
+            Float64 count = bins[index - offset];
+            size_t count_varfloat64_size = estimatedFloatSize(count);
+            dense_encoding_size += count_varfloat64_size;
+            if (count != 0) {
+                num_non_empty_bins++;
+                sparse_encoding_size += estimatedFloatSize(index - previous_index);
+                sparse_encoding_size += count_varfloat64_size;
+                previous_index = index;
+            }
+        }
+        sparse_encoding_size += estimatedVarIntSize(num_non_empty_bins);
+
+        // Choose the smallest encoding and write to buffer
+        if (dense_encoding_size <= sparse_encoding_size) {
+            // Write the dense encoding
+            writeVarInt(1, buf); // Flag for dense encoding
+            writeVarUInt(num_bins, buf);
+            writeVarInt(min_key, buf);
+            writeVarInt(1, buf); // indexDelta in dense encoding
+            for (int index = min_key; index <= max_key; ++index) {
+                writeFloatBinary(bins[index - offset], buf);
+            }
+        } else {
+            // Write the sparse encoding
+            writeVarInt(0, buf); // Flag for sparse encoding
+            writeVarUInt(num_non_empty_bins, buf);
+            previous_index = 0;
+            for (int index = min_key; index <= max_key; ++index) {
+                Float64 count = bins[index - offset];
+                if (count != 0) {
+                    writeVarInt(index - previous_index, buf);
+                    writeFloatBinary(count, buf);
+                    previous_index = index;
+                }
+            }
+        }
     }
 
     void deserialize(ReadBuffer& buf) {
-        readBinary(min_key, buf);
-        readBinary(max_key, buf);
-        readBinary(offset, buf);
-        readBinary(count, buf);
-        readBinary(bins, buf);
+        int is_dense_encoding;
+        readVarInt(is_dense_encoding, buf);
+
+        if (is_dense_encoding) {
+            UInt64 num_bins;
+            readVarUInt(num_bins, buf);
+            int min_key;
+            readVarInt(min_key, buf);
+            int index_delta;
+            readVarInt(index_delta, buf);
+
+            for (UInt64 i = 0; i < num_bins; ++i) {
+                Float64 count;
+                readFloatBinary(count, buf);
+                add(min_key, count);
+                min_key += index_delta;
+            }
+        } else {
+            UInt64 num_non_empty_bins;
+            readVarUInt(num_non_empty_bins, buf);
+            int previous_index = 0;
+            for (UInt64 i = 0; i < num_non_empty_bins; ++i) {
+                int index_delta;
+                readVarInt(index_delta, buf);
+                Float64 count;
+                readFloatBinary(count, buf);
+                previous_index += index_delta;
+                add(previous_index, count);
+            }
+        }
     }
 
 private:
@@ -152,6 +220,19 @@ private:
     void centerBins(int new_min_key, int new_max_key) {
         int middle_key = new_min_key + (new_max_key - new_min_key + 1) / 2;
         shiftBins(offset + length() / 2 - middle_key);
+    }
+
+    // This is a rough estimate for the size of a VarInt/VarUInt.
+    // The actual size depends on the encoding and the value.
+    size_t estimatedVarIntSize(Int64 value) const {
+        // This is a very rough estimate.
+        // Some encodings (like LEB128 or VarInt) use 1 byte for small values and more bytes for larger values.
+        return 1 + (sizeof(value) * 8) / 7;
+    }
+
+    size_t estimatedFloatSize(Float64 value) const {
+        // Assuming IEEE 754 double-precision binary floating-point format: binary64
+        return sizeof(value);
     }
 };
 

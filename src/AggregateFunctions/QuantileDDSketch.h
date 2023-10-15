@@ -2,7 +2,7 @@
 
 #include <base/types.h>
 #include <base/sort.h>
-#include <AggregateFunctions/Sketch.h>
+#include <AggregateFunctions/DDSketch.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -11,14 +11,14 @@
 namespace DB
 {
 template <typename Value>
-class QuantileSketch
+class QuantileDDSketch
 {
 public:
     using Weight = UInt64;
 
-    QuantileSketch() = default;
+    QuantileDDSketch() = default;
 
-    explicit QuantileSketch(Float64 relative_accuracy) : data(relative_accuracy) { }
+    explicit QuantileDDSketch(Float64 relative_accuracy) : data(relative_accuracy) { }
 
     void add(const Value & x)
     {
@@ -31,7 +31,7 @@ public:
             data.add(x, w);
     }
 
-    void merge(const QuantileSketch &other)
+    void merge(const QuantileDDSketch &other)
     {
         data.merge(other.data);
     }
@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    Sketch data;
+    DDSketch data;
 
     template <typename T>
     T getImpl(Float64 level) const
