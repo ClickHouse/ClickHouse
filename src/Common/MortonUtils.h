@@ -7,6 +7,26 @@
 #include <set>
 
 
+/** Functions to analyze the Morton space-filling curve on ranges.
+  * There are two operations:
+  *
+  * 1. Inverting the Morton curve on a range.
+  * Given a range of values of Morton curve,
+  *   mortonEncode(x, y) in [a, b]
+  * get possible set of values of its arguments.
+  * This set is represented by a set of hyperrectangles in (x, y) space.
+  *
+  * 2. Calculating the Morton curve on a hyperrectangle.
+  * Given a hyperrectangle in (x, y) space
+  *   (x, y) in [x_min, x_max] × [y_min, y_max]
+  * get possible intervals of the mortonEncode(x, y).
+  *
+  * These operations could be used for index analysis.
+  *
+  * Note: currently it is only tested in 2d.
+  */
+
+
 namespace
 {
     /// After the most significant bit 1, set all subsequent less significant bits to 1 as well.
