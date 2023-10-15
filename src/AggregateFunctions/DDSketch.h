@@ -13,14 +13,16 @@
 #include <AggregateFunctions/Mapping.h>
 #include <AggregateFunctions/Store.h>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
-class BaseQuantileDDSketch {
+class BaseQuantileDDSketch
+{
 public:
     BaseQuantileDDSketch(std::unique_ptr<KeyMapping> mapping_, std::unique_ptr<DenseStore> store_,
                          std::unique_ptr<DenseStore> negative_store_, Float64 zero_count_)
@@ -28,43 +30,58 @@ public:
           zero_count(zero_count_),
           count(static_cast<Float64>(negative_store->count + zero_count_ + store->count)) {}
 
-    void add(Float64 val, Float64 weight = 1.0) {
-        if (weight <= 0.0) {
+    void add(Float64 val, Float64 weight = 1.0)
+    {
+        if (weight <= 0.0)
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "weight must be a positive Float64");
         }
 
-        if (val > mapping->getMinPossible()) {
+        if (val > mapping->getMinPossible())
+        {
             store->add(mapping->key(val), weight);
-        } else if (val < -mapping->getMinPossible()) {
+        }
+        else if (val < -mapping->getMinPossible())
+        {
             negative_store->add(mapping->key(-val), weight);
-        } else {
+        }
+        else
+        {
             zero_count += weight;
         }
 
         count += weight;
     }
 
-    Float64 get(Float64 quantile) const {
-        if (quantile < 0 || quantile > 1 || count == 0) {
+    Float64 get(Float64 quantile) const
+    {
+        if (quantile < 0 || quantile > 1 || count == 0)
+        {
             return std::numeric_limits<Float64>::quiet_NaN(); // Return NaN if the conditions are not met
         }
 
         Float64 rank = quantile * (count - 1);
         Float64 quantile_value;
-        if (rank < negative_store->count) {
+        if (rank < negative_store->count)
+        {
             Float64 reversed_rank = negative_store->count - rank - 1;
             int key = negative_store->keyAtRank(reversed_rank, false);
             quantile_value = -mapping->value(key);
-        } else if (rank < zero_count + negative_store->count) {
+        }
+        else if (rank < zero_count + negative_store->count)
+        {
             quantile_value = 0;
-        } else {
+        }
+        else
+        {
             int key = store->keyAtRank(rank - zero_count - negative_store->count);
             quantile_value = mapping->value(key);
         }
         return quantile_value;
     }
 
-    void copy(const BaseQuantileDDSketch& other) {
+    void copy(const BaseQuantileDDSketch& other)
+    {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
         mapping = std::make_unique<LogarithmicMapping>(rel_acc);
         store = std::make_unique<DenseStore>();
@@ -75,25 +92,32 @@ public:
         count = other.count;
     }
 
-    void merge(const BaseQuantileDDSketch& other) {
-        if (mapping->getGamma() != other.mapping->getGamma()) {
+    void merge(const BaseQuantileDDSketch& other)
+    {
+        if (mapping->getGamma() != other.mapping->getGamma())
+        {
             // modify the one with higher precision to match the one with lower precision
-            if (mapping->getGamma() > other.mapping->getGamma()) {
+            if (mapping->getGamma() > other.mapping->getGamma())
+            {
                 BaseQuantileDDSketch new_sketch = other.changeMapping(mapping->getGamma());
                 this->merge(new_sketch);
                 return;
-            } else {
+            }
+            else
+            {
                 *this = changeMapping(other.mapping->getGamma());
             }
         }
 
         // If the other sketch is empty, do nothing
-        if (other.count == 0) {
+        if (other.count == 0)
+        {
             return;
         }
 
         // If this sketch is empty, copy the other sketch
-        if (count == 0) {
+        if (count == 0)
+        {
             copy(other);
             return;
         }
@@ -105,14 +129,16 @@ public:
         negative_store->merge(other.negative_store.get());
     }
 
-    void serialize(WriteBuffer& buf) const {
+    void serialize(WriteBuffer& buf) const
+    {
         mapping->serialize(buf);
         store->serialize(buf);
         negative_store->serialize(buf);
         writeBinary(zero_count, buf);
     }
 
-    void deserialize(ReadBuffer& buf) {
+    void deserialize(ReadBuffer& buf)
+    {
         mapping->deserialize(buf);
         store->deserialize(buf);
         negative_store->deserialize(buf);
@@ -129,7 +155,8 @@ private:
     Poco::Logger * log = &Poco::Logger::get("DDSketch");
 
 
-    BaseQuantileDDSketch changeMapping(Float64 new_gamma) const {
+    BaseQuantileDDSketch changeMapping(Float64 new_gamma) const
+    {
         Float64 old_gamma = mapping->getGamma();
 
         // Create new Stores to hold the remapped bins
@@ -137,14 +164,16 @@ private:
         auto new_negative_store = std::make_unique<DenseStore>();
 
         // Change mapping for the positive store
-        for (int i = 0; i < store->length(); ++i) {
+        for (int i = 0; i < store->length(); ++i)
+        {
             int old_key = i + store->offset;
             int new_key = static_cast<int>(std::round(old_key * std::log(new_gamma) / std::log(old_gamma)));
             new_store->add(new_key, store->bins[i]);
         }
 
         // Change mapping for the negative store
-        for (int i = 0; i < negative_store->length(); ++i) {
+        for (int i = 0; i < negative_store->length(); ++i)
+        {
             int old_key = i + negative_store->offset;
             int new_key = static_cast<int>(std::round(old_key * std::log(new_gamma) / std::log(old_gamma)));
             new_negative_store->add(new_key, negative_store->bins[i]);
@@ -157,7 +186,8 @@ private:
     }
 };
 
-class DDSketch : public BaseQuantileDDSketch {
+class DDSketch : public BaseQuantileDDSketch
+{
 public:
     DDSketch(Float64 relative_accuracy = 0.01)
         : BaseQuantileDDSketch(std::make_unique<LogarithmicMapping>(relative_accuracy),
