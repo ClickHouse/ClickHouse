@@ -956,6 +956,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         std::string path_created = request.path;
         if (request.is_sequential)
         {
+            if (request.not_exists)
+                return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+
             auto seq_num = parent_node->seq_num;
 
             std::stringstream seq_num_str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -974,7 +977,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         }
 
         if (storage.uncommitted_state.getNode(path_created))
+        {
+            if (zk_request->getOpNum() == Coordination::OpNum::CreateIfNotExists)
+                return new_deltas;
+
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        }
 
         if (getBaseNodeName(path_created).size == 0)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
@@ -1030,6 +1038,13 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCreateResponse & response = dynamic_cast<Coordination::ZooKeeperCreateResponse &>(*response_ptr);
+
+        if (storage.uncommitted_state.deltas.begin()->zxid != zxid)
+        {
+            response.path_created = zk_request->getPath();
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
+        }
 
         if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)
         {
@@ -1764,6 +1779,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                case Coordination::OpNum::CreateIfNotExists:
                     check_operation_type(OperationType::Write);
                     concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
                     break;
@@ -2030,6 +2046,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
     registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::MultiRead, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::CreateIfNotExists, KeeperStorageCreateRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
     registerKeeperRequestProcessor<Coordination::OpNum::CheckNotExists, KeeperStorageCheckRequestProcessor>(*this);

@@ -52,7 +52,7 @@ std::vector<size_t> TableFunctionS3::skipAnalysisForArguments(const QueryTreeNod
     return result;
 }
 
-/// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
+/// This is needed to avoid copy-paste. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))

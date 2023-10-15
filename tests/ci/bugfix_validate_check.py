@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
 from typing import List, Tuple
 import argparse
 import csv
 import logging
-import os
 
 from github import Github
 
@@ -16,13 +16,13 @@ from s3_helper import S3Helper
 from upload_result_helper import upload_results
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("status", nargs="+", help="Path to status file")
+    parser.add_argument("files", nargs="+", type=Path, help="Path to status files")
     return parser.parse_args()
 
 
-def post_commit_status_from_file(file_path: str) -> List[str]:
+def post_commit_status_from_file(file_path: Path) -> List[str]:
     with open(file_path, "r", encoding="utf-8") as f:
         res = list(csv.reader(f, delimiter="\t"))
     if len(res) < 1:
@@ -32,22 +32,24 @@ def post_commit_status_from_file(file_path: str) -> List[str]:
     return res[0]
 
 
-def process_result(file_path: str) -> Tuple[bool, TestResults]:
+def process_result(file_path: Path) -> Tuple[bool, TestResults]:
     test_results = []  # type: TestResults
     state, report_url, description = post_commit_status_from_file(file_path)
-    prefix = os.path.basename(os.path.dirname(file_path))
+    prefix = file_path.parent.name
     is_ok = state == "success"
     if is_ok and report_url == "null":
         return is_ok, test_results
 
-    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
-    if not is_ok:
-        status = f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
+    status = (
+        f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
+        if is_ok
+        else f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
+    )
     test_results.append(TestResult(f"{prefix}: {description}", status))
     return is_ok, test_results
 
 
-def process_all_results(file_paths: str) -> Tuple[bool, TestResults]:
+def process_all_results(file_paths: List[Path]) -> Tuple[bool, TestResults]:
     any_ok = False
     all_results = []
     for status_path in file_paths:
@@ -59,12 +61,14 @@ def process_all_results(file_paths: str) -> Tuple[bool, TestResults]:
     return any_ok, all_results
 
 
-def main(args):
+def main():
     logging.basicConfig(level=logging.INFO)
+    args = parse_args()
+    status_files = args.files  # type: List[Path]
 
     check_name_with_group = "Bugfix validate check"
 
-    is_ok, test_results = process_all_results(args.status)
+    is_ok, test_results = process_all_results(status_files)
 
     if not test_results:
         logging.info("No results to upload")
@@ -76,7 +80,7 @@ def main(args):
         pr_info.number,
         pr_info.sha,
         test_results,
-        args.status,
+        status_files,
         check_name_with_group,
     )
 
@@ -93,4 +97,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(parse_args())
+    main()

@@ -5372,7 +5372,7 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -8824,9 +8824,7 @@ void StorageReplicatedMergeTree::lockSharedData(
     LOG_DEBUG(log, "Trying to create zero-copy lock for part {}", part.name);
     auto zookeeper = tryGetZooKeeper();
     if (zookeeper)
-        return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_existing_lock, hardlinked_files);
-    else
-        return lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(nullptr), replace_existing_lock, hardlinked_files);
+        lockSharedData(part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_existing_lock, hardlinked_files);
 }
 
 void StorageReplicatedMergeTree::getLockSharedDataOps(
@@ -9853,7 +9851,8 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(
 
 bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name)
 {
-    if (disk->supportZeroCopyReplication())
+    auto settings_ptr = getSettings();
+    if (disk->supportZeroCopyReplication() && settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         String table_id = getTableSharedID();
         return removeSharedDetachedPart(disk, path, part_name, table_id, replica_name, zookeeper_path, getContext(), current_zookeeper);
