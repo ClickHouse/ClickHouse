@@ -302,7 +302,7 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
 
                 if (status == 2)
                 {
-                    LOG_TEST(log, "Got delete file for {}", file_path);
+                    LOG_TEST(log, "Processing delete file for path: {}", file_path);
                     chassert(!keys.contains(file_path));
                 }
                 else
