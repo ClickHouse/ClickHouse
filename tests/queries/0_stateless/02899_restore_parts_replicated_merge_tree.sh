@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO table_with_unsuccessful_commits SELECT r
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE table_with_unsuccessful_commits DELETE WHERE value = 'hello' SETTINGS mutations_sync=2"
 
-$CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts where table = 'table_with_unsuccessful_commits' and database = currentDatabase() and active order by name"
+original_parts=$($CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts where table = 'table_with_unsuccessful_commits' and database = currentDatabase() and active order by name")
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE table_with_unsuccessful_commits MODIFY SETTING fault_probability_before_part_commit=1"
 
@@ -44,12 +44,20 @@ while [[ $i -lt $retries ]]; do
     ((++i))
 done
 
-$CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts where table = 'table_with_unsuccessful_commits' and database = currentDatabase() and active order by name"
+parts_after_mutation=$($CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts where table = 'table_with_unsuccessful_commits' and database = currentDatabase() and active order by name")
 
 $CLICKHOUSE_CLIENT --query "DETACH TABLE table_with_unsuccessful_commits"
 
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE table_with_unsuccessful_commits"
 
-$CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts where table = 'table_with_unsuccessful_commits' and database = currentDatabase() and active order by name"
+parts_after_detach_attach=$($CLICKHOUSE_CLIENT --query "SELECT name FROM system.parts where table = 'table_with_unsuccessful_commits' and database = currentDatabase() and active order by name")
+
+if [[ "$parts_after_detach_attach" == "$parts_after_mutation" && "$parts_after_mutation" == "$original_parts" ]]; then
+   echo "Ok"
+else
+    echo "Original parts $original_parts"
+    echo "Parts after mutation $parts_after_mutation"
+    echo "Parts after detach attach $parts_after_detach_attach"
+fi
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE table_with_unsuccessful_commits"
