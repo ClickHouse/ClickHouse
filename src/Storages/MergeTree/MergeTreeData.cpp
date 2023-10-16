@@ -20,6 +20,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/Config/ConfigHelper.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -94,6 +95,7 @@
 #include <iomanip>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <thread>
 #include <typeinfo>
@@ -3943,10 +3945,26 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
         /// ActiveDataPartSet allows to restore most top-level parts instead of unexpected.
         /// It can be important in case of assigned merges. If unexpected part is result of some
-        /// finished, but not committed merge we should restore closest ancestors for the
-        /// unexpected part to be able to execute it.
+        /// finished, but not committed merge then we should restore (at least try to restore)
+        /// closest ancestors for the unexpected part to be able to execute it.
+        /// However it's not guaranteed because outdated parts can intersect
         ActiveDataPartSet parts_for_replacement(format_version);
-        for (const auto & part_candidate_in_partition : getDataPartsPartitionRange(part->info.partition_id))
+        auto range = getDataPartsPartitionRange(part->info.partition_id);
+        DataPartsVector parts_candidates(range.begin(), range.end());
+
+        /// In case of intersecting outdated parts we want to add bigger parts (with higher level) first
+        auto comparator = [] (const DataPartPtr left, const DataPartPtr right) -> bool
+        {
+            if (left->info.level < right->info.level)
+                return true;
+            else if (left->info.level > right->info.level)
+                return false;
+            else
+                return left->info.mutation < right->info.mutation;
+        };
+        std::sort(parts_candidates.begin(), parts_candidates.end(), comparator);
+        /// From larger to smaller parts
+        for (const auto & part_candidate_in_partition : parts_candidates | std::views::reverse)
         {
             if (part->info.contains(part_candidate_in_partition->info)
                 && is_appropriate_state(part_candidate_in_partition->getState()))
@@ -3966,6 +3984,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         if (parts_for_replacement.size() > 0)
         {
             std::vector<std::pair<uint64_t, uint64_t>> holes_list;
+            /// Most part of the code bellow is just to write pretty message
             auto part_infos = parts_for_replacement.getPartInfos();
             int64_t current_right_block = part_infos[0].min_block;
             for (const auto & top_level_part_to_replace : part_infos)
