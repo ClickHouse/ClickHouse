@@ -802,22 +802,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 set_initialized();
             return nuraft::cb_func::ReturnCode::Ok;
         }
-        case nuraft::cb_func::GotAppendEntryReqFromLeader:
-        {
-            if (param->leaderId != -1)
-            {
-                auto leader_index = raft_instance->get_leader_committed_log_idx();
-                auto our_index = raft_instance->get_committed_log_idx();
-                /// This may happen when we start RAFT cluster from scratch.
-                /// Node first became leader, and after that some other node became leader.
-                /// BecameFresh for this node will not be called because it was already fresh
-                /// when it was leader.
-                if (leader_index < our_index + coordination_settings->fresh_log_gap)
-                    set_initialized();
-            }
-            return nuraft::cb_func::ReturnCode::Ok;
-        }
         case nuraft::cb_func::BecomeFollower:
+        case nuraft::cb_func::GotAppendEntryReqFromLeader:
         {
             if (param->leaderId != -1)
             {
