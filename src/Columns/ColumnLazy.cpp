@@ -12,8 +12,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 ColumnLazy::ColumnLazy(MutableColumnPtr && part_nums_, MutableColumnPtr && row_nums_)
@@ -184,29 +184,29 @@ ColumnPtr ColumnLazy::replicate(const Offsets &) const
 
 MutableColumns ColumnLazy::scatter(ColumnIndex, const Selector &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method xxx is not supported for {}", getName()); 
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }
 
-int ColumnLazy::compareAt(size_t , size_t , const IColumn &, int) const
+int ColumnLazy::compareAt(size_t, size_t, const IColumn &, int) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method xxx is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareAt is not supported for {}", getName());
 }
 
-void ColumnLazy::compareColumn(const IColumn & , size_t,
-                                PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &,
-                                int, int) const
+void ColumnLazy::compareColumn(const IColumn &, size_t,
+                               PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &,
+                               int, int) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method xxx is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareColumn is not supported for {}", getName());
 }
 
-int ColumnLazy::compareAtWithCollation(size_t , size_t , const IColumn &, int , const Collator &) const
+int ColumnLazy::compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method xxx is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareAtWithCollation is not supported for {}", getName());
 }
 
 bool ColumnLazy::hasEqualValues() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method xxx is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for {}", getName());
 }
 
 void ColumnLazy::getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,

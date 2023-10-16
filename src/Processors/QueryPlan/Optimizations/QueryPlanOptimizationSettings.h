@@ -43,8 +43,8 @@ struct QueryPlanOptimizationSettings
     bool force_use_projection = false;
     bool optimize_use_implicit_projections = false;
 
-    /// If lazy projection optimisation is enabled
-    bool optimize_lazy_projection = false;
+    /// If lazy materialization optimisation is enabled
+    bool optimize_lazy_materialization = false;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);

@@ -6,19 +6,11 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include "Storages/SelectQueryInfo.h"
-#include <deque>
 
-namespace DB
+namespace DB::QueryPlanOptimizations
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace QueryPlanOptimizations
-{
-constexpr size_t MAX_LIMIT_FOR_LAZY_PROJECTION = 128;
+constexpr size_t MAX_LIMIT_FOR_LAZY_MATERIALIZATION = 128;
 
 static bool canUseLazyProjectionForReadingStep(ReadFromMergeTree * reading)
 {
@@ -196,7 +188,7 @@ void optimizeLazyProjection(Stack & stack, QueryPlan::Nodes & nodes)
         return;
 
     const auto limit = sorting->getLimit();
-    if (limit == 0 || limit > MAX_LIMIT_FOR_LAZY_PROJECTION)
+    if (limit == 0 || limit > MAX_LIMIT_FOR_LAZY_MATERIALIZATION)
         return;
 
     StepStack steps_to_update;
@@ -232,7 +224,7 @@ void optimizeLazyProjection(Stack & stack, QueryPlan::Nodes & nodes)
     }
 
     updateStepsDataStreams(steps_to_update);
-    
+
     auto lazily_read_step = std::make_unique<LazilyReadStep>(
         sorting->getOutputStream(),
         reading_step->getMergeTreeData(),
@@ -242,8 +234,6 @@ void optimizeLazyProjection(Stack & stack, QueryPlan::Nodes & nodes)
     );
     lazily_read_step->setStepDescription("Lazily Read");
     replace_node.step = std::move(lazily_read_step);
-}
-
 }
 
 }

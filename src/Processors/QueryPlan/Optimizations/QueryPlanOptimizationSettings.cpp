@@ -20,7 +20,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.optimize_projection = from.optimize_use_projections;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
     settings.optimize_use_implicit_projections = settings.optimize_projection && from.optimize_use_implicit_projections;
-    settings.optimize_lazy_projection = from.query_plan_optimize_lazy_projection;
+    settings.optimize_lazy_materialization = from.query_plan_optimize_lazy_materialization;
     return settings;
 }
 

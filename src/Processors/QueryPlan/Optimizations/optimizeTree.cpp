@@ -170,7 +170,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        if (optimization_settings.optimize_lazy_projection)
+        if (optimization_settings.optimize_lazy_materialization)
         {
             optimizeLazyProjection(stack, nodes);
         }

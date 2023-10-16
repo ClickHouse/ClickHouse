@@ -65,7 +65,8 @@ void MergeTreeTransform::transform(Chunk & chunk)
         .save_marks_in_cache = false,
     };
 
-    MutableColumns lazily_read_columns(columns_size);
+    MutableColumns lazily_read_columns;
+    lazily_read_columns.resize(columns_size);
     size_t column_idx = 0;
     size_t row_idx = 0;
     for (auto & iter : names_and_types_list)
@@ -74,6 +75,7 @@ void MergeTreeTransform::transform(Chunk & chunk)
         lazily_read_columns[column_idx]->reserve(rows_size);
         column_idx++;
     }
+
     for (; row_idx < rows_size; ++row_idx)
     {
         size_t row_offset = row_num_column->getUInt(row_idx);
@@ -95,15 +97,7 @@ void MergeTreeTransform::transform(Chunk & chunk)
         reader->readRows(mark_range.begin, mark_range.end, false, current_offset + 1, columns_to_read);
 
         for (size_t i = 0; i < columns_size; ++i)
-        {
-            lazily_read_columns[i]->insertFrom(*columns_to_read[i].get(), current_offset);
-        }
-
-        int64_t i = 0;
-        for (auto & it : names_and_types_list)
-        {
-            block.getByName(it.name).column = std::move(columns_to_read[i++]);
-        }
+            lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset]);
     }
 
     column_idx = 0;
