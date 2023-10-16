@@ -162,10 +162,6 @@ void assertDigest(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    keeper_context->local_logs_preprocessed.wait(false);
-    if (keeper_context->shutdown_called)
-        return nullptr;
-
     auto request_for_session = parseRequest(data, /*final=*/false);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
@@ -510,10 +506,6 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
-    keeper_context->local_logs_preprocessed.wait(false);
-    if (keeper_context->shutdown_called)
-        return;
-
     auto request_for_session = parseRequest(data, true);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
