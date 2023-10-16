@@ -29,7 +29,9 @@
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
 #    include <Interpreters/castColumn.h>
+#    include <Storages/MergeTree/KeyCondition.h>
 #    include <boost/algorithm/string/case_conv.hpp>
+#    include <Common/FieldVisitorsAccurateComparison.h>
 #    include "ArrowBufferedStreams.h"
 
 
@@ -355,6 +357,44 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
     }
 }
 
+/// Attention: evaluateRPNElement is only invoked in buildORCSearchArgumentImpl.
+/// So it is guaranted that:
+///     1. elem has no monotonic_functions_chains.
+///     2. if elem function is FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE, `set_index` is not null and `set_index->getOrderedSet().size()` is 1.
+///     3. elem function should be FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE/FUNCTION_IN_SET/FUNCTION_NOT_IN_SET/FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL
+static bool evaluateRPNElement(const Field & field, [[maybe_unused]] DataTypePtr type, const KeyCondition::RPNElement & elem)
+{
+    Range key_range(field);
+    switch (elem.function)
+    {
+        case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
+        case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE: {
+            bool res = elem.range.intersectsRange(key_range);
+            if (elem.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE)
+                res = !res;
+            return res;
+        }
+        case KeyCondition::RPNElement::FUNCTION_IN_SET:
+        case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET: {
+            auto mask = elem.set_index->checkInRange({key_range}, {type}, false);
+            if (elem.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET)
+                mask = !mask;
+            return mask.can_be_true;
+        }
+        /*
+        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
+            bool res = elem.range.intersectsRange(key_range);
+            if (elem.function == KeyCondition::RPNElement::FUNCTION_IS_NULL)
+                res = !res;
+            return res;
+        }
+        */
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected RPNElement Function {}", elem.toString());
+    }
+}
+
 static void buildORCSearchArgumentImpl(
     const KeyCondition & key_condition,
     const Block & header,
@@ -416,18 +456,42 @@ static void buildORCSearchArgumentImpl(
             }
 
             /// Make sure key column in header has exactly the same type with key column in ORC file schema
-            /// A counter-example:
-            ///     Column a has type "Nullable(Int64)" in ORC file, but in header column a has type "Int64", which is allowd in CH.
-            ///     For queries with where condition like "a is null", pushing such filter down to ORC file will make CH return wrong results.
+            /// Counter-example 1:
+            ///     Column a has type "Nullable(Int64)" in ORC file, but in header column a has type "Int64", which is allowed in CH.
+            ///     For queries with where condition like "a is null", if a column contains null value, pushing or not pushing down filters
+            ///     would result in different outputs.
+            /// Counter-example 2:
+            ///     Column a has type "Nullable(Int64)" in ORC file, but in header column a has type "Nullable(UInt64)".
+            ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
+            ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = parseORCType(orc_type, true, skipped);
-            if (format_settings.schema_inference_make_columns_nullable)
-                expect_type = makeNullableRecursively(expect_type);
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, skipped));
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
-            if (!expect_type || !column || !removeLowCardinality(column->type)->equals(*expect_type))
+            if (!expect_type || !column)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
+            }
+
+            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column->type));
+            auto expect_nested_type = removeNullable(expect_type);
+            if (!nested_type->equals(*expect_nested_type))
+            {
+                builder.literal(orc::TruthValue::YES_NO_NULL);
+                break;
+            }
+
+            /// If null_as_default is true, the only difference is nullable, and the evaluations of current RPNElement based on default and null field
+            /// have the same result, we still should push down current filter.
+            if (format_settings.null_as_default && !column->type->isNullable() && !column->type->isLowCardinalityNullable())
+            {
+                bool match_if_null = evaluateRPNElement({}, expect_type, curr);
+                bool match_if_default = evaluateRPNElement(column->type->getDefault(), column->type, curr);
+                if (match_if_default != match_if_null)
+                {
+                    builder.literal(orc::TruthValue::YES_NO_NULL);
+                    break;
+                }
             }
 
             auto predicate_type = convertORCTypeToPredicateType(*orc_type);
