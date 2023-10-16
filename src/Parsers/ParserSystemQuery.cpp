@@ -165,14 +165,6 @@ enum class SystemQueryTargetType
         if (!ParserStringLiteral{}.parse(pos, ast, expected))
             return false;
         res->shard = ast->as<ASTLiteral &>().value.safeGet<String>();
-
-        if (database && ParserKeyword{"FROM GROUP"}.ignore(pos, expected))
-        {
-            ASTPtr group_ast;
-            if (!ParserStringLiteral{}.parse(pos, group_ast, expected))
-                return false;
-            res->replica_group = group_ast->as<ASTLiteral &>().value.safeGet<String>();
-        }
     }
 
     if (ParserKeyword{"FROM"}.ignore(pos, expected))
