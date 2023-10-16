@@ -28,6 +28,7 @@
 #include <sstream>
 #include <tuple>
 #include <unordered_map>
+#include <Common/ProxyConfiguration.h>
 
 
 namespace ProfileEvents
@@ -145,6 +146,13 @@ namespace
         Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {})
     {
         HTTPSessionPtr session;
+
+        bool is_proxy_http_and_is_tunneling_off = proxy_config.protocol == "http" && !proxy_config.tunnel;
+
+        if (https && is_proxy_http_and_is_tunneling_off)
+        {
+            https = false;
+        }
 
         if (https)
         {
@@ -281,7 +289,7 @@ namespace
 
         Entry getSession(
             const Poco::URI & uri,
-            const Poco::URI & proxy_uri,
+            const Poco::Net::HTTPClientSession::ProxyConfig & proxy_config,
             const ConnectionTimeouts & timeouts,
             size_t max_connections_per_endpoint,
             bool wait_on_pool_size_limit)
@@ -291,17 +299,13 @@ namespace
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
 
-            String proxy_host;
-            UInt16 proxy_port = 0;
-            bool proxy_https = false;
-            if (!proxy_uri.empty())
-            {
-                proxy_host = proxy_uri.getHost();
-                proxy_port = proxy_uri.getPort();
-                proxy_https = isHTTPS(proxy_uri);
-            }
+            auto proxy_host = proxy_config.host;
+            auto proxy_port = proxy_config.port;
+            bool proxy_https = proxy_config.protocol == "https";
 
-            HTTPSessionPool::Key key{host, port, https, proxy_host, proxy_port, proxy_https, wait_on_pool_size_limit};
+            // TODO arthur fix fact tunnel is not being used
+
+            HTTPSessionPool::Key key{host, port, https, proxy_host, proxy_config.port, proxy_config.protocol == "https", wait_on_pool_size_limit};
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
                 std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
@@ -357,24 +361,14 @@ HTTPSessionPtr makeHTTPSession(
     return session;
 }
 
-
 PooledHTTPSessionPtr makePooledHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     size_t per_endpoint_pool_size,
-    bool wait_on_pool_size_limit)
+    bool wait_on_pool_size_limit,
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config)
 {
-    return makePooledHTTPSession(uri, {}, timeouts, per_endpoint_pool_size, wait_on_pool_size_limit);
-}
-
-PooledHTTPSessionPtr makePooledHTTPSession(
-    const Poco::URI & uri,
-    const Poco::URI & proxy_uri,
-    const ConnectionTimeouts & timeouts,
-    size_t per_endpoint_pool_size,
-    bool wait_on_pool_size_limit)
-{
-    return HTTPSessionPool::instance().getSession(uri, proxy_uri, timeouts, per_endpoint_pool_size, wait_on_pool_size_limit);
+    return HTTPSessionPool::instance().getSession(uri, proxy_config, timeouts, per_endpoint_pool_size, wait_on_pool_size_limit);
 }
 
 bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
@@ -441,6 +435,19 @@ void markSessionForReuse(HTTPSessionPtr session)
 void markSessionForReuse(PooledHTTPSessionPtr session)
 {
     markSessionForReuse(static_cast<Poco::Net::HTTPSession &>(*session));
+}
+
+Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const ProxyConfiguration & proxy_configuration)
+{
+    Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+    poco_proxy_config.host = proxy_configuration.host;
+    poco_proxy_config.port = proxy_configuration.port;
+    poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+    poco_proxy_config.tunnel = proxy_configuration.use_connect_protocol;
+    poco_proxy_config.originalRequestProtocol = ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
+
+    return poco_proxy_config;
 }
 
 }

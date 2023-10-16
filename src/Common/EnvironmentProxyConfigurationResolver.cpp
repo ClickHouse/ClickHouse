@@ -55,7 +55,8 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
         host,
         ProxyConfiguration::protocolFromString(scheme),
         port,
-        useConnectProtocol(ProxyConfiguration::protocolFromString(scheme))
+        useConnectProtocol(ProxyConfiguration::protocolFromString(scheme)),
+        request_protocol
     };
 }
 

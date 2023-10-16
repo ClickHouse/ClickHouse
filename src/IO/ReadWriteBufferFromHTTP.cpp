@@ -148,7 +148,7 @@ std::istream * ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::callImpl(
             range = HTTPRange{getOffset(), read_range.end};
     }
 
-    Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+    Poco::Net::HTTPRequest request(method_, uri.toString(), Poco::Net::HTTPRequest::HTTP_1_1);
     prepareRequest(request, uri_, range);
 
     LOG_TRACE(log, "Sending request to {}", uri_.toString());

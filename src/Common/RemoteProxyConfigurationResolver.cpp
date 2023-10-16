@@ -101,6 +101,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
         cached_config.host = proxy_host;
         cached_config.port = proxy_port;
         cached_config.use_connect_protocol = useConnectProtocol(cached_config.protocol);
+        cached_config.original_request_protocol = request_protocol;
         cache_timestamp = std::chrono::system_clock::now();
         cache_valid = true;
 

@@ -344,23 +344,14 @@ void PocoHTTPClient::makeRequestInternalImpl(
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
-
+                auto proxy_config = proxyConfigurationToPocoProxyConfig(proxy_configuration);
                 /// Reverse proxy can replace host header with resolved ip address instead of host name.
                 /// This can lead to request signature difference on S3 side.
                 if constexpr (pooled)
                     session = makePooledHTTPSession(
-                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit);
+                        target_uri, timeouts, http_connection_pool_size, wait_on_pool_size_limit, proxy_config);
                 else
-                    session = makeHTTPSession(target_uri, timeouts);
-//                bool use_tunnel = proxy_configuration.protocol == DB::ProxyConfiguration::Protocol::HTTP && target_uri.getScheme() == "https";
-
-                session->setProxy(
-                    proxy_configuration.host,
-                    proxy_configuration.port,
-                    DB::ProxyConfiguration::protocolToString(proxy_configuration.protocol),
-//                    use_tunnel
-                    proxy_configuration.use_connect_protocol
-                );
+                    session = makeHTTPSession(target_uri, timeouts, proxy_config);
             }
             else
             {

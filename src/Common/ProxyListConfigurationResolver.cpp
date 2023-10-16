@@ -34,7 +34,8 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve()
         proxy.getHost(),
         ProxyConfiguration::protocolFromString(proxy.getScheme()),
         proxy.getPort(),
-        useConnectProtocol(ProxyConfiguration::protocolFromString(proxy.getScheme()))
+        useConnectProtocol(ProxyConfiguration::protocolFromString(proxy.getScheme())),
+        request_protocol
     };
 }
 

@@ -81,6 +81,9 @@ HTTPSessionPtr makeHTTPSession(
     Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {}
 );
 
+struct ProxyConfiguration;
+Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const ProxyConfiguration & proxy_configuration);
+
 /// As previous method creates session, but takes it from pool, without and with proxy uri.
 ///
 /// The max_connections_per_endpoint parameter makes it look like the pool size can be different for
@@ -97,14 +100,8 @@ PooledHTTPSessionPtr makePooledHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
     size_t per_endpoint_pool_size,
-    bool wait_on_pool_size_limit = true);
-
-PooledHTTPSessionPtr makePooledHTTPSession(
-    const Poco::URI & uri,
-    const Poco::URI & proxy_uri,
-    const ConnectionTimeouts & timeouts,
-    size_t per_endpoint_pool_size,
-    bool wait_on_pool_size_limit = true);
+    bool wait_on_pool_size_limit = true,
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {});
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 
