@@ -691,6 +691,7 @@ class ClickHouseCluster:
 
         if with_spark:
             import pyspark
+
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
