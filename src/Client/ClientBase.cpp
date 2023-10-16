@@ -719,6 +719,23 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
+void ClientBase::adjustSettings()
+{
+    Settings settings = global_context->getSettings();
+
+    /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
+
+    /// In case of multi-query we allow data after semicolon since it will be
+    /// parsed by the client and interpreted as new query
+    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
+    {
+        settings.input_format_values_allow_data_after_semicolon = true;
+        settings.input_format_values_allow_data_after_semicolon.changed = false;
+    }
+
+    global_context->setSettings(settings);
+}
+
 void ClientBase::initTtyBuffer(ProgressOption progress)
 {
     if (tty_buf)

@@ -182,6 +182,9 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
     void initTtyBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,

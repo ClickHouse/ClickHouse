@@ -320,6 +320,7 @@ try
     registerAggregateFunctions();
 
     processConfig();
+    adjustSettings();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     {
@@ -1264,15 +1265,6 @@ void Client::processConfig()
     global_context->setQueryKindInitial();
     global_context->setQuotaClientKey(config().getString("quota_key", ""));
     global_context->setQueryKind(query_kind);
-
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
-    {
-        Settings settings = global_context->getSettings();
-        settings.input_format_values_allow_data_after_semicolon = true;
-        /// Do not send it to the server
-        settings.input_format_values_allow_data_after_semicolon.changed = false;
-        global_context->setSettings(settings);
-    }
 }
 
 

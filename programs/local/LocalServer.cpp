@@ -494,6 +494,7 @@ try
     registerFormats();
 
     processConfig();
+    adjustSettings();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
@@ -783,15 +784,6 @@ void LocalServer::processConfig()
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);
-
-    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
-    {
-        Settings settings = global_context->getSettings();
-        settings.input_format_values_allow_data_after_semicolon = true;
-        /// Do not send it to the server
-        settings.input_format_values_allow_data_after_semicolon.changed = false;
-        global_context->setSettings(settings);
-    }
 }
 
 
