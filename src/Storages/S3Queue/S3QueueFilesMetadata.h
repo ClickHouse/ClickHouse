@@ -149,7 +149,11 @@ class S3QueueFilesMetadata::ProcessingNodeHolder
 {
     friend class S3QueueFilesMetadata;
 public:
-    ProcessingNodeHolder(const std::string & processing_id_, const std::string & path_, const std::string & zk_node_path_, zkutil::ZooKeeperPtr zk_client_);
+    ProcessingNodeHolder(
+        const std::string & processing_id_,
+        const std::string & path_,
+        const std::string & zk_node_path_,
+        zkutil::ZooKeeperPtr zk_client_);
 
     ~ProcessingNodeHolder();
 
