@@ -44,9 +44,7 @@ public:
     /// Allocates block numbers and recalculates `part_infos_` and `mutation_infos_`.
     void allocateBlockNumbers(
         std::vector<MergeTreePartInfo> & part_infos_,
-        Strings & part_names_in_backup_,
         std::vector<MutationInfoFromBackup> & mutation_infos_,
-        Strings & mutation_names_in_backup_,
         NoPartsCheckReason no_parts_check_reason_) const
     {
         Int64 base_increment_value = getCurrentIncrementValue();
@@ -71,7 +69,7 @@ public:
         };
 
         /// Recalculate block numbers in `part_infos` and `mutation_infos`.
-        calculateBlockNumbersForRestoringMergeTree(part_infos_, part_names_in_backup_, mutation_infos_, mutation_names_in_backup_, do_allocate_block_numbers);
+        calculateBlockNumbersForRestoringMergeTree(part_infos_, mutation_infos_, do_allocate_block_numbers);
 
         /// Check the table has no existing parts again to be sure no parts were added while we were allocating block numbers.
         if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
@@ -326,9 +324,7 @@ bool MergeTreeCurrentlyRestoringFromBackup::containsMutation(Int64 mutation_numb
 
 scope_guard MergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers(
     std::vector<MergeTreePartInfo> & part_infos_,
-    Strings & part_names_in_backup_,
     std::vector<MutationInfoFromBackup> & mutation_infos_,
-    Strings & mutation_names_in_backup_,
     bool check_no_parts_before_)
 {
     auto no_parts_check_reason = NoPartsCheckReason::NONE;
@@ -338,7 +334,7 @@ scope_guard MergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers(
         no_parts_check_reason = NoPartsCheckReason::RESTORING_MUTATIONS;
 
     /// Create temporary zookeeper nodes to allocate block numbers and mutation numbers.
-    block_numbers_allocator->allocateBlockNumbers(part_infos_, part_names_in_backup_, mutation_infos_, mutation_names_in_backup_, no_parts_check_reason);
+    block_numbers_allocator->allocateBlockNumbers(part_infos_, mutation_infos_, no_parts_check_reason);
 
     /// Store information about parts and mutations we're going to restore in memory and ZooKeeper.
     return currently_restoring_info->addEntry(part_infos_, mutation_infos_);

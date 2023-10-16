@@ -269,7 +269,7 @@ private:
     void startBackgroundMovesIfNeeded() override;
 
     BackupEntries backupMutations(const String & data_path_in_backup) const;
-    scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, Strings & part_names_in_backup, std::vector<MutationInfoFromBackup> & mutation_infos, Strings & mutation_names_in_backup, bool check_table_is_empty, ContextMutablePtr) override;
+    scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, std::vector<MutationInfoFromBackup> & mutation_infos, bool check_table_is_empty, ContextMutablePtr) override;
     void checkTableIsEmptyBeforeRestoringParts();
     void attachPartFromBackup(MutableDataPartPtr && part, SinkToStoragePtr, bool check_table_is_empty) override;
     void attachMutationFromBackup(MutationInfoFromBackup && mutation_info, ContextMutablePtr) override;

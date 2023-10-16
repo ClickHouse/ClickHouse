@@ -27,11 +27,7 @@ public:
 
     /// Allocates block numbers to restore a MergeTree table.
     scope_guard allocateBlockNumbers(
-        std::vector<MergeTreePartInfo> & part_infos_,
-        Strings & part_names_in_backup_,
-        std::vector<MutationInfoFromBackup> & mutation_infos_,
-        Strings & mutation_names_in_backup_,
-        bool check_no_parts_before_);
+        std::vector<MergeTreePartInfo> & part_infos_, std::vector<MutationInfoFromBackup> & mutation_infos_, bool check_no_parts_before_);
 
 private:
     class BlockNumbersAllocator;

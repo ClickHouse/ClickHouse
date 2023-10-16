@@ -10213,9 +10213,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 
 scope_guard StorageReplicatedMergeTree::allocateBlockNumbersForRestoringFromBackup(
     std::vector<MergeTreePartInfo> & part_infos,
-    Strings & part_names_in_backup,
     std::vector<MutationInfoFromBackup> & mutation_infos,
-    Strings & mutation_names_in_backup,
     bool check_table_is_empty,
     ContextMutablePtr local_context)
 {
@@ -10228,8 +10226,7 @@ scope_guard StorageReplicatedMergeTree::allocateBlockNumbersForRestoringFromBack
 
     String zookeeper_path_for_checking;
     return currently_restoring_from_backup->allocateBlockNumbers(
-        part_infos, part_names_in_backup, mutation_infos, mutation_names_in_backup,
-        check_table_is_empty, zookeeper_path_for_checking, local_context);
+        part_infos, mutation_infos, check_table_is_empty, zookeeper_path_for_checking, local_context);
 }
 
 void StorageReplicatedMergeTree::checkTableIsEmptyBeforeRestoringParts()

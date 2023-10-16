@@ -146,9 +146,7 @@ public:
     /// The function returns a list of zookeeper paths to ephemeral nodes created in "/block_numbers/" and "/mutations".
     TemporaryZookeeperNodes allocateBlockNumbers(
         std::vector<MergeTreePartInfo> & part_infos_,
-        Strings & part_names_in_backup_,
         std::vector<MutationInfoFromBackup> & mutation_infos_,
-        Strings & mutation_names_in_backup_,
         NoPartsCheckReason no_parts_check_reason_,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
         const ContextPtr & context_) const
@@ -206,15 +204,14 @@ public:
         };
 
         auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-        auto get_partition_ids_affected_by_commands = [&](const MutationCommands & commands)
+        auto get_partitions_affected_by_mutation = [&](const MutationCommands & commands)
         {
             return storage.getPartitionIdsAffectedByCommands(commands, context_);
         };
 
         /// Calculate block numbers using the `do_allocate*` functions.
         calculateBlockNumbersForRestoringReplicatedMergeTree(
-            part_infos_, part_names_in_backup_, mutation_infos_, mutation_names_in_backup_,
-            do_allocate_block_numbers, do_allocate_mutation_numbers, get_partition_ids_affected_by_commands);
+            part_infos_, mutation_infos_, do_allocate_block_numbers, do_allocate_mutation_numbers, get_partitions_affected_by_mutation);
 
         /// Check the table has no existing parts again to be sure no parts were added while we were allocating block numbers.
         if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
@@ -1069,9 +1066,7 @@ void ReplicatedMergeTreeCurrentlyRestoringFromBackup::update(const ZooKeeperWith
 
 scope_guard ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers(
     std::vector<MergeTreePartInfo> & part_infos_,
-    Strings & part_names_in_backup_,
     std::vector<MutationInfoFromBackup> & mutation_infos_,
-    Strings & mutation_names_in_backup_,
     bool check_no_parts_before_,
     String & zookeeper_path_for_checking_,
     const ContextPtr & context_)
@@ -1112,8 +1107,7 @@ scope_guard ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumber
 
         /// Create temporary zookeeper nodes to allocate block numbers and mutation numbers.
         auto temp_nodes = block_numbers_allocator->allocateBlockNumbers(
-            part_infos_, part_names_in_backup_, mutation_infos_, mutation_names_in_backup_,
-            no_parts_check_reason, zookeeper, context_);
+            part_infos_, mutation_infos_, no_parts_check_reason, zookeeper, context_);
 
         /// Store information about parts and mutations we're going to restore in memory and ZooKeeper.
         remove_entry = currently_restoring_info->addEntry(part_infos_, mutation_infos_, zookeeper_path_for_checking_, zookeeper, keeper_settings);

@@ -2370,9 +2370,7 @@ BackupEntries StorageMergeTree::backupMutations(const String & data_path_in_back
 
 scope_guard StorageMergeTree::allocateBlockNumbersForRestoringFromBackup(
     std::vector<MergeTreePartInfo> & part_infos,
-    Strings & part_names_in_backup,
     std::vector<MutationInfoFromBackup> & mutation_infos,
-    Strings & mutation_names_in_backup,
     bool check_table_is_empty,
     ContextMutablePtr)
 {
@@ -2383,7 +2381,7 @@ scope_guard StorageMergeTree::allocateBlockNumbersForRestoringFromBackup(
         return {};
     }
 
-    return currently_restoring_from_backup->allocateBlockNumbers(part_infos, part_names_in_backup, mutation_infos, mutation_names_in_backup, check_table_is_empty);
+    return currently_restoring_from_backup->allocateBlockNumbers(part_infos, mutation_infos, check_table_is_empty);
 }
 
 void StorageMergeTree::checkTableIsEmptyBeforeRestoringParts()

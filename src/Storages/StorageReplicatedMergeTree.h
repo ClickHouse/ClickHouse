@@ -963,7 +963,7 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
-    scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, Strings & part_names_in_backup, std::vector<MutationInfoFromBackup> & mutation_infos, Strings & mutation_names_in_backup, bool check_table_is_empty, ContextMutablePtr local_context) override;
+    scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, std::vector<MutationInfoFromBackup> & mutation_infos, bool check_table_is_empty, ContextMutablePtr local_context) override;
     void checkTableIsEmptyBeforeRestoringParts();
     SinkToStoragePtr createSinkForPartsFromBackup() override;
     void attachPartFromBackup(MutableDataPartPtr && part, SinkToStoragePtr sink, bool check_table_is_empty) override;

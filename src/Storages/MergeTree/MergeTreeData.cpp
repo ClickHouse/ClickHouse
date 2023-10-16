@@ -5417,8 +5417,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         mutation_infos = readMutationsFromBackup(*backup, data_path_in_backup, mutation_names_in_backup);
 
     /// Allocate block numbers and recalculate part infos extracted from backup.
-    auto unlock_block_numbers = allocateBlockNumbersForRestoringFromBackup(
-        part_infos, part_names_in_backup, mutation_infos, mutation_names_in_backup, check_table_is_empty, local_context);
+    auto unlock_block_numbers = allocateBlockNumbersForRestoringFromBackup(part_infos, mutation_infos, check_table_is_empty, local_context);
 
     /// At the end of the restoring we'll need to unlock block numbers and awake restored mutations.
     scope_guard unlock_table_and_start_bg_processing;

@@ -15,9 +15,9 @@ namespace
     struct ListOfPartsAndMutations
     {
         std::vector<MergeTreePartInfo> part_infos;
-        std::vector<String> part_names_in_backup;
         std::vector<MutationInfoFromBackup> mutation_infos;
-        std::vector<String> mutation_names_in_backup;
+        std::vector<String> original_part_names;
+        std::vector<String> original_mutation_names;
     };
 
     using StringPairs = std::vector<std::pair<String, String>>;
@@ -28,16 +28,16 @@ namespace
 
         size_t num_parts = original_part_names.size();
         lst.part_infos.reserve(num_parts);
-        lst.part_names_in_backup = original_part_names;
+        lst.original_part_names = original_part_names;
         for (const auto & part_name : original_part_names)
             lst.part_infos.emplace_back(MergeTreePartInfo::fromPartName(part_name, ::DB::MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING));
 
         size_t num_mutations = original_mutations.size();
         lst.mutation_infos.reserve(num_mutations);
-        lst.mutation_names_in_backup.reserve(num_mutations);
+        lst.original_mutation_names.reserve(num_mutations);
         for (const auto & [mutation_name, mutation_as_string] : original_mutations)
         {
-            lst.mutation_names_in_backup.emplace_back(mutation_name);
+            lst.original_mutation_names.emplace_back(mutation_name);
             lst.mutation_infos.emplace_back(MutationInfoFromBackup::parseFromString(mutation_as_string, mutation_name));
         }
 
@@ -48,23 +48,23 @@ namespace
     {
         Strings lines;
 
-        if (lst.part_infos.size() != lst.part_names_in_backup.size())
+        if (lst.part_infos.size() != lst.original_part_names.size())
         {
             lines.push_back("number of parts mismatch");
             return lines;
         }
 
-        if (lst.mutation_infos.size() != lst.mutation_names_in_backup.size())
+        if (lst.mutation_infos.size() != lst.original_mutation_names.size())
         {
             lines.push_back("number of mutations mismatch");
             return lines;
         }
 
         for (size_t i = 0; i != lst.part_infos.size(); ++i)
-            lines.push_back(fmt::format("Part #{}: {} -> {}", i + 1, lst.part_names_in_backup[i], lst.part_infos[i].getPartNameForLogs()));
+            lines.push_back(fmt::format("Part #{}: {} -> {}", i + 1, lst.original_part_names[i], lst.part_infos[i].getPartNameForLogs()));
 
         for (size_t i = 0; i != lst.mutation_infos.size(); ++i)
-            lines.push_back(fmt::format("Mutation #{}: {} -> {} ({})", i + 1, lst.mutation_names_in_backup[i],
+            lines.push_back(fmt::format("Mutation #{}: {} -> {} ({})", i + 1, lst.original_mutation_names[i],
                             lst.mutation_infos[i].name, lst.mutation_infos[i].toString(/* one_line= */ true)));
         return lines;
     }
@@ -86,13 +86,12 @@ namespace
     void checkCalculationForMergeTree(
         const Strings & original_part_names,
         const StringPairs & original_mutations,
-        AllocateBlockNumbersToRestoreMergeTreeFunction allocate_block_numbers,
+        BlockNumbersForRestoringMergeTreeAllocator allocate_block_numbers,
         const Strings & expected_result)
     {
         ListOfPartsAndMutations lst = prepareListOfPartsAndMutations(original_part_names, original_mutations);
 
-        ::DB::calculateBlockNumbersForRestoringMergeTree(
-            lst.part_infos, lst.part_names_in_backup, lst.mutation_infos, lst.mutation_names_in_backup, allocate_block_numbers);
+        ::DB::calculateBlockNumbersForRestoringMergeTree(lst.part_infos, lst.mutation_infos, allocate_block_numbers);
 
         Strings result = toLines(lst);
 
@@ -103,21 +102,19 @@ namespace
     void checkCalculationForReplicatedMergeTree(
         const Strings & original_part_names,
         const StringPairs & original_mutations,
-        AllocateBlockNumbersToRestoreReplicatedMergeTreeFunction allocate_block_numbers,
-        AllocateMutationNumbersToRestoreReplicatedMergeTreeFunction allocate_mutation_numbers,
-        GetPartitionIdsAffectedByCommandsFunction get_partition_ids_affected_by_commands,
+        BlockNumbersForRestoringReplicatedMergeTreeAllocator allocate_block_numbers,
+        MutationNumbersForRestoringReplicatedMergeTreeAllocator allocate_mutation_numbers,
+        PartitionsAffectedByMutationGetter get_partitions_affected_by_mutation,
         const Strings & expected_result)
     {
         ListOfPartsAndMutations lst = prepareListOfPartsAndMutations(original_part_names, original_mutations);
 
         ::DB::calculateBlockNumbersForRestoringReplicatedMergeTree(
             lst.part_infos,
-            lst.part_names_in_backup,
             lst.mutation_infos,
-            lst.mutation_names_in_backup,
             allocate_block_numbers,
             allocate_mutation_numbers,
-            get_partition_ids_affected_by_commands);
+            get_partitions_affected_by_mutation);
 
         Strings result = toLines(lst);
 
@@ -154,7 +151,7 @@ namespace
         return res;
     }
 
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands &)
+    std::set<String> getPartitionsAffectedByMutation(const MutationCommands &)
     {
         return {};
     }
@@ -242,28 +239,56 @@ TEST(CalculateBlockNumbersForRestoring, MergeTree)
 
     checkCalculationForMergeTree(parts, mutations, allocateBlockNumbersForMergeTree, expected_result);
 
-    auto expected_result_2 = Strings{
-        "Part #1: 1_2_2_0_7 -> 1_1800_1800_0",
-        "Part #2: 2_4_4_0_9 -> 2_1801_1801_0_1804",
-        "Part #3: 0_6_6_0_11 -> 0_1802_1802_0_1806",
-        "Part #4: 1_8_8_0_13 -> 1_1803_1803_0_1808",
-        "Part #5: 2_10_10_0_11 -> 2_1805_1805_0_1806",
-        "Part #6: 0_12_12_0_13 -> 0_1807_1807_0_1808",
-        "Part #7: 1_14_14_0_15 -> 1_1809_1809_0_1810",
-        "Part #8: 2_16_16_0_17 -> 2_1811_1811_0_1812",
-        "Part #9: 0_18_18_0 -> 0_1813_1813_0",
-        "Part #10: 1_20_20_0 -> 1_1815_1815_0",
-        "Part #11: 2_22_22_0 -> 2_1817_1817_0",
-        "Mutation #1: 0000000009.txt -> mutation_1804.txt (block number: 1804 commands: UPDATE b = concat(b, \\'E\\', space(sleep(2))) WHERE 1 )",
-        "Mutation #2: 0000000011.txt -> mutation_1806.txt (block number: 1806 commands: UPDATE b = concat(b, \\'F\\', space(sleep(2))) WHERE 1 )",
-        "Mutation #3: 0000000013.txt -> mutation_1808.txt (block number: 1808 commands: UPDATE b = concat(b, \\'G\\', space(sleep(2))) WHERE 1 )",
-        "Mutation #4: 0000000015.txt -> mutation_1810.txt (block number: 1810 commands: UPDATE b = concat(b, \\'H\\', space(sleep(2))) WHERE 1 )",
-        "Mutation #5: 0000000017.txt -> mutation_1812.txt (block number: 1812 commands: UPDATE b = concat(b, \\'I\\', space(sleep(2))) WHERE 1 )",
-        "Mutation #6: 0000000019.txt -> mutation_1814.txt (block number: 1814 commands: UPDATE b = concat(b, \\'J\\', space(sleep(2))) WHERE 1 )",
-        "Mutation #7: 0000000021.txt -> mutation_1816.txt (block number: 1816 commands: UPDATE b = concat(b, \\'K\\', space(sleep(2))) WHERE 1 )",
+    /// The same parts, a different order.
+    auto parts_2 = Strings{
+        "1_14_14_0_15",
+        "0_18_18_0",
+        "0_6_6_0_11",
+        "1_2_2_0_7",
+        "2_4_4_0_9",
+        "1_8_8_0_13",
+        "0_12_12_0_13",
+        "2_10_10_0_11",
+        "2_22_22_0",
+        "2_16_16_0_17",
+        "1_20_20_0",
     };
 
-    checkCalculationForMergeTree(parts, mutations, allocateBlockNumbersForMergeTree_2, expected_result_2);
+    /// The same mutations, a different order.
+    auto mutations_2 = StringPairs{
+        { "0000000017.txt", "block number: 17 commands: UPDATE b = concat(b, \'I\', space(sleep(2))) WHERE 1" }, 
+        { "0000000009.txt", "block number: 9 commands: UPDATE b = concat(b, \'E\', space(sleep(2))) WHERE 1" },
+        { "0000000013.txt", "block number: 13 commands: UPDATE b = concat(b, \'G\', space(sleep(2))) WHERE 1" }, 
+        { "0000000011.txt", "block number: 11 commands: UPDATE b = concat(b, \'F\', space(sleep(2))) WHERE 1" }, 
+        { "0000000015.txt", "block number: 15 commands: UPDATE b = concat(b, \'H\', space(sleep(2))) WHERE 1" }, 
+        { "0000000021.txt", "block number: 21 commands: UPDATE b = concat(b, \'K\', space(sleep(2))) WHERE 1" },
+        { "0000000019.txt", "block number: 19 commands: UPDATE b = concat(b, \'J\', space(sleep(2))) WHERE 1" }, 
+    };
+
+    /// The input order of parts and mutations must be preserved, but block numbers must be calculated in the correct order.
+    auto expected_result_2 = Strings{
+        "Part #1: 1_14_14_0_15 -> 1_1809_1809_0_1810",
+        "Part #2: 0_18_18_0 -> 0_1813_1813_0",
+        "Part #3: 0_6_6_0_11 -> 0_1802_1802_0_1806",
+        "Part #4: 1_2_2_0_7 -> 1_1800_1800_0",
+        "Part #5: 2_4_4_0_9 -> 2_1801_1801_0_1804",
+        "Part #6: 1_8_8_0_13 -> 1_1803_1803_0_1808",
+        "Part #7: 0_12_12_0_13 -> 0_1807_1807_0_1808",
+        "Part #8: 2_10_10_0_11 -> 2_1805_1805_0_1806",
+        "Part #9: 2_22_22_0 -> 2_1817_1817_0",
+        "Part #10: 2_16_16_0_17 -> 2_1811_1811_0_1812",
+        "Part #11: 1_20_20_0 -> 1_1815_1815_0",
+        "Mutation #1: 0000000017.txt -> mutation_1812.txt (block number: 1812 commands: UPDATE b = concat(b, \\'I\\', space(sleep(2))) WHERE 1 )",
+        "Mutation #2: 0000000009.txt -> mutation_1804.txt (block number: 1804 commands: UPDATE b = concat(b, \\'E\\', space(sleep(2))) WHERE 1 )",
+        "Mutation #3: 0000000013.txt -> mutation_1808.txt (block number: 1808 commands: UPDATE b = concat(b, \\'G\\', space(sleep(2))) WHERE 1 )",
+        "Mutation #4: 0000000011.txt -> mutation_1806.txt (block number: 1806 commands: UPDATE b = concat(b, \\'F\\', space(sleep(2))) WHERE 1 )",
+        "Mutation #5: 0000000015.txt -> mutation_1810.txt (block number: 1810 commands: UPDATE b = concat(b, \\'H\\', space(sleep(2))) WHERE 1 )",
+        "Mutation #6: 0000000021.txt -> mutation_1816.txt (block number: 1816 commands: UPDATE b = concat(b, \\'K\\', space(sleep(2))) WHERE 1 )",
+        "Mutation #7: 0000000019.txt -> mutation_1814.txt (block number: 1814 commands: UPDATE b = concat(b, \\'J\\', space(sleep(2))) WHERE 1 )",
+    };
+
+    /// A different function to allocate block number.
+    checkCalculationForMergeTree(parts_2, mutations_2, allocateBlockNumbersForMergeTree_2, expected_result_2);
 }
 
 
@@ -319,7 +344,7 @@ TEST(CalculateBlockNumbersForRestoring, ReplicatedMergeTree)
         mutations,
         allocateBlockNumbersForReplicatedMergeTree,
         allocateMutationNumbers,
-        getPartitionIdsAffectedByCommands,
+        getPartitionsAffectedByMutation,
         expected_result);
 
     auto expected_result_2 = Strings{
@@ -348,6 +373,6 @@ TEST(CalculateBlockNumbersForRestoring, ReplicatedMergeTree)
         mutations,
         allocateBlockNumbersForReplicatedMergeTree_2,
         allocateMutationNumbers_2,
-        getPartitionIdsAffectedByCommands,
+        getPartitionsAffectedByMutation,
         expected_result_2);
 }

@@ -1379,7 +1379,7 @@ protected:
 
     /// Allocates block numbers for restoring parts and mutations.
     /// This function also adjusts block numbers in `part_infos` and `mutation_infos`.
-    virtual scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, Strings & part_names_in_backup, std::vector<MutationInfoFromBackup> & mutation_infos, Strings & mutation_names_in_backup, bool check_table_is_empty, ContextMutablePtr local_context) = 0;
+    virtual scope_guard allocateBlockNumbersForRestoringFromBackup(std::vector<MergeTreePartInfo> & part_infos, std::vector<MutationInfoFromBackup> & mutation_infos, bool check_table_is_empty, ContextMutablePtr local_context) = 0;
 
     /// Creates a sink to attach parts from backup.
     virtual std::shared_ptr<SinkToStorage> createSinkForPartsFromBackup() { return nullptr; }

@@ -42,9 +42,7 @@ public:
     /// `zookeeper_path_for_checking_` is set to some path which can be used to check later that this allocation is still valid.
     scope_guard allocateBlockNumbers(
         std::vector<MergeTreePartInfo> & part_infos_,
-        Strings & part_names_in_backup_,
         std::vector<MutationInfoFromBackup> & mutation_infos_,
-        Strings & mutation_names_in_backup_,
         bool check_no_parts_before_,
         String & zookeeper_path_for_checking_,
         const ContextPtr & context_);
