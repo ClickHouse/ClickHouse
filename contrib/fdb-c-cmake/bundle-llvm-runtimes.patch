@@ -22,7 +22,7 @@ new file mode 100644
 index 000000000..fd2af3718
 --- /dev/null
 +++ b/contrib/libcxx/CMakeLists.txt
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,73 @@
 +if(NOT CLANG)
 +  message(FATAL_ERROR "Custom libcxx only supported with Clang")
 +endif()
@@ -47,6 +47,7 @@ index 000000000..fd2af3718
 +    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 +    -DLIBCXX_EXTRA_SITE_DEFINES=_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
 +)
++list(APPEND LLVM_CMAKE_ARGS -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
 +if(USE_MSAN)
 +    list(APPEND LLVM_CMAKE_ARGS -DLLVM_USE_SANITIZER=MemoryWithOrigins)
 +endif()
