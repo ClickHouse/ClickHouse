@@ -54,7 +54,7 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
-    std::atomic<bool> initial_batch_committed = false;
+    std::atomic<bool> local_logs_preprocessed = false;
     std::atomic<bool> shutdown_called = false;
 private:
     /// local disk defined using path or disk name

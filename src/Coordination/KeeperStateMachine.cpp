@@ -162,7 +162,7 @@ void assertDigest(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
-    keeper_context->initial_batch_committed.wait(false);
+    keeper_context->local_logs_preprocessed.wait(false);
     if (keeper_context->shutdown_called)
         return nullptr;
 
@@ -393,7 +393,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->initial_batch_committed)
+    if (!keeper_context->local_logs_preprocessed)
         preprocess(*request_for_session);
 
     auto try_push = [this](const KeeperStorage::ResponseForSession& response)
@@ -510,7 +510,7 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
-    keeper_context->initial_batch_committed.wait(false);
+    keeper_context->local_logs_preprocessed.wait(false);
     if (keeper_context->shutdown_called)
         return;
 
