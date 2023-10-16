@@ -885,16 +885,9 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 // SELECT x from t  if  t has row policy that is based on y
 void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 {
-    ASTPtr expr = row_policy_filter_ptr->expression;
-
-    RequiredSourceColumnsVisitor::Data columns_context;
-    RequiredSourceColumnsVisitor(columns_context).visit(expr);
-
-    const auto req_columns = columns_context.requiredColumns();
-
     NameSet added_names;
 
-    for (const auto & req_column : req_columns)
+    for (const auto & req_column : filter_actions->getRequiredColumns())
     {
         if (std::find(names.begin(), names.end(), req_column) == names.end())
         {
