@@ -1968,10 +1968,6 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
                     cond1.space_filling_curve_args_hyperrectangle,
                     cond2.space_filling_curve_args_hyperrectangle);
 
-                /*std::cerr << DB::toString(cond1.space_filling_curve_args_hyperrectangle) << "\n";
-                std::cerr << DB::toString(cond2.space_filling_curve_args_hyperrectangle) << "\n";
-                std::cerr << DB::toString(collapsed_elem.space_filling_curve_args_hyperrectangle) << "\n";*/
-
                 /// Replace the AND operation with its arguments to the collapsed condition
 
                 new_rpn.pop_back();
