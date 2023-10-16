@@ -2660,6 +2660,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
                 rpn_stack.emplace_back(true, true);
+
+            /** Note: we can consider implementing a simpler solution, based on "hidden keys".
+              * It means, when we have a table's key like (a, b, mortonCurve(x, y))
+              * we extract the arguments from the curves, and append them to the key,
+              * imagining that we have the key (a, b, mortonCurve(x, y), x, y)
+              *
+              * Then while we analyze the granule's range between (a, b, mortonCurve(x, y))
+              * and decompose it to the series of hyperrectangles,
+              * we can construct a series of hyperrectangles of the extended key (a, b, mortonCurve(x, y), x, y),
+              * and then do everything as usual.
+              *
+              * This approach is generalizable to any functions, that have preimage of interval
+              * represented by a set of hyperrectangles.
+              */
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
