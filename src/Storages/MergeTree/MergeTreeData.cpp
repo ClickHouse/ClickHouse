@@ -3984,7 +3984,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         if (parts_for_replacement.size() > 0)
         {
             std::vector<std::pair<uint64_t, uint64_t>> holes_list;
-            /// Most part of the code bellow is just to write pretty message
+            /// Most part of the code below is just to write pretty message
             auto part_infos = parts_for_replacement.getPartInfos();
             int64_t current_right_block = part_infos[0].min_block;
             for (const auto & top_level_part_to_replace : part_infos)
