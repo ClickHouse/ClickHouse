@@ -1413,6 +1413,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
+- [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
@@ -1443,6 +1444,25 @@ This method might seem primitive, but it does not require external data about ne
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
+
+### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
+
+``` sql
+load_balancing = hostname_levenshtein_distance
+```
+
+Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
+
+``` text
+example-clickhouse-0-0 ample-clickhouse-0-0
+1
+
+example-clickhouse-0-0 example-clickhouse-1-10
+2
+
+example-clickhouse-0-0 example-clickhouse-12-0
+3
+```
 
 ### In Order {#load_balancing-in_order}
 
@@ -3279,6 +3299,17 @@ Possible values:
 
 Default value: `0`.
 
+## use_mysql_types_in_show_columns {#use_mysql_types_in_show_columns}
+
+Show the names of MySQL data types corresponding to ClickHouse data types in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Possible values:
+
+- 0 - Show names of native ClickHouse data types.
+- 1 - Show names of MySQL data types corresponding to ClickHouse data types.
+
+Default value: `0`.
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.
@@ -4659,6 +4690,10 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 
 Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
 
+:::note
+It's an experimental feature. Enable `allow_experimental_partial_result` setting first to use it.
+:::
+
 ## max_rows_in_partial_result
 
 Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
@@ -4677,4 +4712,37 @@ The default value is `false`.
 
 ``` xml
 <validate_tcp_client_information>true</validate_tcp_client_information>
+```
+
+## print_pretty_type_names {#print_pretty_type_names}
+
+Allows to print deep-nested type names in a pretty way with indents in `DESCRIBE` query and in `toTypeName()` function.
+
+Example:
+
+```sql
+CREATE TABLE test (a Tuple(b String, c Tuple(d Nullable(UInt64), e Array(UInt32), f Array(Tuple(g String, h Map(String, Array(Tuple(i String, j UInt64))))), k Date), l Nullable(String))) ENGINE=Memory;
+DESCRIBE TABLE test FORMAT TSVRaw SETTINGS print_pretty_type_names=1;
+```
+
+```
+a	Tuple(
+    b String,
+    c Tuple(
+        d Nullable(UInt64),
+        e Array(UInt32),
+        f Array(Tuple(
+            g String,
+            h Map(
+                String,
+                Array(Tuple(
+                    i String,
+                    j UInt64
+                ))
+            )
+        )),
+        k Date
+    ),
+    l Nullable(String)
+)
 ```

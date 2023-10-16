@@ -383,6 +383,13 @@ Allow parsing numbers as strings in JSON input formats.
 
 Enabled by default.
 
+## input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
+
+If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
+It can be useful if JSON data contains quoted UInt64 numbers.
+
+Disabled by default.
+
 ## input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
 
 Allow parsing JSON objects as strings in JSON input formats.
