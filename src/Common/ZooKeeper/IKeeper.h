@@ -545,7 +545,10 @@ public:
     virtual bool isExpired() const = 0;
 
     /// Get the current connected node idx.
-    virtual int32_t getConnectedNodeIdx() const = 0;
+    virtual Int8 getConnectedNodeIdx() const = 0;
+
+    /// Get the current connected host and port.
+    virtual String getConnectedHostPort() const = 0;
 
     /// Get the xid of current connection.
     virtual int32_t getConnectionXid() const = 0;

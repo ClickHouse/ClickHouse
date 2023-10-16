@@ -445,17 +445,7 @@ void ZooKeeper::connect(
                     throw;
                 }
                 connected = true;
-
-                /// We can't user 'i' as idx because the nodes have already been shuffled.
-                for (size_t idx = 0; idx < args.hosts.size(); ++idx)
-                {
-                    /// The domain names of two nodes in a cluster cannot point to the same IP address.
-                    Poco::Net::SocketAddress addr(args.hosts[idx]);
-                    if (addr.toString() != node.address.toString())
-                        continue;
-                    connected_hosts_idx = static_cast<int32_t>(idx);
-                    break;
-                }
+                original_index = static_cast<Int8>(node.original_index);
 
                 if (i != 0)
                 {
@@ -920,8 +910,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
 
-    /// Reset the idx.
-    connected_hosts_idx = -1;
+    /// Reset the original index.
+    original_index = -1;
 
     auto expire_session_if_not_expired = [&]
     {

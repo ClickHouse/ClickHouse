@@ -103,6 +103,7 @@ public:
     struct Node
     {
         Poco::Net::SocketAddress address;
+        UInt8 original_index;
         bool secure;
     };
 
@@ -123,7 +124,8 @@ public:
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
-    int32_t getConnectedNodeIdx() const override { return connected_hosts_idx; }
+    Int8 getConnectedNodeIdx() const override { return original_index; }
+    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
     int32_t getConnectionXid() const override { return next_xid.load(); }
 
     /// A ZooKeeper session can have an optional deadline set on it.
@@ -220,9 +222,7 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-
-    /// The n member of the array 'args.hosts' is now being connected.
-    int32_t connected_hosts_idx = -1;
+    Int8 original_index = -1;
 
     /// Fault injection
     void maybeInjectSendFault();

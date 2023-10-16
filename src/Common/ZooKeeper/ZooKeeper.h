@@ -51,6 +51,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
+    UInt8 original_index = 0;
     Priority priority;
     UInt64 random = 0;
 
@@ -551,7 +552,7 @@ public:
 
     void setServerCompletelyStarted();
 
-    int32_t getConnectedHostIdx() const;
+    Int8 getConnectedHostIdx() const;
     String getConnectedHostPort() const;
     int32_t getConnectionXid() const;
 

@@ -89,7 +89,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
                 const Poco::Net::SocketAddress host_socket_addr{host_string};
                 LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
-                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, secure});
+                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, host.original_index, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
             {
@@ -174,6 +174,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
     {
         ShuffleHost shuffle_host;
         shuffle_host.host = args.hosts[i];
+        shuffle_host.original_index = static_cast<UInt8>(i);
         if (get_priority)
             shuffle_host.priority = get_priority(i);
         shuffle_host.randomize();
@@ -1307,22 +1308,14 @@ void ZooKeeper::setServerCompletelyStarted()
         zk->setServerCompletelyStarted();
 }
 
-int32_t ZooKeeper::getConnectedHostIdx() const
+Int8 ZooKeeper::getConnectedHostIdx() const
 {
     return impl->getConnectedNodeIdx();
 }
 
 String ZooKeeper::getConnectedHostPort() const
 {
-    int32_t idx = impl->getConnectedNodeIdx();
-    if (idx < 0 || static_cast<int32_t>(args.hosts.size()) <= idx)
-        return "";
-
-    String host = args.hosts[idx];
-    bool secure = startsWith(host, "secure://");
-    if (secure)
-        host.erase(0, strlen("secure://"));
-    return host;
+    return impl->getConnectedHostPort();
 }
 
 int32_t ZooKeeper::getConnectionXid() const
