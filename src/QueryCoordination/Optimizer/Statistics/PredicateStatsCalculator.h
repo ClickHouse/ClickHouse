@@ -35,6 +35,10 @@ public:
     ActionNodeStatistics visitLessOrEqual(const ActionsDAG::Node * node, ContextType & context) override;
     ActionNodeStatistics visitOtherFuncs(const ActionsDAG::Node * node, ContextType & context) override;
 
+    /// non visit functions
+    ActionNodeStatistics calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
+    ActionNodeStatistics calculateUnaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
+
 private:
     Poco::Logger * log;
 };

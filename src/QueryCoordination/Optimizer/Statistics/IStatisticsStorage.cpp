@@ -273,6 +273,7 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
     auto block_io = executeQuery(sql, load_query_context, true);
 
     auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
+    auto table_columns = DatabaseCatalog::instance().getTable(storage_id, load_query_context)->getInMemoryMetadata().columns;
 
     Block block;
     std::shared_ptr<ColumnStatisticsMap> column_stats_map = std::make_shared<ColumnStatisticsMap>();
@@ -281,15 +282,16 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
     {
         for (size_t i=0;i<block.rows();i++)
         {
-            auto column = block.getByPosition(0).column->getDataAt(i);
+            auto column = block.getByPosition(0).column->getDataAt(i).toString();
             auto column_stats = std::make_shared<ColumnStatistics>();
 
             column_stats->setNdv(block.getByPosition(1).column->getFloat64(i));
             column_stats->setMinValue(block.getByPosition(2).column->getFloat64(i));
             column_stats->setMaxValue(block.getByPosition(3).column->getFloat64(i));
             column_stats->setAvgRowSize(block.getByPosition(4).column->getFloat64(i));
+            column_stats->setDataType(table_columns.get(column).type);
 
-            column_stats_map->insert({column.toString(), column_stats});
+            column_stats_map->insert({column, column_stats});
         }
     }
 
@@ -323,6 +325,18 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
 
     for (const auto & column : columns)
     {
+        auto table_meta = DatabaseCatalog::instance().getTable(storage_id, context);
+
+        Float64 avg_row_size;
+        try
+        {
+            avg_row_size = table_meta->getInMemoryMetadata().columns.get(column).type->getSizeOfValueInMemory();
+        }
+        catch (...)
+        {
+            avg_row_size = 8.0;
+        }
+
         String sql = fmt::format(
             "INSERT INTO {}.{} SELECT {}, '{}', '{}', '{}', uniqState(cast('{}', 'String')), min(toFloat64OrDefault({})), "
             "max(toFloat64OrDefault({})), {} FROM {}",
@@ -335,7 +349,7 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
             column,
             column,
             column,
-            8, /// TODO
+            avg_row_size,
             storage_id.getFullNameNotQuoted());
 
         auto block_io = executeQuery(sql, context, true);

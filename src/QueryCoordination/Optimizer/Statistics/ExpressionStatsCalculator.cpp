@@ -49,7 +49,7 @@ ActionNodeStatistics ExpressionNodeVisitor::visitChildren(const ActionsDAG::Node
 ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node * node, ContextType & context)
 {
     auto input_nodes = getInputNodes(node);
-    /// random(), now()
+    /// TODO check random(), now()
     chassert(!input_nodes.empty());
 
     ActionNodeStatistics node_stats;
@@ -58,7 +58,9 @@ ActionNodeStatistics ExpressionNodeVisitor::visitDefault(const ActionsDAG::Node 
     for (auto input_node : input_nodes)
     {
         chassert(context.contains(input_node));
-        node_stats.set(input_node, context[input_node].get(input_node)->clone());
+        auto input_stats = context[input_node].get(input_node)->clone();
+        node_stats.set(input_node, input_stats);
+        input_stats->setDataType(input_node->result_type);
     }
 
     return node_stats;
@@ -77,19 +79,17 @@ ActionNodeStatistics ExpressionNodeVisitor::visitColumn(const ActionsDAG::Node *
     if (!isColumnConst(*node->column))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not a constant column", node->column->getName());
 
-    Float64 value;
+    ActionNodeStatistics node_stats;
     try
     {
-        value = node->column->getFloat64(0);
+        node_stats.value = node->column->getFloat64(0); /// TODO throw exception?
     }
     catch (...)
     {
         LOG_TRACE(log, "Node {} can not be parsed to Float64", node->result_name);
-        value = 0.0; // TODO use NaN
     }
 
-    ActionNodeStatistics stats{.value = value};
-    return stats;
+    return node_stats;
 }
 
 
@@ -161,7 +161,6 @@ Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & 
     for (auto output_node : output_nodes)
     {
         chassert(context.contains(output_node));
-        chassert(context[output_node].input_node_stats.size() == 1);  /// TODO support 'col1 + col2'
 
         /// Output column contains multi-input node, for example: 'col1 + col2'
         if (context[output_node].input_node_stats.size() > 1)

@@ -326,7 +326,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Statistics &
         const auto right_key_stats = statistics.getColumnStatistics(right_key);
 
         /// calculate min_value / max_value
-        left_key_stats->mergeColumnByIntersect(right_key_stats);
+        left_key_stats->mergeColumnValueByIntersect(right_key_stats);
         right_key_stats->setMinValue(left_key_stats->getMinValue());
         right_key_stats->setMaxValue(left_key_stats->getMaxValue());
 
@@ -442,13 +442,13 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForOuterJoin(Statistics & st
                 /// left table column ndv not changed
                 right_key_stats->setNdv(right_ndv * 0.8); /// TODO add to settings
                 /// shrink right column min_value/max_value
-                right_key_stats->mergeColumnByIntersect(left_key_stats);
+                right_key_stats->mergeColumnValueByIntersect(left_key_stats);
                 break;
             case JoinKind::Right:
                 /// right table column ndv not changed
                 left_key_stats->setNdv(left_ndv * 0.8);
                 /// shrink right column min_value/max_value
-                left_key_stats->mergeColumnByIntersect(right_key_stats);
+                left_key_stats->mergeColumnValueByIntersect(right_key_stats);
                 break;
             case JoinKind::Full:
                 /// both left and right table column ndv not changed,

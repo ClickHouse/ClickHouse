@@ -40,7 +40,7 @@ public:
     bool hasUnknownColumn(const Names & columns) const;
 
     void adjustStatistics();
-    void mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other);
+    void mergeColumnValueByUnion(const String & column_name, ColumnStatisticsPtr other);
 
     void reset();
 

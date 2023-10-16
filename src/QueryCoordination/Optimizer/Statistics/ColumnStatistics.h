@@ -65,38 +65,47 @@ public:
     static ColumnStatisticsPtr unknown();
     static ColumnStatisticsPtr create(Float64 value);
 
-    /// Calculate selectivity
-    Float64 calculateSelectivity(OP_TYPE, Float64 value);
-    /// Adjust min_value or max_value by value.
-    void updateValues(OP_TYPE, Float64 value);
+    /// Calculate selectivity by value and adjust min_value, max_value and ndv.
+    Float64 calculateByValue(OP_TYPE, Float64 value);
 
-    void mergeColumnByUnion(ColumnStatisticsPtr other);
+    /// Union min_value/max_value with others
+    void mergeColumnValueByUnion(ColumnStatisticsPtr other);
     /// Intersect min_value/max_value with others
-    void mergeColumnByIntersect(ColumnStatisticsPtr other);
+    void mergeColumnValueByIntersect(ColumnStatisticsPtr other);
+    /// Revert min_value/max_value with others
+    void revertColumnValue();
 
     ColumnStatisticsPtr clone();
     bool isUnKnown() const;
 
     Float64 getNdv() const;
     void setNdv(Float64 new_value);
-private:
-    Float64 min_value;
 
-public:
     Float64 getMinValue() const;
     void setMinValue(Float64 minValue);
     Float64 getMaxValue() const;
     void setMaxValue(Float64 maxValue);
     Float64 getAvgRowSize() const;
     void setAvgRowSize(Float64 avgRowSize);
+    const DataTypePtr & getDataType() const;
+    void setDataType(const DataTypePtr & dataType);
+    /// Whether value is in column.
+    /// For numeric column check whether it is in min_value/max_value range.
+    /// For non numeric column is always true.
+    bool inRange(Float64 value);
 
 private:
+    Float64 calculateForNumber(OP_TYPE op_type, Float64 value);
+    Float64 calculateForNaN(OP_TYPE op_type);
+
+    Float64 min_value;
     Float64 max_value;
 
     /// number of distinct value
     Float64 ndv;
     Float64 avg_row_size;
 
+    /// used to calculate avg_row_size
     DataTypePtr data_type;
     bool is_unknown;
 

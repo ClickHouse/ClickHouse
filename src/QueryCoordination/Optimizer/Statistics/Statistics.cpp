@@ -126,12 +126,12 @@ void Statistics::adjustStatistics()
     }
 }
 
-void Statistics::mergeColumnByUnion(const String & column_name, ColumnStatisticsPtr other)
+void Statistics::mergeColumnValueByUnion(const String & column_name, ColumnStatisticsPtr other)
 {
     if (!other)
         return;
     auto my = getColumnStatistics(column_name);
-    my->mergeColumnByUnion(other);
+    my->mergeColumnValueByUnion(other);
 }
 
 

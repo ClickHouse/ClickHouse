@@ -298,7 +298,7 @@ Statistics DeriveStatistics::visit(UnionStep & step)
         auto output_column_stats = statistics.getColumnStatistics(output_columns[i]);
 
         /// merge min_value / max_value
-        output_column_stats->mergeColumnByUnion(column_stats);
+        output_column_stats->mergeColumnValueByUnion(column_stats);
 
         /// merge ndv
         auto ndv = std::max(column_stats->getNdv(), output_column_stats->getNdv());

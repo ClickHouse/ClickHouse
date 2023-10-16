@@ -24,11 +24,11 @@ using InputNodeStatsMap = std::unordered_map<const ActionsDAG::Node *, ColumnSta
  */
 struct ActionNodeStatistics
 {
-    /// Selectivity of the node
+    /// Selectivity of the node, only for predicate nodes, for others it is 1.0.
     Float64 selectivity;
-    /// For constant node
+    /// For constant node, try to convert it to Float64
     std::optional<Float64> value;
-    /// Statistics after the action node
+    /// For non const node, represent the input nodes statistics after the action node
     InputNodeStatsMap input_node_stats;
 
     ColumnStatisticsPtr get(const ActionsDAG::Node * node)
@@ -49,6 +49,16 @@ struct ActionNodeStatistics
     void set(const ActionsDAG::Node * node, ColumnStatisticsPtr stats)
     {
         input_node_stats.insert({node, stats});
+    }
+
+    std::set<const ActionsDAG::Node *> getInputNodes()
+    {
+        std::set<const ActionsDAG::Node *> input_nodes;
+        for (auto & [input_node, _] : input_node_stats)
+        {
+            input_nodes.insert(input_node);
+        }
+        return input_nodes;
     }
 
 };

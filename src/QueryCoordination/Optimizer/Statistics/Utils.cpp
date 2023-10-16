@@ -1,13 +1,50 @@
 #include "Utils.h"
 #include <Core/Field.h>
+#include <Core/TypeId.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
 
-[[maybe_unused]] bool isNumeric(DataTypePtr)
+bool isNumeric(DataTypePtr type)
 {
-    /// TODO
-    return true;
+//    isColumnedAsNumber
+    switch (type->getTypeId())
+    {
+        /// number
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+//        case TypeIndex::UInt128: /// TODO check
+//        case TypeIndex::UInt256:
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+//        case TypeIndex::Int128:
+//        case TypeIndex::Int256:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        /// datetime
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+        /// enum
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
+        /// interval
+        case TypeIndex::Interval:
+        /// ip
+        case TypeIndex::IPv4:
+        case TypeIndex::IPv6:
+            return true;
+        case TypeIndex::Nullable:
+            return isNumeric(dynamic_cast<const DataTypeNullable *>(type.get())->getNestedType());
+        default:
+            return false;
+    }
 }
 
 bool isConstColumn(const ActionsDAG::Node * node_)
