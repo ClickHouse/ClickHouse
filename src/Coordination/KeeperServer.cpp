@@ -405,26 +405,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
-    if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
-    {
-        auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, last_log_idx_on_disk + 1);
-
-        //size_t preprocessed = 0;
-        LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
-        //auto idx = state_machine->last_commit_index() + 1;
-        //for (const auto & entry : *log_entries)
-        //{
-        //    if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
-        //        state_machine->pre_commit(idx, entry->get_buf());
-
-        //    ++idx;
-        //    ++preprocessed;
-
-        //    if (preprocessed % 50000 == 0)
-        //        LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
-        //}
-        //LOG_INFO(log, "Preprocessing done");
-    }
+    LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
 
     loadLatestConfig();
 
@@ -625,39 +606,68 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
-    if (!keeper_context->initial_batch_committed)
+    if (!keeper_context->local_logs_preprocessed)
     {
+        const auto preprocess_logs = [&]
+        {
+            auto log_store = state_manager->load_log_store();
+            if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
+            {
+                auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, last_log_idx_on_disk + 1);
+
+                size_t preprocessed = 0;
+                LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
+                auto idx = state_machine->last_commit_index() + 1;
+                for (const auto & entry : *log_entries)
+                {
+                    if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
+                        state_machine->pre_commit(idx, entry->get_buf());
+
+                    ++idx;
+                    ++preprocessed;
+
+                    if (preprocessed % 50000 == 0)
+                        LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
+                }
+                LOG_INFO(log, "Preprocessing done");
+            }
+            else
+            {
+                LOG_INFO(log, "All local log entries preprocessed");
+            }
+            keeper_context->local_logs_preprocessed = true;
+            keeper_context->local_logs_preprocessed.notify_all();
+        };
+
         switch (type)
         {
             case nuraft::cb_func::InitialBatchCommited:
             {
-                auto log_store = state_manager->load_log_store();
-                if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
+                preprocess_logs();
+                break;
+            }
+            case nuraft::cb_func::GotAppendEntryReqFromLeader:
+            {
+                auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
+                if (req.get_commit_idx() != 0)
                 {
-                    auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, last_log_idx_on_disk + 1);
-
-                    size_t preprocessed = 0;
-                    LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
-                    auto idx = state_machine->last_commit_index() + 1;
-                    for (const auto & entry : *log_entries)
+                    auto last_committed_index = state_machine->last_commit_index();
+                    if (!req.log_entries().empty())
                     {
-                        if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
-                            state_machine->pre_commit(idx, entry->get_buf());
+                        // Actual log number.
+                        auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
 
-                        ++idx;
-                        ++preprocessed;
-
-                        if (preprocessed % 50000 == 0)
-                            LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
+                        if (index_to_commit > last_committed_index)
+                        {
+                            LOG_TRACE(log, "Trying to commit local log entries, comitting upto {}", index_to_commit);
+                            raft_instance->commitLogs(index_to_commit);
+                        }
+                        else if (index_to_commit == 0) /// we need to rollback all the logs so we preprocess all of them
+                        {
+                            preprocess_logs();
+                        }
                     }
-                    LOG_INFO(log, "Preprocessing done");
                 }
-                else
-                {
-                    LOG_INFO(log, "Nothing extra to preprocess");
-                }
-                keeper_context->initial_batch_committed = true;
-                keeper_context->initial_batch_committed.notify_all();
                 break;
             }
             default:
@@ -788,34 +798,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         case nuraft::cb_func::BecomeLeader:
         {
             /// We become leader and store is empty or we already committed it
-            if (commited_store || keeper_context->initial_batch_committed)
+            if (commited_store || initial_batch_committed)
                 set_initialized();
             return nuraft::cb_func::ReturnCode::Ok;
         }
-        case nuraft::cb_func::GotAppendEntryReqFromLeader: 
+        case nuraft::cb_func::GotAppendEntryReqFromLeader:
         {
-            if (!on_disk_logs_preprocessed)
-            {
-                auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
-                if (req.get_commit_idx() != 0)
-                {
-                    auto last_committed_index = state_machine->last_commit_index();
-                    ulong index_to_commit = last_log_idx_on_disk;
-                    if (!req.log_entries().empty())
-                    {
-                        // Actual log number.
-                        ulong last_log_idx = req.get_last_log_idx() + 1;
-                        index_to_commit = std::min({index_to_commit, last_log_idx, req.get_commit_idx()});
-                        LOG_INFO(log, "Going to commit {}, last committed index {}", index_to_commit, last_committed_index);
-
-                        if (index_to_commit > last_committed_index)
-                            raft_instance->commitLogs(index_to_commit);
-                    }
-
-                    on_disk_logs_preprocessed = true;
-                }
-            }
-
             if (param->leaderId != -1)
             {
                 auto leader_index = raft_instance->get_leader_committed_log_idx();
@@ -852,10 +840,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         case nuraft::cb_func::InitialBatchCommited:
         {
             if (param->myId == param->leaderId) /// We have committed our log store and we are leader, ready to serve requests.
-            {
-                on_disk_logs_preprocessed = true;
                 set_initialized();
-            }
+            initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
         case nuraft::cb_func::PreAppendLogFollower:

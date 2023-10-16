@@ -460,8 +460,8 @@ void KeeperDispatcher::shutdown()
             our_last_committed_log_idx = std::numeric_limits<uint64_t>::max();
             our_last_committed_log_idx.notify_all();
 
-            keeper_context->initial_batch_committed = true;
-            keeper_context->initial_batch_committed.notify_all();
+            keeper_context->local_logs_preprocessed = true;
+            keeper_context->local_logs_preprocessed.notify_all();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
