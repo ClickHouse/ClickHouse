@@ -535,7 +535,8 @@ public:
         if constexpr (!std::is_trivial_v<T>)
         {
             VarCtrl ctrl;
-            ctrl.ctorFn = [... args = std::forward<Args>(args)](void * buf) mutable { new (buf) T(std::forward<Args>(args)...); };
+            ctrl.ctorFn
+                = [... lambda_args = std::forward<Args>(args)](void * buf) mutable { new (buf) T(std::forward<Args>(lambda_args)...); };
             if (!std::is_trivially_destructible_v<T>)
                 ctrl.dtorFn = [](void * buf) { reinterpret_cast<T *>(buf)->~T(); };
             vars_ctrls.emplace_back(desc.offset, ctrl);
@@ -553,7 +554,8 @@ public:
         total_vars_size += sizeof(T);
 
         VarCtrl ctrl;
-        ctrl.ctorFn = [default_val = std::forward<Default>(default_val)](void * buf) { *reinterpret_cast<T *>(buf) = default_val; };
+        ctrl.ctorFn
+            = [lambda_default_val = std::forward<Default>(default_val)](void * buf) { *reinterpret_cast<T *>(buf) = lambda_default_val; };
         if (!std::is_trivially_destructible_v<T>)
             ctrl.dtorFn = [](void * buf) { reinterpret_cast<T *>(buf)->~T(); };
         vars_ctrls.emplace_back(desc.offset, ctrl);

@@ -155,11 +155,11 @@ FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args)
         session->currentSession(trxb, trxb.var<SessionID>());
         trxb.exec(
             newTrx(),
-            [&promise, log = log](AsyncTrx::Context &, std::exception_ptr eptr)
+            [&promise, lambda_log = log](AsyncTrx::Context &, std::exception_ptr eptr)
             {
                 if (eptr)
                 {
-                    LOG_ERROR(log, "Failed to wait session ready");
+                    LOG_ERROR(lambda_log, "Failed to wait session ready");
                     promise.set_exception(eptr);
                 }
                 else
@@ -222,9 +222,9 @@ void FDBKeeper::create(
 #endif
 
     if (!chroot.empty())
-        trxb.then(TRX_STEP(resp, chroot = chroot)
+        trxb.then(TRX_STEP(resp, local_chroot = chroot)
         {
-            removeRootPath(ctx.getVar(resp)->path_created, chroot);
+            removeRootPath(ctx.getVar(resp)->path_created, local_chroot);
             return nullptr;
         });
     trxb.commit().exec(newTrx(), handleKeeperCallback(resp, callback, " during create " + chrooted_path), trx_tracker.newToken());
@@ -472,9 +472,9 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
             if (!chroot.empty())
             {
-                trxb.then(TRX_STEP(resp, chroot = chroot)
+                trxb.then(TRX_STEP(resp, local_chroot = chroot)
                 {
-                    removeRootPath(ctx.getVar(resp)->path_created, chroot);
+                    removeRootPath(ctx.getVar(resp)->path_created, local_chroot);
                     return nullptr;
                 });
             }

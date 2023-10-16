@@ -90,12 +90,12 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
 
     heartbeat_trx = trxb.build(
         tr,
-        [this, log = log, var_vs, var_new_vs](AsyncTrx::Context & ctx, std::exception_ptr eptr)
+        [this, lambda_log = log, var_vs, var_new_vs](AsyncTrx::Context & ctx, std::exception_ptr eptr)
         {
             if (eptr)
             {
                 expired.store(true);
-                tryLogException(eptr, log, "Unexpected error during heartbeat");
+                tryLogException(eptr, lambda_log, "Unexpected error during heartbeat");
                 onExpired();
             }
             else
@@ -106,7 +106,7 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
                 applyNewSessionKey();
 
                 heartbeat_task->scheduleAfter(KEEPER_HEARTBEAT_INTERVAL_MS);
-                LOG_TRACE(log, "{} session: {}, expire: {}", new_vs ? "New" : "Renew", curSessionID(), curExpire().format());
+                LOG_TRACE(lambda_log, "{} session: {}, expire: {}", new_vs ? "New" : "Renew", curSessionID(), curExpire().format());
             }
         },
         heartbeat_trx_cancel.getToken());
@@ -114,21 +114,21 @@ void KeeperSession::buildHeartbeatTrx(FDBTransaction * tr)
 
 void KeeperSession::currentSession(AsyncTrxBuilder & trxb, AsyncTrxVar<SessionID> var_session)
 {
-    trxb.then(TRX_STEP(this, log = log)
+    trxb.then(TRX_STEP(this, local_log = this->log)
         {
             if (expired)
                 throw KeeperException(Coordination::Error::ZSESSIONEXPIRED);
 
             if (cur_session_key.empty())
             {
-                LOG_TRACE(log, "Session not inited, retry...");
+                LOG_TRACE(local_log, "Session not inited, retry...");
                 ctx.reset();
                 return fdb_delay(KEEPER_SESSION_RETRY_INTERVAL_S);
             }
 
             return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(cur_session_key), false);
         })
-        .then(TRX_STEP(this, log = log, var_session)
+        .then(TRX_STEP(this, local_log = this->log, var_session)
         {
             fdb_bool_t exists;
             const uint8_t * data;
@@ -137,7 +137,7 @@ void KeeperSession::currentSession(AsyncTrxBuilder & trxb, AsyncTrxVar<SessionID
 
             if (!exists)
             {
-                LOG_TRACE(log, "Session expired, retry...");
+                LOG_TRACE(local_log, "Session expired, retry...");
                 ctx.reset();
                 return fdb_delay(KEEPER_SESSION_RETRY_INTERVAL_S);
             }

@@ -65,7 +65,7 @@ AsyncTrx::Ptr KeeperCleaner::buildClearTrx(FDBTransaction * tr)
     auto var_session_key_end = trxb.var<String>();
 
     /// Fetch all expired session keys
-    trxb.then(TRX_STEP(keys = keys, var_expire_before_ts, var_session_keys, var_session_key_begin, var_session_key_end)
+    trxb.then(TRX_STEP(local_keys = keys, var_expire_before_ts, var_session_keys, var_session_key_begin, var_session_key_end)
     {
         auto & session_key_begin = *ctx.getVar(var_session_key_begin);
         auto & session_key_end = *ctx.getVar(var_session_key_end);
@@ -74,8 +74,8 @@ AsyncTrx::Ptr KeeperCleaner::buildClearTrx(FDBTransaction * tr)
         if (!f)
         {
             auto & expire_before_ts = *ctx.getVar(var_expire_before_ts);
-            session_key_begin = keys.getSessionKey(BigEndianTimestamp{}, FDBVersionstamp{}, false);
-            session_key_end = keys.getSessionKey(expire_before_ts, FDBVersionstamp{}, false);
+            session_key_begin = local_keys.getSessionKey(BigEndianTimestamp{}, FDBVersionstamp{}, false);
+            session_key_end = local_keys.getSessionKey(expire_before_ts, FDBVersionstamp{}, false);
         }
         else
         {
@@ -113,7 +113,7 @@ AsyncTrx::Ptr KeeperCleaner::buildClearTrx(FDBTransaction * tr)
 
     return trxb.build(
         tr,
-        [clear_task = clear_task->shared_from_this(), log = log](AsyncTrxContext &, std::exception_ptr eptr)
+        [lambda_clear_task = clear_task->shared_from_this(), lambda_log = this->log](AsyncTrxContext &, std::exception_ptr eptr)
         {
             if (eptr)
             {
@@ -123,19 +123,19 @@ AsyncTrx::Ptr KeeperCleaner::buildClearTrx(FDBTransaction * tr)
                 }
                 catch (OtherCleanerRunningException &)
                 {
-                    LOG_TRACE(log, "Other cleaner is running");
+                    LOG_TRACE(lambda_log, "Other cleaner is running");
                 }
                 catch (...)
                 {
-                    tryLogException(eptr, log, "Unexpected error in cleaner trx");
+                    tryLogException(eptr, lambda_log, "Unexpected error in cleaner trx");
                 }
             }
             else
             {
-                LOG_TRACE(log, "Current clean round done");
+                LOG_TRACE(lambda_log, "Current clean round done");
             }
 
-            clear_task->scheduleAfter(KEEPER_CLEANER_ROUND_DURATION_MS);
+            lambda_clear_task->scheduleAfter(KEEPER_CLEANER_ROUND_DURATION_MS);
         },
         clear_trx_cancel.getToken());
 }
@@ -167,7 +167,7 @@ void KeeperCleaner::tryGetRound(AsyncTrxBuilder & trxb, AsyncTrxVar<BigEndianTim
 
             return fdb_transaction_commit(ctx.getTrx());
         })
-        .then(TRX_STEP(log = log)
+        .then(TRX_STEP(local_log = this->log)
         {
             auto error = fdb_future_get_error(f);
             if (error == FDBErrorCode::not_committed)
@@ -175,7 +175,7 @@ void KeeperCleaner::tryGetRound(AsyncTrxBuilder & trxb, AsyncTrxVar<BigEndianTim
             throwIfFDBError(error);
             fdb_transaction_reset(ctx.getTrx());
 
-            LOG_TRACE(log, "I am cleaner now");
+            LOG_TRACE(local_log, "I am cleaner now");
             return nullptr;
         });
 }
@@ -188,7 +188,7 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
     auto var_ephe_iterator = trxb.var<int>();
 
     auto init_step_tick = trxb.nextStepTick();
-    trxb.then(TRX_STEP(keys = keys, var_session_keys, var_ephe_iterator, var_paths)
+    trxb.then(TRX_STEP(local_keys = keys, var_session_keys, var_ephe_iterator, var_paths)
         {
             auto & session_keys = *ctx.getVar(var_session_keys);
             if (session_keys.empty())
@@ -207,7 +207,7 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
             return nullptr;
         })
         /// Get all paths, then clear ephemeral keys, session key and nodes keys
-        .then(TRX_STEP(keys = keys, var_session_keys, var_ephe_iterator, var_ephe_range_begin, var_ephe_range_end, var_paths)
+        .then(TRX_STEP(local_keys = keys, var_session_keys, var_ephe_iterator, var_ephe_range_begin, var_ephe_range_end, var_paths)
         {
             auto & session_keys = *ctx.getVar(var_session_keys);
             if (session_keys.empty())
@@ -222,7 +222,7 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
             fdb_bool_t more = true;
             if (ephe_iterator == 1)
             {
-                ephe_range_begin = keys.getEphemeral(KeeperKeys::extractSessionFromSessionKey(session_key, false), "");
+                ephe_range_begin = local_keys.getEphemeral(KeeperKeys::extractSessionFromSessionKey(session_key, false), "");
                 ephe_range_end = ephe_range_begin + '\xff';
             }
             else
@@ -231,7 +231,7 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
                 int kvs_len;
                 throwIfFDBError(fdb_future_get_keyvalue_array(f, &kvs, &kvs_len, &more));
 
-                const int prefix_size = static_cast<int>(keys.getEphemeralPrefixSize());
+                const int prefix_size = static_cast<int>(local_keys.getEphemeralPrefixSize());
 
                 for (int i = 0; i < kvs_len; i++)
                 {
@@ -263,17 +263,17 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
             }
             else
             {
-                ephe_range_begin = keys.getEphemeral(KeeperKeys::extractSessionFromSessionKey(session_key, false), "");
+                ephe_range_begin = local_keys.getEphemeral(KeeperKeys::extractSessionFromSessionKey(session_key, false), "");
                 fdb_transaction_clear_range(ctx.getTrx(), FDB_KEY_FROM_STRING(ephe_range_begin), FDB_KEY_FROM_STRING(ephe_range_end));
                 fdb_transaction_clear(ctx.getTrx(), FDB_KEY_FROM_STRING(session_key));
 
                 for (auto & path : paths)
-                    ZNodeLayer::removeUnsafeTrx(ctx.getTrx(), keys, path);
+                    ZNodeLayer::removeUnsafeTrx(ctx.getTrx(), local_keys, path);
                 return fdb_transaction_commit(ctx.getTrx());
             }
         })
         /// Check error
-        .then(TRX_STEP(var_session_keys, var_paths, log = log, init_step_tick)
+        .then(TRX_STEP(var_session_keys, var_paths, local_log = this->log, init_step_tick)
         {
             auto error = fdb_future_get_error(f);
             if (error != 0)
@@ -283,7 +283,7 @@ void KeeperCleaner::clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque
             auto & session_key = session_keys.front();
             auto & paths = *ctx.getVar(var_paths);
             LOG_DEBUG(
-                log,
+                local_log,
                 "Clean {} nodes owned by session {} expired at {}.",
                 paths.size(),
                 KeeperKeys::extractSessionFromSessionKey(session_key, false),

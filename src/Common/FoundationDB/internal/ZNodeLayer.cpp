@@ -102,7 +102,7 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
         const auto parent_numcreate_key = keys.getMetaPrefix(parent_path) + static_cast<char>(KeeperKeys::numCreate);
         trxb.then(
                 TRX_STEP(parent_numcreate_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(parent_numcreate_key), 0); })
-            .then(TRX_STEP(parent_numcreate_key, var_resp, path = path)
+            .then(TRX_STEP(parent_numcreate_key, var_resp, local_path = path)
             {
                 fdb_bool_t exists_seq;
                 const uint8_t * seq_bytes;
@@ -116,7 +116,7 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
                     seq = *reinterpret_cast<const UInt32 *>(seq_bytes);
 
                 auto & resp = *ctx.getVar(var_resp);
-                resp.path_created = fmt::format("{}{:010}", path, seq);
+                resp.path_created = fmt::format("{}{:010}", local_path, seq);
                 return nullptr;
             });
     }
@@ -124,7 +124,7 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
     {
         auto child_key = keys.getChild(path);
         trxb.then(TRX_STEP(child_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), 0); })
-            .then(TRX_STEP(var_resp, ignore_exists, path = path)
+            .then(TRX_STEP(var_resp, ignore_exists, local_path = path)
             {
                 fdb_bool_t exists;
                 const uint8_t * value;
@@ -141,18 +141,18 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
                 }
 
                 auto & resp = *ctx.getVar(var_resp);
-                resp.path_created = path;
+                resp.path_created = local_path;
                 return nullptr;
             });
     }
 
-    trxb.then(TRX_STEP(data, keys = keys, path = path, parent_path, var_resp)
+    trxb.then(TRX_STEP(data, local_keys = keys, local_path = path, parent_path, var_resp)
     {
         auto & resp = *ctx.getVar(var_resp);
-        auto data_key = keys.getData(resp.path_created);
-        auto child_key = keys.getChild(resp.path_created);
-        auto meta_key_prefix = keys.getMetaPrefix(resp.path_created);
-        auto parent_meta_key_prefix = keys.getMetaPrefix(parent_path);
+        auto data_key = local_keys.getData(resp.path_created);
+        auto child_key = local_keys.getChild(resp.path_created);
+        auto meta_key_prefix = local_keys.getMetaPrefix(resp.path_created);
+        auto parent_meta_key_prefix = local_keys.getMetaPrefix(parent_path);
 
         /// Set child key
         fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), nullptr, 0);
@@ -213,14 +213,14 @@ void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<Cre
 
 void ZNodeLayer::registerEphemeralUnsafe(AsyncTrxVar<SessionID> var_session, AsyncTrxVar<CreateResponse> var_resp)
 {
-    trxb.then(TRX_STEP(keys = keys, var_session, var_resp)
+    trxb.then(TRX_STEP(local_keys = keys, var_session, var_resp)
     {
         auto & session = *ctx.getVar(var_session);
         auto & resp = *ctx.getVar(var_resp);
 
-        auto ephemeral_key = keys.getEphemeral(session, resp.path_created);
-        auto meta_owner_key = keys.getMetaPrefix(resp.path_created) + static_cast<char>(KeeperKeys::ephemeralOwner);
-        auto child_key = keys.getChild(resp.path_created);
+        auto ephemeral_key = local_keys.getEphemeral(session, resp.path_created);
+        auto meta_owner_key = local_keys.getMetaPrefix(resp.path_created) + static_cast<char>(KeeperKeys::ephemeralOwner);
+        auto child_key = local_keys.getChild(resp.path_created);
         fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(ephemeral_key), nullptr, 0);
         fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_owner_key), FDB_VALUE_FROM_POD(session));
         fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), FDB_VALUE_FROM_POD(KeeperKeys::ListFilterEphemeral));
@@ -232,9 +232,9 @@ void ZNodeLayer::registerEphemeralUnsafe(AsyncTrxVar<SessionID> var_session, Asy
 void ZNodeLayer::setUnsafe(const String & data)
 {
     trxb.lockExclusive(path);
-    trxb.then(TRX_STEP(keys = keys, path = path, data)
+    trxb.then(TRX_STEP(local_keys = keys, local_path = path, data)
     {
-        auto data_key = keys.getData(path);
+        auto data_key = local_keys.getData(local_path);
         if (data.size() > zk_max_value_size)
             throw KeeperException(Error::ZBADARGUMENTS);
         auto & data_split = data_key.back();
@@ -250,7 +250,7 @@ void ZNodeLayer::setUnsafe(const String & data)
             data_offset += split_size;
         }
 
-        auto meta_key_prefix = keys.getMetaPrefix(path);
+        auto meta_key_prefix = local_keys.getMetaPrefix(local_path);
         auto meta_key = meta_key_prefix + static_cast<char>(KeeperKeys::version);
         fdb_transaction_atomic_op(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_key), FDB_ATOMIC_PLUS_ONE_32);
 
@@ -358,10 +358,10 @@ void ZNodeLayer::get(AsyncTrxVar<GetResponse> var_resp)
 {
     stat(var_resp);
     auto var_data_key = trxb.var<String>();
-    trxb.then(TRX_STEP(var_data_key, keys = keys, path = path)
+    trxb.then(TRX_STEP(var_data_key, local_keys = keys, local_path = path)
         {
             auto & data_key = *ctx.getVar(var_data_key);
-            data_key = keys.getData(path);
+            data_key = local_keys.getData(local_path);
             data_key.back() = 0;
             return nullptr;
         })
@@ -471,7 +471,7 @@ void ZNodeLayer::remove(int32_t version)
 
     /// Remove ephemeral key if exists
     trxb.then(TRX_STEP(owner_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(owner_key), false); })
-        .then(TRX_STEP(keys = keys, path = path)
+        .then(TRX_STEP(local_keys = keys, local_path = path)
         {
             fdb_bool_t exists;
             const uint8_t * session_bytes;
@@ -483,13 +483,13 @@ void ZNodeLayer::remove(int32_t version)
                 return nullptr;
 
             assert(len == sizeof(SessionID));
-            auto ephemeral_key = keys.getEphemeral(*reinterpret_cast<const SessionID *>(session_bytes), path);
+            auto ephemeral_key = local_keys.getEphemeral(*reinterpret_cast<const SessionID *>(session_bytes), local_path);
             fdb_transaction_clear(ctx.getTrx(), FDB_KEY_FROM_STRING(ephemeral_key));
             return nullptr;
         });
 
     trxb.then(TRX_STEP(children_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(children_key), 0); })
-        .then(TRX_STEP(path = path, keys = keys)
+        .then(TRX_STEP(local_path = path, local_keys = keys)
         {
             fdb_bool_t children_key_exists;
             const uint8_t * children_bytes;
@@ -499,7 +499,7 @@ void ZNodeLayer::remove(int32_t version)
             if (children_key_exists && *(reinterpret_cast<const int32_t *>(children_bytes)) > 0)
                 throw KeeperException(Error::ZNOTEMPTY);
 
-            removeUnsafeTrx(ctx.getTrx(), keys, path);
+            removeUnsafeTrx(ctx.getTrx(), local_keys, local_path);
 
             return nullptr;
         });
