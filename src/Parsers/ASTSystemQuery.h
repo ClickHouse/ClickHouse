@@ -33,6 +33,7 @@ public:
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_SCHEMA_CACHE,
+        DROP_FORMAT_SCHEMA_CACHE,
 #if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
 #endif
@@ -106,6 +107,7 @@ public:
     String replica;
     String shard;
     String replica_zk_path;
+    String replica_group;
     bool is_drop_whole_replica{};
     String storage_policy;
     String volume;
@@ -119,6 +121,8 @@ public:
     String backup_name;
 
     String schema_cache_storage;
+
+    String schema_cache_format;
 
     String fail_point_name;
 

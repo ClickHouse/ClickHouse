@@ -1046,6 +1046,7 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
+arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1061,6 +1062,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1178,10 +1180,11 @@ builtins
 byteSize
 bytebase
 bytesToCutForIPv
-byteEditDistance
+editDistance
 byteHammingDistance
-byteJaccardIndex
-byteLevenshteinDistance
+jaccardIndex
+levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1508,6 +1511,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
