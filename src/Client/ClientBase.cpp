@@ -72,6 +72,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <iostream>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <memory>
 #include <unordered_map>
@@ -730,6 +731,13 @@ void ClientBase::adjustSettings()
     {
         settings.input_format_values_allow_data_after_semicolon = true;
         settings.input_format_values_allow_data_after_semicolon.changed = false;
+    }
+
+    /// If pager is specified then output_format_pretty_max_rows is ignored, this should be handled by pager.
+    if (!pager.empty() && !global_context->getSettingsRef().output_format_pretty_max_rows.changed)
+    {
+        settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
+        settings.output_format_pretty_max_rows.changed = false;
     }
 
     global_context->setSettings(settings);
