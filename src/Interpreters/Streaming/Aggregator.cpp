@@ -131,17 +131,17 @@ void AggregatedDataVariants::convertToTwoLevel()
 
 Block Aggregator::getHeader(bool final) const
 {
-    return params.getHeader(header, final);
+    return params.getHeader(final);
 }
 
 Block Aggregator::Params::getHeader(
-    const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final)
+    const Block & src_header, const Block & intermediate_header, const Names & keys, const AggregateDescriptions & aggregates, bool final)
 {
     Block res;
 
-    if (only_merge)
+    if (intermediate_header)
     {
-        res = header.cloneEmpty();
+        res = intermediate_header.cloneEmpty();
 
         if (final)
         {
@@ -157,14 +157,14 @@ Block Aggregator::Params::getHeader(
     else
     {
         for (const auto & key : keys)
-            res.insert(header.getByName(key).cloneEmpty());
+            res.insert(src_header.getByName(key).cloneEmpty());
 
         for (const auto & aggregate : aggregates)
         {
             size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
             for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
+                argument_types[j] = src_header.getByName(aggregate.argument_names[j]).type;
 
             DataTypePtr type;
             if (final)
@@ -234,8 +234,8 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
     }
 }
 
-Aggregator::Aggregator(const Block & header_, const Params & params_)
-    : header(header_), keys_positions(calculateKeysPositions(header, params_)), params(params_), log(&Poco::Logger::get("StreamingAggregator"))
+Aggregator::Aggregator(const Params & params_)
+    : keys_positions(calculateKeysPositions(params_.src_header, params_)), params(params_), log(&Poco::Logger::get("StreamingAggregator"))
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -384,7 +384,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     for (const auto & key : params.keys)
     {
-        DataTypePtr type = header.getByName(key).type;
+        DataTypePtr type = params.src_header.getByName(key).type;
 
         if (type->lowCardinality())
         {
@@ -1039,7 +1039,7 @@ void Aggregator::prepareAggregateInstructions(
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
+            const auto pos = params.src_header.getPositionByName(params.aggregates[i].argument_names[j]);
             materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 

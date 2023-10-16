@@ -12,8 +12,11 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
-
 #include <QueryPipeline/printPipeline.h>
+
+/// proton: porting starts. TODO: remove comments
+#include <Processors/Streaming/ResizeProcessor.h>
+/// proton: porting ends. TODO: remove comments
 
 namespace DB
 {
@@ -21,6 +24,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+ProcessorPtr getStreamingResizeProcessor(const Block & header, size_t from_num_streams, size_t to_num_streams)
+{
+    if (from_num_streams == to_num_streams)
+        return std::make_shared<Streaming::StrictResizeProcessor>(header, to_num_streams);
+    else if (to_num_streams == 1)
+        return std::make_shared<Streaming::ShrinkResizeProcessor>(header, from_num_streams);
+    else if (from_num_streams == 1)
+        return std::make_shared<Streaming::ExpandResizeProcessor>(header, to_num_streams);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Don't support resize combination from {} to {}", from_num_streams, to_num_streams);
+}
 }
 
 static void checkSource(const IProcessor & source)
@@ -686,6 +704,11 @@ void Pipe::addChains(std::vector<Chain> chains)
 
 void Pipe::resize(size_t num_streams, bool force, bool strict)
 {
+    /// proton: starts.
+    if (isStreaming())
+        return resizeStreaming(num_streams, force);
+    /// proton: ends.
+
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
 
@@ -841,6 +864,5 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
-
 
 }

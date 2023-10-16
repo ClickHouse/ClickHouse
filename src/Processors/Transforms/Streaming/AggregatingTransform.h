@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Processors/IProcessor.h>
 #include <Common/Stopwatch.h>
+#include <Common/ProtonCommon.h>
 // #include <base/SerdeTag.h>
 
 #include <any>
@@ -29,8 +30,8 @@ struct AggregatingTransformParams
     bool emit_version = false;
     DataTypePtr version_type;
 
-    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_, bool emit_version_)
-        : aggregator(header, params_)
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_, bool emit_version_)
+        : aggregator(params_)
         , params(aggregator.getParams())
         , final(final_)
         , emit_version(emit_version_)
@@ -39,18 +40,16 @@ struct AggregatingTransformParams
             version_type = DataTypeFactory::instance().get("int64");
     }
 
-    // static Block getHeader(const Aggregator::Params & params, bool final, bool emit_version)
-    // {
-    //     auto res = params.getHeader(final);
-    //     if (final && emit_version)
-    //         res.insert({DataTypeFactory::instance().get("int64"), "emit_version()"});
-    //         / proton: porting notes. TODO: remove comments. Need revisit. support emit_version
-    //         res.insert({DataTypeFactory::instance().get("int64"), ProtonConsts::RESERVED_EMIT_VERSION});
+    static Block getHeader(const Aggregator::Params & params, bool final, bool emit_version)
+    {
+        auto res = params.getHeader(final);
+        if (final && emit_version)
+            res.insert({DataTypeFactory::instance().get("int64"), ProtonConsts::RESERVED_EMIT_VERSION});
 
-    //     return res;
-    // }
+        return res;
+    }
 
-    Block getHeader() const { return aggregator.getHeader(final); }
+    Block getHeader() const { return getHeader(params, final, emit_version); }
 };
 
 class AggregatingTransform;

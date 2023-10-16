@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/Streaming/AggregatingStep.h>
 
 #include <Processors/Transforms/Streaming/GlobalAggregatingTransform.h>
-// #include <Processors/QueryPlan/AggregatorStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <memory>
@@ -12,6 +11,7 @@ namespace Streaming
 {
 namespace
 {
+}
 ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits{
@@ -36,50 +36,18 @@ inline void convertToNullable(Block & header, const Names & keys)
     }
 }
 
-Block appendGroupingSetColumn(Block header)
-{
-    Block res;
-    res.insert({std::make_shared<DataTypeUInt64>(), "__grouping_set"});
-
-    for (auto & col : header)
-        res.insert(std::move(col));
-
-    return res;
-}
-
-Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls)
-{
-    auto header = appendGroupingSetColumn(input_header);
-    if (use_nulls)
-        convertToNullable(header, keys);
-    return header;
-}
-}
-
-Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls)
-{
-    if (!has_grouping)
-        return block;
-
-    return generateOutputHeader(block, keys, use_nulls);
-}
-
 AggregatingStep::AggregatingStep(
     const DataStream & input_stream_,
     Aggregator::Params params_,
-    GroupingSetsParamsList grouping_sets_params_,
     bool final_,
     size_t merge_threads_,
     size_t temporary_data_merge_threads_,
-    bool group_by_use_nulls_,
     bool emit_version_)
-    : ITransformingStep(input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_), getTraits(), false)
+    : ITransformingStep(input_stream_, AggregatingTransformParams::getHeader(params_, final_, emit_version_), getTraits(), false)
     , params(std::move(params_))
-    , grouping_sets_params(std::move(grouping_sets_params_))
     , final(std::move(final_))
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
-    , group_by_use_nulls(group_by_use_nulls_)
     , emit_version(emit_version_)
 {
 }
@@ -102,7 +70,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
-
+    auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), final, emit_version);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
@@ -142,7 +110,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             //     return std::make_shared<UserDefinedEmitStrategyAggregatingTransform>(
             //         header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
             // else
-            auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final, emit_version);
             return std::make_shared<GlobalAggregatingTransform>(
                 header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
@@ -176,7 +143,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             // else if (transform_params->params.group_by == Aggregator::Params::GroupBy::USER_DEFINED)
             //     return std::make_shared<UserDefinedEmitStrategyAggregatingTransform>(header, transform_params);
             // else
-            auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final, emit_version);
             return std::make_shared<GlobalAggregatingTransform>(header, transform_params);
         });
     }
@@ -203,7 +169,8 @@ void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
+        // appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
+        AggregatingTransformParams::getHeader(params, final, emit_version),
         getDataStreamTraits());
 }
 

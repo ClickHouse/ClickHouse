@@ -579,6 +579,11 @@ class Aggregator final
 public:
     struct Params
     {
+        /// Data structure of source blocks.
+        Block src_header;
+        /// Data structure of intermediate blocks before merge.
+        Block intermediate_header;
+
         /// What to count.
         const Names keys;
         const AggregateDescriptions aggregates;
@@ -614,8 +619,6 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
-        bool only_merge;
-
         /// proton: starts
         /// `keep_state` tell Aggregator if it needs to hold state in-memory for streaming
         /// processing. In normal case, it is true. However for global over global aggregation
@@ -647,6 +650,7 @@ public:
 
         /// proton: starts
         Params(
+            const Block & src_header_,
             const Names & keys_, const AggregateDescriptions & aggregates_,
             bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
@@ -656,14 +660,12 @@ public:
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            bool only_merge_ = false, // true for projections
+            const Block & intermediate_header_ = {},
             bool keep_state_ = true,
-            /* size_t streaming_window_count_ = 0, */
-            GroupBy streaming_group_by_ = GroupBy::OTHER
-            /* ssize_t delta_col_pos_ = -1,
-            size_t window_keys_num_ = 0,
-            WindowParamsPtr window_params_ = nullptr */)
-        : keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
+            GroupBy streaming_group_by_ = GroupBy::OTHER)
+        : src_header(src_header_),
+            intermediate_header(intermediate_header_),
+            keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
             group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
@@ -672,39 +674,35 @@ public:
             min_free_disk_space(min_free_disk_space_),
             compile_aggregate_expressions(compile_aggregate_expressions_),
             min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_),
-            only_merge(only_merge_),
             keep_state(keep_state_),
-            /* streaming_window_count(streaming_window_count_), */
             group_by(streaming_group_by_)
-            /* delta_col_pos(delta_col_pos_),
-            window_keys_num(window_keys_num_),
-            window_params(window_params_) */
         {
         }
         /// proton: ends
 
         /// Only parameters that matter during merge.
-        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, true, {})
+        Params(const Block & intermediate_header_,
+            const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0)
         {
+            intermediate_header = intermediate_header_;
         }
 
         static Block getHeader(
-            const Block & header,
-            bool only_merge,
+            const Block & src_header,
+            const Block & intermediate_header,
             const Names & keys,
             const AggregateDescriptions & aggregates,
             bool final);
 
-        Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
+        Block getHeader(bool final) const { return getHeader(src_header, intermediate_header, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(WriteBuffer & out, size_t indent) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
-    explicit Aggregator(const Block & header_, const Params & params_);
+    explicit Aggregator(const Params & params_);
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
@@ -839,8 +837,6 @@ private:
     // mutable std::optional<VersionType> version;
     /// proton: ends
 
-    /// Data structure of source blocks.
-    Block header;
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
     Params params;
@@ -890,7 +886,8 @@ private:
     /// For external aggregation.
     mutable TemporaryFiles temporary_files;
 
-#if USE_EMBEDDED_COMPILER
+// #if USE_EMBEDDED_COMPILER
+#if 0
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
 #endif
 
@@ -904,9 +901,9 @@ private:
     AggregatedDataVariants::Type chooseAggregationMethod();
 
     /// proton: starts
-    AggregatedDataVariants::Type chooseAggregationMethodTimeBucketTwoLevel(
-        const DataTypes & types_removed_nullable, bool has_nullable_key,
-        bool has_low_cardinality, size_t num_fixed_contiguous_keys, size_t keys_bytes) const;
+    // AggregatedDataVariants::Type chooseAggregationMethodTimeBucketTwoLevel(
+    //     const DataTypes & types_removed_nullable, bool has_nullable_key,
+    //     bool has_low_cardinality, size_t num_fixed_contiguous_keys, size_t keys_bytes) const;
     /// proton: ends
 
     /** Create states of aggregate functions for one key.

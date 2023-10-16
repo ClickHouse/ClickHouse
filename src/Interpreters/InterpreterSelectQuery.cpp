@@ -3397,7 +3397,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
 
     auto streaming_group_by = Streaming::Aggregator::Params::GroupBy::OTHER;
 
-    // const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
+    const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
     const auto & keys = query_analyzer->aggregationKeys().getNames();
 
     // ssize_t delta_col_pos = data_stream_semantic_pair.isChangelogInput()
@@ -3479,6 +3479,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
     const Settings & settings = context->getSettingsRef();
 
     Streaming::Aggregator::Params params(
+        header_before_aggregation,
         keys,
         aggregates,
         overflow_row,
@@ -3495,15 +3496,13 @@ void InterpreterSelectQuery::executeStreamingAggregation(
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
-        /* only_merge */ false,
+        {},
         shouldKeepState(),
         /* settings.keep_windows, */
         streaming_group_by
         /* delta_col_pos,
         window_keys_num,
         query_info.streaming_window_params */);
-
-    auto grouping_sets_params = getAggregatorGroupingSetsParams<Streaming::GroupingSetsParamsList>(*query_analyzer, keys);
 
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -3515,7 +3514,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
     //         std::make_unique<Streaming::AggregatingStepWithSubstream>(query_plan.getCurrentDataStream(), params, final, emit_version));
     // else
     query_plan.addStep(std::make_unique<Streaming::AggregatingStep>(
-        query_plan.getCurrentDataStream(), params, std::move(grouping_sets_params), final, merge_threads, temporary_data_merge_threads, settings.group_by_use_nulls, emit_version));
+        query_plan.getCurrentDataStream(), params, final, merge_threads, temporary_data_merge_threads, emit_version));
 }
 
 bool InterpreterSelectQuery::isStreaming() const

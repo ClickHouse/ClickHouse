@@ -196,25 +196,25 @@ void AggregatingTransform::consume(Chunk chunk)
         propagateHeartbeatChunk();
 }
 
-std::pair<bool, bool> AggregatingTransform::executeOrMergeColumns(Chunk & chunk, size_t num_rows)
+std::pair<bool, bool> AggregatingTransform::executeOrMergeColumns(Chunk & chunk, [[maybe_unused]] size_t num_rows)
 {
     auto columns = chunk.detachColumns();
-    if (params->params.only_merge)
-    {
-        auto block = getInputs().front().getHeader().cloneWithColumns(columns);
-        materializeBlockInplace(block);
-        /// FIXME
-        /// Blocking finalization during execution on current variant
-        std::lock_guard lock(variants_mutex);
-        auto success = params->aggregator.mergeOnBlock(block, variants, no_more_keys);
-        return {!success, false};
-    }
-    else
-    {
+    // if (params->params.only_merge)
+    // {
+    //     auto block = getInputs().front().getHeader().cloneWithColumns(columns);
+    //     materializeBlockInplace(block);
+    //     /// FIXME
+    //     /// Blocking finalization during execution on current variant
+    //     std::lock_guard lock(variants_mutex);
+    //     auto success = params->aggregator.mergeOnBlock(block, variants, no_more_keys);
+    //     return {!success, false};
+    // }
+    // else
+    // {
         /// Blocking finalization during execution on current variant
         std::lock_guard lock(variants_mutex);
         return params->aggregator.executeOnBlock(std::move(columns), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys);
-    }
+    // }
 }
 
 void AggregatingTransform::emitVersion([[maybe_unused]] Block & block)

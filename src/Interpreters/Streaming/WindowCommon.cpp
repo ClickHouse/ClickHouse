@@ -31,27 +31,27 @@ namespace
 {
 std::optional<IntervalKind> mapIntervalKind(const String & func_name)
 {
-    if (func_name == "to_interval_nanosecond")
+    if (func_name == "toIntervalNanosecond")
         return IntervalKind::Nanosecond;
-    else if (func_name == "to_interval_microsecond")
+    else if (func_name == "toIntervalMicrosecond")
         return IntervalKind::Microsecond;
-    else if (func_name == "to_interval_millisecond")
+    else if (func_name == "toIntervalMillisecond")
         return IntervalKind::Millisecond;
-    else if (func_name == "to_interval_second")
+    else if (func_name == "toIntervalSecond")
         return IntervalKind::Second;
-    else if (func_name == "to_interval_minute")
+    else if (func_name == "toIntervalMinute")
         return IntervalKind::Minute;
-    else if (func_name == "to_interval_hour")
+    else if (func_name == "toIntervalHour")
         return IntervalKind::Hour;
-    else if (func_name == "to_interval_day")
+    else if (func_name == "toIntervalDay")
         return IntervalKind::Day;
-    else if (func_name == "to_interval_week")
+    else if (func_name == "toIntervalWeek")
         return IntervalKind::Week;
-    else if (func_name == "to_interval_month")
+    else if (func_name == "toIntervalMonth")
         return IntervalKind::Month;
-    else if (func_name == "to_interval_quarter")
+    else if (func_name == "toIntervalQuarter")
         return IntervalKind::Quarter;
-    else if (func_name == "to_interval_year")
+    else if (func_name == "toIntervalYear")
         return IntervalKind::Year;
     else
         return {};

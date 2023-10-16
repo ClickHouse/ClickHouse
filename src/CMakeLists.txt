@@ -244,6 +244,7 @@ add_object_library(clickhouse_processors_executors Processors/Executors)
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
+add_object_library(clickhouse_processors_streaming Processors/Streaming)
 # proton: porting start. TODO: remove comments
 add_object_library(clickhouse_processors_transforms_streaming Processors/Transforms/Streaming)
 # proton: porting ends. TODO: remove comments

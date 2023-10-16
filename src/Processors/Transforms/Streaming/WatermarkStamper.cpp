@@ -10,7 +10,7 @@
 #include <Processors/Chunk.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/ClockUtils.h>
-// #include <Common/ProtonCommon.h>
+#include <Common/ProtonCommon.h>
 // #include <Common/VersionRevision.h>
 #include <Common/logger_useful.h>
 
@@ -30,7 +30,7 @@ namespace Streaming
 namespace
 {
 /// Default periodic interval
-const std::pair<Int64, IntervalKind> DEFAULT_PERIODIC_INTERVAL = {2, IntervalKind::Second};
+// const std::pair<Int64, IntervalKind> DEFAULT_PERIODIC_INTERVAL = {2, IntervalKind::Second};
 
 void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & params)
 {
@@ -103,16 +103,13 @@ WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, TreeRewriterResultP
         if (mode == EmitMode::TAIL)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Streaming aggregation doesn't support tail emit");
 
-        if (mode == EmitMode::PERIODIC)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Streaming window aggregation doesn't support periodic emit");
-
         /// Set default emit mode
         if (mode == EmitMode::NONE)
         {
             /// If `PERIODIC INTERVAL ...` is missing in `EMIT STREAM` query
             mode = EmitMode::PERIODIC;
-            periodic_interval.interval = DEFAULT_PERIODIC_INTERVAL.first;
-            periodic_interval.unit = DEFAULT_PERIODIC_INTERVAL.second;
+            periodic_interval.interval = ProtonConsts::DEFAULT_PERIODIC_INTERVAL.first;
+            periodic_interval.unit = ProtonConsts::DEFAULT_PERIODIC_INTERVAL.second;
         }
     }
 }
@@ -146,6 +143,7 @@ void WatermarkStamper::process(Chunk & chunk)
     // logLateEvents();
 }
 
+#include <iostream>
 void WatermarkStamper::processPeriodic(Chunk & chunk)
 {
     assert(next_periodic_emit_ts);
@@ -154,6 +152,11 @@ void WatermarkStamper::processPeriodic(Chunk & chunk)
     auto now = MonotonicNanoseconds::now();
     if (now < next_periodic_emit_ts)
         return;
+
+    if (chunk.getNumRows() == 0)
+    {
+        std::cout << "logger" << std::endl;
+    }
 
     next_periodic_emit_ts = now + periodic_interval;
 
