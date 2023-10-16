@@ -2,7 +2,7 @@ import com.mysql.cj.MysqlType;
 
 import java.sql.*;
 
-public class PreparedStatementsTest {
+public class MySQLJavaClientTest {
     public static void main(String[] args) {
         int i = 0;
         String host = "127.0.0.1";
@@ -10,6 +10,7 @@ public class PreparedStatementsTest {
         String user = "default";
         String password = "";
         String database = "default";
+        String binary = "false";
         while (i < args.length) {
             switch (args[i]) {
                 case "--host":
@@ -27,16 +28,19 @@ public class PreparedStatementsTest {
                 case "--database":
                     database = args[++i];
                     break;
+                case "--binary":
+                    binary = args[++i];
+                    break;
                 default:
                     i++;
                     break;
             }
         }
 
-        // useServerPrepStmts uses COM_STMT_PREPARE and COM_STMT_EXECUTE
-        // instead of COM_QUERY which allows us to test the binary protocol
-        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=true",
-                host, port, database);
+        // useServerPrepStmts=true -> COM_STMT_PREPARE + COM_STMT_EXECUTE -> binary
+        // useServerPrepStmts=false -> COM_QUERY -> text
+        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false&useServerPrepStmts=%s",
+                host, port, database, binary);
 
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
@@ -49,6 +53,7 @@ public class PreparedStatementsTest {
             testDateTypes(conn);
             testUnusualDateTime64Scales(conn);
             testDateTimeTimezones(conn);
+            testSuspiciousNullableLowCardinalityTypes(conn);
             conn.close();
         } catch (Exception e) {
             e.printStackTrace();
@@ -58,7 +63,7 @@ public class PreparedStatementsTest {
 
     private static void testSimpleDataTypes(Connection conn) throws SQLException {
         System.out.println("### testSimpleDataTypes");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_simple_data_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM simple_data_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -83,7 +88,7 @@ public class PreparedStatementsTest {
 
     private static void testStringTypes(Connection conn) throws SQLException {
         System.out.println("### testStringTypes");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_string_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM string_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -97,7 +102,7 @@ public class PreparedStatementsTest {
 
     private static void testLowCardinalityAndNullableTypes(Connection conn) throws SQLException {
         System.out.println("### testLowCardinalityAndNullableTypes");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_low_cardinality_and_nullable_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM low_cardinality_and_nullable_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -111,7 +116,7 @@ public class PreparedStatementsTest {
 
     private static void testDecimalTypes(Connection conn) throws SQLException {
         System.out.println("### testDecimalTypes");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_decimal_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM decimal_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -127,7 +132,7 @@ public class PreparedStatementsTest {
 
     private static void testDateTypes(Connection conn) throws SQLException {
         System.out.println("### testDateTypes");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_date_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM date_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -143,7 +148,7 @@ public class PreparedStatementsTest {
 
     private static void testUnusualDateTime64Scales(Connection conn) throws SQLException {
         System.out.println("### testUnusualDateTime64Scales");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_unusual_datetime64_scales").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM unusual_datetime64_scales").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -160,7 +165,7 @@ public class PreparedStatementsTest {
 
     private static void testDateTimeTimezones(Connection conn) throws SQLException {
         System.out.println("### testDateTimeTimezones");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_datetime_timezones").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM datetime_timezones").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -172,7 +177,7 @@ public class PreparedStatementsTest {
 
     private static void testMiscTypes(Connection conn) throws SQLException {
         System.out.println("### testMiscTypes");
-        ResultSet rs = conn.prepareStatement("SELECT * FROM ps_misc_types").executeQuery();
+        ResultSet rs = conn.prepareStatement("SELECT * FROM misc_types").executeQuery();
         int rowNum = 1;
         while (rs.next()) {
             System.out.printf("Row #%d\n", rowNum++);
@@ -180,6 +185,20 @@ public class PreparedStatementsTest {
             System.out.printf("%s, value: %s\n", getMysqlType(rs, "u"), rs.getString("u"));
             System.out.printf("%s, value: %s\n", getMysqlType(rs, "t"), rs.getString("t"));
             System.out.printf("%s, value: %s\n", getMysqlType(rs, "m"), rs.getString("m"));
+        }
+        System.out.println();
+    }
+
+    private static void testSuspiciousNullableLowCardinalityTypes(Connection conn) throws SQLException {
+        System.out.println("### testSuspiciousNullableLowCardinalityTypes");
+        String query = "SELECT * FROM suspicious_nullable_low_cardinality_types";
+        ResultSet rs = conn.prepareStatement(query).executeQuery();
+        int rowNum = 1;
+        while (rs.next()) {
+            System.out.printf("Row #%d\n", rowNum++);
+            System.out.printf("%s, value: %s\n", getMysqlType(rs, "f"), rs.getFloat("f"));
+            System.out.printf("%s, value: %s\n", getMysqlType(rs, "d"), rs.getDate("d"));
+            System.out.printf("%s, value: %s\n", getMysqlType(rs, "dt"), rs.getTimestamp("dt"));
         }
         System.out.println();
     }
