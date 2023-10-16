@@ -881,8 +881,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
 }
 
-// Add columns that needed to evaluate row policies
-// SELECT x from t  if  t has row policy
+// Add columns that needed _only_ to evaluate row policies
+// SELECT x from t  if  t has row policy that is based on y
 void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 {
     ASTPtr expr = row_policy_filter_ptr->expression;
