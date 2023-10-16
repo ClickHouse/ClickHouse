@@ -5764,7 +5764,7 @@ void StorageReplicatedMergeTree::alter(
     while (true)
     {
         if (shutdown_called || partial_shutdown_called)
-            throw Exception(ErrorCodes::ABORTED, "Cannot assing alter because shutdown called");
+            throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
 
         bool pulled_queue = false;
         std::optional<int32_t> maybe_mutations_version_after_logs_pull;
@@ -5774,7 +5774,7 @@ void StorageReplicatedMergeTree::alter(
             if (command.isDropSomething())
             {
                 if (shutdown_called || partial_shutdown_called)
-                    throw Exception(ErrorCodes::ABORTED, "Cannot assing alter because shutdown called");
+                    throw Exception(ErrorCodes::ABORTED, "Cannot assign alter because shutdown called");
 
                 if (!pulled_queue)
                 {
