@@ -205,3 +205,23 @@ select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE
 1000	499500
 select count(), min(nEgAtIvE_oR_nUlL), max(nEgAtIvE_oR_nUlL) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where (nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
 5	0	0
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null < -500);
+600	419700
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null < -500);
+596	-1099	-501
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null is null);
+1000	499500
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null is null);
+0	0	0
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null in (0, -1, -10, -100, -1000));
+1000	499500
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null in (0, -1, -10, -100, -1000));
+6	-1000	0
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(String)') where indexHint(string_or_null like 'I am%');
+1000	499500
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(String)') where (string_or_null like 'I am%');
+995	I am a string	I am a string
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(Nullable(String))') where indexHint(string_or_null like 'I am%');
+1000	499500
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(Nullable(String))') where (string_or_null like 'I am%');
+995	I am a string	I am a string

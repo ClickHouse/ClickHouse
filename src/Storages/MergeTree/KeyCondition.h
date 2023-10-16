@@ -55,11 +55,10 @@ struct FieldRef : public Field
   */
 struct Range
 {
-private:
+public:
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
 
-public:
     FieldRef left;        /// the left border
     FieldRef right;       /// the right border
     bool left_included;   /// includes the left border

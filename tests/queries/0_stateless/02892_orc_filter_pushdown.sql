@@ -4,8 +4,8 @@ set output_format_orc_string_as_string = 1;
 set output_format_orc_row_index_stride = 100;
 set input_format_orc_row_batch_size = 100;
 set input_format_orc_filter_push_down = 1;
-
 set input_format_null_as_default = 1;
+
 set engine_file_truncate_on_insert = 1;
 set optimize_or_like_chain = 0;
 set max_block_size = 100000;
@@ -209,4 +209,19 @@ select count(), min(string_or_null), max(string_or_null) from file('02892.orc', 
 
 select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where indexHint(nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
 select count(), min(nEgAtIvE_oR_nUlL), max(nEgAtIvE_oR_nUlL) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where (nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
+
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null < -500);
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null < -500);
+
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null is null);
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null is null);
+
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null in (0, -1, -10, -100, -1000));
+select count(), min(negative_or_null), max(negative_or_null) from file('02892.orc', ORC, 'number UInt64, negative_or_null Int64') where (negative_or_null in (0, -1, -10, -100, -1000));
+
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(String)') where indexHint(string_or_null like 'I am%');
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(String)') where (string_or_null like 'I am%');
+
+select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(Nullable(String))') where indexHint(string_or_null like 'I am%');
+select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null LowCardinality(Nullable(String))') where (string_or_null like 'I am%');
 -- { echoOff }

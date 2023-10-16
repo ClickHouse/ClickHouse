@@ -362,13 +362,17 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
 ///     1. elem has no monotonic_functions_chains.
 ///     2. if elem function is FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE, `set_index` is not null and `set_index->getOrderedSet().size()` is 1.
 ///     3. elem function should be FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE/FUNCTION_IN_SET/FUNCTION_NOT_IN_SET/FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL
-static bool evaluateRPNElement(const Field & field, [[maybe_unused]] DataTypePtr type, const KeyCondition::RPNElement & elem)
+static bool evaluateRPNElement(const Field & field, const KeyCondition::RPNElement & elem)
 {
     Range key_range(field);
     switch (elem.function)
     {
         case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE: {
+            /// Rows with null values should never output when filters like ">=", ">", "<=", "<", '=' are applied
+            if (field.isNull())
+                return false;
+
             bool res = elem.range.intersectsRange(key_range);
             if (elem.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE)
                 res = !res;
@@ -376,20 +380,31 @@ static bool evaluateRPNElement(const Field & field, [[maybe_unused]] DataTypePtr
         }
         case KeyCondition::RPNElement::FUNCTION_IN_SET:
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET: {
-            auto mask = elem.set_index->checkInRange({key_range}, {type}, false);
+            const auto & set_index = elem.set_index;
+            const auto & ordered_set = set_index->getOrderedSet();
+            const auto & set_column = ordered_set[0];
+
+            bool res = false;
+            for (size_t i = 0; i < set_column->size(); ++i)
+            {
+                if (Range::equals(field, (*set_column)[i]))
+                {
+                    res = true;
+                    break;
+                }
+            }
+
             if (elem.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_SET)
-                mask = !mask;
-            return mask.can_be_true;
-        }
-        /*
-        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
-        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
-            bool res = elem.range.intersectsRange(key_range);
-            if (elem.function == KeyCondition::RPNElement::FUNCTION_IS_NULL)
                 res = !res;
             return res;
         }
-        */
+        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL: {
+            if (field.isNull())
+                return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NULL;
+            else
+                return elem.function == KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL;
+        }
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected RPNElement Function {}", elem.toString());
     }
@@ -485,8 +500,8 @@ static void buildORCSearchArgumentImpl(
             /// have the same result, we still should push down current filter.
             if (format_settings.null_as_default && !column->type->isNullable() && !column->type->isLowCardinalityNullable())
             {
-                bool match_if_null = evaluateRPNElement({}, expect_type, curr);
-                bool match_if_default = evaluateRPNElement(column->type->getDefault(), column->type, curr);
+                bool match_if_null = evaluateRPNElement({}, curr);
+                bool match_if_default = evaluateRPNElement(column->type->getDefault(), curr);
                 if (match_if_default != match_if_null)
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);

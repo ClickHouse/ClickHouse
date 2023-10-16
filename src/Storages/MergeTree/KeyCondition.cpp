@@ -705,8 +705,15 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
 }
 
 
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
+bool Range::equals(const Field & lhs, const Field & rhs)
+{
+    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
+}
+
+bool Range::less(const Field & lhs, const Field & rhs)
+{
+    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
+}
 
 
 /** Calculate expressions, that depend only on constants.
