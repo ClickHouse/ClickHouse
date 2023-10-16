@@ -42,4 +42,6 @@ INSERT INTO largestTriangleThreeBucketsTestDateTime64Float64 (x, y) VALUES ('202
 
 select largestTriangleThreeBuckets(5)(x, y) from largestTriangleThreeBucketsTestDateTime64Float64;
 
+select lttb(5)(x, y) from largestTriangleThreeBucketsTestDateTime64Float64;
+
 drop table largestTriangleThreeBucketsTestDateTime64Float64;

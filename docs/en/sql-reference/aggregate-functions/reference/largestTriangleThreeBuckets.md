@@ -9,6 +9,7 @@ sidebar_label: largestTriangleThreeBuckets
 Applies the [Largest-Triangle-Three-Buckets](https://skemman.is/bitstream/1946/15343/3/SS_MSthesis.pdf) algorithm to the input data.
 The algorithm is used for downsampling time series data for visualization. It is designed to operate on series sorted by x coordinate.
 It works by dividing the sorted series into buckets and then finding the largest triangle in each bucket. The number of buckets is equal to the number of points in the resulting series.
+the function will sort data by `x` and then apply the downsampling algorithm to the sorted data.
 
 **Syntax**
 
@@ -16,7 +17,7 @@ It works by dividing the sorted series into buckets and then finding the largest
 largestTriangleThreeBuckets(n)(x, y)
 ```
 
-the function will sort data by `x` and then apply the downsampling algorithm to the sorted data.
+Alias: `lttb`.
 
 **Arguments**
 

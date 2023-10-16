@@ -44,7 +44,8 @@ namespace
 
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("largestTriangleThreeBuckets", createAggregateFunctionLargestTriangleThreeBuckets);
+    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, createAggregateFunctionLargestTriangleThreeBuckets);
+    factory.registerAlias("lttb", AggregateFunctionLargestTriangleThreeBuckets::name);
 }
 
 

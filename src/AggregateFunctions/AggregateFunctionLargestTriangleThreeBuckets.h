@@ -170,7 +170,9 @@ public:
         this->y_type = WhichDataType(arguments[1]).idx;
     }
 
-    String getName() const override { return "largestTriangleThreeBuckets"; }
+    static constexpr auto name = "largestTriangleThreeBuckets";
+
+    String getName() const override { return name; }
 
     bool allocatesMemoryInArena() const override { return true; }
 

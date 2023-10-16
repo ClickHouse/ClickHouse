@@ -1745,6 +1745,7 @@ london
 lowcardinality
 lowerUTF
 lowercased
+lttb
 lzma
 macOS
 mailrugo
