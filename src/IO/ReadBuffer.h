@@ -204,7 +204,7 @@ public:
       * By default - the same as read.
       * Don't use for small reads.
       */
-    [[nodiscard]]  virtual size_t readBig(char * to, size_t n) { return read(to, n); }
+    [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.

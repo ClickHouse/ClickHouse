@@ -16,7 +16,11 @@
 namespace DB
 {
 
-
+/// Storage for read-only integration with Apache Iceberg tables in Amazon S3 (see https://iceberg.apache.org/)
+/// Right now it's implemented on top of StorageS3 and right now it doesn't support
+/// many Iceberg features like schema evolution, partitioning, positional and equality deletes.
+/// TODO: Implement Iceberg as a separate storage using IObjectStorage
+/// (to support all object storages, not only S3) and add support for missing Iceberg features.
 class StorageIceberg : public StorageS3
 {
 public:
