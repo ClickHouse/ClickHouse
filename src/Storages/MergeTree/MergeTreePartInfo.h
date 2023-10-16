@@ -9,6 +9,7 @@
 #include <base/DayNum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -119,7 +120,7 @@ struct MergeTreePartInfo
     void deserialize(ReadBuffer & in);
 
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
-    static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
+    static void validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version);
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
