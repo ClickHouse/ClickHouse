@@ -5425,10 +5425,10 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     scope_guard unlock_table_and_start_bg_processing;
     if (unlock_block_numbers)
     {
-        unlock_table_and_start_bg_processing = [this, unlock_block_numbers = std::make_shared<scope_guard>(std::move(unlock_block_numbers))]
+        unlock_table_and_start_bg_processing = [this, unlock_block_numbers_ = std::make_shared<scope_guard>(std::move(unlock_block_numbers))]
         {
             /// Invoke `unlock_block_numbers` : remove protection from restored parts from merging and mutations.
-            *unlock_block_numbers = {};
+            *unlock_block_numbers_ = {};
 
             try
             {
@@ -5471,7 +5471,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
                      parts_collector,
                      sink,
                      check_table_is_empty,
-                     unlock_table_and_start_bg_processing = std::make_shared<scope_guard>(std::move(unlock_table_and_start_bg_processing))]
+                     unlock_table_and_start_bg_processing_ = std::make_shared<scope_guard>(std::move(unlock_table_and_start_bg_processing))]
     {
         if (parts_collector)
         {
@@ -5484,18 +5484,18 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
             }
         }
         /// Invoke `unlock_table_and_start_bg_processing`.
-        *unlock_table_and_start_bg_processing = {};
+        *unlock_table_and_start_bg_processing_ = {};
     };
 
     /// Helper function to add a data restoring task.
     auto add_data_restore_task = [&](std::function<void()> && task)
     {
         restorer.addDataRestoreTask(
-            [this, keep_storage = shared_from_this(), num_tasks_processed, num_tasks_total, finalize, task = std::move(task)]
+            [this, keep_storage = shared_from_this(), num_tasks_processed, num_tasks_total, finalize, task_ = std::move(task)]
             {
                 try
                 {
-                    task();
+                    task_();
 
                     if (++*num_tasks_processed == num_tasks_total)
                     {
@@ -5520,7 +5520,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         {
             add_data_restore_task(
                 [this,
-                 backup = backup,
+                 backup,
                  data_path_in_backup,
                  part_name_in_backup = part_names_in_backup[i],
                  part_info = part_infos[i],

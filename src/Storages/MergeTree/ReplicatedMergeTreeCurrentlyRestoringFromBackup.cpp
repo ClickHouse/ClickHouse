@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCurrentlyRestoringFromBackup.h>
 
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Storages/MergeTree/MergeTreeCurrentlyRestoringFromBackup.h>
 #include <Storages/MergeTree/MutationInfoFromBackup.h>
 #include <Storages/MergeTree/calculateBlockNumbersForRestoring.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -26,18 +27,7 @@ namespace ErrorCodes
 
 namespace
 {
-    /// There can be various reasons to check that no parts exist.
-    enum class NoPartsCheckReason
-    {
-        /// No need to check for no parts.
-        NONE,
-
-        /// Non-empty tables are not allowed because of the restore command's settings: `SETTINGS allow_non_empty_tables = false`.
-        NON_EMPTY_TABLE_IS_NOT_ALLOWED,
-
-        /// We going to restore mutations, and mutations from a backup should never be applied to existing parts.
-        RESTORING_MUTATIONS,
-    };
+    using CheckForNoPartsReason = MergeTreeCurrentlyRestoringFromBackup::CheckForNoPartsReason;
 
     /// Keeps a list of paths to zookeeper nodes, which are removed in the destructor.
     class TemporaryZookeeperNodes
@@ -147,15 +137,15 @@ public:
     TemporaryZookeeperNodes allocateBlockNumbers(
         std::vector<MergeTreePartInfo> & part_infos_,
         std::vector<MutationInfoFromBackup> & mutation_infos_,
-        NoPartsCheckReason no_parts_check_reason_,
+        CheckForNoPartsReason check_for_no_parts_reason_,
         const ZooKeeperWithFaultInjectionPtr & zookeeper_,
         const ContextPtr & context_) const
     {
         /// Check the table has no existing parts if it's necessary.
         /// If a backup contains mutations the table must have no existing parts,
         /// otherwise mutations from the backup could be applied to existing parts which is wrong.
-        if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
-            checkNoPartsExist(zookeeper_, {}, no_parts_check_reason_);
+        if (check_for_no_parts_reason_ != CheckForNoPartsReason::NONE)
+            checkNoPartsExist(zookeeper_, {}, check_for_no_parts_reason_);
 
         LOG_INFO(log, "Creating ephemeral nodes to allocate block numbers and mutation numbers for {} parts and {} mutations",
                  part_infos_.size(), mutation_infos_.size());
@@ -185,8 +175,8 @@ public:
                 const String & partition_id = partitions_and_num_block_numbers[i].partition_id;
                 block_numbers[i] = extractBlockNumbersFromPaths(block_number_nodes[i], partition_id);
 
-                if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
-                    checkBlockNumbersSequential(no_parts_check_reason_, partition_id, block_numbers[i]);
+                if (check_for_no_parts_reason_ != CheckForNoPartsReason::NONE)
+                    checkBlockNumbersSequential(check_for_no_parts_reason_, partition_id, block_numbers[i]);
 
                 total_num_block_numbers += block_numbers[i].size();
                 temp_nodes.join(std::exchange(block_number_nodes[i], {}));
@@ -214,8 +204,8 @@ public:
             part_infos_, mutation_infos_, do_allocate_block_numbers, do_allocate_mutation_numbers, get_partitions_affected_by_mutation);
 
         /// Check the table has no existing parts again to be sure no parts were added while we were allocating block numbers.
-        if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
-            checkNoPartsExist(zookeeper_, temp_nodes.getPaths(), no_parts_check_reason_);
+        if (check_for_no_parts_reason_ != CheckForNoPartsReason::NONE)
+            checkNoPartsExist(zookeeper_, temp_nodes.getPaths(), check_for_no_parts_reason_);
 
         LOG_INFO(log, "{} ephemeral nodes created to allocate {} block numbers in {} partitions and {} mutation numbers",
             temp_nodes.size(), total_num_block_numbers, num_partitions, mutation_infos_.size());
@@ -425,9 +415,9 @@ private:
 
     /// Checks that there no parts exist in the table.
     /// The function also checks that no parts will be inserted / attached soon due to a concurrent process.
-    void checkNoPartsExist(const ZooKeeperWithFaultInjectionPtr & zookeeper, const Strings & ignore_block_number_zk_paths, NoPartsCheckReason reason) const
+    void checkNoPartsExist(const ZooKeeperWithFaultInjectionPtr & zookeeper, const Strings & ignore_block_number_zk_paths, CheckForNoPartsReason reason) const
     {
-        if (reason == NoPartsCheckReason::NONE)
+        if (reason == CheckForNoPartsReason::NONE)
             return;
 
         LOG_INFO(log, "Checking that no parts exist in the table before restoring its data (reason: {})", magic_enum::enum_name(reason));
@@ -520,9 +510,9 @@ private:
 
     /// If some block numbers were skipped during allocation that means there was a concurrent INSERT which allocated some block numbers for itself.
     /// And concurrent INSERTs are prohibited if we check that no parts exist.
-    void checkBlockNumbersSequential(NoPartsCheckReason reason, const String & partition_id, const std::vector<Int64> & block_numbers) const
+    void checkBlockNumbersSequential(CheckForNoPartsReason reason, const String & partition_id, const std::vector<Int64> & block_numbers) const
     {
-        if ((reason == NoPartsCheckReason::NONE) || (block_numbers.size() <= 1))
+        if ((reason == CheckForNoPartsReason::NONE) || (block_numbers.size() <= 1))
             return;
 
         for (size_t i = 1; i != block_numbers.size(); ++i)
@@ -535,14 +525,14 @@ private:
     }
 
     /// Provides an extra description for error messages to make them more detailed.
-    [[noreturn]] void throwTableIsNotEmpty(NoPartsCheckReason reason, const String & details) const
+    [[noreturn]] void throwTableIsNotEmpty(CheckForNoPartsReason reason, const String & details) const
     {
         String message = fmt::format("Cannot restore the table {} because it already contains some data{}.",
                                      getTableName(), details.empty() ? "" : (" (" + details + ")"));
-        if (reason == NoPartsCheckReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED)
+        if (reason == CheckForNoPartsReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED)
             message += "You can either truncate the table before restoring OR set \"allow_non_empty_tables=true\" to allow appending to "
                          "existing data in the table";
-        else if (reason == NoPartsCheckReason::RESTORING_MUTATIONS)
+        else if (reason == CheckForNoPartsReason::RESTORING_MUTATIONS)
             message += "Mutations cannot be restored if a table is non-empty already. You can either truncate the table before "
                          "restoring OR set \"restore_mutations=false\" to restore the table without restoring its mutations";
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "{}", message);
@@ -1067,15 +1057,11 @@ void ReplicatedMergeTreeCurrentlyRestoringFromBackup::update(const ZooKeeperWith
 scope_guard ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers(
     std::vector<MergeTreePartInfo> & part_infos_,
     std::vector<MutationInfoFromBackup> & mutation_infos_,
-    bool check_no_parts_before_,
+    bool check_table_is_empty_,
     String & zookeeper_path_for_checking_,
     const ContextPtr & context_)
 {
-    auto no_parts_check_reason = NoPartsCheckReason::NONE;
-    if (check_no_parts_before_)
-        no_parts_check_reason = NoPartsCheckReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED;
-    else if (!mutation_infos_.empty())
-        no_parts_check_reason = NoPartsCheckReason::RESTORING_MUTATIONS;
+    auto check_for_no_parts_reason = MergeTreeCurrentlyRestoringFromBackup::getCheckForNoPartsReason(check_table_is_empty_, !mutation_infos_.empty());
 
     auto get_zookeeper = [this] { return storage.getZooKeeper(); };
     WithRetries::KeeperSettings keeper_settings{context_};
@@ -1098,7 +1084,7 @@ scope_guard ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumber
                 throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
             /// If we are not going to check that there are no parts exists then it's okay to be in read-only mode.
-            if (no_parts_check_reason != NoPartsCheckReason::NONE)
+            if (check_for_no_parts_reason != CheckForNoPartsReason::NONE)
             {
                 holder.retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
                 return;
@@ -1107,7 +1093,7 @@ scope_guard ReplicatedMergeTreeCurrentlyRestoringFromBackup::allocateBlockNumber
 
         /// Create temporary zookeeper nodes to allocate block numbers and mutation numbers.
         auto temp_nodes = block_numbers_allocator->allocateBlockNumbers(
-            part_infos_, mutation_infos_, no_parts_check_reason, zookeeper, context_);
+            part_infos_, mutation_infos_, check_for_no_parts_reason, zookeeper, context_);
 
         /// Store information about parts and mutations we're going to restore in memory and ZooKeeper.
         remove_entry = currently_restoring_info->addEntry(part_infos_, mutation_infos_, zookeeper_path_for_checking_, zookeeper, keeper_settings);

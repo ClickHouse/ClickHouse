@@ -11,23 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
-}
-
-
-namespace
-{
-    /// There can be various reasons to check that no parts exist.
-    enum class NoPartsCheckReason
-    {
-        /// No need to check for no parts.
-        NONE,
-
-        /// Non-empty tables are not allowed because of the restore command's settings: `SETTINGS allow_non_empty_tables = false`.
-        NON_EMPTY_TABLE_IS_NOT_ALLOWED,
-
-        /// We going to restore mutations, and mutations from a backup should never be applied to existing parts.
-        RESTORING_MUTATIONS,
-    };
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -45,7 +29,7 @@ public:
     void allocateBlockNumbers(
         std::vector<MergeTreePartInfo> & part_infos_,
         std::vector<MutationInfoFromBackup> & mutation_infos_,
-        NoPartsCheckReason no_parts_check_reason_) const
+        CheckForNoPartsReason check_for_no_parts_reason_) const
     {
         Int64 base_increment_value = getCurrentIncrementValue();
         std::optional<AllocatedBlockNumbers> allocated_block_numbers;
@@ -53,8 +37,8 @@ public:
         /// Check the table has no existing parts if it's necessary.
         /// If a backup contains mutations the table must have no existing parts,
         /// otherwise mutations from the backup could be applied to existing parts which is wrong.
-        if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
-            checkNoPartsExist(base_increment_value, allocated_block_numbers, no_parts_check_reason_);
+        if (check_for_no_parts_reason_ != CheckForNoPartsReason::NONE)
+            checkNoPartsExist(base_increment_value, allocated_block_numbers, check_for_no_parts_reason_);
 
         LOG_INFO(log, "Increasing the increment to allocate block numbers for {} parts and {} mutations",
                  part_infos_.size(), mutation_infos_.size());
@@ -63,7 +47,7 @@ public:
         auto do_allocate_block_numbers = [&](size_t count)
         {
             auto lock = storage.lockParts();
-            Int64 first = storage.increment.getMany(count);
+            Int64 first = storage.increment.get(count) - count + 1;
             allocated_block_numbers.emplace(AllocatedBlockNumbers{.first = first, .count = count});
             return first;
         };
@@ -72,8 +56,8 @@ public:
         calculateBlockNumbersForRestoringMergeTree(part_infos_, mutation_infos_, do_allocate_block_numbers);
 
         /// Check the table has no existing parts again to be sure no parts were added while we were allocating block numbers.
-        if (no_parts_check_reason_ != NoPartsCheckReason::NONE)
-            checkNoPartsExist(base_increment_value, allocated_block_numbers, no_parts_check_reason_);
+        if (check_for_no_parts_reason_ != CheckForNoPartsReason::NONE)
+            checkNoPartsExist(base_increment_value, allocated_block_numbers, check_for_no_parts_reason_);
 
         LOG_INFO(log, "The increment was incremented by {} to allocate block numbers",
                  allocated_block_numbers ? allocated_block_numbers->count : 0);
@@ -94,9 +78,9 @@ private:
 
     /// Checks that there no parts exist in the table.
     /// The function also checks that no parts will be inserted / attached soon due to a concurrent process.
-    void checkNoPartsExist(Int64 base_increment_value, const std::optional<AllocatedBlockNumbers> & ignore_block_numbers, NoPartsCheckReason reason) const
+    void checkNoPartsExist(Int64 base_increment_value, const std::optional<AllocatedBlockNumbers> & ignore_block_numbers, CheckForNoPartsReason reason) const
     {
-        if (reason == NoPartsCheckReason::NONE)
+        if (reason == CheckForNoPartsReason::NONE)
             return;
 
         LOG_INFO(log, "Checking that no parts exist in the table before restoring its data (reason: {})", magic_enum::enum_name(reason));
@@ -145,14 +129,14 @@ private:
         Int64 base = base_increment_value;
         Int64 current = getCurrentIncrementValue();
 
+        if (current < base)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The block number increment changed in a unexpected way: base={}, current={}",
+                            base, current);
+        }
+
         if (!ignore_block_numbers)
         {
-            if (current < base)
-            {
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "The block number increment changed in a unexpected way: base={}, current={}",
-                                base, current);
-            }
-
             if (current > base)
                 return base + 1;
             return {};
@@ -163,7 +147,7 @@ private:
 
         if ((ignore_first < base + 1) || (ignore_first + ignore_count < ignore_first) || (current < ignore_first + ignore_count - 1))
         {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "The block number increment changed in a unexpected way: base={}, ignore_first={}, ignore_count={}, current={}",
                             base, ignore_first, ignore_count, current);
         }
@@ -181,14 +165,14 @@ private:
     std::optional<String> findAnyRestoringPart() const;
 
     /// Provides an extra description for error messages to make them more detailed.
-    [[noreturn]] void throwTableIsNotEmpty(NoPartsCheckReason reason, const String & details) const
+    [[noreturn]] void throwTableIsNotEmpty(CheckForNoPartsReason reason, const String & details) const
     {
         String message = fmt::format("Cannot restore the table {} because it already contains some data{}.",
                                      getTableName(), details.empty() ? "" : (" (" + details + ")"));
-        if (reason == NoPartsCheckReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED)
+        if (reason == CheckForNoPartsReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED)
             message += "You can either truncate the table before restoring OR set \"allow_non_empty_tables=true\" to allow appending to "
                          "existing data in the table";
-        else if (reason == NoPartsCheckReason::RESTORING_MUTATIONS)
+        else if (reason == CheckForNoPartsReason::RESTORING_MUTATIONS)
             message += "Mutations cannot be restored if a table is non-empty already. You can either truncate the table before "
                          "restoring OR set \"restore_mutations=false\" to restore the table without restoring its mutations";
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "{}", message);
@@ -325,19 +309,25 @@ bool MergeTreeCurrentlyRestoringFromBackup::containsMutation(Int64 mutation_numb
 scope_guard MergeTreeCurrentlyRestoringFromBackup::allocateBlockNumbers(
     std::vector<MergeTreePartInfo> & part_infos_,
     std::vector<MutationInfoFromBackup> & mutation_infos_,
-    bool check_no_parts_before_)
+    bool check_table_is_empty_)
 {
-    auto no_parts_check_reason = NoPartsCheckReason::NONE;
-    if (check_no_parts_before_)
-        no_parts_check_reason = NoPartsCheckReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED;
-    else if (!mutation_infos_.empty())
-        no_parts_check_reason = NoPartsCheckReason::RESTORING_MUTATIONS;
+    auto check_for_no_parts_reason = getCheckForNoPartsReason(check_table_is_empty_, !mutation_infos_.empty());
 
     /// Create temporary zookeeper nodes to allocate block numbers and mutation numbers.
-    block_numbers_allocator->allocateBlockNumbers(part_infos_, mutation_infos_, no_parts_check_reason);
+    block_numbers_allocator->allocateBlockNumbers(part_infos_, mutation_infos_, check_for_no_parts_reason);
 
     /// Store information about parts and mutations we're going to restore in memory and ZooKeeper.
     return currently_restoring_info->addEntry(part_infos_, mutation_infos_);
 }
 
+MergeTreeCurrentlyRestoringFromBackup::CheckForNoPartsReason
+MergeTreeCurrentlyRestoringFromBackup::getCheckForNoPartsReason(bool check_table_is_empty_, bool has_mutations_to_restore_)
+{
+    if (check_table_is_empty_)
+        return CheckForNoPartsReason::NON_EMPTY_TABLE_IS_NOT_ALLOWED;
+    else if (has_mutations_to_restore_)
+        return CheckForNoPartsReason::RESTORING_MUTATIONS;
+    else
+        return CheckForNoPartsReason::NONE;
+}
 }

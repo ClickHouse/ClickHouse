@@ -45,107 +45,128 @@ namespace
         size_t num_applied_mutations = 0;
     };
 
-    /// Find corresponding mutations for each part.
-    void findMutationsForEachPart(std::vector<PartMutations> & parts, const std::vector<MutationInfoFromBackup *> & mutations)
+    /// Find corresponding mutations for each part - in case the mutations are specified with single block numbers.
+    /// It means the mutations are in the MergeTree format.
+    void findMutationsForEachPart_MergeTree(std::vector<PartMutations> & parts, const std::vector<MutationInfoFromBackup *> & mutations)
     {
-        if (mutations.empty())
-        {
-            /// No mutations.
-            return;
-        }
-
-        if (mutations.front()->block_number)
-        {
-            /// Mutations are specified with a single `block_number` per a mutation.
-
-            /// Make a map of mutations where mutations are ordered by their block numbers.
-            /// This map needs to be ordered because we use upper_bound() below.
-            std::map<Int64, size_t> mutations_by_block_number;
-
-            for (size_t i = 0; i != mutations.size(); ++i)
-            {
-                const auto & mutation = *mutations[i];
-
-                /// MergeTree and ReplicatedMergeTree mutations can't be mixed.
-                if (!mutation.block_number || mutation.block_numbers)
-                    throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Mutations specify incorrect block numbers");
-                Int64 block_number = *mutation.block_number;
-
-                /// The block number specified in a mutation must increase with following mutations.
-                if (i > 0)
-                {
-                    Int64 previous_block_number = *mutations[i - 1]->block_number;
-                    if (block_number <= previous_block_number)
-                        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Mutations specify incorrect block numbers");
-                }
-
-                mutations_by_block_number[block_number] = i;
-            }
-
-            /// Use the map of mutations to calculate `first_mutation` and `num_applied_mutations` for each part.
-            for (auto & part : parts)
-            {
-                const auto & part_info = *part.part_info;
-                auto & first_mutation = part.first_mutation;
-                auto & num_applied_mutations = part.num_applied_mutations;
-
-                auto it = mutations_by_block_number.upper_bound(part_info.min_block);
-                if (it == mutations_by_block_number.end())
-                {
-                    /// For all mutations `mutation_info.block_number < part_info.min_block`.
-                    first_mutation = mutations.size();
-                }
-                else
-                {
-                    /// We've found the first mutation for which `mutation_info.block_number > part_info.min_block`.
-                    first_mutation = it->second;
-                    if (part_info.mutation > part_info.min_block)
-                    {
-                        it = mutations_by_block_number.upper_bound(part_info.mutation);
-                        if (it == mutations_by_block_number.end())
-                            num_applied_mutations = mutations.size() - first_mutation;
-                        else
-                            num_applied_mutations = it->second - first_mutation;
-                    }
-                }
-            }
-
-            return;
-        }
-
-        /// Mutations are specified with multiple block numbers - each partition has its own block number.
-
         /// Make a map of mutations where mutations are ordered by their block numbers.
-        /// The nested map needs to be ordered because we use upper_bound() below.
-        std::unordered_map<String, std::map<Int64, size_t>> mutation_by_partition_and_block_number;
+        std::vector<std::pair<Int64, size_t>> mutations_by_block_number;
+        mutations_by_block_number.reserve(mutations.size());
 
         for (size_t i = 0; i != mutations.size(); ++i)
         {
             const auto & mutation = *mutations[i];
 
             /// MergeTree and ReplicatedMergeTree mutations can't be mixed.
-            if (!mutation.block_numbers || mutation.block_number)
-                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Mutations specify incorrect block numbers");
-            const auto & block_numbers = *mutation.block_numbers;
+            if (mutation.block_numbers)
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Read incorrect mutations from the backup: {} has MergeTree format and {} has ReplicatedMergeTree format",
+                                mutations.front()->name, mutation.name);
+            }
+
+            if (!mutation.block_number)
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Read incorrect mutations from the backup: {} is in an unknown format without a block number",
+                                mutation.name);
+            }
+
+            Int64 block_number = *mutation.block_number;
 
             /// The block number specified in a mutation must increase with following mutations.
-            if (i > 0)
+            if (!mutations_by_block_number.empty())
             {
-                const auto & previos_block_numbers = *mutations[i - 1]->block_numbers;
-                for (const auto & [partition_id, previous_block_number] : previos_block_numbers)
+                Int64 previous_block_number = mutations_by_block_number.back().first;
+                if (block_number <= previous_block_number)
                 {
-                    auto it = block_numbers.find(partition_id);
-                    if (it != block_numbers.end())
-                    {
-                        Int64 block_number = it->second;
-                        if (block_number <= previous_block_number)
-                            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Mutations specify incorrect block numbers");
-                    }
+                    const auto & previous_mutation = *mutations[mutations_by_block_number.back().second];
+                    throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                    "Read incorrect mutations from the backup: "
+                                    "Next mutation {} has a non-increased block number ({}) compared with a previous one {} ({})",
+                                    mutation.name, block_number, previous_mutation.name, previous_block_number);
                 }
             }
 
+            mutations_by_block_number.emplace_back(block_number, i);
+        }
+
+        /// Returns the index of the first mutation with the block number greater than a specified value.
+        auto find_mutation_by_block_number = [&](Int64 block_number)
+        {
+            auto it = std::upper_bound(
+                mutations_by_block_number.begin(),
+                mutations_by_block_number.end(),
+                block_number,
+                [](Int64 x, const std::pair<Int64, size_t> & y) { return x < y.first; });
+            if (it == mutations_by_block_number.end())
+                return mutations.size();
+            return it->second;
+        };
+
+        /// Use the map of mutations to calculate `first_mutation` and `num_applied_mutations` for each part.
+        for (auto & part : parts)
+        {
+            const auto & part_info = *part.part_info;
+            auto & first_mutation = part.first_mutation;
+            auto & num_applied_mutations = part.num_applied_mutations;
+
+            first_mutation = find_mutation_by_block_number(part_info.min_block);
+
+            if ((part_info.mutation > part_info.min_block) && (first_mutation < mutations.size()))
+                num_applied_mutations = find_mutation_by_block_number(part_info.mutation) - first_mutation;
+        }
+    }
+
+    /// Find corresponding mutations for each part - in case the mutations are specified with multiple block numbers for each partitions.
+    /// It means the mutations are in the ReplicatedMergeTree format.
+    void findMutationsForEachPart_ReplicatedMergeTree(std::vector<PartMutations> & parts, const std::vector<MutationInfoFromBackup *> & mutations)
+    {
+        /// Make a map of mutations where mutations are ordered by their block numbers.
+        std::unordered_map<String, std::vector<std::pair<Int64, size_t>>> mutations_by_partition_and_block_number;
+
+        for (size_t i = 0; i != mutations.size(); ++i)
+        {
+            const auto & mutation = *mutations[i];
+
+            /// MergeTree and ReplicatedMergeTree mutations can't be mixed.
+            if (mutation.block_number)
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Read incorrect mutations from the backup: {} has MergeTree format and {} has ReplicatedMergeTree format",
+                                mutation.name, mutations.front()->name);
+            }
+
+            if (!mutation.block_numbers)
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Read incorrect mutations from the backup: {} is in an unknown format without a block number",
+                                mutation.name);
+            }
+
+            const auto & block_numbers = *mutation.block_numbers;
+
             for (const auto & [partition_id, block_number] : block_numbers)
-                mutation_by_partition_and_block_number[partition_id][block_number] = i;
+            {
+                auto & mutations_by_block_number = mutations_by_partition_and_block_number[partition_id];
+                mutations_by_block_number.reserve(mutations.size());
+
+                /// The block number specified in a mutation must increase with following mutations.
+                if (!mutations_by_block_number.empty())
+                {
+                    Int64 previous_block_number = mutations_by_block_number.back().first;
+                    if (block_number <= previous_block_number)
+                    {
+                        const auto & previous_mutation = *mutations[mutations_by_block_number.back().second];
+                        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                        "Read incorrect mutations from the backup: "
+                                        "Next mutation {} has a non-increased block number ({}) compared with a previous one {} ({}) in partition {}",
+                                        mutation.name, block_number, previous_mutation.name, previous_block_number, partition_id);
+                    }
+                }
+
+                mutations_by_block_number.emplace_back(block_number, i);
+            }
         }
 
         /// Use the map of mutations to calculate `first_mutation` and `num_applied_mutations` for each part.
@@ -156,8 +177,8 @@ namespace
             auto & first_mutation = part.first_mutation;
             auto & num_applied_mutations = part.num_applied_mutations;
 
-            auto it_by_partition = mutation_by_partition_and_block_number.find(partition_id);
-            if (it_by_partition == mutation_by_partition_and_block_number.end())
+            auto it_by_partition = mutations_by_partition_and_block_number.find(partition_id);
+            if (it_by_partition == mutations_by_partition_and_block_number.end())
             {
                 /// The partition is not found in the map of mutation, that means the part was added after all the mutations.
                 first_mutation = mutations.size();
@@ -165,27 +186,40 @@ namespace
             else
             {
                 const auto & mutations_by_block_number = it_by_partition->second;
-                auto it = mutations_by_block_number.upper_bound(part_info.min_block);
-                if (it == mutations_by_block_number.end())
+
+                /// Returns the index of the first mutation with the block number greater than a specified value.
+                auto find_mutation_by_block_number = [&](Int64 block_number)
                 {
-                    /// For all mutations `mutation_info.block_number < part_info.min_block`.
-                    first_mutation = mutations.size();
-                }
-                else
-                {
-                    /// We've found the first mutation for which `mutation_info.block_number > part_info.min_block`.
-                    first_mutation = it->second;
-                    if (part_info.mutation > part_info.min_block)
-                    {
-                        it = mutations_by_block_number.upper_bound(part_info.mutation);
-                        if (it == mutations_by_block_number.end())
-                            num_applied_mutations = mutations.size() - first_mutation;
-                        else
-                            num_applied_mutations = it->second - first_mutation;
-                    }
-                }
+                    auto it = std::upper_bound(
+                        mutations_by_block_number.begin(),
+                        mutations_by_block_number.end(),
+                        block_number,
+                        [](Int64 x, const std::pair<Int64, size_t> & y) { return x < y.first; });
+                    if (it == mutations_by_block_number.end())
+                        return mutations.size();
+                    return it->second;
+                };
+
+                first_mutation = find_mutation_by_block_number(part_info.min_block);
+
+                if ((part_info.mutation > part_info.min_block) && (first_mutation < mutations.size()))
+                    num_applied_mutations = find_mutation_by_block_number(part_info.mutation) - first_mutation;
             }
         }
+    }
+
+    /// Find corresponding mutations for each part.
+    void findMutationsForEachPart(std::vector<PartMutations> & parts, const std::vector<MutationInfoFromBackup *> & mutations)
+    {
+        if (mutations.empty())
+            return;
+
+        /// Single block number corresponds to a MergeTree's mutations and multiple block numbers correspond to a ReplicatedMergeTree's mutations.
+        const auto & single_block_number = mutations.front()->block_number.has_value();
+        if (single_block_number)
+            findMutationsForEachPart_MergeTree(parts, mutations);
+        else
+            findMutationsForEachPart_ReplicatedMergeTree(parts, mutations);
     }
 
     /// Sort parts by `first_mutation`, then by `min_block`.

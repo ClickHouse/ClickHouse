@@ -27,7 +27,22 @@ public:
 
     /// Allocates block numbers to restore a MergeTree table.
     scope_guard allocateBlockNumbers(
-        std::vector<MergeTreePartInfo> & part_infos_, std::vector<MutationInfoFromBackup> & mutation_infos_, bool check_no_parts_before_);
+        std::vector<MergeTreePartInfo> & part_infos_, std::vector<MutationInfoFromBackup> & mutation_infos_, bool check_table_is_empty_);
+
+    /// There can be various reasons to check that no parts exist.
+    enum class CheckForNoPartsReason
+    {
+        /// No need to check that no parts exist.
+        NONE,
+
+        /// Non-empty tables are not allowed because of the restore command's settings: `SETTINGS allow_non_empty_tables = false`.
+        NON_EMPTY_TABLE_IS_NOT_ALLOWED,
+
+        /// We going to restore mutations, and mutations from a backup should never be applied to existing parts.
+        RESTORING_MUTATIONS,
+    };
+
+    static CheckForNoPartsReason getCheckForNoPartsReason(bool check_table_is_empty_, bool has_mutations_to_restore_);
 
 private:
     class BlockNumbersAllocator;

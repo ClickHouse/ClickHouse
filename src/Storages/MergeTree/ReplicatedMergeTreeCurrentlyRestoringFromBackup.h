@@ -43,7 +43,7 @@ public:
     scope_guard allocateBlockNumbers(
         std::vector<MergeTreePartInfo> & part_infos_,
         std::vector<MutationInfoFromBackup> & mutation_infos_,
-        bool check_no_parts_before_,
+        bool check_table_is_empty_,
         String & zookeeper_path_for_checking_,
         const ContextPtr & context_);
 

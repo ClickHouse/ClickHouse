@@ -15,13 +15,8 @@ struct SimpleIncrement
         value = new_value;
     }
 
-    UInt64 get()
+    UInt64 get(size_t increase_by = 1)
     {
-        return ++value;
-    }
-
-    UInt64 getMany(size_t count = 1)
-    {
-        return (value += count) - count + 1;
+        return value += increase_by;
     }
 };
