@@ -231,6 +231,7 @@ struct ContextSharedPart : boost::noncopyable
     /// Initialized once during server startup.
     TemporaryDataOnDiskScopePtr root_temp_data_on_disk;
 
+    mutable OnceFlag async_loader_initialized;
     mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
@@ -2255,8 +2256,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 
 AsyncLoader & Context::getAsyncLoader() const
 {
-    auto lock = getLock();
-    if (!shared->async_loader)
+    callOnce(shared->async_loader_initialized, [&] {
         shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
                 // IMPORTANT: Pool declaration order should match the order in `AsyncLoaderPoolId.h` to get the indices right.
                 { // AsyncLoaderPoolId::Foreground
@@ -2283,6 +2283,8 @@ AsyncLoader & Context::getAsyncLoader() const
             },
             /* log_failures = */ true,
             /* log_progress = */ true);
+    });
+
     return *shared->async_loader;
 }
 
