@@ -1239,6 +1239,8 @@ void Client::processConfig()
     if (config().has("multiquery"))
         is_multiquery = true;
 
+    pager = config().getString("pager", "");
+
     is_default_format = !config().has("vertical") && !config().has("format");
     if (config().has("vertical"))
         format = config().getString("format", "Vertical");

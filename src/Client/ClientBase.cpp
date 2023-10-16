@@ -560,7 +560,6 @@ try
         }
 
         WriteBuffer * out_buf = nullptr;
-        String pager = config().getString("pager", "");
         if (!pager.empty())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
