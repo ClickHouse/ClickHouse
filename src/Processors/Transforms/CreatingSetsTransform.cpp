@@ -75,6 +75,7 @@ void CreatingSetsTransform::work()
             try
             {
                 promise_to_build->set_exception(std::current_exception());
+                promise_to_build.reset();
             }
             catch (...)
             {
