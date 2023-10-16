@@ -472,13 +472,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for FINAL for parallel replicas
     bool is_query_with_final = isQueryWithFinal(query_info);
-    if (is_query_with_final && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas > 0))
+    if (is_query_with_final && settings.allow_experimental_parallel_reading_from_replicas > 0)
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
             LOG_DEBUG(log, "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
             context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            context->setSetting("parallel_replicas_custom_key", String{""});
         }
         else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
         {
