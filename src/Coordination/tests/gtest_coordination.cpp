@@ -76,6 +76,8 @@ protected:
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
+
+        keeper_context->local_logs_preprocessed = true;
     }
 
     void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
