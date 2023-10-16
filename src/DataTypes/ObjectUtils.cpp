@@ -339,7 +339,7 @@ static DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool che
         for (size_t i = 1; i < subtypes.size(); ++i)
             if (first_dim != getNumberOfDimensions(*subtypes[i]))
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Uncompatible types of subcolumn '{}': {} and {}",
+                    "Incompatible types of subcolumn '{}': {} and {}",
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
