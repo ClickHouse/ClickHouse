@@ -237,6 +237,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
 
             if (!add_to_result(file_segment_metadata))
                 return result;
+
             ++segment_it;
         }
     }
@@ -418,65 +419,66 @@ FileCache::getOrSet(
 
     assertInitialized();
 
+    const auto end_offset = offset + size - 1;
     const auto aligned_offset = roundDownToMultiple(offset, boundary_alignment);
-    const auto aligned_end = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size);
-    const auto aligned_size = aligned_end - aligned_offset;
-
-    FileSegment::Range range(aligned_offset, aligned_offset + aligned_size - 1);
+    const auto aligned_end_offset = std::min(roundUpToMultiple(offset + size, boundary_alignment), file_size) - 1;
+    chassert(aligned_offset <= offset);
 
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY);
 
     /// Get all segments which intersect with the given range.
+    FileSegment::Range range(offset, end_offset);
     auto file_segments = getImpl(*locked_key, range, file_segments_limit);
 
-    bool limit_reached = false;
+    if (aligned_offset < offset && (file_segments.empty() || offset < file_segments.front()->range().left))
+    {
+        auto prefix_range = FileSegment::Range(aligned_offset, file_segments.empty() ? offset - 1 : file_segments.front()->range().left - 1);
+        auto prefix_file_segments = getImpl(*locked_key, prefix_range, /* file_segments_limit */0);
+
+        while (!prefix_file_segments.empty() && prefix_file_segments.front()->range().right < offset)
+            prefix_file_segments.pop_front();
+
+        if (!prefix_file_segments.empty())
+        {
+            file_segments.splice(file_segments.begin(), prefix_file_segments);
+            range.left = file_segments.front()->range().left;
+        }
+    }
+
+    if (end_offset < aligned_end_offset && (file_segments.empty() || file_segments.back()->range().right < end_offset))
+    {
+        auto suffix_range = FileSegment::Range(end_offset, aligned_end_offset);
+        /// Get only 1 file segment.
+        auto suffix_file_segments = getImpl(*locked_key, suffix_range, /* file_segments_limit */1);
+
+        if (!suffix_file_segments.empty())
+            range.right = suffix_file_segments.front()->range().left - 1;
+    }
+
     if (file_segments.empty())
     {
         file_segments = splitRangeIntoFileSegments(*locked_key, range.left, range.size(), FileSegment::State::EMPTY, settings);
-
-        while (!file_segments.empty() && file_segments.front()->range().right < offset)
-            file_segments.pop_front();
     }
     else
     {
-        limit_reached = file_segments_limit && file_segments.size() >= file_segments_limit;
-
-        /// A while loop for the case if we set a limit to n, but all these n file segments are removed
-        /// as they turned out redundant because of the alignment of offset to aligned_offset.
-        while (true)
-        {
-            size_t last_offset = file_segments.back()->range().right;
-
-            while (!file_segments.empty() && file_segments.front()->range().right < offset)
-                file_segments.pop_front();
-
-            if (!file_segments.empty())
-                break;
-
-            if (!limit_reached)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of file segments");
-
-            range.left = last_offset + 1;
-            chassert(offset >= range.left);
-            file_segments = getImpl(*locked_key, range, file_segments_limit);
-        }
-
-        range.left = std::min(offset, file_segments.front()->range().left);
-        if (limit_reached)
-            range.right =  file_segments.back()->range().right;
+        chassert(file_segments.front()->range().right >= offset);
+        chassert(file_segments.back()->range().left <= end_offset);
 
         fillHolesWithEmptyFileSegments(
             *locked_key, file_segments, range, file_segments_limit, /* fill_with_detached */false, settings);
+
+        if (!file_segments.front()->range().contains(offset))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} to include {} "
+                            "(end offset: {}, aligned offset: {}, aligned end offset: {})",
+                            file_segments.front()->range().toString(), offset, end_offset, aligned_offset, aligned_end_offset);
+        }
+
+        chassert(file_segments_limit ? file_segments.back()->range().left <= end_offset : file_segments.back()->range().contains(end_offset));
     }
 
-    while (!file_segments.empty() && file_segments.back()->range().left >= offset + size)
+    while (file_segments_limit && file_segments.size() > file_segments_limit)
         file_segments.pop_back();
-
-    if (file_segments_limit)
-    {
-        while (file_segments.size() > file_segments_limit)
-            file_segments.pop_back();
-    }
 
     if (file_segments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of file segments for offset {}, size {} (file size: {})", offset, size, file_size);

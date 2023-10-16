@@ -136,6 +136,8 @@ public:
         size_t size() const { return right - left + 1; }
 
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
+
+        bool contains(size_t offset) const { return left <= offset && offset <= right; }
     };
 
     static String getCallerId();

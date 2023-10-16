@@ -47,6 +47,9 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     if (config.has(config_prefix + ".boundary_alignment"))
         boundary_alignment = parseWithSizeSuffix<uint64_t>(config.getString(config_prefix + ".boundary_alignment"));
 
+    if (boundary_alignment > max_file_segment_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `boundary_alignment` cannot exceed `max_file_segment_size`");
+
     if (config.has(config_prefix + ".background_download_threads"))
         background_download_threads = config.getUInt(config_prefix + ".background_download_threads");
 
