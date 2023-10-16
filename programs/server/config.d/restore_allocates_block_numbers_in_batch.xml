@@ -1,3 +1,0 @@
-<clickhouse>
-    <restore_allocates_block_numbers_in_batch>true</restore_allocates_block_numbers_in_batch>
-</clickhouse>

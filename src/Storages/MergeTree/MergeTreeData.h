@@ -1126,7 +1126,7 @@ protected:
 
     /// Should RESTORE allocate all block numbers in a batch before attaching any restored parts.
     /// This mode allows to restore mutations from backup.
-    bool restore_allocates_block_numbers_in_batch = false;
+    bool restore_allocates_block_numbers_in_batch = true;
 
     /// Used to determine which UUIDs to send to root query executor for deduplication.
     mutable SharedMutex pinned_part_uuids_mutex;

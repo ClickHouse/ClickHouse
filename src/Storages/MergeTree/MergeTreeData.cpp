@@ -5409,8 +5409,10 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     auto part_infos = readPartInfosFromBackup(*backup, data_path_in_backup, format_version, partition_ids, part_names_in_backup, mutation_names_in_backup);
 
     /// Read mutations from backup.
-    if (!restorer.getRestoreSettings().mutations || !restore_allocates_block_numbers_in_batch)
+    if (!restorer.getRestoreSettings().mutations)
         mutation_names_in_backup.clear();
+    if (!mutation_names_in_backup.empty() && !restore_allocates_block_numbers_in_batch)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Enable 'restore_allocates_block_numbers_in_batch' in the configuration to restore mutations");
 
     std::vector<MutationInfoFromBackup> mutation_infos;
     if (!mutation_names_in_backup.empty())

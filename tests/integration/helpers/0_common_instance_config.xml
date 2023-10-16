@@ -27,6 +27,4 @@
         <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
         <role_cache_expiration_time_seconds>2</role_cache_expiration_time_seconds>
     </access_control_improvements>
-
-    <restore_allocates_block_numbers_in_batch>true</restore_allocates_block_numbers_in_batch>
 </clickhouse>
