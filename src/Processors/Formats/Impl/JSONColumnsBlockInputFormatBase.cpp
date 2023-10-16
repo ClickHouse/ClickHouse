@@ -294,7 +294,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
         /// Don't check/change types from hints.
         if (!hints.contains(name))
         {
-            transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+            transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
             /// Check that we could determine the type of this column.
             checkFinalInferredType(type, name, format_settings, nullptr, format_settings.max_rows_to_read_for_schema_inference, hints_parsing_error);
         }

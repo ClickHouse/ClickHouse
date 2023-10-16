@@ -2,9 +2,7 @@
 import json
 import logging
 import os
-from typing import Dict, List, Set, Union
-
-from unidiff import PatchSet  # type: ignore
+from typing import Dict, List, Set, Union, Literal
 
 from build_download_helper import get_gh_api
 from env_helper import (
@@ -171,7 +169,11 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_urls.append(github_event["pull_request"]["diff_url"])
+            self.diff_urls.append(
+                f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                f"compare/master...{self.head_ref}"
+            )
+
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
             commit_message = github_event["head_commit"]["message"]  # type: str
@@ -215,12 +217,12 @@ class PRInfo:
                     # files changed in upstream AND master...{self.head_ref}
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{self.head_ref}.diff"
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                        f"compare/master...{self.head_ref}"
                     )
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master.diff"
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master"
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
@@ -232,8 +234,8 @@ class PRInfo:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master.diff"
+                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master"
                     )
         else:
             print("event.json does not match pull_request or push:")
@@ -261,19 +263,11 @@ class PRInfo:
             raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
-            response = get_gh_api(
-                diff_url,
-                sleep=RETRY_SLEEP,
-            )
+            response = get_gh_api(diff_url, sleep=RETRY_SLEEP)
             response.raise_for_status()
-            if "commits" in self.event and self.number == 0:
-                diff = response.json()
-
-                if "files" in diff:
-                    self.changed_files = {f["filename"] for f in diff["files"]}
-            else:
-                diff_object = PatchSet(response.text)
-                self.changed_files.update({f.path for f in diff_object})
+            diff = response.json()
+            if "files" in diff:
+                self.changed_files = {f["filename"] for f in diff["files"]}
         print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
@@ -310,57 +304,73 @@ class PRInfo:
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
-        # TODO: See a broken loop
         if FORCE_TESTS_LABEL in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
-        for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if (
-                not f.startswith("tests/queries")
-                or not f.startswith("tests/integration")
-                or not f.startswith("tests/performance")
-            ):
-                return False
+        return not any(
+            f.startswith("programs")
+            or f.startswith("src")
+            or f.startswith("base")
+            or f.startswith("cmake")
+            or f.startswith("rust")
+            or f == "CMakeLists.txt"
+            or f == "tests/ci/build_check.py"
+            for f in self.changed_files
+        )
 
-        return True
-
-    def can_skip_integration_tests(self):
-        # TODO: See a broken loop
+    def can_skip_integration_tests(self, versions: List[str]) -> bool:
         if FORCE_TESTS_LABEL in self.labels:
+            return False
+
+        # If docker image(s) relevant to integration tests are updated
+        if any(self.sha in version for version in versions):
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
-        for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if not f.startswith("tests/queries") or not f.startswith(
-                "tests/performance"
-            ):
-                return False
+        if not self.can_skip_builds_and_use_version_from_master():
+            return False
 
-        return True
+        # Integration tests can be skipped if integration tests are not changed
+        return not any(
+            f.startswith("tests/integration/")
+            or f == "tests/ci/integration_test_check.py"
+            for f in self.changed_files
+        )
 
-    def can_skip_functional_tests(self):
-        # TODO: See a broken loop
+    def can_skip_functional_tests(
+        self, version: str, test_type: Literal["stateless", "stateful"]
+    ) -> bool:
         if FORCE_TESTS_LABEL in self.labels:
+            return False
+
+        # If docker image(s) relevant to functional tests are updated
+        if self.sha in version:
             return False
 
         if self.changed_files is None or not self.changed_files:
             return False
 
-        for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if not f.startswith("tests/integration") or not f.startswith(
-                "tests/performance"
-            ):
-                return False
+        if not self.can_skip_builds_and_use_version_from_master():
+            return False
 
-        return True
+        # Functional tests can be skipped if queries tests are not changed
+        if test_type == "stateless":
+            return not any(
+                f.startswith("tests/queries/0_stateless")
+                or f == "tests/ci/functional_test_check.py"
+                for f in self.changed_files
+            )
+        else:  # stateful
+            return not any(
+                f.startswith("tests/queries/1_stateful")
+                or f == "tests/ci/functional_test_check.py"
+                for f in self.changed_files
+            )
 
 
 class FakePRInfo:

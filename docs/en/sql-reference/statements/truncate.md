@@ -25,7 +25,7 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 ## TRUNCATE DATABASE
 ``` sql
-TRUNCATE DATBASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+TRUNCATE DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Removes all tables from a database but keeps the database itself. When the clause `IF EXISTS` is omitted, the query returns an error if the database does not exist.

@@ -1405,6 +1405,8 @@ struct PcgSerializer
 
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
+String fourSpaceIndent(size_t indent);
+
 }
 
 template<>

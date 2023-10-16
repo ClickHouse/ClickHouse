@@ -1,0 +1,65 @@
+-- mv-expand --
+-- mv_expand_test_table | mv-expand c --
+1	['Salmon','Steak','Chicken']	1	[5,6,7,8]
+1	['Salmon','Steak','Chicken']	2	[5,6,7,8]
+1	['Salmon','Steak','Chicken']	3	[5,6,7,8]
+1	['Salmon','Steak','Chicken']	4	[5,6,7,8]
+-- mv_expand_test_table | mv-expand c, d --
+1	['Salmon','Steak','Chicken']	1	5
+1	['Salmon','Steak','Chicken']	2	6
+1	['Salmon','Steak','Chicken']	3	7
+1	['Salmon','Steak','Chicken']	4	8
+-- mv_expand_test_table | mv-expand b | mv-expand c --
+1	Salmon	1	[5,6,7,8]
+1	Salmon	2	[5,6,7,8]
+1	Salmon	3	[5,6,7,8]
+1	Salmon	4	[5,6,7,8]
+1	Steak	1	[5,6,7,8]
+1	Steak	2	[5,6,7,8]
+1	Steak	3	[5,6,7,8]
+1	Steak	4	[5,6,7,8]
+1	Chicken	1	[5,6,7,8]
+1	Chicken	2	[5,6,7,8]
+1	Chicken	3	[5,6,7,8]
+1	Chicken	4	[5,6,7,8]
+-- mv_expand_test_table | mv-expand with_itemindex=index b, c, d --
+0	1	Salmon	1	5
+1	1	Steak	2	6
+2	1	Chicken	3	7
+3	1		4	8
+-- mv_expand_test_table | mv-expand array_concat(c,d) --
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	1
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	2
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	3
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	4
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	5
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	6
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	7
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	8
+-- mv_expand_test_table | mv-expand x = c, y = d --
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	1	5
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	2	6
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	3	7
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	4	8
+-- mv_expand_test_table | mv-expand xy = array_concat(c, d) --
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	1
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	2
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	3
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	4
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	5
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	6
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	7
+1	['Salmon','Steak','Chicken']	[1,2,3,4]	[5,6,7,8]	8
+-- mv_expand_test_table | mv-expand xy = array_concat(c, d) limit 2| summarize count() by xy --
+1	1
+2	1
+-- mv_expand_test_table | mv-expand with_itemindex=index c,d to typeof(bool) --
+0	1	['Salmon','Steak','Chicken']	1	true
+1	1	['Salmon','Steak','Chicken']	2	true
+2	1	['Salmon','Steak','Chicken']	3	true
+3	1	['Salmon','Steak','Chicken']	4	true
+-- mv_expand_test_table | mv-expand c to typeof(bool) --
+1	['Salmon','Steak','Chicken']	[5,6,7,8]	true
+1	['Salmon','Steak','Chicken']	[5,6,7,8]	true
+1	['Salmon','Steak','Chicken']	[5,6,7,8]	true
+1	['Salmon','Steak','Chicken']	[5,6,7,8]	true
