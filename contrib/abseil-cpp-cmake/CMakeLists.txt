@@ -1,5 +1,5 @@
 set(ABSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
-set(BUILD_TESTING OFF)
+
 set(ABSL_PROPAGATE_CXX_STD ON)
 add_subdirectory("${ABSL_ROOT_DIR}" "${ClickHouse_BINARY_DIR}/contrib/abseil-cpp")
 

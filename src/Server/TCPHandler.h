@@ -194,6 +194,7 @@ private:
 
     String default_database;
 
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
@@ -223,6 +224,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();

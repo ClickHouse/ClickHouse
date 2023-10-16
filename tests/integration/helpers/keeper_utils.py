@@ -115,6 +115,14 @@ class KeeperClient(object):
     def get(self, path: str, timeout: float = 60.0) -> str:
         return self.execute_query(f"get {path}", timeout)
 
+    def set(self, path: str, value: str, version: tp.Optional[int] = None) -> None:
+        self.execute_query(
+            f"set {path} {value} {version if version is not None else ''}"
+        )
+
+    def rm(self, path: str, version: tp.Optional[int] = None) -> None:
+        self.execute_query(f"rm {path} {version if version is not None else ''}")
+
     def exists(self, path: str, timeout: float = 60.0) -> bool:
         return bool(int(self.execute_query(f"exists {path}", timeout)))
 
@@ -134,6 +142,9 @@ class KeeperClient(object):
 
     def find_super_nodes(self, threshold: int, timeout: float = 60.0) -> str:
         return self.execute_query(f"find_super_nodes {threshold}", timeout)
+
+    def get_all_children_number(self, path: str, timeout: float = 60.0) -> str:
+        return self.execute_query(f"get_all_children_number {path}", timeout)
 
     def delete_stale_backups(self, timeout: float = 60.0) -> str:
         return self.execute_query("delete_stale_backups", timeout)

@@ -119,6 +119,18 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 Clears the [query cache](../../operations/query-cache.md).
 
+## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
+
+Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path).
+
+Supported formats:
+
+- Protobuf
+
+```sql
+SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
+```
+
 ## FLUSH LOGS
 
 Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
@@ -339,6 +351,15 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
  - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
  - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
+
+### SYNC DATABASE REPLICA
+
+Waits until the specified [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database. 
+
+**Syntax**
+```sql
+SYSTEM SYNC DATABASE REPLICA replicated_database_name;
+```
 
 ### RESTART REPLICA
 

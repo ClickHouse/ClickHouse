@@ -46,8 +46,6 @@ struct FormatSettings
     bool try_infer_dates = false;
     bool try_infer_datetimes = false;
 
-    bool output_format_markdown_escape_special_characters = false;
-
     enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -196,11 +194,16 @@ struct FormatSettings
         bool read_bools_as_numbers = true;
         bool read_numbers_as_strings = true;
         bool read_objects_as_strings = true;
+        bool read_arrays_as_strings = true;
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
         bool allow_object_type = false;
+        bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
+        bool try_infer_objects_as_tuples = false;
+        bool infer_incomplete_types_as_strings = true;
+
     } json;
 
     struct
@@ -338,6 +341,7 @@ struct FormatSettings
         bool interpret_expressions = true;
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
+        bool allow_data_after_semicolon = false;
     } values;
 
     enum class ORCCompression
@@ -415,6 +419,16 @@ struct FormatSettings
     {
         bool allow_types_conversion = true;
     } native;
+
+    struct
+    {
+        bool valid_output_on_exception = false;
+    } xml;
+
+    struct
+    {
+        bool escape_special_characters = false;
+    } markdown;
 };
 
 }

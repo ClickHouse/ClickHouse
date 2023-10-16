@@ -33,6 +33,8 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -573,17 +575,14 @@ void LocalServer::processConfig()
     if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
+    if (config().has("multiquery"))
+        is_multiquery = true;
+
     delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
-    if (is_interactive && !delayed_interactive)
-    {
-        if (config().has("multiquery"))
-            is_multiquery = true;
-    }
-    else
+    if (!is_interactive || delayed_interactive)
     {
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
-        is_multiquery = true;
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
@@ -603,7 +602,9 @@ void LocalServer::processConfig()
     {
         auto poco_logs_level = Poco::Logger::parseLevel(level);
         Poco::Logger::root().setLevel(poco_logs_level);
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
+        Poco::Logger::root().setChannel(log);
         logging_initialized = true;
     }
     else if (logging || is_interactive)
@@ -783,6 +784,15 @@ void LocalServer::processConfig()
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);
+
+    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
+    {
+        Settings settings = global_context->getSettings();
+        settings.input_format_values_allow_data_after_semicolon = true;
+        /// Do not send it to the server
+        settings.input_format_values_allow_data_after_semicolon.changed = false;
+        global_context->setSettings(settings);
+    }
 }
 
 

@@ -15,7 +15,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
@@ -47,6 +46,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -233,7 +233,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
             dst_array_current_time[dst_row] = src_array_current_time[src_row];
 
-            switch (dst_array_type[dst_row])
+            switch (static_cast<ProfileEvents::Type>(dst_array_type[dst_row]))
             {
                 case ProfileEvents::Type::INCREMENT:
                     dst_array_value[dst_row] += src_array_value[src_row];
@@ -349,7 +349,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (is_interactive || ignore_error)
     {
         String message;
-        res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        if (dialect == Dialect::kusto)
+            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        else
+            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (!res)
         {
@@ -359,7 +362,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     }
     else
     {
-        res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        if (dialect == Dialect::kusto)
+            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
+        else
+            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
     }
 
     if (is_interactive)
@@ -1475,13 +1481,23 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
 
         /// Create temporary storage file, to support globs and parallel reading
+        /// StorageFile doesn't support ephemeral/materialized/alias columns.
+        /// We should change ephemeral columns to ordinary and ignore materialized/alias columns.
+        ColumnsDescription columns_for_storage_file;
+        for (const auto & [name, _] : columns_description_for_query.getInsertable())
+        {
+            ColumnDescription column = columns_description_for_query.get(name);
+            column.default_desc.kind = ColumnDefaultKind::Default;
+            columns_for_storage_file.add(std::move(column));
+        }
+
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
             current_format,
             getFormatSettings(global_context),
             compression_method,
-            columns_description_for_query,
+            columns_for_storage_file,
             ConstraintsDescription{},
             String{},
             {},
@@ -2003,9 +2019,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2013,6 +2026,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
+    /// Test tags are started with "--" so they are interpreted as comments anyway.
+    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+    /// because we don't want test tags to be echoed.
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.

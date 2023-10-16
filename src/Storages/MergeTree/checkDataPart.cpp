@@ -15,6 +15,7 @@
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -38,6 +39,7 @@ namespace ErrorCodes
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NO_FILE_IN_DATA_PART;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
 }
@@ -150,9 +152,20 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (data_part_storage.exists(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
-        auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
-        SerializationInfo::Settings settings{ratio_of_defaults, false};
-        serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        try
+        {
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
+            SerializationInfo::Settings settings{ratio_of_defaults, false};
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+        }
+        catch (const Poco::Exception & ex)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, ex.message());
+        }
+        catch (...)
+        {
+            throw;
+        }
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)
@@ -189,7 +202,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         {
             get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
+
+                if (!stream_name)
+                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "There is no file for column '{}' in data part '{}'",
+                        column.name, data_part->name);
+
+                auto file_name = *stream_name + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             });
         }

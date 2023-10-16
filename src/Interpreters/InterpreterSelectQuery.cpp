@@ -684,7 +684,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze)
         {
             if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
-                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
+            {
+                if (storage)
+                    throw Exception(
+                        ErrorCodes::SAMPLING_NOT_SUPPORTED,
+                        "Storage {} doesn't support sampling",
+                        storage->getStorageID().getNameForLogs());
+                else
+                    throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
+            }
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
             {
@@ -2574,6 +2582,7 @@ static Aggregator::Params getAggregatorParams(
         settings.max_block_size,
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
+        settings.optimize_group_by_constant_keys,
         stats_collecting_params
     };
 }

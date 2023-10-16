@@ -436,6 +436,7 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
+Levenshtein
 LGPL
 LLDB
 LLVM's
@@ -960,7 +961,6 @@ WikiStat
 WindowView
 WithNames
 WithNamesAndTypes
-Woboq
 WordNet
 WriteBuffer
 WriteBuffers
@@ -971,6 +971,8 @@ Xeon
 YAML
 YAMLRegExpTree
 YYYY
+YYYYMMDDToDate
+YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 Zabbix
@@ -1047,6 +1049,7 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
+arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1062,6 +1065,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1177,8 +1181,14 @@ buildId
 buildable
 builtins
 byteSize
+byteSwap
 bytebase
 bytesToCutForIPv
+editDistance
+byteHammingDistance
+jaccardIndex
+levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1416,6 +1426,7 @@ encodeXMLComponent
 encodings
 encryptions
 endian
+endianness
 endsWith
 endsWithUTF
 enqueued
@@ -1507,6 +1518,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1707,6 +1719,7 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+levenshtein
 lexicographically
 lgamma
 libFuzzer
@@ -1813,6 +1826,7 @@ monthName
 moscow
 msgpack
 msgpk
+multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1908,6 +1922,7 @@ outfile
 overcommit
 overcommitted
 overfitting
+overparallelization
 packetpool
 packetsize
 pageviews
@@ -2216,6 +2231,8 @@ sparkBar
 sparkbar
 sparsehash
 speedscope
+splitBy
+splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp

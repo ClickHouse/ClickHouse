@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/Net/NameValueCollection.h>
+#include <Core/Types.h>
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 #include <base/types.h>
@@ -10,6 +12,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
+#include <Common/SharedMutex.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -27,7 +30,6 @@
 
 #include "config.h"
 
-#include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -195,9 +197,6 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
-class ParallelReplicasReadingCoordinator;
-using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
-
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
@@ -232,16 +231,9 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-
-/** A set of known objects that can be used in the query.
-  * Consists of a shared part (always common to all sessions and queries)
-  *  and copied part (which can be its own for each session or query).
-  *
-  * Everything is encapsulated for all sorts of checks and locks.
-  */
-class Context: public std::enable_shared_from_this<Context>
+class ContextData
 {
-private:
+protected:
     ContextSharedPart * shared;
 
     ClientInfo client_info;
@@ -266,7 +258,13 @@ private:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
-    StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
+    struct InsertionTableInfo
+    {
+        StorageID table = StorageID::createEmpty();
+        std::optional<Names> column_names;
+    };
+
+    InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -444,9 +442,7 @@ public:
 
     KitchenSink kitchen_sink;
 
-    ParallelReplicasReadingCoordinatorPtr parallel_reading_coordinator;
-
-private:
+protected:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
@@ -473,13 +469,36 @@ private:
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     /// Use copy constructor or createGlobal() instead
+    ContextData();
+    ContextData(const ContextData &);
+
+    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
+    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
+
+    mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
+    mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
+
+    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
+};
+
+/** A set of known objects that can be used in the query.
+  * Consists of a shared part (always common to all sessions and queries)
+  *  and copied part (which can be its own for each session or query).
+  *
+  * Everything is encapsulated for all sorts of checks and locks.
+  */
+class Context: public ContextData, public std::enable_shared_from_this<Context>
+{
+private:
+    /// ContextData mutex
+    mutable SharedMutex mutex;
+
     Context();
     Context(const Context &);
-    Context & operator=(const Context &);
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static ContextMutablePtr createGlobal(ContextSharedPart * shared);
+    static ContextMutablePtr createGlobal(ContextSharedPart * shared_part);
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
@@ -549,8 +568,8 @@ public:
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
-    boost::container::flat_set<UUID> getCurrentRoles() const;
-    boost::container::flat_set<UUID> getEnabledRoles() const;
+    std::vector<UUID> getCurrentRoles() const;
+    std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
@@ -610,7 +629,7 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers = {});
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
     void setQueryKindInitial();
@@ -713,10 +732,13 @@ public:
     void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;
+    bool isCurrentQueryKilled() const;
 
-    bool hasInsertionTable() const { return !insertion_table.empty(); }
-    void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
-    const StorageID & getInsertionTable() const { return insertion_table; }
+    bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }
+    bool hasInsertionTableColumnNames() const { return insertion_table_info.column_names.has_value(); }
+    void setInsertionTable(StorageID db_and_table, std::optional<Names> column_names = std::nullopt) { insertion_table_info = {std::move(db_and_table), std::move(column_names)}; }
+    const StorageID & getInsertionTable() const { return insertion_table_info.table; }
+    const std::optional<Names> & getInsertionTableColumnNames() const{ return insertion_table_info.column_names; }
 
     void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
     bool isDistributed() const { return is_distributed; }
@@ -862,6 +884,7 @@ public:
     void setProcessListElement(QueryStatusPtr elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
+    QueryStatusPtr getProcessListElementSafe() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -1177,6 +1200,7 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    bool canUseParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
 
@@ -1195,7 +1219,49 @@ public:
     const ServerSettings & getServerSettings() const;
 
 private:
-    std::unique_lock<std::recursive_mutex> getLock() const;
+    std::unique_lock<SharedMutex> getGlobalLock() const;
+
+    std::shared_lock<SharedMutex> getGlobalSharedLock() const;
+
+    std::unique_lock<SharedMutex> getLocalLock() const;
+
+    std::shared_lock<SharedMutex> getLocalSharedLock() const;
+
+    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::unique_lock<SharedMutex> & lock) const;
+
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
+
+    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::unique_lock<SharedMutex> & lock);
+
+    void setSettingWithLock(std::string_view name, const String & value, const std::unique_lock<SharedMutex> & lock);
+
+    void setSettingWithLock(std::string_view name, const Field & value, const std::unique_lock<SharedMutex> & lock);
+
+    void applySettingChangeWithLock(const SettingChange & change, const std::unique_lock<SharedMutex> & lock);
+
+    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::unique_lock<SharedMutex> & lock);
+
+    void setUserIDWithLock(const UUID & user_id_, const std::unique_lock<SharedMutex> & lock);
+
+    void setCurrentDatabaseWithLock(const String & name, const std::unique_lock<SharedMutex> & lock);
+
+    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source) const;
+
+    void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+
+    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
+
+    void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     void initGlobal();
 
@@ -1230,14 +1296,9 @@ public:
 
     ThrottlerPtr getBackupsThrottler() const;
 
-private:
-    mutable ThrottlerPtr remote_read_query_throttler;       /// A query-wide throttler for remote IO reads
-    mutable ThrottlerPtr remote_write_query_throttler;      /// A query-wide throttler for remote IO writes
-
-    mutable ThrottlerPtr local_read_query_throttler;        /// A query-wide throttler for local IO reads
-    mutable ThrottlerPtr local_write_query_throttler;       /// A query-wide throttler for local IO writes
-
-    mutable ThrottlerPtr backups_query_throttler;           /// A query-wide throttler for BACKUPs
+    /// Kitchen sink
+    using ContextData::KitchenSink;
+    using ContextData::kitchen_sink;
 };
 
 struct HTTPContext : public IHTTPContext
