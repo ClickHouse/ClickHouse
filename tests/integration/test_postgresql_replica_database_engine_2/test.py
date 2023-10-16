@@ -57,6 +57,7 @@ instance2 = cluster.add_instance(
 
 pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
+pg_manager_instance2 = PostgresManager()
 
 
 @pytest.fixture(scope="module")
@@ -69,9 +70,17 @@ def started_cluster():
             cluster.postgres_port,
             default_database="postgres_database",
         )
+        pg_manager_instance2.init(
+            instance2,
+            cluster.postgres_ip,
+            cluster.postgres_port,
+            default_database="postgres_database",
+            postgres_db_exists=True,
+        )
         pg_manager2.init(
             instance2, cluster.postgres_ip, cluster.postgres_port, "postgres_database2"
         )
+
         yield cluster
 
     finally:
@@ -721,8 +730,10 @@ def test_too_many_parts(started_cluster):
 
 def test_toast(started_cluster):
     table = "test_toast"
-    pg_manager.execute(
-        f"CREATE TABLE {table} (id integer PRIMARY KEY, txt text, other text)"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, txt text, other text)""",
     )
     pg_manager.create_materialized_db(
         ip=started_cluster.postgres_ip,
@@ -752,16 +763,7 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
 
-    pg_manager_replica = PostgresManager()
-    pg_manager_replica.init(
-        instance2,
-        cluster.postgres_ip,
-        cluster.postgres_port,
-        default_database="postgres_database",
-        postgres_db_exists=True,
-    )
-
-    for pm in [pg_manager, pg_manager_replica]:
+    for pm in [pg_manager, pg_manager_instance2]:
         pm.create_and_fill_postgres_table(table)
         pm.create_materialized_db(
             ip=started_cluster.postgres_ip,
@@ -778,7 +780,7 @@ def test_replica_consumer(started_cluster):
         instance, table, postgres_database=pg_manager.get_default_database()
     )
     check_tables_are_synchronized(
-        instance2, table, postgres_database=pg_manager_replica.get_default_database()
+        instance2, table, postgres_database=pg_manager_instance2.get_default_database()
     )
 
     assert 50 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
@@ -792,15 +794,15 @@ def test_replica_consumer(started_cluster):
         instance, table, postgres_database=pg_manager.get_default_database()
     )
     check_tables_are_synchronized(
-        instance2, table, postgres_database=pg_manager_replica.get_default_database()
+        instance2, table, postgres_database=pg_manager_instance2.get_default_database()
     )
 
     assert 1050 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
     assert 1050 == int(instance2.query(f"SELECT count() FROM test_database.{table}"))
 
-    for pm in [pg_manager, pg_manager_replica]:
+    for pm in [pg_manager, pg_manager_instance2]:
         pm.drop_materialized_db()
-    pg_manager_replica.clear()
+    pg_manager_instance2.clear()
 
 
 if __name__ == "__main__":
