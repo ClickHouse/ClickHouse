@@ -29,6 +29,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <fmt/chrono.h>
+#include <libnuraft/req_msg.hxx>
 
 namespace DB
 {
@@ -196,10 +197,13 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         nuraft::raft_server::commit_in_bg();
     }
 
-    void commitLogs(uint64_t index_to_commit)
+    void commitLogs(uint64_t index_to_commit, bool initial_commit_exec)
     {
         leader_commit_index_.store(index_to_commit);
-        commit(index_to_commit);
+        quick_commit_index_ = index_to_commit;
+        lagging_sm_target_index_ = index_to_commit;
+
+        commit_in_bg_exec(0, initial_commit_exec);
     }
 
     using nuraft::raft_server::raft_server;
@@ -407,6 +411,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
+    if (state_machine->last_commit_index() >= last_log_idx_on_disk)
+        keeper_context->local_logs_preprocessed = true;
 
     loadLatestConfig();
 
@@ -647,31 +653,34 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 preprocess_logs();
                 break;
             }
-            case nuraft::cb_func::ProcessReq:
+            case nuraft::cb_func::GotAppendEntryReqFromLeader:
             {
                 auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
-                if (req.get_type() != nuraft::msg_type::append_entries_request)
-                    break;
 
                 if (req.get_commit_idx() == 0)
                     break;
 
-                auto last_committed_index = state_machine->last_commit_index();
-                if (!req.log_entries().empty())
-                {
-                    // Actual log number.
-                    auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
+                if (req.log_entries().empty())
+                    break;
 
-                    if (index_to_commit > last_committed_index)
-                    {
-                        LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
-                        raft_instance->commitLogs(index_to_commit);
-                        keeper_context->local_logs_preprocessed.wait(false);
-                    }
-                    else if (index_to_commit == 0) /// we need to rollback all the logs so we preprocess all of them
-                    {
-                        preprocess_logs();
-                    }
+                auto last_committed_index = state_machine->last_commit_index();
+                // Actual log number.
+                auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
+                LOG_TRACE(log, "Index to commit {}, last committed index {}", index_to_commit, last_committed_index);
+
+                if (index_to_commit > last_committed_index)
+                {
+                    LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
+                    raft_instance->commitLogs(index_to_commit, true);
+                    keeper_context->local_logs_preprocessed.wait(false);
+                }
+                else if (index_to_commit == last_committed_index && last_log_idx_on_disk > index_to_commit)
+                {
+                    preprocess_logs();
+                }
+                else if (index_to_commit == 0) /// we need to rollback all the logs so we preprocess all of them
+                {
+                    preprocess_logs();
                 }
                 break;
             }
