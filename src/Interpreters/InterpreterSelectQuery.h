@@ -205,8 +205,8 @@ private:
 
     void executeStreamingOrder(QueryPlan & query_plan);
     void executeStreamingAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final);
-    bool shouldKeepState() const;
-    void checkAndPrepareStreamingFunctions();
+    bool shouldKeepAggregationState() const;
+    void checkAggregateAndWindowFunctions();
     void buildWatermarkQueryPlan(QueryPlan & query_plan) const;
     void buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan);
 
@@ -249,7 +249,6 @@ private:
     /// Structure of query source (table, subquery, etc).
     Block source_header;
 
-    bool emit_version = false;
     mutable std::optional<bool> is_streaming;
 
     /// Actions to calculate ALIAS if required.

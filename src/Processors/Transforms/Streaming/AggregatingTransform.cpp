@@ -55,8 +55,6 @@ AggregatingTransform::AggregatingTransform(
     many_data->aggregating_transforms[current_variant] = this;
 }
 
-AggregatingTransform::~AggregatingTransform() = default;
-
 IProcessor::Status AggregatingTransform::prepare()
 {
     /// There are one or two input ports.
@@ -122,11 +120,7 @@ void AggregatingTransform::work()
     {
         auto num_rows = current_chunk.getNumRows();
         if (num_rows > 0)
-        {
             many_data->addRowCount(num_rows, current_variant);
-            src_rows += num_rows;
-            src_bytes += current_chunk.bytes();
-        }
 
         consume(std::move(current_chunk));
 
@@ -178,11 +172,6 @@ std::pair<bool, bool> AggregatingTransform::executeOrMergeColumns(Chunk & chunk,
 
     std::lock_guard lock(variants_mutex);
     return params->aggregator.executeOnBlock(std::move(columns), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys);
-}
-
-void AggregatingTransform::emitVersion([[maybe_unused]] Block & block)
-{
-     // TODO: remove
 }
 
 void AggregatingTransform::setCurrentChunk(Chunk chunk, const ChunkContextPtr & chunk_ctx)

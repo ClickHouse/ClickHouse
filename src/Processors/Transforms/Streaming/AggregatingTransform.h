@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/Streaming/Aggregator.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Interpreters/Streaming/Aggregator.h>
 #include <Processors/IProcessor.h>
 #include <Common/Stopwatch.h>
 
@@ -24,29 +24,15 @@ struct AggregatingTransformParams
     Aggregator aggregator;
     Aggregator::Params & params;
     bool final;
-    bool emit_version = false;
-    DataTypePtr version_type;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_, bool emit_version_)
-        : aggregator(params_)
-        , params(aggregator.getParams())
-        , final(final_)
-        , emit_version(emit_version_)
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+        : aggregator(params_), params(aggregator.getParams()), final(final_)
     {
-        if (emit_version)
-            version_type = DataTypeFactory::instance().get("Int64");
     }
 
-    static Block getHeader(const Aggregator::Params & params, bool final, bool emit_version)
-    {
-        auto res = params.getHeader(final);
-        if (final && emit_version)
-            res.insert({DataTypeFactory::instance().get("Int64"), "emit_version()"});
+    static Block getHeader(const Aggregator::Params & params, bool final) { return params.getHeader(final); }
 
-        return res;
-    }
-
-    Block getHeader() const { return getHeader(params, final, emit_version); }
+    Block getHeader() const { return getHeader(params, final); }
 };
 
 class AggregatingTransform;
@@ -66,7 +52,7 @@ struct ManyAggregatedData
 
     std::mutex finalizing_mutex;
 
-    /// `finalized_watermark` is capturing the max watermark we have progressed 
+    /// `finalized_watermark` is capturing the max watermark we have progressed
     std::atomic<Int64> finalized_watermark = INVALID_WATERMARK;
     std::atomic<Int64> finalized_window_end = INVALID_WATERMARK;
 
@@ -100,11 +86,17 @@ struct ManyAggregatedData
 
     void setField(AnyField && field_) { any_field = std::move(field_); }
 
-    template<typename T>
-    T & getField() { return std::any_cast<T &>(any_field.field); }
+    template <typename T>
+    T & getField()
+    {
+        return std::any_cast<T &>(any_field.field);
+    }
 
-    template<typename T>
-    const T & getField() const { return std::any_cast<const T &>(any_field.field); }
+    template <typename T>
+    const T & getField() const
+    {
+        return std::any_cast<const T &>(any_field.field);
+    }
 
     bool hasNewData() const
     {
@@ -118,10 +110,7 @@ struct ManyAggregatedData
             *rows = 0;
     }
 
-    void addRowCount(size_t rows, size_t current_variant)
-    {
-        *rows_since_last_finalizations[current_variant] += rows;
-    }
+    void addRowCount(size_t rows, size_t current_variant) { *rows_since_last_finalizations[current_variant] += rows; }
 };
 
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
@@ -145,7 +134,7 @@ public:
         size_t max_threads,
         const String & log_name);
 
-    ~AggregatingTransform() override;
+    ~AggregatingTransform() override = default;
 
     Status prepare() override;
     void work() override;
@@ -217,9 +206,6 @@ protected:
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
-
-    UInt64 src_rows = 0;
-    UInt64 src_bytes = 0;
 
     bool is_consume_finished = false;
 

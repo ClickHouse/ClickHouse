@@ -43,7 +43,6 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/Streaming/EmitInterpreter.h>
-#include <Interpreters/Streaming/SubstituteStreamingFunction.h>
 #include <Interpreters/Streaming/Aggregator.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -822,7 +821,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    checkAndPrepareStreamingFunctions();
+    checkAggregateAndWindowFunctions();
+
     analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
@@ -3405,7 +3405,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
         {},
-        shouldKeepState(),
+        shouldKeepAggregationState(),
         streaming_group_by);
 
     auto merge_threads = max_streams;
@@ -3414,7 +3414,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
         : static_cast<size_t>(settings.max_threads);
 
     query_plan.addStep(std::make_unique<Streaming::AggregatingStep>(
-        query_plan.getCurrentDataStream(), params, final, merge_threads, temporary_data_merge_threads, emit_version));
+        query_plan.getCurrentDataStream(), params, final, merge_threads, temporary_data_merge_threads));
 }
 
 bool InterpreterSelectQuery::isStreaming() const
@@ -3445,7 +3445,7 @@ bool InterpreterSelectQuery::hasGlobalAggregation() const
     return isStreaming() && hasAggregation();
 }
 
-bool InterpreterSelectQuery::shouldKeepState() const
+bool InterpreterSelectQuery::shouldKeepAggregationState() const
 {
     if (!isStreaming())
         return false;
@@ -3491,14 +3491,10 @@ void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPla
     buildWatermarkQueryPlan(query_plan);
 }
 
-void InterpreterSelectQuery::checkAndPrepareStreamingFunctions()
+void InterpreterSelectQuery::checkAggregateAndWindowFunctions()
 {
     /// Prepare streaming version of the functions
     bool streaming = isStreaming();
-    Streaming::SubstituteStreamingFunctionVisitor::Data func_data(streaming);
-    Streaming::SubstituteStreamingFunctionVisitor(func_data).visit(query_ptr);
-    emit_version = func_data.emit_version;
-
     if (!streaming)
         return;
 

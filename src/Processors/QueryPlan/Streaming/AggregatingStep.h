@@ -22,8 +22,7 @@ public:
         Aggregator::Params params_,
         bool final_,
         size_t merge_threads_,
-        size_t temporary_data_merge_threads_,
-        bool emit_version_);
+        size_t temporary_data_merge_threads_);
 
     static Block appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -45,8 +44,6 @@ private:
     bool final;
     size_t merge_threads;
     size_t temporary_data_merge_threads;
-
-    bool emit_version;
 
     Processors aggregating;
 };

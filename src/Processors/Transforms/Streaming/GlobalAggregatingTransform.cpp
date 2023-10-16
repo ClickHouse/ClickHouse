@@ -85,9 +85,6 @@ bool GlobalAggregatingTransform::initialize(ManyAggregatedDataVariantsPtr & data
         auto block = params->aggregator.prepareBlockAndFillWithoutKey(
             *first, params->final, first->type != AggregatedDataVariants::Type::without_key, ConvertAction::STREAMING_EMIT);
 
-        if (params->emit_version)
-            emitVersion(block);
-
         setCurrentChunk(convertToChunk(block), chunk_ctx);
         return true;
     }
@@ -114,9 +111,6 @@ void GlobalAggregatingTransform::convertSingleLevel(ManyAggregatedDataVariantsPt
     else throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     auto block = params->aggregator.prepareBlockAndFillSingleLevel(*first, params->final, ConvertAction::STREAMING_EMIT);
-
-    if (params->emit_version)
-        emitVersion(block);
 
     setCurrentChunk(convertToChunk(block), chunk_ctx);
 }
