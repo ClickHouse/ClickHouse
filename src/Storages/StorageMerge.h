@@ -203,8 +203,7 @@ private:
         const Aliases & aliases,
         ContextPtr context,
         QueryPipelineBuilder & builder,
-        QueryProcessingStage::Enum processed_stage,
-        RowPolicyData & row_policy_data);
+        QueryProcessingStage::Enum processed_stage);
 };
 
 }

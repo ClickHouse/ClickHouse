@@ -382,13 +382,7 @@ void StorageMerge::read(
 class ReadFromMerge::RowPolicyData
 {
 public:
-    /// Row policy requires extra filtering
-    bool hasRowPolicy()
-    {
-        return static_cast<bool>(row_policy_filter_ptr);
-    }
-
-    void init(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
+    RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
 
     /// Add columns that needed for row policies to data stream
     /// SELECT x from T  if  T has row policy  y=42
@@ -687,7 +681,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         storage_snapshot,
         modified_query_info);
 
-    RowPolicyData row_policy_data;
+    std::optional<RowPolicyData> row_policy_data;
 
     if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
@@ -700,18 +694,16 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)
         {
-            row_policy_data.init(
-                modified_context->getRowPolicyFilter(
+            auto row_policy_filter_ptr = modified_context->getRowPolicyFilter(
                     database_name,
                     table_name,
-                    RowPolicyFilterType::SELECT_FILTER),
-                storage,
-                modified_context);
-
-            if (row_policy_data.hasRowPolicy())
+                    RowPolicyFilterType::SELECT_FILTER);
+            if (row_policy_filter_ptr)
             {
-                row_policy_data.extendNames(real_column_names);
+                row_policy_data.emplace(row_policy_filter_ptr, storage, modified_context);
+                row_policy_data->extendNames(real_column_names);
             }
+
 
             storage->read(plan,
                 real_column_names,
@@ -725,11 +717,11 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             if (!plan.isInitialized())
                 return {};
 
-            if (row_policy_data.hasRowPolicy())
+            if (row_policy_data)
             {
                 if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter*>((plan.getRootNode()->step.get())))
                 {
-                    row_policy_data.addStorageFilter(source_step_with_filter);
+                    row_policy_data->addStorageFilter(source_step_with_filter);
                 }
             }
         }
@@ -847,6 +839,11 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             });
         }
 
+        if (row_policy_data)
+        {
+            row_policy_data->addFilterTransform(*builder);
+        }
+
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
         /// Besides this we add FilterTransform if it is needed to follow row level policies.
@@ -856,42 +853,38 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             aliases,
             modified_context,
             *builder,
-            processed_stage,
-            row_policy_data);
+            processed_stage);
     }
 
     return builder;
 }
 
-void ReadFromMerge::RowPolicyData::init(RowPolicyFilterPtr row_policy_filter_ptr_,
+ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr_,
     std::shared_ptr<DB::IStorage> storage,
     ContextPtr local_context)
+    : row_policy_filter_ptr(row_policy_filter_ptr_)
 {
-    if (row_policy_filter_ptr_)
-    {
-        row_policy_filter_ptr = row_policy_filter_ptr_;
+    assert(row_policy_filter_ptr_);
 
-        ASTPtr expr = row_policy_filter_ptr->expression;
+    ASTPtr expr = row_policy_filter_ptr->expression;
 
-        auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
-        auto storage_columns = storage_metadata_snapshot->getColumns();
-        auto needed_columns = storage_columns.getAllPhysical();
+    auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto storage_columns = storage_metadata_snapshot->getColumns();
+    auto needed_columns = storage_columns.getAllPhysical();
 
-        auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
-        auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
+    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
+    auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
-        actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-        filter_actions = std::make_shared<ExpressionActions>(actions_dag,
-            ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-        filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
-    }
+    actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag,
+        ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+    filter_column_name = namesDifference(filter_actions->getSampleBlock().getNames(), filter_actions->getRequiredColumns());
 }
 
 // Add columns that needed to evaluate row policies
 // SELECT x from t  if  t has row policy
 void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 {
-    assert(row_policy_filter_ptr);
     ASTPtr expr = row_policy_filter_ptr->expression;
 
     RequiredSourceColumnsVisitor::Data columns_context;
@@ -899,12 +892,11 @@ void ReadFromMerge::RowPolicyData::extendNames(Names & names)
 
     const auto req_columns = columns_context.requiredColumns();
 
-    std::sort(names.begin(), names.end());
     NameSet added_names;
 
     for (const auto & req_column : req_columns)
     {
-        if (!std::binary_search(names.begin(), names.end(), req_column))
+        if (std::find(names.begin(), names.end(), req_column) == names.end())
         {
             added_names.insert(req_column);
         }
@@ -1138,14 +1130,8 @@ void ReadFromMerge::convertingSourceStream(
     const Aliases & aliases,
     ContextPtr local_context,
     QueryPipelineBuilder & builder,
-    QueryProcessingStage::Enum processed_stage,
-    RowPolicyData & row_policy_data)
+    QueryProcessingStage::Enum processed_stage)
 {
-    if (row_policy_data.hasRowPolicy())
-    {
-        row_policy_data.addFilterTransform(builder);
-    }
-
     Block before_block_header = builder.getHeader();
 
     auto storage_sample_block = metadata_snapshot->getSampleBlock();
