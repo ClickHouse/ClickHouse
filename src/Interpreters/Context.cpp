@@ -3877,6 +3877,10 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
     shared->max_table_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
+size_t Context::getMaxTableSizeToDrop() const
+{
+    return shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+}
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
@@ -3892,6 +3896,10 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
     shared->max_partition_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
+size_t Context::getMaxPartitionSizeToDrop() const
+{
+    return shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+}
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
