@@ -65,7 +65,7 @@ public:
         RemoveFileFunc remove_file_func_,
         const NamesAndTypesList & requested_virtual_columns_,
         ContextPtr context_,
-        const std::atomic<bool> &  shutdown_called_,
+        const std::atomic<bool> & shutdown_called_,
         std::shared_ptr<S3QueueLog> s3_queue_log_,
         const StorageID & storage_id_);
 

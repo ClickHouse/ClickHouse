@@ -83,9 +83,9 @@ private:
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, ASTPtr query);
     std::shared_ptr<StorageS3QueueSource> createSource(
+        std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
-        ASTPtr query,
         size_t max_block_size,
         ContextPtr local_context);
 

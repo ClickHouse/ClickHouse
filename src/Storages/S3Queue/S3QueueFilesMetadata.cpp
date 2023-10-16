@@ -474,6 +474,7 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
     if (holder->remove(&requests, &responses))
     {
         LOG_TEST(log, "Moved file `{}` to processed", path);
+        zk_client->tryRemove(node_name + ".retriable", -1);
         return;
     }
 
@@ -534,7 +535,11 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
 
         Coordination::Responses responses;
         if (holder->remove(&requests, &responses))
+        {
+            LOG_TEST(log, "Moved file `{}` to processed", path);
+            zk_client->tryRemove(node_name + ".retriable", -1);
             return;
+        }
 
         /// Failed to update max processed node, retry.
         if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
@@ -814,14 +819,12 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     };
     auto node_cmp = [](const Node & a, const Node & b)
     {
-        if (a.metadata.last_processed_timestamp == b.metadata.last_processed_timestamp)
-            return a.metadata.file_path < b.metadata.file_path;
-        else
-            return a.metadata.last_processed_timestamp < b.metadata.last_processed_timestamp;
+        return std::tie(a.metadata.last_processed_timestamp, a.metadata.file_path)
+            < std::tie(b.metadata.last_processed_timestamp, b.metadata.file_path);
     };
 
     /// Ordered in ascending order of timestamps.
-    std::multiset<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
+    std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
 
     LOG_TRACE(log, "Found {} nodes", nodes.size());
 
@@ -854,7 +857,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}", max_set_size, max_set_age_sec, get_nodes_str());
 
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes.size() - max_set_size : 0;
-    for  (const auto & node : sorted_nodes)
+    for (const auto & node : sorted_nodes)
     {
         if (nodes_to_remove)
         {

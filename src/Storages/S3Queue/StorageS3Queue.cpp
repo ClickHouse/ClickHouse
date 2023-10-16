@@ -210,20 +210,21 @@ Pipe StorageS3Queue::read(
 
     Pipes pipes;
     const size_t adjusted_num_streams = std::min<size_t>(num_streams, s3queue_settings->s3queue_processing_threads_num);
+
+    auto file_iterator = createFileIterator(local_context, query_info.query);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
-        pipes.emplace_back(createSource(column_names, storage_snapshot, query_info.query, max_block_size, local_context));
+        pipes.emplace_back(createSource(file_iterator, column_names, storage_snapshot, max_block_size, local_context));
     return Pipe::unitePipes(std::move(pipes));
 }
 
 std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
+    std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    ASTPtr query,
     size_t max_block_size,
     ContextPtr local_context)
 {
     auto configuration_snapshot = updateConfigurationAndGetCopy(local_context);
-    auto file_iterator = createFileIterator(local_context, query);
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
 
     auto internal_source = std::make_unique<StorageS3Source>(
@@ -350,12 +351,12 @@ bool StorageS3Queue::streamToViews()
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(insert, s3queue_context, false, true, true);
     auto block_io = interpreter.execute();
+    auto file_iterator = createFileIterator(s3queue_context, nullptr);
 
     Pipes pipes;
     for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
     {
-        auto source = createSource(
-            block_io.pipeline.getHeader().getNames(), storage_snapshot, nullptr, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
+        auto source = createSource(file_iterator, block_io.pipeline.getHeader().getNames(), storage_snapshot, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
         pipes.emplace_back(std::move(source));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));

@@ -167,11 +167,12 @@ Chunk StorageS3QueueSource::generate()
                 return chunk;
             }
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getFile(), e.displayText());
+            const auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", reader.getFile(), message);
 
-            files_metadata->setFileFailed(key_with_info->processing_holder, e.message());
+            files_metadata->setFileFailed(key_with_info->processing_holder, message);
 
             appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
             throw;
