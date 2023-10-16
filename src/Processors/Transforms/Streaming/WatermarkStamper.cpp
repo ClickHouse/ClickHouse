@@ -1,17 +1,14 @@
 #include <Processors/Transforms/Streaming/WatermarkTransform.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/Streaming/ASTEmitQuery.h>
 #include <Processors/Chunk.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/ClockUtils.h>
-#include <Common/ProtonCommon.h>
-#include <Common/logger_useful.h>
 
 #include <magic_enum.hpp>
+
 #include <utility>
 
 namespace DB
@@ -26,15 +23,12 @@ namespace Streaming
 {
 namespace
 {
-/// Default periodic interval
-// const std::pair<Int64, IntervalKind> DEFAULT_PERIODIC_INTERVAL = {2, IntervalKind::Second};
+const std::pair<Int64, IntervalKind> DEFAULT_PERIODIC_INTERVAL = {2, IntervalKind::Second};
 
 void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & params)
 {
     if (!emit_query)
-    {
         return;
-    }
 
     auto emit = emit_query->as<ASTEmitQuery>();
     assert(emit);
@@ -78,8 +72,8 @@ WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, TreeRewriterResultP
         {
             /// If `PERIODIC INTERVAL ...` is missing in `EMIT STREAM` query
             mode = EmitMode::PERIODIC;
-            periodic_interval.interval = ProtonConsts::DEFAULT_PERIODIC_INTERVAL.first;
-            periodic_interval.unit = ProtonConsts::DEFAULT_PERIODIC_INTERVAL.second;
+            periodic_interval.interval = DEFAULT_PERIODIC_INTERVAL.first;
+            periodic_interval.unit = DEFAULT_PERIODIC_INTERVAL.second;
         }
     }
 }
@@ -88,7 +82,8 @@ void WatermarkStamper::preProcess(const Block &)
 {
     switch (params.mode)
     {
-        case WatermarkStamperParams::EmitMode::PERIODIC: {
+        case WatermarkStamperParams::EmitMode::PERIODIC:
+        {
             initPeriodicTimer(params.periodic_interval);
             break;
         }
@@ -101,7 +96,8 @@ void WatermarkStamper::process(Chunk & chunk)
 {
     switch (params.mode)
     {
-        case WatermarkStamperParams::EmitMode::PERIODIC: {
+        case WatermarkStamperParams::EmitMode::PERIODIC:
+        {
             processPeriodic(chunk);
             break;
         }
@@ -110,26 +106,15 @@ void WatermarkStamper::process(Chunk & chunk)
     }
 }
 
-#include <iostream>
 void WatermarkStamper::processPeriodic(Chunk & chunk)
 {
-    assert(next_periodic_emit_ts);
-
-    /// FIXME: use a Timer.
     auto now = MonotonicNanoseconds::now();
     if (now < next_periodic_emit_ts)
         return;
 
-    if (chunk.getNumRows() == 0)
-    {
-        std::cout << "logger" << std::endl;
-    }
-
     next_periodic_emit_ts = now + periodic_interval;
 
     chunk.getOrCreateChunkContext()->setWatermark(now);
-
-    LOG_DEBUG(log, "Periodic emit time={}, rows={}", now, chunk.getNumRows());
 }
 
 template <typename TimeColumnType, bool apply_watermark_per_row>
@@ -144,7 +129,6 @@ void WatermarkStamper::processWatermark(Chunk & chunk)
         calc_watermark_ts = [](Int64 event_ts) { return event_ts; };
     else
         calc_watermark_ts = [this](Int64 event_ts) { return calculateWatermark(event_ts); };
-    // }
 
     Int64 event_ts_watermark = watermark_ts;
 
@@ -154,7 +138,6 @@ void WatermarkStamper::processWatermark(Chunk & chunk)
     auto columns = chunk.detachColumns();
     const auto & time_vec = assert_cast<const TimeColumnType &>(*columns[time_col_pos]).getData();
 
-    /// FIXME, use simple FilterTransform to do this ?
     auto rows = time_vec.size();
     IColumn::Filter filter(rows, 1);
 

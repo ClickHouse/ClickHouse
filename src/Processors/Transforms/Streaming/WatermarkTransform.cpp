@@ -20,8 +20,7 @@ WatermarkStamperPtr initWatermark(const WatermarkStamperParams & params, Poco::L
 }
 
 WatermarkTransform::WatermarkTransform(const Block & header, WatermarkStamperParamsPtr params_, Poco::Logger * log)
-    : ISimpleTransform(header, header, false)
-    , params(std::move(params_))
+    : ISimpleTransform(header, header, false), params(std::move(params_))
 {
     watermark = initWatermark(*params, log);
     assert(watermark);

@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Processors/IProcessor.h>
 #include <Common/Stopwatch.h>
-#include <Common/ProtonCommon.h>
 
 #include <any>
 
@@ -35,14 +34,14 @@ struct AggregatingTransformParams
         , emit_version(emit_version_)
     {
         if (emit_version)
-            version_type = DataTypeFactory::instance().get("int64");
+            version_type = DataTypeFactory::instance().get("Int64");
     }
 
     static Block getHeader(const Aggregator::Params & params, bool final, bool emit_version)
     {
         auto res = params.getHeader(final);
         if (final && emit_version)
-            res.insert({DataTypeFactory::instance().get("int64"), ProtonConsts::RESERVED_EMIT_VERSION});
+            res.insert({DataTypeFactory::instance().get("Int64"), "emit_version()"});
 
         return res;
     }
@@ -61,7 +60,7 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
 
     /// Watermarks for all variants
-    /// Acquire lock when update current watemark and find min watermark from all transform
+    /// Acquire lock when update current watermark and find min watermark from all transform
     std::mutex watermarks_mutex;
     std::vector<Int64> watermarks;
 
@@ -75,15 +74,12 @@ struct ManyAggregatedData
 
     std::vector<std::unique_ptr<std::atomic<UInt64>>> rows_since_last_finalizations;
 
-    std::atomic<UInt32> ckpt_requested = 0;
-    std::atomic<AggregatingTransform *> last_checkpointing_transform = nullptr;
+    /// std::atomic<AggregatingTransform *> last_checkpointing_transform = nullptr;
 
     /// Stuff additional data context to it if needed
     struct AnyField
     {
         std::any field;
-        std::function<void(const std::any &, WriteBuffer &)> serializer;
-        std::function<void(std::any &, ReadBuffer &)> deserializer;
     } any_field;
 
     explicit ManyAggregatedData(size_t num_threads) : variants(num_threads), watermarks(num_threads, INVALID_WATERMARK)
@@ -147,7 +143,6 @@ public:
         ManyAggregatedDataPtr many_data,
         size_t current_variant_,
         size_t max_threads,
-        size_t temporary_data_merge_threads,
         const String & log_name);
 
     ~AggregatingTransform() override;

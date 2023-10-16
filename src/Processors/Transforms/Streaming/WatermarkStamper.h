@@ -3,10 +3,7 @@
 #include <Core/Types.h>
 #include <Interpreters/Streaming/WindowCommon.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/IntervalKind.h>
 
-class DateLUTImpl;
 
 namespace Poco
 {

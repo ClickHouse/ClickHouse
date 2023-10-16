@@ -7,7 +7,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int RECOVER_CHECKPOINT_FAILED;
 }
 
 namespace Streaming
@@ -29,7 +28,7 @@ Chunk convertToChunk(const Block & block)
 }
 
 AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_, const String & log_name)
-    : AggregatingTransform(std::move(header), std::move(params_), std::make_shared<ManyAggregatedData>(1), 0, 1, 1, log_name)
+    : AggregatingTransform(std::move(header), std::move(params_), std::make_shared<ManyAggregatedData>(1), 0, 1, log_name)
 {
 }
 
@@ -39,7 +38,6 @@ AggregatingTransform::AggregatingTransform(
     ManyAggregatedDataPtr many_data_,
     size_t current_variant_,
     size_t max_threads_,
-    size_t temporary_data_merge_threads_,
     const String & log_name)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
@@ -52,10 +50,7 @@ AggregatingTransform::AggregatingTransform(
     , watermark(many_data->watermarks[current_variant_])
     , current_variant(current_variant_)
     , max_threads(std::min(many_data->variants.size(), max_threads_))
-    , temporary_data_merge_threads(temporary_data_merge_threads_)
 {
-    (void)temporary_data_merge_threads;
-
     /// Register itself in the many aggregated data
     many_data->aggregating_transforms[current_variant] = this;
 }

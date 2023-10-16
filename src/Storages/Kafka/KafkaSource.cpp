@@ -104,6 +104,7 @@ Chunk KafkaSource::generateImpl()
 
     if (!isStreaming())
         is_finished = true;
+
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy

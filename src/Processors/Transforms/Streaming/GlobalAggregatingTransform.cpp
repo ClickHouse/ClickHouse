@@ -1,4 +1,4 @@
-#include "GlobalAggregatingTransform.h"
+#include <Processors/Transforms/Streaming/GlobalAggregatingTransform.h>
 
 
 namespace DB
@@ -6,7 +6,7 @@ namespace DB
 namespace Streaming
 {
 GlobalAggregatingTransform::GlobalAggregatingTransform(Block header, AggregatingTransformParamsPtr params_)
-    : GlobalAggregatingTransform(std::move(header), std::move(params_), std::make_unique<ManyAggregatedData>(1), 0, 1, 1)
+    : GlobalAggregatingTransform(std::move(header), std::move(params_), std::make_unique<ManyAggregatedData>(1), 0, 1)
 {
 }
 
@@ -15,15 +15,13 @@ GlobalAggregatingTransform::GlobalAggregatingTransform(
     AggregatingTransformParamsPtr params_,
     ManyAggregatedDataPtr many_data_,
     size_t current_variant_,
-    size_t max_threads_,
-    size_t temporary_data_merge_threads_)
+    size_t max_threads_)
     : AggregatingTransform(
         std::move(header),
         std::move(params_),
         std::move(many_data_),
         current_variant_,
         max_threads_,
-        temporary_data_merge_threads_,
         "GlobalAggregatingTransform")
 {
     assert(params->params.group_by == Aggregator::Params::GroupBy::OTHER);
@@ -62,7 +60,6 @@ void GlobalAggregatingTransform::finalize(const ChunkContextPtr & chunk_ctx)
         many_data->finalized_watermark.store(chunk_ctx->getWatermark(), std::memory_order_relaxed);
     });
 
-    /// FIXME spill to disk, overflow_row etc cases
     auto prepared_data_ptr = params->aggregator.prepareVariantsToMerge(many_data->variants);
     if (prepared_data_ptr->empty())
         return;

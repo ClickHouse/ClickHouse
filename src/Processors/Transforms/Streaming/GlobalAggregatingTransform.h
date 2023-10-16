@@ -1,4 +1,4 @@
-#include "AggregatingTransform.h"
+#include <Processors/Transforms/Streaming/AggregatingTransform.h>
 
 namespace DB
 {
@@ -15,8 +15,7 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant_,
-        size_t max_threads,
-        size_t temporary_data_merge_threads);
+        size_t max_threads);
 
     ~GlobalAggregatingTransform() override = default;
 

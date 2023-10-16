@@ -80,7 +80,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         size_t counter = 0;
         pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor> {
             return std::make_shared<GlobalAggregatingTransform>(
-                header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+                header, transform_params, many_data, counter++, merge_threads);
         });
 
         pipeline.resize(1);
