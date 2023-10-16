@@ -2349,7 +2349,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     for (auto & part_backup_entries : parts_backup_entries)
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
-    if (backup_entries_collector.getBackupSettings().mutations)
+    if (backup_entries_collector.getBackupSettings().with_mutations)
         backup_entries_collector.addBackupEntries(backupMutations(data_path_in_backup));
 }
 

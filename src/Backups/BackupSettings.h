@@ -33,7 +33,7 @@ struct BackupSettings
     bool structure_only = false;
 
     /// Should the BACKUP command backup mutations too.
-    bool mutations = true;
+    bool with_mutations = true;
 
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;

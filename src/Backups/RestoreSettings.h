@@ -101,7 +101,7 @@ struct RestoreSettings
     RestoreAccessCreationMode create_access = RestoreAccessCreationMode::kCreateIfNotExists;
 
     /// Should the RESTORE command restore mutations too.
-    bool mutations = true;
+    bool with_mutations = true;
 
     /// Skip dependencies of access entities which can't be resolved.
     /// For example, if an user has a profile assigned and that profile is not in the backup and doesn't exist locally.

@@ -24,7 +24,7 @@ namespace ErrorCodes
     M(String, s3_storage_class) \
     M(Bool, structure_only) \
     M(Bool, async) \
-    M(Bool, mutations) \
+    M(Bool, with_mutations) \
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
     M(Bool, allow_s3_native_copy) \
