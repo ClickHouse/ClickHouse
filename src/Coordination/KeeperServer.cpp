@@ -17,6 +17,7 @@
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/cluster_config.hxx>
 #include <libnuraft/log_val_type.hxx>
+#include <libnuraft/msg_type.hxx>
 #include <libnuraft/ptr.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -646,26 +647,30 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 preprocess_logs();
                 break;
             }
-            case nuraft::cb_func::GotAppendEntryReqFromLeader:
+            case nuraft::cb_func::ProcessReq:
             {
                 auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
-                if (req.get_commit_idx() != 0)
-                {
-                    auto last_committed_index = state_machine->last_commit_index();
-                    if (!req.log_entries().empty())
-                    {
-                        // Actual log number.
-                        auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
+                if (req.get_type() != nuraft::msg_type::append_entries_request)
+                    break;
 
-                        if (index_to_commit > last_committed_index)
-                        {
-                            LOG_TRACE(log, "Trying to commit local log entries, comitting upto {}", index_to_commit);
-                            raft_instance->commitLogs(index_to_commit);
-                        }
-                        else if (index_to_commit == 0) /// we need to rollback all the logs so we preprocess all of them
-                        {
-                            preprocess_logs();
-                        }
+                if (req.get_commit_idx() == 0)
+                    break;
+
+                auto last_committed_index = state_machine->last_commit_index();
+                if (!req.log_entries().empty())
+                {
+                    // Actual log number.
+                    auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
+
+                    if (index_to_commit > last_committed_index)
+                    {
+                        LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
+                        raft_instance->commitLogs(index_to_commit);
+                        keeper_context->local_logs_preprocessed.wait(false);
+                    }
+                    else if (index_to_commit == 0) /// we need to rollback all the logs so we preprocess all of them
+                    {
+                        preprocess_logs();
                     }
                 }
                 break;
