@@ -20,10 +20,8 @@ DataStream ITransformingStep::createOutputStream(
 {
     DataStream output_stream{.header = std::move(output_header)};
 
-    /// proton: porting starts. TODO: remove comments
     /// Propagate streaming flag to output stream
     output_stream.is_streaming = input_stream.is_streaming;
-    /// proton: porting ends. TODO: remove comments
 
     output_stream.has_single_port = stream_traits.returns_single_stream
                                      || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);

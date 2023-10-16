@@ -109,8 +109,6 @@ bool ShrinkResizeProcessor::updateAndAlignWatermark(InputPortWithStatus & input_
     if (!chunk.hasWatermark())
         return false;
 
-    // assert(!chunk.requestCheckpoint());
-
     bool updated = false;
     auto new_watermark = chunk.getWatermark();
     if (new_watermark > input_with_data.watermark || (input_with_data.watermark == TIMEOUT_WATERMARK && new_watermark >= aligned_watermark))
@@ -139,34 +137,6 @@ bool ShrinkResizeProcessor::updateAndAlignWatermark(InputPortWithStatus & input_
 
     return true;
 }
-
-// bool ShrinkResizeProcessor::updateAndRequestCheckpoint(InputPortWithStatus & input_with_data, Chunk & chunk)
-// {
-//     if (!chunk.requestCheckpoint())
-//         return false;
-
-//     if (!input_with_data.requested_checkpoint)
-//     {
-//         input_with_data.requested_checkpoint = true;
-//         ++num_requested_checkpoint;
-//     }
-
-//     /// When all inputs request checkpoint, propagate the request and reset all checkpoint request
-//     if (num_requested_checkpoint == input_ports.size())
-//     {
-//         std::ranges::for_each(input_ports, [](auto & input) {
-//             input.requested_checkpoint = false;
-//             input.status = InputStatus::NeedData;
-//         });
-//         num_requested_checkpoint = 0;
-//     }
-//     else
-//     {
-//         input_with_data.status = InputStatus::NotNeedData;
-//         chunk.clearRequestCheckpoint();
-//     }
-//     return true;
-// }
 
 ExpandResizeProcessor::ExpandResizeProcessor(const Block & header, size_t num_outputs)
     : IProcessor(InputPorts(1, header), OutputPorts(num_outputs, header))
@@ -246,7 +216,6 @@ IProcessor::Status ExpandResizeProcessor::prepare(const PortNumbers & /*updated_
     }
 
     /// Check input has data
-    /// If has checkpoint request, we must waiting for the request is propagated in all outputs before read new data
     if (!waiting_outputs.empty())
     {
         input.setNeeded();
@@ -260,13 +229,6 @@ IProcessor::Status ExpandResizeProcessor::prepare(const PortNumbers & /*updated_
                     output_ports, [](auto & output) { output.propagate_flag |= OutputPortWithStatus::PROPAGATE_WATERMARK; });
                 watermark = std::max(watermark, data.chunk.getWatermark());
             }
-            // else if (data.chunk.requestCheckpoint())
-            // {
-            //     std::ranges::for_each(
-            //         output_ports, [](auto & output) { output.propagate_flag |= OutputPortWithStatus::PROPAGATE_CHECKPOINT_REQUEST; });
-            //     ckpt_ctx = data.chunk.getCheckpointContext();
-            //     num_checkpoint_requests = output_ports.size();
-            // }
             else if (!data.chunk.hasRows())
             {
                 std::ranges::for_each(
@@ -275,7 +237,6 @@ IProcessor::Status ExpandResizeProcessor::prepare(const PortNumbers & /*updated_
             
             if (data.chunk.hasRows())
             {
-                // assert(num_checkpoint_requests == 0);
                 auto & waiting_output = *waiting_outputs.front();
                 waiting_outputs.pop_front();
                 waiting_output.port->pushData(std::move(data));
@@ -293,20 +254,11 @@ IProcessor::Status ExpandResizeProcessor::prepare(const PortNumbers & /*updated_
         {
             auto chunk = header_chunk.clone();
 
-            /// Checkpoint barrier is always standalone, it can't coexist with watermark, we must propagate watermark first
             if (waiting_output.propagate_flag & OutputPortWithStatus::PROPAGATE_WATERMARK)
             {
                 chunk.getOrCreateChunkContext()->setWatermark(watermark);
                 waiting_output.propagate_flag &= ~(OutputPortWithStatus::PROPAGATE_WATERMARK | OutputPortWithStatus::PROPAGATE_HEARTBEAT);
             }
-            // else if (waiting_output.propagate_flag & OutputPortWithStatus::PROPAGATE_CHECKPOINT_REQUEST)
-            // {
-            //     chunk.getOrCreateChunkContext()->setCheckpointContext(ckpt_ctx);
-            //     waiting_output.propagate_flag
-            //         &= ~(OutputPortWithStatus::PROPAGATE_CHECKPOINT_REQUEST | OutputPortWithStatus::PROPAGATE_HEARTBEAT);
-            //     assert(num_checkpoint_requests > 0);
-            //     --num_checkpoint_requests;
-            // }
             else
             {
                 waiting_output.propagate_flag &= ~OutputPortWithStatus::PROPAGATE_HEARTBEAT;

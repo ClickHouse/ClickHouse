@@ -4,7 +4,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-// #include <Common/ProtonCommon.h>
 
 namespace DB
 {

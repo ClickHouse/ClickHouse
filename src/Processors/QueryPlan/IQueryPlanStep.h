@@ -44,9 +44,7 @@ public:
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::None;
 
-    /// proton: porting starts.
     bool is_streaming = false;
-    /// proton: porting ends.
 
     /// Things which may be added:
     /// * limit

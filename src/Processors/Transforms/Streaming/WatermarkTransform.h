@@ -22,9 +22,6 @@ public:
 
     String getName() const override { return watermark->getName() + "Transform"; }
 
-    // void checkpoint(CheckpointContextPtr ckpt_ctx) override;
-    // void recover(CheckpointContextPtr ckpt_ctx) override;
-
 private:
     void transform(Chunk & chunk) override;
 

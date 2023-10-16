@@ -1,15 +1,10 @@
 #pragma once
 
 #include <Core/ColumnWithTypeAndName.h>
-// #include <Columns/ColumnsDateTime.h>
-// #include <Interpreters/Streaming/SessionInfo.h>
-// #include <Interpreters/Streaming/TableFunctionDescription_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
-// #include <base/types.h>
-// #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
-// #include <Common/TypePromotion.h>
+
 
 namespace DB
 {

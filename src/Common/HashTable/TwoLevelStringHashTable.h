@@ -1,8 +1,9 @@
 #pragma once
 
+#include <numeric>
+
 #include <Common/HashTable/StringHashTable.h>
 
-#include <numeric>
 
 template <typename SubMaps, typename ImplTable = StringHashTable<SubMaps>, size_t BITS_FOR_BUCKET = 8>
 class TwoLevelStringHashTable : private boost::noncopyable
@@ -246,12 +247,10 @@ public:
         return res;
     }
 
-    /// proton: porting starts. TODO: remove comments
     std::vector<size_t> buckets() const
     {
         std::vector<size_t> bucket_ids(256);
         std::iota(bucket_ids.begin(), bucket_ids.end(), 0);
         return bucket_ids;
     }
-    /// proton: porting ends. TODO: remove comments
 };

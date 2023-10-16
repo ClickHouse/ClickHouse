@@ -7,13 +7,10 @@
 namespace DB
 {
 
-/// proton : porting starts. TODO: remove comments
 struct ChunkContext
 {
     static constexpr UInt64 WATERMARK_FLAG = 0x1;
     static constexpr UInt64 APPEND_TIME_FLAG = 0x2;
-    // static constexpr UInt64 HISTORICAL_DATA_START_FLAG = 0x4;
-    // static constexpr UInt64 HISTORICAL_DATA_END_FLAG = 0x8;
     static constexpr UInt64 RETRACTED_DATA_FLAG = 0x10;
     static constexpr UInt64 AVOID_WATERMARK_FLAG = 0x8000'0000'0000'0000;
 
@@ -21,16 +18,11 @@ struct ChunkContext
     Int64 ts_1 = 0;
     UInt64 flags = 0;
 
-    // ALWAYS_INLINE Int64 isHistoricalDataStart() const { return flags & HISTORICAL_DATA_START_FLAG; }
-    // ALWAYS_INLINE Int64 isHistoricalDataEnd() const { return flags & HISTORICAL_DATA_END_FLAG; }
-
     ALWAYS_INLINE void setMark(UInt64 mark) { flags |= mark; }
 
     ALWAYS_INLINE explicit operator bool () const { return flags != 0; }
 
     ALWAYS_INLINE bool hasWatermark() const { return flags & WATERMARK_FLAG; }
-
-    // ALWAYS_INLINE bool hasTimeoutWatermark() const { return hasWatermark() && getWatermark() == Streaming::TIMEOUT_WATERMARK; }
 
     ALWAYS_INLINE void setWatermark(Int64 watermark)
     {
@@ -80,7 +72,6 @@ struct ChunkContext
     ALWAYS_INLINE Int64 getAppendTime() const { assert(hasAppendTime()); return ts_1; }
 };
 using ChunkContextPtr = std::shared_ptr<ChunkContext>;
-/// proton : porting ends. TODO: remove comments
 
 class ChunkInfo
 {
@@ -184,13 +175,9 @@ public:
     void append(const Chunk & chunk);
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
-    /// proton : starts
     bool hasWatermark() const { return chunk_ctx && chunk_ctx->hasWatermark(); }
-
     bool hasChunkContext() const { return chunk_ctx && chunk_ctx->operator bool(); }
-
     void setChunkContext(ChunkContextPtr chunk_ctx_) { chunk_ctx = std::move(chunk_ctx_); }
-
     ChunkContextPtr getChunkContext() const { return chunk_ctx; }
 
     ChunkContextPtr getOrCreateChunkContext()
@@ -234,7 +221,6 @@ public:
     /// Dummy interface to make RefCountBlockList happy
     Int64 minTimestamp() const { return 0; }
     Int64 maxTimestamp() const { return 0;}
-    /// proton : porting ends. TODO: remove comments
 
 private:
     Columns columns;

@@ -1,7 +1,5 @@
 #include <IO/Operators.h>
-/// #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/Streaming/SortingStep.h>
-/// #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>

@@ -1,7 +1,5 @@
 #include <Processors/Transforms/Streaming/AggregatingTransform.h>
 
-// #include <Checkpoint/CheckpointCoordinator.h>
-// #include <Common/ProtonCommon.h>
 #include <base/ClockUtils.h>
 
 namespace DB
@@ -93,11 +91,6 @@ IProcessor::Status AggregatingTransform::prepare()
     if (read_current_chunk)
         return Status::Ready;
 
-    /// Only possible after local checkpointed and other AggregatingTransforms don't finish checkpoint yet.
-    /// Check it before input, since we can not fetch new data until all checkpoint request completed
-    // if (ckpt_request)
-    //     return Status::Ready;
-
     bool need_process = false;
     /// cond-1: Only possible after finalize failed (because other threads were finalizing)
     /// cond-2: Only possible after finalization, need to propagate new watermark
@@ -130,9 +123,6 @@ IProcessor::Status AggregatingTransform::prepare()
 
 void AggregatingTransform::work()
 {
-    // Int64 start_ns = MonotonicNanoseconds::now();
-    // metrics.processed_bytes += current_chunk.bytes();
-
     if (likely(!is_consume_finished))
     {
         auto num_rows = current_chunk.getNumRows();
@@ -147,8 +137,6 @@ void AggregatingTransform::work()
 
         read_current_chunk = false;
     }
-
-    // metrics.processing_time_ns += MonotonicNanoseconds::now() - start_ns;
 }
 
 void AggregatingTransform::consume(Chunk chunk)
@@ -171,10 +159,6 @@ void AggregatingTransform::consume(Chunk chunk)
     /// since when UDA has user defined emit strategy, watermark is disabled
     assert(!(chunk.hasWatermark() && need_finalization));
 
-    /// Since checkpoint barrier is always standalone, it can't coexist with watermark,
-    /// we handle watermark and checkpoint barrier separately
-    // assert(!chunk.hasWatermark());
-
     if (chunk.hasWatermark())
         finalizeAlignment(chunk.getChunkContext());
     else if (need_finalization)
@@ -188,9 +172,6 @@ void AggregatingTransform::consume(Chunk chunk)
     /// Try propagate and garbage collect time bucketed memory by finalized watermark
     propagateWatermarkAndClear();
 
-    /// Try propagate checkpoint to downstream
-    // propagateCheckpointAndReset();
-
     /// Try propagate an empty rows chunk to downstream
     if (need_propagate_heartbeat)
         propagateHeartbeatChunk();
@@ -199,45 +180,14 @@ void AggregatingTransform::consume(Chunk chunk)
 std::pair<bool, bool> AggregatingTransform::executeOrMergeColumns(Chunk & chunk, [[maybe_unused]] size_t num_rows)
 {
     auto columns = chunk.detachColumns();
-    // if (params->params.only_merge)
-    // {
-    //     auto block = getInputs().front().getHeader().cloneWithColumns(columns);
-    //     materializeBlockInplace(block);
-    //     /// FIXME
-    //     /// Blocking finalization during execution on current variant
-    //     std::lock_guard lock(variants_mutex);
-    //     auto success = params->aggregator.mergeOnBlock(block, variants, no_more_keys);
-    //     return {!success, false};
-    // }
-    // else
-    // {
-        /// Blocking finalization during execution on current variant
-        std::lock_guard lock(variants_mutex);
-        return params->aggregator.executeOnBlock(std::move(columns), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys);
-    // }
+
+    std::lock_guard lock(variants_mutex);
+    return params->aggregator.executeOnBlock(std::move(columns), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys);
 }
 
 void AggregatingTransform::emitVersion([[maybe_unused]] Block & block)
 {
-    // size_t rows = block.rows();
-    // if (params->params.group_by == Aggregator::Params::GroupBy::USER_DEFINED)
-    // {
-    //     /// For UDA with own emit strategy, possibly a block can trigger multiple emits, each emit cause version+1
-    //     /// each emit only has one result, therefore we can count emit times by row number
-    //     auto col = params->version_type->createColumn();
-    //     col->reserve(rows);
-    //     for (size_t i = 0; i < rows; i++)
-    //         col->insert(many_data->version++);
-    //     block.insert({std::move(col), params->version_type, ProtonConsts::RESERVED_EMIT_VERSION});
-    // }
-    // else
-    // {
-    //     Int64 version = many_data->version++;
-    //     block.insert(
-    //         {params->version_type->createColumnConst(rows, version)->convertToFullColumnIfConst(),
-    //          params->version_type,
-    //          ProtonConsts::RESERVED_EMIT_VERSION});
-    // }
+     // TODO: remove
 }
 
 void AggregatingTransform::setCurrentChunk(Chunk chunk, const ChunkContextPtr & chunk_ctx)
@@ -250,12 +200,6 @@ void AggregatingTransform::setCurrentChunk(Chunk chunk, const ChunkContextPtr & 
 
     if (chunk_ctx)
     {
-        /// NOTE: For StremaingShrinkResize of downstream, it's need all inputs propagate watermark then do watermark alignment,
-        /// So the watermark cannot be cleared. On the other hand, if the downstream needs to establish its own watermark,
-        /// the watermark will be cleared and reassigned in another `WatermarkStamper` of downstream.
-        // if (params->final && params->params.group_by != Aggregator::Params::GroupBy::OTHER)
-        //     chunk_ctx->clearWatermark();
-
         current_chunk_aggregated.setChunkContext(std::move(chunk_ctx));
     }
 }
@@ -386,138 +330,6 @@ bool AggregatingTransform::propagateWatermarkAndClear()
     }
     return false;
 }
-
-// void AggregatingTransform::checkpointAlignment(const CheckpointContextPtr & ckpt_ctx)
-// {
-//     assert(!ckpt_request);
-//     ckpt_request = std::move(ckpt_ctx);
-
-//     bool is_last_checkpoint_transform = false;
-//     if (many_data->ckpt_requested.fetch_add(1) + 1 == many_data->variants.size())
-//     {
-//         is_last_checkpoint_transform = true;
-//         many_data->last_checkpointing_transform.store(this);
-//     }
-
-//     /// Do checkpoint for itself
-//     checkpoint(ckpt_request);
-
-//     /// Last checkpoint request done, reset the progress of checkpointing
-//     if (is_last_checkpoint_transform)
-//     {
-//         many_data->last_checkpointing_transform.store(nullptr);
-//         many_data->ckpt_requested.store(0);
-//     }
-// }
-
-// bool AggregatingTransform::propagateCheckpointAndReset()
-// {
-//     /// Since checkpoint barrier is always standalone, it can't coexist with other contexts.
-//     if (!ckpt_request || has_input)
-//         return false;
-
-//     /// Only all checkpoints request done, then can reset and propagate current ckpt request
-//     if (many_data->ckpt_requested.load() == 0)
-//     {
-//         auto chunk_ctx = std::make_shared<ChunkContext>();
-//         chunk_ctx->setCheckpointContext(std::move(ckpt_request));
-//         setCurrentChunk(Chunk{getOutputs().front().getHeader().getColumns(), 0}, std::move(chunk_ctx));
-//         assert(!ckpt_request);
-//         return true;
-//     }
-//     return false;
-// }
-
-// void AggregatingTransform::checkpoint(CheckpointContextPtr ckpt_ctx)
-// {
-//     ckpt_ctx->coordinator->checkpoint(getVersion(), getLogicID(), ckpt_ctx, [this](WriteBuffer & wb) {
-//         bool is_last_checkpointing_transform = (this == many_data->last_checkpointing_transform.load());
-//         DB::writeBoolText(is_last_checkpointing_transform, wb);
-
-//         /// Serializing shared data (only do it on last checkpointing transform)
-//         if (is_last_checkpointing_transform)
-//         {
-//             UInt16 num_variants = many_data->variants.size();
-//             DB::writeIntBinary(num_variants, wb);
-
-//             DB::writeIntBinary(many_data->finalized_watermark.load(std::memory_order_relaxed), wb);
-//             DB::writeIntBinary(many_data->finalized_window_end.load(std::memory_order_relaxed), wb);
-//             DB::writeIntBinary(many_data->version.load(std::memory_order_relaxed), wb);
-
-//             assert(num_variants == many_data->rows_since_last_finalizations.size());
-//             for (const auto & last_row : many_data->rows_since_last_finalizations)
-//                 writeIntBinary<UInt64>(last_row->load(std::memory_order_relaxed), wb);
-
-//             bool has_field = many_data->hasField();
-//             DB::writeBoolText(has_field, wb);
-//             if (has_field)
-//                 many_data->any_field.serializer(many_data->any_field.field, wb);
-//         }
-
-//         /// Serializing no shared data
-//         params->aggregator.checkpoint(variants, wb);
-
-//         DB::writeIntBinary(watermark, wb);
-
-//         /// After the local checkpoint is processed, the `propagated_watermark` may still be updated,
-//         /// because other transforms may have new finalizing processing.
-//         /// But it doesn't matter, we will update according to the recovered `finalized_watermark` later
-//         DB::writeIntBinary(propagated_watermark, wb);
-//     });
-// }
-
-// void AggregatingTransform::recover(CheckpointContextPtr ckpt_ctx)
-// {
-//     ckpt_ctx->coordinator->recover(getLogicID(), ckpt_ctx, [this](VersionType /*version*/, ReadBuffer & rb) {
-//         bool is_last_checkpointing_transform;
-//         DB::readBoolText(is_last_checkpointing_transform, rb);
-
-//         /// Serializing shared data
-//         if (is_last_checkpointing_transform)
-//         {
-//             UInt16 num_variants = 0;
-//             DB::readIntBinary(num_variants, rb);
-//             if (num_variants != many_data->variants.size())
-//                 throw Exception(
-//                     ErrorCodes::RECOVER_CHECKPOINT_FAILED,
-//                     "Failed to recover aggregation checkpoint. Number of data variants are not the same, checkpointed={}, current={}",
-//                     num_variants,
-//                     variants.size());
-
-//             Int64 last_finalized_watermark;
-//             DB::readIntBinary(last_finalized_watermark, rb);
-//             many_data->finalized_watermark = last_finalized_watermark;
-
-//             Int64 last_finalized_window_end;
-//             DB::readIntBinary(last_finalized_window_end, rb);
-//             many_data->finalized_window_end = last_finalized_window_end;
-
-//             Int64 last_version = 0;
-//             DB::readIntBinary(last_version, rb);
-//             many_data->version = last_version;
-
-//             assert(num_variants == many_data->rows_since_last_finalizations.size());
-//             for (auto & rows_since_last_finalization : many_data->rows_since_last_finalizations)
-//             {
-//                 UInt64 last_rows = 0;
-//                 DB::readIntBinary<UInt64>(last_rows, rb);
-//                 *rows_since_last_finalization = last_rows;
-//             }
-
-//             bool has_field;
-//             DB::readBoolText(has_field, rb);
-//             if (has_field)
-//                 many_data->any_field.deserializer(many_data->any_field.field, rb);
-//         }
-
-//         /// Serializing local or stable data during checkpointing
-//         params->aggregator.recover(variants, rb);
-
-//         DB::readIntBinary(watermark, rb);
-
-//         DB::readIntBinary(propagated_watermark, rb);
-//     });
-// }
 
 }
 }

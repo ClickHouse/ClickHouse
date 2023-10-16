@@ -37,10 +37,8 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
-    /// proton: porting starts. TODO: remove comments
     bool isStreaming() const override;
     bool hasGlobalAggregation() const override;
-    /// proton: porting ends. TODO: remove comments
 
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }

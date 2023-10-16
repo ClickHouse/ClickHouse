@@ -10,13 +10,13 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Streaming/ResizeProcessor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
-#include <QueryPipeline/printPipeline.h>
+#include <Common/logger_useful.h>
 
-/// proton: porting starts. TODO: remove comments
+#include <QueryPipeline/printPipeline.h>
 #include <Processors/Streaming/ResizeProcessor.h>
-/// proton: porting ends. TODO: remove comments
 
 namespace DB
 {
@@ -704,10 +704,8 @@ void Pipe::addChains(std::vector<Chain> chains)
 
 void Pipe::resize(size_t num_streams, bool force, bool strict)
 {
-    /// proton: starts.
     if (isStreaming())
         return resizeStreaming(num_streams, force);
-    /// proton: ends.
 
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");

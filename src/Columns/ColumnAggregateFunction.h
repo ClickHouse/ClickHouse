@@ -1,16 +1,12 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-
 #include <Core/Field.h>
-
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-
 #include <Functions/FunctionHelpers.h>
 
 namespace DB
@@ -87,9 +83,7 @@ private:
 
     std::optional<size_t> version;
 
-    /// proton: porting starts. TODO: remove comments
     bool streaming = false;
-    /// proton: porting ends. TODO: remove comments
 
     ColumnAggregateFunction() = default;
 
@@ -260,8 +254,6 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    /// proton: porting starts. TODO: remove comments
     void setStreaming(bool streaming_) { streaming = streaming_; }
-    /// proton: porting ends. TODO: remove comments
 };
 }

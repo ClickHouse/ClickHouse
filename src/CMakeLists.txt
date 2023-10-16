@@ -200,9 +200,7 @@ endmacro()
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
-# proton: porting starts. TODO: remove comments
 add_object_library(clickhouse_core_streaming Core/Streaming)
-# proton: porting ends. TODO: remove comments
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
@@ -220,11 +218,9 @@ add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
-# proton: porting start. TODO: remove comments
 add_object_library(clickhouse_interpreters_streaming AggregateFunctions/Streaming)
 add_object_library(clickhouse_interpreters_streaming Interpreters/Streaming)
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
-# proton: porting ends. TODO: remove comments
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
@@ -245,9 +241,7 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_streaming Processors/Streaming)
-# proton: porting start. TODO: remove comments
 add_object_library(clickhouse_processors_transforms_streaming Processors/Transforms/Streaming)
-# proton: porting ends. TODO: remove comments
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)

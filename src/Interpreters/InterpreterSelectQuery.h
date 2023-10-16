@@ -115,10 +115,9 @@ public:
     const Names & getRequiredColumns() const { return required_columns; }
 
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
-    /// proton: porting starts. TODO: remove comments
+
     bool isStreaming() const override;
     bool hasGlobalAggregation() const override;
-    /// proton: porting ends. TODO: remove comments
 
     static void addEmptySourceToQueryPlan(
         QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
@@ -204,14 +203,12 @@ private:
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
-    /// proton: porting starts. TODO: remove comments
     void executeStreamingOrder(QueryPlan & query_plan);
     void executeStreamingAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final);
     bool shouldKeepState() const;
     void checkAndPrepareStreamingFunctions();
     void buildWatermarkQueryPlan(QueryPlan & query_plan) const;
     void buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan);
-    /// proton: porting ends. TODO: remove comments
 
     enum class Modificator
     {
@@ -252,10 +249,8 @@ private:
     /// Structure of query source (table, subquery, etc).
     Block source_header;
 
-    /// proton: porting starts. TODO: remove comments
     bool emit_version = false;
     mutable std::optional<bool> is_streaming;
-    /// proton: porting ends. TODO: remove comments
 
     /// Actions to calculate ALIAS if required.
     ActionsDAGPtr alias_actions;

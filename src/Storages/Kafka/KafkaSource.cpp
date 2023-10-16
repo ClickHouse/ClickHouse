@@ -44,7 +44,7 @@ KafkaSource::KafkaSource(
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , header_chunk(storage_snapshot_->getSampleBlockForColumns(columns).getColumns(), 0)    /// proton: porting. TODO: remove comment, get this from context
+    , header_chunk(storage_snapshot_->getSampleBlockForColumns(columns).getColumns(), 0)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
@@ -81,7 +81,6 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        /// proton: porting start. TODO: remove comments
         if (isStreaming())
         {
             consumer = storage.createConsumer(0, context->getCurrentQueryId());
@@ -91,7 +90,6 @@ Chunk KafkaSource::generateImpl()
             auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
             consumer = storage.popConsumer(timeout);
         }
-        /// proton: porting ends. TODO: remove comments
 
         if (!consumer)
             return {};
@@ -251,10 +249,8 @@ Chunk KafkaSource::generateImpl()
             LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
         }
 
-        /// proton: porting start. TODO: remove comments
         if (isStreaming())
             break;
-        /// proton: porting end. TODO: remove comments
 
         if (!consumer->hasMorePolledMessages()
             && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
@@ -265,12 +261,10 @@ Chunk KafkaSource::generateImpl()
 
     if (total_rows == 0)
     {
-        /// proton: porting start. TODO: remove comments
         if (isStreaming())
             return header_chunk.clone();
         else
             return {};
-        /// proton: porting end. TODO: remove comments
     }
     else if (consumer->polledDataUnusable())
     {

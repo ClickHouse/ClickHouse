@@ -23,7 +23,6 @@ private:
     bool streaming;
 
     static std::unordered_map<String, String> func_map;
-    // static std::unordered_map<String, String> changelog_func_map;
 
     /// only streaming query can use these functions
     static std::set<String> streaming_only_func;

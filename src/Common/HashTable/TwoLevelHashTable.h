@@ -1,8 +1,9 @@
 #pragma once
 
+#include <numeric>
+
 #include <Common/HashTable/HashTable.h>
 
-#include <numeric>
 
 /** Two-level hash table.
   * Represents 256 (or 1ULL << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
@@ -347,12 +348,10 @@ public:
         return res;
     }
 
-    /// proton: porting starts. TODO: remove comments
     std::vector<size_t> buckets() const
     {
         std::vector<size_t> bucket_ids(NUM_BUCKETS);
         std::iota(bucket_ids.begin(), bucket_ids.end(), 0);
         return bucket_ids;
     }
-    /// proton: porting ends. TODO: remove comments
 };

@@ -75,41 +75,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
-        /// Add resize transform to uniformly distribute data between aggregating streams.
-        /// For streaming aggregating, we don't need use StrictResizeProcessor.
-        /// There is no case that some upstream closed, since AggregatingTransform required `watermark` of upstream to trigger finalize.
-        // if (!storage_has_evenly_distributed_read)
-        //     pipeline.resize(pipeline.getNumStreams(), true, true);
-
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
         size_t counter = 0;
         pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor> {
-            // if (transform_params->params.group_by == Aggregator::Params::GroupBy::WINDOW_START
-            //     || transform_params->params.group_by == Aggregator::Params::GroupBy::WINDOW_END)
-            // {
-            //     assert(transform_params->params.window_params);
-            //     switch (transform_params->params.window_params->type)
-            //     {
-            //         case WindowType::TUMBLE:
-            //             return std::make_shared<TumbleAggregatingTransform>(
-            //                 header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-            //         case WindowType::HOP:
-            //             return std::make_shared<HopAggregatingTransform>(
-            //                 header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-            //         case WindowType::SESSION:
-            //             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel processing session window is not supported");
-            //         default:
-            //             throw Exception(
-            //                 ErrorCodes::NOT_IMPLEMENTED,
-            //                 "No support window type: {}",
-            //                 magic_enum::enum_name(transform_params->params.window_params->type));
-            //     }
-            // }
-            // else if (transform_params->params.group_by == Aggregator::Params::GroupBy::USER_DEFINED)
-            //     return std::make_shared<UserDefinedEmitStrategyAggregatingTransform>(
-            //         header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-            // else
             return std::make_shared<GlobalAggregatingTransform>(
                 header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
         });
@@ -121,28 +90,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.resize(1);
 
         pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor> {
-            // if (transform_params->params.group_by == Aggregator::Params::GroupBy::WINDOW_START
-            //     || transform_params->params.group_by == Aggregator::Params::GroupBy::WINDOW_END)
-            // {
-            //     assert(transform_params->params.window_params);
-            //     switch (transform_params->params.window_params->type)
-            //     {
-            //         case WindowType::TUMBLE:
-            //             return std::make_shared<TumbleAggregatingTransform>(header, transform_params);
-            //         case WindowType::HOP:
-            //             return std::make_shared<HopAggregatingTransform>(header, transform_params);
-            //         case WindowType::SESSION:
-            //             return std::make_shared<SessionAggregatingTransform>(header, transform_params);
-            //         default:
-            //             throw Exception(
-            //                 ErrorCodes::NOT_IMPLEMENTED,
-            //                 "No support window type: {}",
-            //                 magic_enum::enum_name(transform_params->params.window_params->type));
-            //     }
-            // }
-            // else if (transform_params->params.group_by == Aggregator::Params::GroupBy::USER_DEFINED)
-            //     return std::make_shared<UserDefinedEmitStrategyAggregatingTransform>(header, transform_params);
-            // else
             return std::make_shared<GlobalAggregatingTransform>(header, transform_params);
         });
     }
@@ -169,7 +116,6 @@ void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        // appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
         AggregatingTransformParams::getHeader(params, final, emit_version),
         getDataStreamTraits());
 }

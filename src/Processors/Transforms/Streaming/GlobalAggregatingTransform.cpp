@@ -1,6 +1,5 @@
 #include "GlobalAggregatingTransform.h"
 
-// #include <Processors/Transforms/convertToChunk.h>
 
 namespace DB
 {
@@ -82,11 +81,6 @@ void GlobalAggregatingTransform::finalize(const ChunkContextPtr & chunk_ctx)
 bool GlobalAggregatingTransform::initialize(ManyAggregatedDataVariantsPtr & data, const ChunkContextPtr & chunk_ctx)
 {
     AggregatedDataVariantsPtr & first = data->at(0);
-
-    /// At least we need one arena in first data item per thread. FIXME, we are using 1 thread to do state merge
-    //    Arenas & first_pool = first->aggregates_pools;
-    //    for (size_t j = first_pool.size(); j < max_threads; j++)
-    //        first_pool.emplace_back(std::make_shared<Arena>());
 
     if (first->type == AggregatedDataVariants::Type::without_key || params->params.overflow_row)
     {

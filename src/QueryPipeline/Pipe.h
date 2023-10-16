@@ -109,7 +109,6 @@ public:
 
     std::shared_ptr<Processors> getProcessorsPtr() { return processors; }
 
-    /// proton: porting starts. TODO: remove comments.
     bool isStreaming() const
     {
         if (!output_ports.empty())
@@ -122,7 +121,6 @@ public:
     }
 
     void resizeStreaming(size_t num_streams, bool force = false);
-    /// proton: porting ends. TODO: remove comments.
 
 private:
     /// Header is common for all output below.

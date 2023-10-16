@@ -13,16 +13,6 @@ namespace Streaming
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
-// struct GroupingSetsParams
-// {
-//     GroupingSetsParams() = default;
-
-//     GroupingSetsParams(Names used_keys_, Names missing_keys_) : used_keys(std::move(used_keys_)), missing_keys(std::move(missing_keys_)) { }
-
-//     Names used_keys;
-//     Names missing_keys;
-// };
-// using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 /// Streaming Aggregation. See StreamingAggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {

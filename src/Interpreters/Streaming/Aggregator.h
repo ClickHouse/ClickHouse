@@ -32,7 +32,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 
-/// proton: starts
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Streaming/WindowCommon.h>
@@ -40,7 +39,6 @@
 #include <Common/HashTable/Hash.h>
 
 #include <numeric>
-/// proton: ends
 
 /// This is a copy of `Aggregator.h` and adjust for streaming windows aggregation, we shall keep this file and its implementation file's
 /// layouts are as identical as the origins to easy future diff / merge
@@ -75,26 +73,9 @@ enum class ConvertAction : uint8_t
     UNKNOWN = 0,
     DISTRIBUTED_MERGE = 1,
     WRITE_TO_TEMP_FS = 2,
-    // CHECKPOINT = 3,
     STREAMING_EMIT = 4,
     INTERNAL_MERGE = 5
 };
-
-/// using TimeBucketAggregatedDataWithUInt16Key = TimeBucketHashMap<FixedImplicitZeroHashMap<UInt16, AggregateDataPtr>>;
-/// using TimeBucketAggregatedDataWithUInt32Key = TimeBucketHashMap<HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>>;
-/// using TimeBucketAggregatedDataWithUInt64Key = TimeBucketHashMap<HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>>;
-/// using TimeBucketAggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-/// using TimeBucketAggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
-
-/// Single key
-// using TimeBucketAggregatedDataWithUInt16KeyTwoLevel = TimeBucketHashMap<UInt16, AggregateDataPtr, HashCRC32<UInt16>>;
-// using TimeBucketAggregatedDataWithUInt32KeyTwoLevel = TimeBucketHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
-// using TimeBucketAggregatedDataWithUInt64KeyTwoLevel = TimeBucketHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
-// using TimeBucketAggregatedDataWithStringKeyTwoLevel = TimeBucketHashMapWithSavedHash<StringRef, AggregateDataPtr>;
-
-/// Multiple keys
-// using TimeBucketAggregatedDataWithKeys128TwoLevel = TimeBucketHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
-// using TimeBucketAggregatedDataWithKeys256TwoLevel = TimeBucketHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 class Aggregator;
 
@@ -187,35 +168,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, true>> low_cardinality_keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, true>> low_cardinality_keys256_two_level;
 
-    /// proton: starts
-    /// Single key
-    // std::unique_ptr<AggregationMethodOneNumber<UInt16, TimeBucketAggregatedDataWithUInt64KeyTwoLevel>> time_bucket_key16_two_level;
-    // std::unique_ptr<AggregationMethodOneNumber<UInt32, TimeBucketAggregatedDataWithUInt64KeyTwoLevel>> time_bucket_key32_two_level;
-    // std::unique_ptr<AggregationMethodOneNumber<UInt64, TimeBucketAggregatedDataWithUInt64KeyTwoLevel>> time_bucket_key64_two_level;
-
-    /// Multiple keys
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithUInt32KeyTwoLevel>>  time_bucket_keys32_two_level;
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithUInt64KeyTwoLevel>>  time_bucket_keys64_two_level;
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithKeys128TwoLevel>>    time_bucket_keys128_two_level;
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithKeys256TwoLevel>>    time_bucket_keys256_two_level;
-
-    /// Nullable
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithKeys128TwoLevel, true>>  time_bucket_nullable_keys128_two_level;
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithKeys256TwoLevel, true>>  time_bucket_nullable_keys256_two_level;
-
-    /// Low cardinality
-//    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt32, StreamingAggregatedDataWithNullableUInt64KeyTwoLevel>>> streaming_low_cardinality_key32_two_level;
-//    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt64, StreamingAggregatedDataWithNullableUInt64KeyTwoLevel>>> streaming_low_cardinality_key64_two_level;
-//    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodString<StreamingAggregatedDataWithNullableStringKeyTwoLevel>>> streaming_low_cardinality_key_string_two_level;
-//    std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodFixedString<StreamingAggregatedDataWithNullableStringKeyTwoLevel>>> streaming_low_cardinality_key_fixed_string_two_level;
-
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithKeys128TwoLevel, false, true>> time_bucket_low_cardinality_keys128_two_level;
-    // std::unique_ptr<AggregationMethodKeysFixed<TimeBucketAggregatedDataWithKeys256TwoLevel, false, true>> time_bucket_low_cardinality_keys256_two_level;
-
-    /// Fallback
-    // std::unique_ptr<AggregationMethodSerialized<TimeBucketAggregatedDataWithStringKeyTwoLevel>>  time_bucket_serialized_two_level;
-    /// proton: ends
-
     /// In this and similar macros, the option without_key is not considered.
     #define APPLY_FOR_AGGREGATED_VARIANTS_STREAMING(M) \
         M(key8,                       false) \
@@ -262,22 +214,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys128_two_level, true) \
         M(low_cardinality_keys256_two_level, true) \
         M(low_cardinality_key_string_two_level, true) \
-        M(low_cardinality_key_fixed_string_two_level, true) \
-        /* proton: starts */ \
-        /* time bucket two level */ \
-        /* M(time_bucket_key16_two_level, true) */ \
-        /* M(time_bucket_key32_two_level, true) */ \
-        /* M(time_bucket_key64_two_level, true) */ \
-        /* M(time_bucket_keys32_two_level, true) */ \
-        /* M(time_bucket_keys64_two_level, true) */ \
-        /* M(time_bucket_keys128_two_level, true) */ \
-        /* M(time_bucket_keys256_two_level, true) */ \
-        /* M(time_bucket_nullable_keys128_two_level, true) */ \
-        /* M(time_bucket_nullable_keys256_two_level, true) */ \
-        /* M(time_bucket_low_cardinality_keys128_two_level, true) */ \
-        /* M(time_bucket_low_cardinality_keys256_two_level, true) */ \
-        /* M(time_bucket_serialized_two_level, true) */ \
-        /* proton: ends. */
+        M(low_cardinality_key_fixed_string_two_level, true)
 
     enum class Type
     {
@@ -315,23 +252,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level) \
 
-    // #define APPLY_FOR_VARIANTS_TIME_BUCKET_TWO_LEVEL(M) \
-    //     M(time_bucket_key16_two_level) \
-    //     M(time_bucket_key32_two_level) \
-    //     M(time_bucket_key64_two_level) \
-    //     M(time_bucket_keys32_two_level) \
-    //     M(time_bucket_keys64_two_level) \
-    //     M(time_bucket_keys128_two_level) \
-    //     M(time_bucket_keys256_two_level) \
-    //     M(time_bucket_nullable_keys128_two_level) \
-    //     M(time_bucket_nullable_keys256_two_level) \
-    //     M(time_bucket_low_cardinality_keys128_two_level) \
-    //     M(time_bucket_low_cardinality_keys256_two_level) \
-    //     M(time_bucket_serialized_two_level)
-
     #define APPLY_FOR_VARIANTS_ALL_TWO_LEVEL(M) \
         APPLY_FOR_VARIANTS_STATIC_BUCKET_TWO_LEVEL(M)
-        // APPLY_FOR_VARIANTS_TIME_BUCKET_TWO_LEVEL(M)
 
     void init(Type type_)
     {
@@ -347,23 +269,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         }
 
         type = type_;
-
-        /// proton: start. Setup window key size since we will need use the size to extract the window key value
-        /// and sort the window key in a sorted map for recycle
-        // switch (type)
-        // {
-        // #define M(NAME) \
-        //     case Type::NAME: NAME->data.setWinKeySize(key_sizes[0]); break;
-        //     APPLY_FOR_VARIANTS_TIME_BUCKET_TWO_LEVEL(M)
-        // #undef M
-
-        //     default:
-        //         /// Enable arena recycling only for streaming window
-        //         /// Disable it for global streaming aggregation
-        //         aggregates_pool->enableRecycle(false);
-        //         break;
-        // }
-        /// proton: ends;
     }
 
     /// Number of rows (different keys).
@@ -433,18 +338,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         }
     }
 
-    // bool isTimeBucketTwoLevel() const
-    // {
-    //     switch (type)
-    //     {
-    //     #define M(NAME) \
-    //         case Type::NAME: return true;
-    //             // APPLY_FOR_VARIANTS_TIME_BUCKET_TWO_LEVEL(M)
-    //     #undef M
-    //         default: return false;
-    //     }
-    // }
-
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_STATIC_BUCKET_TWO_LEVEL(M) \
         M(key32)            \
         M(key64)            \
@@ -498,7 +391,6 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     void convertToTwoLevel();
 
-    /// proton: starts
     #define APPLY_FOR_LOW_CARDINALITY_VARIANTS_STREAMING(M) \
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
@@ -513,11 +405,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys128_two_level) \
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
-        M(low_cardinality_key_fixed_string_two_level) \
-        // M(time_bucket_low_cardinality_keys128_two_level) \
-        // M(time_bucket_low_cardinality_keys256_two_level) \
+        M(low_cardinality_key_fixed_string_two_level)
 
-    /// proton ends
     bool isLowCardinality() const
     {
         switch (type)
@@ -619,36 +508,18 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
-        /// proton: starts
         /// `keep_state` tell Aggregator if it needs to hold state in-memory for streaming
         /// processing. In normal case, it is true. However for global over global aggregation
         /// etc cases, we don't want the outer global aggregation to accumulate states in-memory.
-        /// Actually things are complex when we support `EMIT CHANGELOG`, in which case `keep_state`
-        /// shall always be `true` as `EMIT CHANGELOG` is expected to retract the previous state.
         /// There is another case we will set keep_state to false : when we cancel
         bool keep_state = true;
-        /// How many streaming windows to keep from recycling
-        // size_t streaming_window_count = 0;
 
-        /// GroupBy tells if the first group column is either WINDOW_START or WINDOW_END or
-        /// anything else
         enum class GroupBy
         {
-            // WINDOW_START,
-            // WINDOW_END,
-            // USER_DEFINED,
             OTHER,
         };
         GroupBy group_by = GroupBy::OTHER;
 
-        // ssize_t delta_col_pos;
-
-        // size_t window_keys_num;
-
-        // WindowParamsPtr window_params;
-        /// proton: ends
-
-        /// proton: starts
         Params(
             const Block & src_header_,
             const Names & keys_, const AggregateDescriptions & aggregates_,
@@ -678,7 +549,6 @@ public:
             group_by(streaming_group_by_)
         {
         }
-        /// proton: ends
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
@@ -808,9 +678,7 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
-    /// proton: starts
     Params & getParams() { return params; }
-    /// proton: ends
 
 private:
 
@@ -819,23 +687,10 @@ private:
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
 
-    /// proton: starts
     friend class StreamingConvertingAggregatedToChunksTransform;
     friend class StreamingConvertingAggregatedToChunksSource;
     friend class AggregatingTransform;
     friend class GlobalAggregatingTransform;
-    // friend class WindowAggregatingTransform;
-    // friend class WindowAggregatingTransformWithSubstream;
-    // friend class TumbleAggregatingTransform;
-    // friend class TumbleAggregatingTransformWithSubstream;
-    // friend class HopAggregatingTransform;
-    // friend class HopAggregatingTransformWithSubstream;
-    // friend class SessionAggregatingTransform;
-    // friend class SessionAggregatingTransformWithSubstream;
-    // friend class UserDefinedEmitStrategyAggregatingTransform;
-
-    // mutable std::optional<VersionType> version;
-    /// proton: ends
 
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
@@ -860,9 +715,6 @@ private:
         const IColumn ** arguments{};
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
-        /// proton : starts
-        // const IColumn * delta_column{};
-        /// proton : ends
         const UInt64 * offsets{};
     };
 
@@ -899,12 +751,6 @@ private:
 
     /** Select the aggregation method based on the number and types of keys. */
     AggregatedDataVariants::Type chooseAggregationMethod();
-
-    /// proton: starts
-    // AggregatedDataVariants::Type chooseAggregationMethodTimeBucketTwoLevel(
-    //     const DataTypes & types_removed_nullable, bool has_nullable_key,
-    //     bool has_low_cardinality, size_t num_fixed_contiguous_keys, size_t keys_bytes) const;
-    /// proton: ends
 
     /** Create states of aggregate functions for one key.
       */
@@ -962,8 +808,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena/* ,
-        const IColumn * delta_col */);
+        Arena * arena);
 
     template <typename Method>
     void writeToTemporaryFileImpl(
@@ -1071,28 +916,6 @@ private:
         size_t bucket,
         std::atomic<bool> * is_cancelled = nullptr) const;
 
-    /// proton: starts.
-    // template <typename Method>
-    // void spliceBucketsImpl(
-    //     AggregatedDataVariants & data_dest,
-    //     AggregatedDataVariants & data_src,
-    //     bool final,
-    //     ConvertAction action,
-    //     const std::vector<Int64> & gcd_buckets,
-    //     Arena * arena) const;
-
-    /// Used for hop window function, merge multiple gcd windows (buckets) to a hop window
-    /// For examples:
-    ///   gcd_bucket1 - [00:00, 00:02)
-    ///                            =>  result block - [00:00, 00:04)
-    ///   gcd_bucket2 - [00:02, 00:04)
-    // Block spliceAndConvertBucketsToBlock(
-    //     AggregatedDataVariants & variants, bool final, ConvertAction action, const std::vector<Int64> & gcd_buckets) const;
-
-    // void mergeBuckets(
-    //     ManyAggregatedDataVariants & variants, Arena * arena, bool final, ConvertAction action, const std::vector<Int64> & buckets) const;
-    /// proton: ends.
-
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows, ConvertAction action) const;
     Block prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final, ConvertAction action) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, size_t max_threads, ConvertAction action) const;
@@ -1173,27 +996,11 @@ private:
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
 
-    /// proton: starts
     void setupAggregatesPoolTimestamps(size_t row_begin, size_t row_end, const ColumnRawPtrs & key_columns, Arena * aggregates_pool) const;
     void removeBucketsBefore(AggregatedDataVariants & result, Int64 max_bucket) const;
     std::vector<Int64> bucketsBefore(const AggregatedDataVariants & result, Int64 max_bucket) const;
 
     inline bool shouldClearStates(ConvertAction action, bool final_) const;
-
-    // VersionType getVersionFromRevision(UInt64 revision) const;
-    // VersionType getVersion() const;
-
-// public:
-    // void checkpoint(const AggregatedDataVariants & data_variants, WriteBuffer & wb);
-    // void recover(AggregatedDataVariants & data_variants, ReadBuffer & rb);
-    // void recoverStates(AggregatedDataVariants & data_variants, BlocksList & blocks);
-    // void recoverStatesWithoutKey(AggregatedDataVariants & data_variants, BlocksList & blocks);
-    // void recoverStatesSingleLevel(AggregatedDataVariants & data_variants, BlocksList & blocks);
-    // void recoverStatesTwoLevel(AggregatedDataVariants & data_variants, BlocksList & blocks);
-
-    // template <typename Method>
-    // void doRecoverStates(Method & method, Arena * aggregates_pool, Block & block);
-    /// proton: ends
 };
 
 

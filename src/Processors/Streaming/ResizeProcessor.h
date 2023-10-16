@@ -81,13 +81,9 @@ private:
 
     /// @returns true if has watermark handling.
     bool updateAndAlignWatermark(InputPortWithStatus & input_with_data, Chunk & chunk);
-    /// @returns true if has request checkpoint handling.
-    // bool updateAndRequestCheckpoint(InputPortWithStatus & input_with_data, Chunk & chunk);
 
     /// Used in `updateAndAlignWatermark`
     Int64 aligned_watermark = INVALID_WATERMARK;
-    /// Used in `updateAndRequestCheckpoint`
-    // UInt8 num_requested_checkpoint = 0;
 
     Poco::Logger * log;
 };
@@ -132,8 +128,6 @@ private:
     /// To propagate
     Chunk header_chunk;
     Int64 watermark = INVALID_WATERMARK;
-    // CheckpointContextPtr ckpt_ctx;
-    // UInt8 num_checkpoint_requests = 0;
 };
 
 class StrictResizeProcessor final : public IProcessor

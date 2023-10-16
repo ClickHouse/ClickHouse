@@ -366,9 +366,6 @@ bool supportStreamingQuery(const StoragePtr & storage, ContextPtr context)
         auto select = storage->getInMemoryMetadataPtr()->getSelectQuery().inner_query;
         auto ctx = Context::createCopy(context);
 
-        /// proton: porting starts. TODO: need revisit. What does this property in context do? Do we need it?
-        // ctx->setCollectRequiredColumns(false);
-        /// proton: porting ends. TODO: remove comments
         return InterpreterSelectWithUnionQuery(select, ctx, SelectQueryOptions().noModify().subquery().analyze()).isStreaming();
     }
 
@@ -469,11 +466,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     /* rules */ Streaming::EmitInterpreter::checkEmitAST);
 
         /// After handling, update setting for context.
-        /// proton: porting. TODO: remove comments. Need revisit: Do we still need apply settings to context since there is only checkEmitAST rule remains
         if (getSelectQuery().settings())
             InterpreterSetQuery(getSelectQuery().settings(), context).executeForCurrentContext();
     }
-    /// proton: porting ends. TODO: remove comments
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
@@ -658,7 +653,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
-        /// proton: porting starts. TODO: remove comments
         TreeRewriterResult tree_rewriter_result(source_header.getNamesAndTypesList(), storage, storage_snapshot);
         tree_rewriter_result.streaming = isStreaming();
 
@@ -669,8 +663,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             joined_tables.tablesWithColumns(),
             required_result_column_names,
             table_join);
-        /// proton: porting ends. TODO: remove comments
-
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
@@ -830,10 +822,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         result_header = getSampleBlockImpl();
     };
 
-    /// proton: porting starts. TODO: remove comments
     checkAndPrepareStreamingFunctions();
-    /// proton: porting ends. TODO: remove comments
-
     analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
@@ -1506,10 +1495,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
     if (options.only_analyze)
     {
-        /// proton: porting starts. TODO: remove comments
         /// We need keep the streaming flag is same with actual source
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header, isStreaming());
-        /// proton: porting ends. TODO: remove comments
         query_plan.addStep(std::move(read_nothing));
 
         if (expressions.filter_info)
@@ -1814,10 +1801,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 }
             }
 
-            /// proton: porting starts. TODO: remove comments
             /// Build some streaming processing steps after joined multiples streams
             buildStreamingProcessingQueryPlanAfterJoin(query_plan);
-            /// proton: porting ends. TODO: remove comments
 
             if (!query_info.projection && expressions.hasWhere())
                 executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
@@ -2766,13 +2751,11 @@ static T getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & q
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
-    /// proton: porting starts. TODO: remove comments
     if (isStreaming())
     {
         executeStreamingAggregation(query_plan, expression, overflow_row, final);
         return;
     }
-    /// proton: porting ends. TODO: remove comments
 
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
@@ -3358,7 +3341,6 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
-/// proton: porting starts. TODO: remove comments
 void InterpreterSelectQuery::executeStreamingOrder(QueryPlan & query_plan)
 {
     const Settings & settings = context->getSettingsRef();
@@ -3400,81 +3382,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
     const auto & keys = query_analyzer->aggregationKeys().getNames();
 
-    // ssize_t delta_col_pos = data_stream_semantic_pair.isChangelogInput()
-    //     ? header_before_aggregation.getPositionByName(ProtonConsts::RESERVED_DELTA_FLAG)
-    //     : -1;
-
-    // size_t window_keys_num = 0;
-
-    // for (const auto & key : query_analyzer->aggregationKeys())
-    // {
-    //     /// In case when `select count() from (select 1 as window_start, 2 as window_end from test) group by window_start, window_end`
-    //     /// There is no window, so `window_start/window_end` are just normal group by keys.
-    //     if (query_info.streaming_window_params)
-    //     {
-    //         if ((key.name == ProtonConsts::STREAMING_WINDOW_END) && (isDate(key.type) || isDateTime(key.type) || isDateTime64(key.type)))
-    //         {
-    //             keys.insert(keys.begin(), header_before_aggregation.getPositionByName(key.name));
-    //             streaming_group_by = Streaming::Aggregator::Params::GroupBy::WINDOW_END;
-    //             ++window_keys_num;
-    //             continue;
-    //         }
-    //         else if ((key.name == ProtonConsts::STREAMING_WINDOW_START) && (isDate(key.type) || isDateTime(key.type) || isDateTime64(key.type)))
-    //         {
-    //             keys.insert(keys.begin(), header_before_aggregation.getPositionByName(key.name));
-    //             streaming_group_by = Streaming::Aggregator::Params::GroupBy::WINDOW_START;
-    //             ++window_keys_num;
-    //             continue;
-    //         }
-    //     }
-
-    //     keys.push_back(header_before_aggregation.getPositionByName(key.name));
-    // }
-
     AggregateDescriptions aggregates = query_analyzer->aggregates();
-    /// Convert window over aggregate descriptions to regular Aggregate descriptions
-    // if (query_info.has_aggregate_over)
-    // {
-    //     /// Window over aggregates are not compatible with regular aggregates
-    //     /// so they can't coexist at the same level in one SQL.
-    //     assert(aggregates.empty());
-    //     assert(query_analyzer->windowDescriptions().size() <= 1);
-    //     for (const auto & [_, window_desc] : query_analyzer->windowDescriptions())
-    //     {
-    //         for (const auto & window_func : window_desc.window_functions)
-    //         {
-    //             if (!window_func.aggregate_function)
-    //                 continue;
-
-    //             AggregateDescription aggr_desc;
-    //             aggr_desc.function = window_func.aggregate_function;
-    //             aggr_desc.argument_names = window_func.argument_names;
-    //             aggr_desc.column_name = window_func.column_name;
-    //             aggregates.emplace_back(std::move(aggr_desc));
-    //         }
-    //     }
-    // }
-
-    // for (auto & descr : aggregates)
-    //     if (descr.arguments.empty())
-    //         for (const auto & name : descr.argument_names)
-    //             descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
-
-    // if (has_user_defined_emit_strategy)
-    // {
-    //     if (aggregates.size() > 1)
-    //         throw Exception(
-    //             ErrorCodes::NOT_IMPLEMENTED,
-    //             "User defined aggregation function with emit strategy shouldn't be used together with other aggregation function");
-
-    //     if (windowType() != Streaming::WindowType::NONE)
-    //         throw Exception(
-    //             ErrorCodes::NOT_IMPLEMENTED,
-    //             "User defined aggregation function with emit strategy shouldn't be used together with streaming window");
-
-    //     assert(streaming_group_by == Streaming::Aggregator::Params::GroupBy::OTHER);
-    //     streaming_group_by = Streaming::Aggregator::Params::GroupBy::USER_DEFINED;
-    // }
 
     const Settings & settings = context->getSettingsRef();
 
@@ -3498,21 +3406,13 @@ void InterpreterSelectQuery::executeStreamingAggregation(
         settings.min_count_to_compile_aggregate_expression,
         {},
         shouldKeepState(),
-        /* settings.keep_windows, */
-        streaming_group_by
-        /* delta_col_pos,
-        window_keys_num,
-        query_info.streaming_window_params */);
+        streaming_group_by);
 
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
         ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
         : static_cast<size_t>(settings.max_threads);
 
-    // if (query_info.hasPartitionByKeys())
-    //     query_plan.addStep(
-    //         std::make_unique<Streaming::AggregatingStepWithSubstream>(query_plan.getCurrentDataStream(), params, final, emit_version));
-    // else
     query_plan.addStep(std::make_unique<Streaming::AggregatingStep>(
         query_plan.getCurrentDataStream(), params, final, merge_threads, temporary_data_merge_threads, emit_version));
 }
@@ -3582,17 +3482,6 @@ void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPla
     /// But if there is join query, we must establish new periodic watermark for joined data
     if (!analysis_result.hasJoin())
     {
-        /// proton: porting note. TODO: remove
-        // /// CTE subquery
-        // if (storage)
-        // {
-        //     if (auto * proxy = storage->as<Streaming::ProxyStream>())
-        //     {
-        //         if (proxy->hasGlobalAggregation())
-        //             return;
-        //     }
-        // }
-
         /// nested global aggregation
         if (interpreter_subquery && interpreter_subquery->hasGlobalAggregation())
             return;
@@ -3621,5 +3510,4 @@ void InterpreterSelectQuery::checkAndPrepareStreamingFunctions()
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED, "Window over aggregation is not compatible with non-window over aggregation in the same query");
 }
-/// proton: porting ends. TODO: remove comments
 }
