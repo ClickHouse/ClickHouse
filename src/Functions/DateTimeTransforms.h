@@ -305,6 +305,132 @@ struct ToStartOfYearImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToYearWeekImpl
+{
+    static constexpr auto name = "toYearWeek";
+    static constexpr bool value_may_be_string = true;
+
+    static UInt32 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        // TODO: ditch toDayNum()
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+
+    static UInt32 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+    static UInt32 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum (d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+    static UInt32 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode | static_cast<UInt32>(WeekModeFlag::YEAR));
+        return yw.first * 100 + yw.second;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfWeekImpl
+{
+    static constexpr auto name = "toStartOfWeek";
+    static constexpr bool value_may_be_string = false;
+
+    static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+    }
+    static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
+    }
+    static Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToLastDayOfWeekImpl
+{
+    static constexpr auto name = "toLastDayOfWeek";
+    static constexpr bool value_may_be_string = false;
+
+    static UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+    }
+    static UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfWeek(DayNum(d), week_mode);
+    }
+    static Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toLastDayNumOfWeek(ExtendedDayNum(d), week_mode);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToWeekImpl
+{
+    static constexpr auto name = "toWeek";
+    static constexpr bool value_may_be_string = true;
+
+    static UInt8 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        // TODO: ditch conversion to DayNum, since it doesn't support extended range.
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        return yw.second;
+    }
+    static UInt8 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(time_zone.toDayNum(t), week_mode);
+        return yw.second;
+    }
+    static UInt8 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(ExtendedDayNum(d), week_mode);
+        return yw.second;
+    }
+    static UInt8 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        YearWeek yw = time_zone.toYearWeek(DayNum(d), week_mode);
+        return yw.second;
+    }
+
+    using FactorTransform = ToStartOfYearImpl;
+};
 
 template <IntervalKind::Kind unit>
 struct ToStartOfInterval;
@@ -1176,6 +1302,7 @@ struct ToDayOfMonthImpl
 struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
+    static constexpr bool value_may_be_string = true;
 
     static UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
     {

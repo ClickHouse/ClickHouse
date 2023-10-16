@@ -587,19 +587,21 @@ The two-argument form of `toDayOfWeek()` enables you to specify whether the week
 | 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
 | 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
 
-Alias: `DAYOFWEEK`.
-
 **Syntax**
 
 ``` sql
 toDayOfWeek(t[, mode[, timezone]])
 ```
 
+Alias: `DAYOFWEEK`.
+
 **Arguments**
 
 - `t` - a [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md)
 - `mode` - determines what the first day of the week is. Possible values are 0, 1, 2 or 3. See the table above for the differences.
 - `timezone` - optional parameter, it behaves like any other conversion function
+
+The first argument can also be specified as [String](../data-types/string.md) in a format supported by [parseDateTime64BestEffort()](type-conversion-functions.md#parsedatetime64besteffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
 
 **Returned value**
 
@@ -1489,11 +1491,15 @@ For mode values with a meaning of “contains January 1”, the week contains Ja
 toWeek(t[, mode[, time_zone]])
 ```
 
+Alias: `WEEK`
+
 **Arguments**
 
 - `t` – Date or DateTime.
 - `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
 - `Timezone` – Optional parameter, it behaves like any other conversion function.
+
+The first argument can also be specified as [String](../data-types/string.md) in a format supported by [parseDateTime64BestEffort()](type-conversion-functions.md#parsedatetime64besteffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
 
 **Example**
 
@@ -1524,6 +1530,10 @@ The week number returned by `toYearWeek()` can be different from what the `toWee
 ``` sql
 toYearWeek(t[, mode[, timezone]])
 ```
+
+Alias: `YEARWEEK`
+
+The first argument can also be specified as [String](../data-types/string.md) in a format supported by [parseDateTime64BestEffort()](type-conversion-functions.md#parsedatetime64besteffort). Support for string arguments exists only for reasons of compatibility with MySQL which is expected by certain 3rd party tools. As string argument support may in future be made dependent on new MySQL-compatibility settings and because string parsing is generally slow, it is recommended to not use it.
 
 **Example**
 
