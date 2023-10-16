@@ -578,6 +578,8 @@ void LocalServer::processConfig()
     if (config().has("multiquery"))
         is_multiquery = true;
 
+    pager = config().getString("pager", "");
+
     delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (!is_interactive || delayed_interactive)
     {
