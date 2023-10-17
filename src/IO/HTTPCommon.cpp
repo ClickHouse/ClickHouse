@@ -108,7 +108,7 @@ namespace
 
                     break;
                 }
-                catch ([[maybe_unused]] const std::exception & e)
+                catch (...)
                 {
                     Session::close();
                     if (++it == endpoinds.end())
@@ -183,9 +183,7 @@ namespace
         const std::string host;
         const UInt16 port;
         const bool https;
-        const String proxy_host;
-        const UInt16 proxy_port;
-        const bool proxy_https;
+        Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
 
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
 
@@ -195,17 +193,9 @@ namespace
             MemoryTrackerSwitcher switcher{&total_memory_tracker};
 
             auto session = makeHTTPSessionImpl(host, port, https, true);
-            if (!proxy_host.empty())
+            if (!proxy_config.host.empty())
             {
-                const String proxy_scheme = proxy_https ? "https" : "http";
-                session->setProxyHost(proxy_host);
-                session->setProxyPort(proxy_port);
-
-                session->setProxyProtocol(proxy_scheme);
-
-                // TODO investigate this use cae
-                /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
-                session->setProxyTunnel(!proxy_https && https);
+                session->setProxyConfig(proxy_config);
             }
             return session;
         }
@@ -215,9 +205,7 @@ namespace
             const std::string & host_,
             UInt16 port_,
             bool https_,
-            const std::string & proxy_host_,
-            UInt16 proxy_port_,
-            bool proxy_https_,
+            Poco::Net::HTTPClientSession::ProxyConfig proxy_config_,
             size_t max_pool_size_,
             bool wait_on_pool_size_limit)
             : Base(
@@ -227,9 +215,7 @@ namespace
             , host(host_)
             , port(port_)
             , https(https_)
-            , proxy_host(proxy_host_)
-            , proxy_port(proxy_port_)
-            , proxy_https(proxy_https_)
+            , proxy_config(proxy_config_)
         {
         }
     };
@@ -242,15 +228,33 @@ namespace
             String target_host;
             UInt16 target_port;
             bool is_target_https;
-            String proxy_host;
-            UInt16 proxy_port;
-            bool is_proxy_https;
+            Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
             bool wait_on_pool_size_limit;
 
             bool operator ==(const Key & rhs) const
             {
-                return std::tie(target_host, target_port, is_target_https, proxy_host, proxy_port, is_proxy_https, wait_on_pool_size_limit)
-                    == std::tie(rhs.target_host, rhs.target_port, rhs.is_target_https, rhs.proxy_host, rhs.proxy_port, rhs.is_proxy_https, rhs.wait_on_pool_size_limit);
+                return std::tie(
+                           target_host,
+                           target_port,
+                           is_target_https,
+                           proxy_config.host,
+                           proxy_config.port,
+                           proxy_config.protocol,
+                           proxy_config.tunnel,
+                           proxy_config.originalRequestProtocol,
+                           wait_on_pool_size_limit
+                       )
+                    == std::tie(
+                           rhs.target_host,
+                           rhs.target_port,
+                           rhs.is_target_https,
+                           rhs.proxy_config.host,
+                           rhs.proxy_config.port,
+                           rhs.proxy_config.protocol,
+                           rhs.proxy_config.tunnel,
+                           rhs.proxy_config.originalRequestProtocol,
+                           rhs.wait_on_pool_size_limit
+                       );
             }
         };
 
@@ -266,9 +270,11 @@ namespace
                 s.update(k.target_host);
                 s.update(k.target_port);
                 s.update(k.is_target_https);
-                s.update(k.proxy_host);
-                s.update(k.proxy_port);
-                s.update(k.is_proxy_https);
+                s.update(k.proxy_config.host);
+                s.update(k.proxy_config.port);
+                s.update(k.proxy_config.protocol);
+                s.update(k.proxy_config.tunnel);
+                s.update(k.proxy_config.originalRequestProtocol);
                 s.update(k.wait_on_pool_size_limit);
                 return s.get64();
             }
@@ -299,13 +305,9 @@ namespace
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
 
-            auto proxy_host = proxy_config.host;
-            auto proxy_port = proxy_config.port;
-            bool proxy_https = proxy_config.protocol == "https";
-
             // TODO arthur fix fact tunnel is not being used
 
-            HTTPSessionPool::Key key{host, port, https, proxy_host, proxy_config.port, proxy_config.protocol == "https", wait_on_pool_size_limit};
+            HTTPSessionPool::Key key{host, port, https, proxy_config, wait_on_pool_size_limit};
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
                 std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
@@ -314,9 +316,7 @@ namespace
                         host,
                         port,
                         https,
-                        proxy_host,
-                        proxy_port,
-                        proxy_https,
+                        proxy_config,
                         max_connections_per_endpoint,
                         wait_on_pool_size_limit));
 
