@@ -46,7 +46,6 @@ void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & s
                 break;
         }
     }
-    settings.ostr << (settings.one_line ? "" : "\n");
 }
 
 ASTPtr ASTStorage::clone() const
@@ -474,12 +473,15 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     else if (is_create_empty)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.one_line ? "" : "\n");
     if (sql_security)
+    {
+        settings.ostr << settings.nl_or_ws;
         sql_security->formatImpl(settings, state, frame);
+    }
 
     if (select)
     {
+        settings.ostr << settings.nl_or_ws;
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "AS "
                       << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
