@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
 
 namespace DB
 {

@@ -115,9 +115,9 @@ public:
         return getNested()->alterPartition(metadata_snapshot, commands, context);
     }
 
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings, ContextPtr context) const override
     {
-        getNested()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
+        getNested()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context);
     }
 
     bool optimize(
