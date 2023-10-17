@@ -102,31 +102,13 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
     if (!old_disks_minus_new_disks.empty())
     {
-        WriteBufferFromOwnString warning;
-        if (old_disks_minus_new_disks.size() == 1)
-            writeString("Disk ", warning);
-        else
-            writeString("Disks ", warning);
-
-        int num_disks_removed_from_config = 0;
         for (const auto & [name, disk] : old_disks_minus_new_disks)
         {
             /// Custom disks are not present in config.
             if (disk->isCustomDisk())
                 continue;
 
-            if (num_disks_removed_from_config++ > 0)
-                writeString(", ", warning);
-
-            writeBackQuotedString(name, warning);
-        }
-
-        if (num_disks_removed_from_config > 0)
-        {
-            LOG_WARNING(
-                &Poco::Logger::get("DiskSelector"),
-                "{} disappeared from configuration, this change will be applied after restart of ClickHouse",
-                warning.str());
+            result->deleteFromDiskMap(name);
         }
     }
 
@@ -164,6 +146,12 @@ void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
     auto [_, inserted] = disks.emplace(name, disk);
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk with name `{}` is already in disks map", name);
+}
+
+void DiskSelector::deleteFromDiskMap(const String & name)
+{
+    assertInitialized();
+    disks.erase(name);
 }
 
 

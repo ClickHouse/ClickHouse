@@ -41,6 +41,8 @@ public:
 
     void addToDiskMap(const String & name, DiskPtr disk);
 
+    void deleteFromDiskMap(const String & name);
+
     void shutdown();
 
 private:

@@ -536,10 +536,9 @@ def test_remove_disk(started_cluster):
         start_over()
         node1.query("SYSTEM RELOAD CONFIG")
 
-        assert "remove_disk_jbod3" in set(
+        assert "remove_disk_jbod3" not in set(
             node1.query("SELECT name FROM system.disks").splitlines()
         )
-        assert re.search("Warning.*remove_disk_jbod3", get_log(node1))
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
