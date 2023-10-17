@@ -330,11 +330,10 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
-    const Settings & settings, ContextPtr local_context) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)

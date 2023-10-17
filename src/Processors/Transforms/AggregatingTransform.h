@@ -217,7 +217,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    std::atomic<bool> is_generate_initialized = false;
+    bool is_generate_initialized = false;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 

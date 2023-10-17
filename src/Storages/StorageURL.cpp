@@ -353,11 +353,10 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                max_parsing_threads,
+                need_only_count ? 1 : max_parsing_threads,
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
-                compression_method,
-                need_only_count);
+                compression_method);
             input_format->setQueryInfo(query_info, getContext());
 
             if (need_only_count)

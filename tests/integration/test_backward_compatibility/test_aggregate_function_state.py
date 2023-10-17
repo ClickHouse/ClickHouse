@@ -35,12 +35,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(autouse=True)
-def cleanup():
-    yield
-    node1.restart_with_original_version(clear_data_dir=True)
-
-
 # We will test that serialization of internal state of "avg" function is compatible between different versions.
 # TODO Implement versioning of serialization format for aggregate function states.
 # NOTE This test is too ad-hoc.
@@ -149,7 +143,7 @@ def test_backward_compatability_for_uniq_exact(start_cluster, uniq_keys):
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version(fix_metadata=True)
+    node1.restart_with_latest_version()
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")
@@ -222,7 +216,7 @@ def test_backward_compatability_for_uniq_exact_variadic(start_cluster, uniq_keys
         == f"{uniq_keys}\n"
     )
 
-    node1.restart_with_latest_version(fix_metadata=True)
+    node1.restart_with_latest_version()
 
     assert (
         node1.query(f"SELECT uniqExactMerge(x) FROM state_{uniq_keys}")

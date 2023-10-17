@@ -80,7 +80,7 @@ public:
 
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
-    OptionalFieldInterval getPreimage(const IDataType & type, const Field & point) const override
+    RangeOrNull getPreimage(const IDataType & type, const Field & point) const override
     {
         if constexpr (Transform::hasPreimage())
             return Transform::getPreimage(type, point);

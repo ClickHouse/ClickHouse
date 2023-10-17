@@ -144,17 +144,6 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
-{
-    for (const auto & elem : ordinary)
-        add(ColumnDescription(elem.name, elem.type));
-}
-
-ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
-{
-    for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
-}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {

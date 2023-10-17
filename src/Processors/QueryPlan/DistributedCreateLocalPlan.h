@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 namespace DB
 {

@@ -35,6 +35,10 @@ public:
     {
         return "Array";
     }
+    String getSQLCompatibleName() const override
+    {
+        return "TEXT";
+    }
 
     bool canBeInsideNullable() const override
     {

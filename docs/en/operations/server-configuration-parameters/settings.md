@@ -2403,8 +2403,7 @@ This section contains the following parameters:
 - zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
   * random - randomly selects one of ZooKeeper nodes.
   * in_order - selects the first ZooKeeper node, if it's not available then the second, and so on.
-  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname, hostname is compared with name prefix.
-  * hostname_levenshtein_distance - just like nearest_hostname, but it compares hostname in a levenshtein distance manner.
+  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
 
@@ -2426,7 +2425,7 @@ This section contains the following parameters:
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
 </zookeeper>
 ```

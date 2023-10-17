@@ -119,18 +119,6 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 
 Clears the [query cache](../../operations/query-cache.md).
 
-## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
-
-Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path).
-
-Supported formats:
-
-- Protobuf
-
-```sql
-SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
-```
-
 ## FLUSH LOGS
 
 Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.

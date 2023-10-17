@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int PROJECTION_NOT_USED;
 }
 
 
@@ -177,6 +178,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read,
             query_info.merge_tree_select_result_ptr,
             enable_parallel_reading);
+
+        if (!step && settings.optimize_use_projections && settings.force_optimize_projection
+            && !metadata_for_reading->projections.empty() && !settings.query_plan_optimize_projection)
+            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
+                            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
         auto plan = std::make_unique<QueryPlan>();
         if (step)
@@ -623,7 +629,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
-        DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
+        DataTypePtr sampling_column_type = sampling_key.data_types[0];
 
         if (sampling_key.data_types.size() == 1)
         {
@@ -1335,10 +1341,6 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
-    /// Do not keep data parts in snapshot.
-    /// They are stored separately, and some could be released after PK analysis.
-    auto storage_snapshot_copy = storage_snapshot->clone(std::make_unique<MergeTreeData::SnapshotData>());
-
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         std::move(alter_conversions),
@@ -1346,7 +1348,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         virt_column_names,
         data,
         query_info,
-        storage_snapshot_copy,
+        storage_snapshot,
         context,
         max_block_size,
         num_streams,

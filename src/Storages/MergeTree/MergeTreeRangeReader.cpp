@@ -1174,7 +1174,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     UInt64 * pos = vec.data();
     UInt64 * end = &vec[num_rows];
 
-    /// Fill the remaining part of the previous range (it was started in the previous read request).
+    /// Fill the reamining part of the previous range (it was started in the previous read request).
     while (pos < end && leading_begin_part_offset < leading_end_part_offset)
         *pos++ = leading_begin_part_offset++;
 

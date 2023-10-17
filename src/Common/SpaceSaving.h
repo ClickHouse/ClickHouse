@@ -321,7 +321,7 @@ protected:
         percolate(ptr);
     }
 
-    // This is equivalent to one step of bubble sort
+    // This is equivallent to one step of bubble sort
     void percolate(Counter * counter)
     {
         while (counter->slot > 0)

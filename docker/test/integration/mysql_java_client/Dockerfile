@@ -10,5 +10,6 @@ RUN curl -L -o /mysql-connector-j-${ver}.jar https://repo1.maven.org/maven2/com/
 ENV CLASSPATH=$CLASSPATH:/mysql-connector-j-${ver}.jar
 
 WORKDIR /jdbc
-COPY MySQLJavaClientTest.java MySQLJavaClientTest.java
-RUN javac MySQLJavaClientTest.java
+COPY Test.java Test.java
+COPY PreparedStatementsTest.java PreparedStatementsTest.java
+RUN javac Test.java PreparedStatementsTest.java

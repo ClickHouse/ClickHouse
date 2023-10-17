@@ -55,6 +55,9 @@ if (OS_LINUX)
     elseif (ARCH_PPC64LE)
         target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/ppc64le")
     elseif (ARCH_S390X)
+        # Like ppc64le but with HAVE_OPENSSL_FIPS_MODE undefined. This is because the OpenSSL used by s390x doesn't support
+        # FIPS_mode(). Besides that, the custom s390x/config.h only exists to make things compile without additional ifdefs.
+        # With high probability, libssl with OpenSSL on s390x is broken.
         target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/s390x")
     elseif (ARCH_RISCV64)
         target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/riscv64")

@@ -91,9 +91,6 @@ private:
     std::unique_ptr<ThreadPool> backups_thread_pool;
     std::unique_ptr<ThreadPool> restores_thread_pool;
 
-    std::unique_ptr<ThreadPool> backup_async_executor_pool;
-    std::unique_ptr<ThreadPool> restore_async_executor_pool;
-
     std::unordered_map<BackupOperationID, BackupOperationInfo> infos;
     std::shared_ptr<BackupLog> backup_log;
     std::condition_variable status_changed;
