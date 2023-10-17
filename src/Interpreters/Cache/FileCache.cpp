@@ -435,13 +435,26 @@ FileCache::getOrSet(
         auto prefix_range = FileSegment::Range(aligned_offset, file_segments.empty() ? offset - 1 : file_segments.front()->range().left - 1);
         auto prefix_file_segments = getImpl(*locked_key, prefix_range, /* file_segments_limit */0);
 
-        while (!prefix_file_segments.empty() && prefix_file_segments.front()->range().right < offset)
-            prefix_file_segments.pop_front();
-
-        if (!prefix_file_segments.empty())
+        if (prefix_file_segments.empty())
         {
-            file_segments.splice(file_segments.begin(), prefix_file_segments);
-            range.left = file_segments.front()->range().left;
+            range.left = aligned_offset;
+        }
+        else
+        {
+            size_t last_right_offset = prefix_file_segments.back()->range().right;
+
+            while (!prefix_file_segments.empty() && prefix_file_segments.front()->range().right < offset)
+                prefix_file_segments.pop_front();
+
+            if (prefix_file_segments.empty())
+            {
+                range.left = last_right_offset + 1;
+            }
+            else
+            {
+                file_segments.splice(file_segments.begin(), prefix_file_segments);
+                range.left = file_segments.front()->range().left;
+            }
         }
     }
 
@@ -451,7 +464,9 @@ FileCache::getOrSet(
         /// Get only 1 file segment.
         auto suffix_file_segments = getImpl(*locked_key, suffix_range, /* file_segments_limit */1);
 
-        if (!suffix_file_segments.empty())
+        if (suffix_file_segments.empty())
+            range.right = aligned_end_offset;
+        else
             range.right = suffix_file_segments.front()->range().left - 1;
     }
 
