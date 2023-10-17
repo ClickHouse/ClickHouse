@@ -5,7 +5,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
-#include <Common/ActionBlocker.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
 
@@ -35,8 +34,6 @@ public:
 
     void wakeupEarlierIfNeeded();
 
-    ActionLock getCleanupLock() { return cleanup_blocker.cancel(); }
-
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
@@ -50,8 +47,6 @@ private:
     std::atomic<bool> is_running = false;
 
     AtomicStopwatch wakeup_check_timer;
-
-    ActionBlocker cleanup_blocker;
 
     void run();
 

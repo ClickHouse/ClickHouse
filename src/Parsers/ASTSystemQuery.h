@@ -33,7 +33,6 @@ public:
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_SCHEMA_CACHE,
-        DROP_FORMAT_SCHEMA_CACHE,
 #if USE_AWS_S3
         DROP_S3_CLIENT_CACHE,
 #endif
@@ -81,11 +80,6 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
-        SYNC_FILESYSTEM_CACHE,
-        STOP_PULLING_REPLICATION_LOG,
-        START_PULLING_REPLICATION_LOG,
-        STOP_CLEANUP,
-        START_CLEANUP,
         END
     };
 
@@ -114,14 +108,10 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_name;
-    std::string key_to_drop;
-    std::optional<size_t> offset_to_drop;
 
     String backup_name;
 
     String schema_cache_storage;
-
-    String schema_cache_format;
 
     String fail_point_name;
 

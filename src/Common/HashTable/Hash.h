@@ -2,10 +2,9 @@
 
 #include <city.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
-#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/StringRef.h>
 
 #include <type_traits>
 
@@ -310,10 +309,7 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     DB::UInt64 out {0};
-    if constexpr (std::endian::native == std::endian::little)
-        std::memcpy(&out, &key, sizeof(T));
-    else
-        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
+    std::memcpy(&out, &key, sizeof(T));
     return intHashCRC32(out, updated_value);
 }
 
@@ -396,18 +392,6 @@ struct UInt128HashCRC32
     }
 };
 
-#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-
-struct UInt128HashCRC32
-{
-    size_t operator()(UInt128 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(0)]);
-        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(1)]);
-        return crc;
-    }
-};
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -417,12 +401,12 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.items[UInt128::_impl::little(0)]; }
+    size_t operator()(UInt128 x) const { return x.items[0]; }
 };
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getHighBytes(x); }
+    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
 };
 
 struct UInt256Hash
@@ -466,19 +450,6 @@ struct UInt256HashCRC32
     }
 };
 
-#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-struct UInt256HashCRC32
-{
-    size_t operator()(UInt256 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(0)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(1)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(2)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(3)]);
-        return crc;
-    }
-};
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.

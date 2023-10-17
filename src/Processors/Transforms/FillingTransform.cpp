@@ -54,7 +54,7 @@ template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
-    switch (kind) // NOLINT(bugprone-switch-missing-default-case)
+    switch (kind)
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::NAME: \
@@ -155,7 +155,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
             const auto & step_dec = descr.fill_step.get<const DecimalField<Decimal64> &>();
             Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
 
-            switch (*descr.step_kind) // NOLINT(bugprone-switch-missing-default-case)
+            switch (*descr.step_kind)
             {
 #define DECLARE_CASE(NAME) \
                 case IntervalKind::NAME: \

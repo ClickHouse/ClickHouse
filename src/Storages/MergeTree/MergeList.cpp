@@ -1,16 +1,20 @@
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <base/getThreadId.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <base/getThreadId.h>
 
 
 namespace DB
 {
 
-MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
+
+MergeListElement::MergeListElement(
+    const StorageID & table_id_,
+    FutureMergedMutatedPartPtr future_part,
+    const ContextPtr & context)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
     , result_part_name{future_part->name}
@@ -36,10 +40,6 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     {
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
-
-        WriteBufferFromString out(partition);
-        const auto & part = future_part->parts[0];
-        part->partition.serializeText(part->storage, out, {});
     }
 
     thread_group = ThreadGroup::createForBackgroundProcess(context);
@@ -53,7 +53,6 @@ MergeInfo MergeListElement::getInfo() const
     res.result_part_name = result_part_name;
     res.result_part_path = result_part_path;
     res.partition_id = partition_id;
-    res.partition = partition;
     res.is_mutation = is_mutation;
     res.elapsed = watch.elapsedSeconds();
     res.progress = progress.load(std::memory_order_relaxed);

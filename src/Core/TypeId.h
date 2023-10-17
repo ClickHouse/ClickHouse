@@ -48,7 +48,6 @@ enum class TypeIndex
     Object,
     IPv4,
     IPv6,
-    JSONPaths,
 };
 
 /**

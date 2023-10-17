@@ -1,6 +1,7 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
+#include <pcg_random.hpp>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
@@ -8,12 +9,19 @@
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/StatusInfo.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
+
+
+namespace CurrentStatusInfo
+{
+    extern const Status DictionaryStatus;
+}
 
 
 namespace DB
@@ -1137,6 +1145,7 @@ private:
         if (info && (info->loading_id == loading_id))
         {
             info->loading_id = info->state_id;
+            CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
         }
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
@@ -1298,6 +1307,7 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }

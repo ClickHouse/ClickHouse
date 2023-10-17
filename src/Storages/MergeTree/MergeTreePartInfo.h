@@ -9,7 +9,6 @@
 #include <base/DayNum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -120,7 +119,7 @@ struct MergeTreePartInfo
     void deserialize(ReadBuffer & in);
 
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
-    static void validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version);
+    static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
@@ -164,8 +163,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "tmp-fetch",
         "covered-by-broken",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical",
-        "broken-from-backup",
+        "mutate-not-byte-identical"
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -177,8 +175,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "clone",
         "merge-not-byte-identical",
-        "mutate-not-byte-identical",
-        "broken-from-backup",
+        "mutate-not-byte-identical"
     });
 
     /// NOTE: It may parse part info incorrectly.

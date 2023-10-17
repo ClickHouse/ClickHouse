@@ -1,5 +1,3 @@
-SET session_timezone = 'UTC';
-
 SELECT 'The reference time point is 2023-06-30 23:59:30';
 SELECT '───────────────────────────────────────────────';
 SELECT 'The argument is before the reference time point';

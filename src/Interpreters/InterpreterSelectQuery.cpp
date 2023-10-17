@@ -68,6 +68,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -83,9 +84,12 @@
 #include <Core/ProtocolDefines.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
+#include <base/sort.h>
+#include <base/types.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/checkStackSize.h>
@@ -93,6 +97,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 
+#include "config_version.h"
 
 namespace ProfileEvents
 {
@@ -294,7 +299,7 @@ void checkAccessRightsForSelect(
         }
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+            "{}: Not enough privileges. To execute this query it's necessary to have grant SELECT for at least one column on {}",
             context->getUserName(),
             table_id.getFullTableName());
     }
@@ -463,6 +468,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// Set skip_unavailable_shards to true only if it wasn't disabled explicitly
+    if (settings.allow_experimental_parallel_reading_from_replicas > 0 && !settings.skip_unavailable_shards && !settings.isChanged("skip_unavailable_shards"))
+    {
+        context->setSetting("skip_unavailable_shards", true);
+    }
+
     /// Check support for JOIN for parallel replicas with custom key
     if (joined_tables.tablesCount() > 1 && !settings.parallel_replicas_custom_key.value.empty())
     {
@@ -599,10 +610,27 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
+        NameToNameMap parameter_types;
         if (view)
         {
             query_info.is_parameterized_view = view->isParameterizedView();
+            /// We need to fetch the parameters set for SELECT ... FROM parameterized_view(<params>) before the query is replaced.
+            /// replaceWithSubquery replaces the function child and adds the subquery in its place.
+            /// the parameters are children of function child, if function (which corresponds to parametrised view and has
+            /// parameters in its arguments: `parametrised_view(<params>)`) is replaced the parameters are also gone from tree
+            /// So we need to get the parameters before they are removed from the tree
+            /// and after query is replaced, we use these parameters to substitute in the parameterized view query
+            if (query_info.is_parameterized_view)
+            {
+                query_info.parameterized_view_values = analyzeFunctionParamValues(query_ptr);
+                parameter_types = view->getParameterTypes();
+            }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
+            if (query_info.is_parameterized_view)
+            {
+                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameterized_view_values);
+            }
+
         }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
@@ -611,7 +639,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
-            table_join);
+            table_join,
+            query_info.is_parameterized_view,
+            query_info.parameterized_view_values,
+            parameter_types);
 
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
@@ -684,15 +715,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze)
         {
             if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
-            {
-                if (storage)
-                    throw Exception(
-                        ErrorCodes::SAMPLING_NOT_SUPPORTED,
-                        "Storage {} doesn't support sampling",
-                        storage->getStorageID().getNameForLogs());
-                else
-                    throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
-            }
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
             {
@@ -770,7 +793,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
         }
 
         /// Calculate structure of the result.
@@ -2263,10 +2286,6 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     auto & query = getSelectQuery();
     if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
     {
-        /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
-        /// require reading some data (but much faster than reading columns).
-        /// Set a special flag in query info so the storage will see it and optimize count in read() method.
-        query_info.optimize_trivial_count = optimize_trivial_count;
         return storage->totalRows(settings);
     }
     else
@@ -2524,8 +2543,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (!query_plan.getMaxThreads() || is_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
-    query_plan.setConcurrencyControl(settings.use_concurrency_control);
-
     /// Aliases in table declaration.
     if (processing_stage == QueryProcessingStage::FetchColumns && alias_actions)
     {
@@ -2582,7 +2599,6 @@ static Aggregator::Params getAggregatorParams(
         settings.max_block_size,
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
-        settings.optimize_group_by_constant_keys,
         stats_collecting_params
     };
 }

@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -16,8 +15,6 @@ private:
     DataTypePtr nested;
 
 public:
-    using FieldType = Array;
-    using ColumnType = ColumnArray;
     static constexpr bool is_parametric = true;
 
     explicit DataTypeArray(const DataTypePtr & nested_);
@@ -29,11 +26,13 @@ public:
         return "Array(" + nested->getName() + ")";
     }
 
-    std::string doGetPrettyName(size_t indent) const override;
-
     const char * getFamilyName() const override
     {
         return "Array";
+    }
+    String getSQLCompatibleName() const override
+    {
+        return "TEXT";
     }
 
     bool canBeInsideNullable() const override
@@ -42,7 +41,6 @@ public:
     }
 
     MutableColumnPtr createColumn() const override;
-
 
     Field getDefault() const override;
 

@@ -228,13 +228,10 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
 {
     /// We will use `sync` argument wneh this function is called from a DROP query
     /// and will ignore database_atomic_wait_for_drop_and_detach_synchronously when it's called from drop task.
-    /// See the comment in StorageMaterializedView::drop.
-    /// DDL queries with StorageMaterializedView are fundamentally broken.
-    /// Best-effort to make them work: the inner table name is almost always less than the MV name (so it's safe to lock DDLGuard)
-    bool may_lock_ddl_guard = getStorageID().getQualifiedName() < target_table_id.getQualifiedName();
+    /// See the comment in StorageMaterializedView::drop
     if (has_inner_table && tryGetTargetTable())
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id,
-                                               sync, /* ignore_sync_setting */ true, may_lock_ddl_guard);
+                                               sync, /* ignore_sync_setting */ true);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -330,11 +327,10 @@ Pipe StorageMaterializedView::alterPartition(
 }
 
 void StorageMaterializedView::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot,
-    const Settings & settings, ContextPtr local_context) const
+    const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
+    getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
@@ -476,13 +472,6 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
             return target_table->getActionLock(type);
     }
     return ActionLock{};
-}
-
-bool StorageMaterializedView::isRemote() const
-{
-    if (auto table = tryGetTargetTable())
-        return table->isRemote();
-    return false;
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)

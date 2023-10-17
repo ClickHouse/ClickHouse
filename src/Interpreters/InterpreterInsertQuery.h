@@ -37,10 +37,6 @@ public:
 
     StorageID getDatabaseTable() const;
 
-    /// Return explicitly specified column names to insert.
-    /// It not explicit names were specified, return nullopt.
-    std::optional<Names> getInsertColumnNames() const;
-
     Chain buildChain(
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,

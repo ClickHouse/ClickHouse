@@ -110,15 +110,6 @@ void QueryPipelineBuilder::init(QueryPipeline & pipeline)
         pipe.header = {};
     }
 
-    if (pipeline.partial_result)
-    {
-        /// Set partial result ports only after activation because when activated, it is set to nullptr
-        pipe.activatePartialResult(pipeline.partial_result_limit, pipeline.partial_result_duration_ms);
-        pipe.partial_result_ports = {pipeline.partial_result};
-    }
-    else
-        pipe.dropPartialResult();
-
     pipe.totals_port = pipeline.totals;
     pipe.extremes_port = pipeline.extremes;
     pipe.max_parallel_streams = pipeline.num_threads;
@@ -287,7 +278,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
     bool will_limit_max_threads = true;
     size_t max_threads = 0;
-    bool concurrency_control = false;
     Pipes pipes;
     QueryPlanResourceHolder resources;
 
@@ -307,8 +297,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
         /// It may happen if max_distributed_connections > max_threads
         if (pipeline.max_threads > max_threads_limit)
             max_threads_limit = pipeline.max_threads;
-
-        concurrency_control = pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -319,7 +307,6 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
-        pipeline.setConcurrencyControl(concurrency_control);
     }
 
     pipeline.setCollectedProcessors(nullptr);
@@ -361,10 +348,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
 
-    /// TODO: Support joining of partial results from different pipelines.
-    left->pipe.dropPartialResult();
-    right->pipe.dropPartialResult();
-
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
     if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
@@ -377,7 +360,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
-    /// TODO: Support partial results in merge pipelines after joining support above.
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
@@ -397,10 +379,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// Extremes before join are useless. They will be calculated after if needed.
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-
-    /// TODO: Support joining of partial results from different pipelines.
-    left->pipe.dropPartialResult();
-    right->pipe.dropPartialResult();
 
     left->pipe.collected_processors = collected_processors;
 
@@ -601,7 +579,6 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     const SizeLimits & limits,
     PreparedSetsCachePtr prepared_sets_cache)
 {
-    dropTotalsAndExtremes();
     resize(1);
 
     auto transform = std::make_shared<CreatingSetsTransform>(
@@ -612,7 +589,12 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             limits,
             std::move(prepared_sets_cache));
 
-    pipe.addTransform(std::move(transform));
+    InputPort * totals_port = nullptr;
+
+    if (pipe.getTotalsPort())
+        totals_port = transform->addTotalsPort();
+
+    pipe.addTransform(std::move(transform), totals_port, nullptr);
 }
 
 void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
@@ -652,7 +634,7 @@ PipelineExecutorPtr QueryPipelineBuilder::execute()
     if (!isCompleted())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute pipeline because it is not completed");
 
-    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element, pipe.partial_result_duration_ms);
+    return std::make_shared<PipelineExecutor>(pipe.processors, process_list_element);
 }
 
 Pipe QueryPipelineBuilder::getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources)
@@ -666,7 +648,6 @@ QueryPipeline QueryPipelineBuilder::getPipeline(QueryPipelineBuilder builder)
     QueryPipeline res(std::move(builder.pipe));
     res.addResources(std::move(builder.resources));
     res.setNumThreads(builder.getNumThreads());
-    res.setConcurrencyControl(builder.getConcurrencyControl());
     res.setProcessListElement(builder.process_list_element);
     res.setProgressCallback(builder.progress_callback);
     return res;

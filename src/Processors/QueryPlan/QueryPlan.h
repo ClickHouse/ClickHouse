@@ -98,9 +98,6 @@ public:
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
 
-    void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
-    bool getConcurrencyControl() const { return concurrency_control; }
-
     /// Tree node. Step and it's children.
     struct Node
     {
@@ -111,7 +108,7 @@ public:
     using Nodes = std::list<Node>;
 
     Node * getRootNode() const { return root; }
-    static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
+    static Nodes detachNodes(QueryPlan && plan);
 
 private:
     QueryPlanResourceHolder resources;
@@ -123,7 +120,6 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-    bool concurrency_control = false;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

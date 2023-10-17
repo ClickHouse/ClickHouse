@@ -48,7 +48,7 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 
 FutureSetFromStorage::FutureSetFromStorage(SetPtr set_) : set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
-DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
+const DataTypes & FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
 
 SetPtr FutureSetFromStorage::buildOrderedSetInplace(const ContextPtr &)
 {
@@ -73,7 +73,7 @@ FutureSetFromTuple::FutureSetFromTuple(Block block, const Settings & settings)
     set->finishInsert();
 }
 
-DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
+const DataTypes & FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
@@ -138,7 +138,7 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentDataStream().header.getColumnsWithTypeAndName());
 }
 
-DataTypes FutureSetFromSubquery::getTypes() const
+const DataTypes & FutureSetFromSubquery::getTypes() const
 {
     return set_and_key->set->getElementsTypes();
 }
@@ -183,10 +183,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     {
         auto set = external_table_set->buildOrderedSetInplace(context);
         if (set)
-        {
-            set_and_key->set = set;
-            return set_and_key->set;
-        }
+            return set_and_key->set = set;
     }
 
     auto plan = build(context);
@@ -201,11 +198,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
-    /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
-    /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
-    /// the pipeline without setting `set_and_key->set->is_created` to true.
-    if (!set_and_key->set->isCreated())
-        return nullptr;
+    set_and_key->set->checkIsCreated();
 
     return set_and_key->set;
 }
@@ -214,7 +207,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & types)
 {
     WriteBufferFromOwnString buf;
-    buf << "__set_" << DB::toString(key);
+    buf << "__set_" << key.first << "_" << key.second;
     if (!types.empty())
     {
         buf << "(";

@@ -49,28 +49,11 @@ namespace ErrorCodes
 }
 
 template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
     unalignedStore<T>(pos, data[n]);
-    return res;
+    return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
@@ -433,7 +416,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
-    auto res = this->create(size);
+    auto res = this->create();
 
     if (size > 0)
     {

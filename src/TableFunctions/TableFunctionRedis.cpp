@@ -25,9 +25,9 @@ namespace ErrorCodes
 }
 
 StoragePtr TableFunctionRedis::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const String & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -39,7 +39,7 @@ StoragePtr TableFunctionRedis::executeImpl(
     return storage;
 }
 
-ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionRedis::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }

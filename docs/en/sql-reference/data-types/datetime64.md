@@ -28,7 +28,7 @@ Note: The precision of the maximum value is 8. If the maximum precision of 9 dig
 1. Creating a table with `DateTime64`-type column and inserting data into it:
 
 ``` sql
-CREATE TABLE dt64
+CREATE TABLE dt
 (
     `timestamp` DateTime64(3, 'Asia/Istanbul'),
     `event_id` UInt8
@@ -37,12 +37,11 @@ ENGINE = TinyLog;
 ```
 
 ``` sql
--- Parse DateTime
--- - from integer interpreted as number of seconds since 1970-01-01.
--- - from string,
-INSERT INTO dt64 VALUES (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
+INSERT INTO dt Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3);
+```
 
-SELECT * FROM dt64;
+``` sql
+SELECT * FROM dt;
 ```
 
 ``` text
@@ -59,7 +58,7 @@ SELECT * FROM dt64;
 2. Filtering on `DateTime64` values
 
 ``` sql
-SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
+SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
 ```
 
 ``` text
@@ -71,7 +70,7 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asi
 Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically.
 
 ``` sql
-SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
+SELECT * FROM dt WHERE timestamp = toDateTime64(1546300800.123, 3);
 ```
 
 ``` text
@@ -102,7 +101,7 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 SELECT
 toDateTime64(timestamp, 3, 'Europe/London') as lon_time,
 toDateTime64(timestamp, 3, 'Asia/Istanbul') as istanbul_time
-FROM dt64;
+FROM dt;
 ```
 
 ``` text

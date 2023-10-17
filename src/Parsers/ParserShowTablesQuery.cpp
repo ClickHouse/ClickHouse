@@ -36,7 +36,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
-    ParserIdentifier name_p(true);
+    ParserIdentifier name_p;
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
@@ -174,7 +174,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
     }
 
-    query->set(query->from, database);
+    tryGetIdentifierNameInto(database, query->from);
 
     if (like)
         query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
