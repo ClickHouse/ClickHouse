@@ -167,6 +167,16 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
         {
             zookeeper->setKeeper(storage.getZooKeeper());
 
+            /// Stop retries if in shutdown, note that we need to check
+            /// shutdown_prepared_called, not shutdown_called, since the table
+            /// will be marked as readonly after calling
+            /// StorageReplicatedMergeTree::flushAndPrepareForShutdown(), and
+            /// the final shutdown() can not be called if you have Buffer table
+            /// that writes to this replicated table, until all the retries
+            /// will be made.
+            if (storage.is_readonly && storage.shutdown_prepared_called)
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+
             quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
             Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
@@ -564,7 +574,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
-            if (storage.shutdown_called)
+            if (storage.shutdown_prepared_called)
                 throw Exception(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 

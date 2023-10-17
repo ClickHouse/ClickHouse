@@ -432,6 +432,7 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
+Levenshtein
 LGPL
 LLDB
 LLVM's
@@ -1179,6 +1180,7 @@ buildId
 buildable
 builtins
 byteSize
+byteSwap
 bytebase
 bytesToCutForIPv
 editDistance
@@ -1422,6 +1424,7 @@ encodeXMLComponent
 encodings
 encryptions
 endian
+endianness
 endsWith
 endsWithUTF
 enum
@@ -1630,6 +1633,8 @@ injective
 innogames
 inodes
 instantiation
+instantiations
+DIEs
 intDiv
 intDivOrZero
 intExp
@@ -1713,6 +1718,7 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+levenshtein
 lexicographically
 lgamma
 libFuzzer
