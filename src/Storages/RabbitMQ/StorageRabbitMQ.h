@@ -187,7 +187,6 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    void streamToViewsImpl();
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);

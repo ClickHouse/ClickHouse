@@ -1,13 +1,13 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
-#include <Interpreters/Context.h>
 #include <Common/checkStackSize.h>
 #include <ranges>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Disks/WriteMode.h>
 #include <base/defines.h>
+
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <boost/algorithm/string/join.hpp>
@@ -476,9 +476,6 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
 struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    ReadSettings read_settings;
-    WriteSettings write_settings;
-
     /// Local paths
     std::string from_path;
     std::string to_path;
@@ -488,13 +485,9 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     CopyFileObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        const ReadSettings & read_settings_,
-        const WriteSettings & write_settings_,
         const std::string & from_path_,
         const std::string & to_path_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
-        , read_settings(read_settings_)
-        , write_settings(write_settings_)
         , from_path(from_path_)
         , to_path(to_path_)
     {}
@@ -514,7 +507,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
             std::string blob_name = object_storage.generateBlobNameForPath(to_path);
             auto object_to = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
 
-            object_storage.copyObject(object_from, object_to, read_settings, write_settings);
+            object_storage.copyObject(object_from, object_to);
 
             tx->addBlobToMetadata(to_path, blob_name, object_from.bytes_size);
 
@@ -840,10 +833,10 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         }));
 }
 
-void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
+void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path));
+        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, from_file_path, to_file_path));
 }
 
 void DiskObjectStorageTransaction::commit()

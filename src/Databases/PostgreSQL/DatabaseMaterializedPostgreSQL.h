@@ -73,7 +73,6 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
-    void tryStartSynchronization();
     void startSynchronization();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
