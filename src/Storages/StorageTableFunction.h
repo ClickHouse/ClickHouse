@@ -66,9 +66,7 @@ public:
     String getName() const override
     {
         std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getName();
-        return StorageProxy::getName();
+        return getNested()->getName();
     }
 
     void startup() override { }
