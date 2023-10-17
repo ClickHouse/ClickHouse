@@ -1332,7 +1332,46 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto update_format_for_exception_if_needed = [&]()
+    {
+        if (!output_format)
+        {
+            try
+            {
+                String format_name = context->getDefaultFormat();
+                output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+                if (output_format)
+                {
+                    /// Force an update of the headers before we start writing
+                    result_details.content_type = output_format->getContentType();
+                    result_details.format = format_name;
+                    set_result_details(result_details);
+                    set_result_details = nullptr;
+                }
+            }
+            catch (const DB::Exception & e)
+            {
+                /// Ignore this exception and report the original one
+                LOG_WARNING(&Poco::Logger::get("executeQuery"), getExceptionMessageAndPattern(e, true));
+            }
+        }
+    };
+
+    try
+    {
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    }
+    catch (...)
+    {
+        if (handle_exception_in_output_format)
+        {
+            update_format_for_exception_if_needed();
+            if (output_format)
+                handle_exception_in_output_format(*output_format);
+        }
+        throw;
+    }
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
@@ -1426,8 +1465,12 @@ void executeQuery(
     }
     catch (...)
     {
-        if (handle_exception_in_output_format && output_format)
-            handle_exception_in_output_format(*output_format);
+        if (handle_exception_in_output_format)
+        {
+            update_format_for_exception_if_needed();
+            if (output_format)
+                handle_exception_in_output_format(*output_format);
+        }
         streams.onException();
         throw;
     }
