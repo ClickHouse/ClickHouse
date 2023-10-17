@@ -2,8 +2,8 @@
 # If the image is built from Dockerfile.alpine, then the `-alpine` suffix is added automatically,
 # so the only purpose of Dockerfile.ubuntu is to push `latest`, `head` and so on w/o suffixes
 FROM ubuntu:20.04 AS glibc-donor
-
 ARG TARGETARCH
+
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) rarch=x86_64 ;; \
@@ -31,7 +31,9 @@ RUN arch=${TARGETARCH:-amd64} \
         arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
     esac
 
-ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
+# lts / testing / prestable / etc
+ARG REPO_CHANNEL="stable"
+ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
 ARG VERSION="23.9.1.1854"
 ARG PACKAGES="clickhouse-keeper"
 
