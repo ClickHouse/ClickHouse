@@ -156,7 +156,7 @@ Chunk KafkaSource::generateImpl()
     {
         size_t new_rows = 0;
         exception_message.reset();
-        if (auto buf = consumer->consume())
+        if (auto buf = consumer->consume(isStreaming()))
         {
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);

@@ -95,7 +95,7 @@ public:
 
     /// Polls batch of messages from Kafka and returns read buffer containing the next message or
     /// nullptr when there are no messages to process.
-    ReadBufferPtr consume();
+    ReadBufferPtr consume(bool is_streaming = false);
 
     // Return values for the message that's being read.
     String currentTopic() const { return current[-1].get_topic(); }
