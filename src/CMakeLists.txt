@@ -278,6 +278,7 @@ target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR
 
 if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
 
 if (TARGET ch_contrib::gwp_asan)
@@ -313,13 +314,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_grpc_protos
         PRIVATE
             ch_contrib::lz4
-            ch_contrib::llvm
-            ch_contrib::nuraft
-            ch_contrib::ldap
-            ch_contrib::lber
             ch_contrib::roaring
-            ch_contrib::ssh
-            ch_contrib::krb5
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
@@ -367,6 +362,7 @@ if (TARGET ch_contrib::crc32-vpmsum)
 
 if (TARGET ch_contrib::ssh)
  target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
+ target_link_libraries(clickhouse_compression PUBLIC ch_contrib::ssh)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
@@ -390,10 +386,12 @@ endif()
 
 if (TARGET ch_contrib::krb5)
     dbms_target_link_libraries(PRIVATE ch_contrib::krb5)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::krb5)
 endif()
 
 if (TARGET ch_contrib::nuraft)
     dbms_target_link_libraries(PUBLIC ch_contrib::nuraft)
+    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::nuraft)
 endif()
 
 dbms_target_link_libraries (
@@ -463,6 +461,7 @@ endif ()
 
 if (TARGET ch_contrib::ldap)
     dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::ldap ch_contrib::lber)
 endif ()
 dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
