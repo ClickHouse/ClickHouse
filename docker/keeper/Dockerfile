@@ -48,16 +48,14 @@ ARG PACKAGES="clickhouse-keeper"
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && for package in ${PACKAGES}; do \
-        { \
-            { echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" -O "/tmp/${package}-${VERSION}-${arch}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / ; \
-            } || \
-            { echo "Fallback to ${REPOSITORY}/${package}-${VERSION}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}.tgz" -O "/tmp/${package}-${VERSION}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}.tgz" --strip-components=2 -C / ; \
-            } ; \
-        } || exit 1 \
+    ( \
+        cd /tmp \
+        && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
+            && sed 's:/output/:/tmp/:' < "${package}-${VERSION}-${arch}.tgz.sha512" | sha512sum -c \
+            && tar xvzf "${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / \
+    ) \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && addgroup -S -g 101 clickhouse \
