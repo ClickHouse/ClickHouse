@@ -26,12 +26,10 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    bool streaming = false;
-    if (ParserKeyword("STREAM").ignore(pos, expected))
-        streaming = true;
+    /// Optional `STREAM` keyword
+    ParserKeyword("STREAM").ignore(pos, expected);
 
     ASTPtr periodic_interval;
-
 
     ParserIntervalOperatorExpression interval_alias_p;
 
@@ -46,7 +44,6 @@ bool ParserEmitQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     auto query = std::make_shared<ASTEmitQuery>();
-    query->streaming = streaming;
     query->periodic_interval = periodic_interval;
 
     node = query;

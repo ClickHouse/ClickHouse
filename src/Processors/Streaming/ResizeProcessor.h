@@ -14,6 +14,9 @@ namespace DB
 
 namespace Streaming
 {
+/// The streaming version of resize. Shrink resize need align watermarks from inputs, Expand resize
+/// needs propagate watermark to new outputs
+
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *

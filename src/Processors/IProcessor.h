@@ -366,8 +366,9 @@ public:
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
     virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
-    void setStreaming(bool is_streaming_) { is_streaming = is_streaming_; }
-    bool isStreaming() const { return is_streaming; }
+    void setStreaming(bool is_streaming_) noexcept { is_streaming = is_streaming_; }
+    bool isStreaming() const noexcept { return is_streaming; }
+
 protected:
     bool is_streaming = false;
 

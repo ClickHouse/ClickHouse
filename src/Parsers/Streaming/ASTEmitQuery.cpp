@@ -6,9 +6,6 @@ namespace DB
 {
 void ASTEmitQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
-    if (streaming)
-        format.ostr << (format.hilite ? hilite_keyword : "") << "STREAM " << (format.hilite ? hilite_none : "");
-
     int elems = 0;
 
     if (periodic_interval)
@@ -21,8 +18,6 @@ void ASTEmitQuery::formatImpl(const FormatSettings & format, FormatState &, Form
 
 void ASTEmitQuery::updateTreeHashImpl(SipHash & hash_state) const
 {
-    hash_state.update(streaming);
-
     if (periodic_interval)
         periodic_interval->updateTreeHashImpl(hash_state);
 

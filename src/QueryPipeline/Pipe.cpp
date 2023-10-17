@@ -10,7 +10,6 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Streaming/ResizeProcessor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>

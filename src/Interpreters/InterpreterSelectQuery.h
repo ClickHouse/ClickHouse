@@ -203,7 +203,6 @@ private:
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
-    void executeStreamingOrder(QueryPlan & query_plan);
     void executeStreamingAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final);
     bool shouldKeepAggregationState() const;
     void checkAggregateAndWindowFunctions();

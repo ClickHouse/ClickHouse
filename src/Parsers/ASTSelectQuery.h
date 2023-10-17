@@ -113,7 +113,7 @@ public:
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
     ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
-    ASTPtr emit()    const { return getExpression(Expression::EMIT); }
+    ASTPtr emit()           const { return getExpression(Expression::EMIT); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 

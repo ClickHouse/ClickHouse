@@ -112,12 +112,13 @@ public:
     bool isStreaming() const
     {
         if (!output_ports.empty())
-            return std::any_of(output_ports.begin(), output_ports.end(), [](const auto * output) {
+            return std::any_of(output_ports.begin(), output_ports.end(), [](const auto * output)
+            {
                 assert(output);
                 return output->getProcessor().isStreaming();
             });
         else
-            return !processors->empty() ? processors->back()->isStreaming() : false; /// last sink prcessor
+            return !processors->empty() ? processors->back()->isStreaming() : false; /// last sink processor
     }
 
     void resizeStreaming(size_t num_streams, bool force = false);

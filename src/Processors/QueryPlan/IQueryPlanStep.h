@@ -137,6 +137,7 @@ public:
 
     bool isStreaming() const
     {
+        /// Streaming is infectious. One input is streaming, the whole query will be streaming
         return output_stream
             ? output_stream->is_streaming
             : std::any_of(input_streams.begin(), input_streams.end(), [](const auto & stream) { return stream.is_streaming; });
