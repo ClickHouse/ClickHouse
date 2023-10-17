@@ -1751,7 +1751,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write(f"{test_cace_name:72}")
+                sys.stdout.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {test_cace_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
