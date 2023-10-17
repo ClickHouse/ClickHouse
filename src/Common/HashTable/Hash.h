@@ -310,7 +310,10 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     DB::UInt64 out {0};
-    std::memcpy(&out, &key, sizeof(T));
+    if constexpr (std::endian::native == std::endian::little)
+        std::memcpy(&out, &key, sizeof(T));
+    else
+        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
     return intHashCRC32(out, updated_value);
 }
 

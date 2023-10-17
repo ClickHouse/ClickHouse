@@ -129,7 +129,12 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in URL storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine URL doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -348,10 +353,11 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                need_only_count ? 1 : max_parsing_threads,
+                max_parsing_threads,
                 /*max_download_threads*/ std::nullopt,
                 /* is_remote_ fs */ true,
-                compression_method);
+                compression_method,
+                need_only_count);
             input_format->setQueryInfo(query_info, getContext());
 
             if (need_only_count)

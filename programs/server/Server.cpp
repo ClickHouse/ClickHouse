@@ -492,7 +492,7 @@ static void sanityChecks(Server & server)
         if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -502,7 +502,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) == 2)
             server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -512,7 +512,7 @@ static void sanityChecks(Server & server)
         if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -522,7 +522,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -532,7 +532,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -546,7 +546,7 @@ static void sanityChecks(Server & server)
         if (getAvailableMemoryAmount() < (2l << 30))
             server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -555,7 +555,7 @@ static void sanityChecks(Server & server)
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
             server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -568,7 +568,7 @@ static void sanityChecks(Server & server)
                 server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -1474,7 +1474,7 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        /// We should start interserver communications before (and more imporant shutdown after) tables.
+        /// We should start interserver communications before (and more important shutdown after) tables.
         /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
         /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
         /// communicate with zookeeper, execute merges, etc.
@@ -1516,11 +1516,13 @@ try
 
     global_context->setStopServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         stopServers(servers, server_type);
     });
 
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         createServers(
             config(),
             listen_hosts,
@@ -1602,7 +1604,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
@@ -1909,7 +1911,7 @@ try
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."

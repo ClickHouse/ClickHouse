@@ -28,7 +28,9 @@ void ExpressionTransform::transform(Chunk & chunk)
 ProcessorPtr ExpressionTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 /*partial_result_limit*/, UInt64 /*partial_result_duration_ms*/)
 {
     const auto & header = getInputPort().getHeader();
-    return std::make_shared<ExpressionTransform>(header, expression);
+    auto result = std::make_shared<ExpressionTransform>(header, expression);
+    result->setDescription("(Partial result)");
+    return result;
 }
 
 ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionActionsPtr expression_)

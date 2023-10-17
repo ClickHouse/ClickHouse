@@ -11,7 +11,7 @@ sidebar_label: Other
 Returns the name of the host on which this function was executed. If the function executes on a remote server (distributed processing), the remote server name is returned.
 If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## getMacro
+## getMacro {#getMacro}
 
 Returns a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
@@ -67,6 +67,45 @@ WHERE macro = 'test';
 │ test  │ Value        │
 └───────┴──────────────┘
 ```
+
+## getHttpHeader  
+Returns the value of specified http header.If there is no such header or the request method is not http, it will return empty string.  
+
+**Syntax**  
+
+```sql
+getHttpHeader(name);
+``` 
+
+**Arguments**  
+
+- `name` — Http header name .[String](../../sql-reference/data-types/string.md#string)  
+
+**Returned value**
+
+Value of the specified header.  
+Type:[String](../../sql-reference/data-types/string.md#string).
+
+  
+When we use `clickhouse-client` to execute this function, we'll always get empty string, because client doesn't use http protocol.
+```sql
+SELECT getHttpHeader('test')
+```
+result:  
+
+```text
+┌─getHttpHeader('test')─┐
+│                       │
+└───────────────────────┘
+```  
+Try to use http request:  
+```shell 
+echo "select getHttpHeader('X-Clickhouse-User')" | curl -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: ' 'http://localhost:8123/' -d @-
+
+#result
+default
+```
+
 
 ## FQDN
 
@@ -186,7 +225,7 @@ Returns the type name of the passed argument.
 
 If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
-## blockSize()
+## blockSize() {#blockSize}
 
 In ClickHouse, queries are processed in blocks (chunks).
 This function returns the size (row count) of the block the function is called on.
@@ -311,7 +350,7 @@ Sleeps ‘seconds’ seconds for each row. The sleep time can be specified as in
 Returns the name of the current database.
 Useful in table engine parameters of `CREATE TABLE` queries where you need to specify the database.
 
-## currentUser()
+## currentUser() {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
 
@@ -660,21 +699,26 @@ SELECT
 
 ## formatReadableTimeDelta
 
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second as string.
+Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as string.
 
 **Syntax**
 
 ``` sql
-formatReadableTimeDelta(column[, maximum_unit])
+formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 ```
 
 **Arguments**
 
 - `column` — A column with a numeric time delta.
-- `maximum_unit` — Optional. Maximum unit to show. Acceptable values `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+- `maximum_unit` — Optional. Maximum unit to show.
+  * Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  * Default value: `years`.
+- `minimum_unit` — Optional. Minimum unit to show. All smaller units are truncated.
+  * Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`.
+  * If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown.
+  * Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.
 
-Example:
-
+**Example**
 ``` sql
 SELECT
     arrayJoin([100, 12345, 432546534]) AS elapsed,
@@ -701,6 +745,20 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    arrayJoin([100, 12345, 432546534.00000006]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes', 'nanoseconds') AS time_delta
+```
+
+```text
+┌────────────elapsed─┬─time_delta─────────────────────────────────────┐
+│                100 │ 1 minute and 40 seconds                        │
+│              12345 │ 205 minutes and 45 seconds                     │
+│ 432546534.00000006 │ 7209108 minutes, 54 seconds and 60 nanoseconds │
+└────────────────────┴────────────────────────────────────────────────┘
 ```
 
 ## parseTimeDelta
@@ -771,7 +829,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock()
+## rowNumberInBlock() {#rowNumberInBlock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
@@ -896,7 +954,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x)
+## runningDifference(x) {#runningDifference}
 
 Calculates the difference between two consecutive row values in the data block.
 Returns 0 for the first row, and for subsequent rows the difference to the previous row.
@@ -2274,7 +2332,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## queryID
+## queryID {#queryID}
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 

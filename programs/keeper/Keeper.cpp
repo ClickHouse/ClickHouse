@@ -509,6 +509,8 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
+            updateLevels(*config, logger());
+
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 

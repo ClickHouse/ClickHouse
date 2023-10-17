@@ -64,6 +64,10 @@
 #include <algorithm>
 #include <unistd.h>
 
+#if USE_PROTOBUF
+#include <Formats/ProtobufSchemas.h>
+#endif
+
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
 #endif
@@ -101,6 +105,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsTTLMerge;
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
+    extern const StorageActionBlockType Cleanup;
 }
 
 
@@ -156,6 +161,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_MOVES;
     else if (action_type == ActionLocks::PullReplicationLog)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
+    else if (action_type == ActionLocks::Cleanup)
+        return AccessType::SYSTEM_CLEANUP;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -462,6 +469,20 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             break;
         }
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_format.empty())
+                caches_to_drop = {"Protobuf"};
+            else
+                caches_to_drop = {query.schema_cache_format};
+#if USE_PROTOBUF
+            if (caches_to_drop.contains("Protobuf"))
+                ProtobufSchemas::instance().clear();
+#endif
+            break;
+        }
         case Type::RELOAD_DICTIONARY:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
@@ -571,6 +592,12 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_PULLING_REPLICATION_LOG:
             startStopAction(ActionLocks::PullReplicationLog, true);
+            break;
+        case Type::STOP_CLEANUP:
+            startStopAction(ActionLocks::Cleanup, false);
+            break;
+        case Type::START_CLEANUP:
+            startStopAction(ActionLocks::Cleanup, true);
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -1073,6 +1100,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
 #endif
@@ -1138,6 +1166,15 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_PULLING_REPLICATION_LOG:
         case Type::START_PULLING_REPLICATION_LOG:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
         {
             if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);

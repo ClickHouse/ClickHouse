@@ -105,7 +105,7 @@ def run_docker_image_with_env(
         ccache_mount = ""
 
     cmd = (
-        f"docker run --network=host --user={user} --rm {ccache_mount}"
+        f"docker run --network=host --user={user} --rm {ccache_mount} "
         f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"--volume={cargo_cache_dir}:/rust/cargo/registry {interactive} {image_name}"
     )
@@ -179,6 +179,7 @@ def parse_env_variables(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake"
         )
         result.append("EXTRACT_TOOLCHAIN_DARWIN=1")
+        result.append("EXPORT_SOURCES_WITH_SUBMODULES=1")
     elif is_cross_darwin_arm:
         cc = compiler[: -len(DARWIN_ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar")
@@ -393,18 +394,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-16",
-            "clang-16-darwin",
-            "clang-16-darwin-aarch64",
-            "clang-16-aarch64",
-            "clang-16-aarch64-v80compat",
-            "clang-16-ppc64le",
-            "clang-16-riscv64",
-            "clang-16-s390x",
-            "clang-16-amd64-compat",
-            "clang-16-freebsd",
+            "clang-17",
+            "clang-17-darwin",
+            "clang-17-darwin-aarch64",
+            "clang-17-aarch64",
+            "clang-17-aarch64-v80compat",
+            "clang-17-ppc64le",
+            "clang-17-riscv64",
+            "clang-17-s390x",
+            "clang-17-amd64-compat",
+            "clang-17-freebsd",
         ),
-        default="clang-16",
+        default="clang-17",
         help="a compiler to use",
     )
     parser.add_argument(
