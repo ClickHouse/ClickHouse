@@ -341,6 +341,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                         ///                     file_offset_of_buffer_end
 
                         read_type = ReadType::CACHED;
+                        implementation_buffer.reset();
                         file_segment.resetDownloader();
                         return getCacheReadBuffer(file_segment);
                     }
@@ -656,16 +657,17 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 /// seek is only allowed once for ReadBufferForS3 - before call to nextImpl.
                 /// TODO: allow seek more than once with seek avoiding.
 
+                swap(*implementation_buffer);
+                resetWorkingBuffer();
+
                 bytes_to_predownload = 0;
+                implementation_buffer.reset();
                 file_segment.completePartAndResetDownloader();
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-
-                swap(*implementation_buffer);
-                resetWorkingBuffer();
 
                 implementation_buffer = getRemoteReadBuffer(file_segment, read_type);
 
@@ -816,6 +818,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     if (!implementation_buffer_can_be_reused)
                         file_segment.resetRemoteFileReader();
 
+                    implementation_buffer.reset();
                     file_segment.completePartAndResetDownloader();
                 }
             }
@@ -1038,7 +1041,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     // No necessary because of the SCOPE_EXIT above, but useful for logging below.
     if (download_current_segment)
+    {
+        implementation_buffer.reset();
         file_segment.completePartAndResetDownloader();
+    }
 
     chassert(!file_segment.isDownloader());
 
