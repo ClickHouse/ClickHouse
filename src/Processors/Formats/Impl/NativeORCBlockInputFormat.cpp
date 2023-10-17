@@ -358,7 +358,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
 }
 
 /// Attention: evaluateRPNElement is only invoked in buildORCSearchArgumentImpl.
-/// So it is guaranted that:
+/// So it is guaranteed that:
 ///     1. elem has no monotonic_functions_chains.
 ///     2. if elem function is FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE, `set_index` is not null and `set_index->getOrderedSet().size()` is 1.
 ///     3. elem function should be FUNCTION_IN_RANGE/FUNCTION_NOT_IN_RANGE/FUNCTION_IN_SET/FUNCTION_NOT_IN_SET/FUNCTION_IS_NULL/FUNCTION_IS_NOT_NULL
