@@ -173,7 +173,7 @@ protected:
 class ParserExpression : public IParserBase
 {
 public:
-    ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
+    explicit ParserExpression(bool allow_trailing_commas_ = false) : allow_trailing_commas(allow_trailing_commas_) {}
 
 protected:
     const char * getName() const override { return "lambda expression"; }
