@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS t_mutations_subcolumns;
+DROP TABLE IF EXISTS t_missed_subcolumns;
 
 SET allow_experimental_object_type = 1;
 
@@ -14,7 +14,7 @@ OPTIMIZE TABLE t_missed_subcolumns FINAL;
 
 SELECT count(), min(id) FROM t_missed_subcolumns;
 
-SELECT * FROM t_missed_subcolumns WHERE obj.k4 = 5 ORDER BY id FORMAT JSONEachRow; 
+SELECT * FROM t_missed_subcolumns WHERE obj.k4 = 5 ORDER BY id FORMAT JSONEachRow;
 
 SELECT * FROM t_missed_subcolumns WHERE obj.k1.k3 = 'fee' ORDER BY id FORMAT JSONEachRow;
 

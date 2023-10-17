@@ -27,6 +27,7 @@ $CLICKHOUSE_CLIENT -nm -q "
     select * from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v order by tl.v;
     select sum(td.v) from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v group by tl.k;
     select sum(tl.v) from test_distributed td asof join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k and td.v < tl.v group by td.k;
+    select td.k, tl.* from test_distributed td join $CLICKHOUSE_DATABASE.test_local tl on td.k = tl.k;
 
     drop table test_distributed;
     drop table test_source;
