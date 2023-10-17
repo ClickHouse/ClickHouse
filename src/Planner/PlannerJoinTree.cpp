@@ -526,7 +526,7 @@ FilterDAGInfo buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
     return buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
-static UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
+UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 {
     auto const & main_query_node = select_query_info.query_tree->as<QueryNode const &>();
 
