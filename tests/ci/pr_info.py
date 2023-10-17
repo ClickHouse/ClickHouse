@@ -171,7 +171,7 @@ class PRInfo:
 
             self.diff_urls.append(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                f"compare/master...{self.head_ref}"
+                f"compare/master...{github_event['pull_request']['head']['label']}"
             )
 
         elif "commits" in github_event:
@@ -218,11 +218,11 @@ class PRInfo:
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{self.head_ref}"
+                        f"compare/master...{pull_request['head']['label']}"
                     )
                     self.diff_urls.append(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master"
+                        f"compare/{pull_request['head']['label']}...master"
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
@@ -235,7 +235,7 @@ class PRInfo:
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master"
+                        f"compare/{pull_request['head']['label']}...master"
                     )
         else:
             print("event.json does not match pull_request or push:")
