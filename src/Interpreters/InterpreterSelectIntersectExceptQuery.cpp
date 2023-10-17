@@ -220,11 +220,11 @@ bool InterpreterSelectIntersectExceptQuery::isStreaming() const
     return false;
 }
 
-bool InterpreterSelectIntersectExceptQuery::hasGlobalAggregation() const
+bool InterpreterSelectIntersectExceptQuery::hasStreamingGlobalAggregation() const
 {
     for (const auto & interpreter : nested_interpreters)
     {
-        if (interpreter->hasGlobalAggregation())
+        if (interpreter->hasStreamingGlobalAggregation())
             return true;
     }
     return false;

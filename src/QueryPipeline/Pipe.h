@@ -118,7 +118,9 @@ public:
                 return output->getProcessor().isStreaming();
             });
         else
-            return !processors->empty() ? processors->back()->isStreaming() : false; /// last sink processor
+            /// Check if the last sink processor is streaming, when a query is streaming, the last sink
+            /// processor will be set to streaming.
+            return !processors->empty() ? processors->back()->isStreaming() : false;
     }
 
     void resizeStreaming(size_t num_streams, bool force = false);

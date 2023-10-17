@@ -420,11 +420,11 @@ bool InterpreterSelectWithUnionQuery::isStreaming() const
     return false;
 }
 
-bool InterpreterSelectWithUnionQuery::hasGlobalAggregation() const
+bool InterpreterSelectWithUnionQuery::hasStreamingGlobalAggregation() const
 {
     for (const auto & interpreter : nested_interpreters)
     {
-        if (interpreter->hasGlobalAggregation())
+        if (interpreter->hasStreamingGlobalAggregation())
             return true;
     }
     return false;

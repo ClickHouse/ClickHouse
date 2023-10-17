@@ -459,9 +459,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// we need to process before table storage generation (maybe has table function)
     if (auto emit = getSelectQuery().emit())
     {
-        Streaming::EmitInterpreter::handleRules(
-                    /* streaming query */ query_ptr,
-                    /* rules */ Streaming::EmitInterpreter::checkEmitAST);
+        Streaming::EmitInterpreter::handleRules(query_ptr, Streaming::EmitInterpreter::checkEmitAST);
 
         /// After handling, update setting for context.
         if (getSelectQuery().settings())
@@ -1494,7 +1492,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
     if (options.only_analyze)
     {
-        /// We need keep the streaming flag is same with actual source
+        /// Propagate streaming flag to NullSource
         auto read_nothing = std::make_unique<ReadNothingStep>(source_header, isStreaming());
         query_plan.addStep(std::move(read_nothing));
 
@@ -3397,37 +3395,38 @@ bool InterpreterSelectQuery::isStreaming() const
     if (is_streaming.has_value())
         return *is_streaming;
 
-    /// We can simple determine the query type (stream or not) by the type of storage or subquery.
+    /// We can simply determine the query type (stream or not) by the type of storage or subquery.
     /// Although `TreeRewriter` optimization may rewrite the subquery, it does not affect whether it is streaming
     /// And for now, we only look at the left stream even in a join case since we don't support
     /// `table join stream` case yet. When the left stream is streaming, then the whole query will be streaming.
     bool streaming = false;
-    if (context->getSettingsRef().query_mode.value == "streaming")
-    {
-        if (storage && supportStreamingQuery(storage, context))
-            streaming = true;
-        else if (interpreter_subquery)
-            streaming = interpreter_subquery->isStreaming();
-    }
+    if (storage && supportStreamingQuery(storage, context))
+        streaming = true;
+    else if (interpreter_subquery)
+        streaming = interpreter_subquery->isStreaming();
 
     is_streaming = streaming;
 
     return streaming;
 }
 
-bool InterpreterSelectQuery::hasGlobalAggregation() const
+bool InterpreterSelectQuery::hasStreamingGlobalAggregation() const
 {
+    /// For now, we only support global aggregation. Once we have window table function
+    /// we will extend the check and support window aggregation.
     return isStreaming() && hasAggregation();
 }
 
 bool InterpreterSelectQuery::shouldKeepAggregationState() const
 {
-    if (!isStreaming())
-        return false;
-
-    if (hasGlobalAggregation())
+    if (hasStreamingGlobalAggregation())
     {
-        if (interpreter_subquery && interpreter_subquery->hasGlobalAggregation())
+        if (interpreter_subquery && interpreter_subquery->hasStreamingGlobalAggregation())
+            /// When we do global aggregation over global aggregation
+            /// we will need remove the aggregation state in the outer aggregation
+            /// to keep the results correct.
+            /// For example, for query `SELECT sum(s) FROM (SELECT sum(i) FROM kafka_stream);`
+            /// we can't keep the aggregation state of `sum(s)` when inner subquery emits
             return false;
 
         return true;
@@ -3439,9 +3438,7 @@ bool InterpreterSelectQuery::shouldKeepAggregationState() const
 void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const
 {
     assert(isStreaming());
-    auto params = std::make_shared<Streaming::WatermarkStamperParams>(
-                query_info.query, query_info.syntax_analyzer_result);
-
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, query_info.syntax_analyzer_result);
     query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), log));
 }
 
@@ -3450,7 +3447,7 @@ void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPla
     if (!isStreaming())
         return;
 
-    if (!hasGlobalAggregation())
+    if (!hasStreamingGlobalAggregation())
         return;
 
     /// An optimizing path, skip duplicate periodic watermark.
@@ -3458,7 +3455,7 @@ void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPla
     if (!analysis_result.hasJoin())
     {
         /// nested global aggregation
-        if (interpreter_subquery && interpreter_subquery->hasGlobalAggregation())
+        if (interpreter_subquery && interpreter_subquery->hasStreamingGlobalAggregation())
             return;
     }
 

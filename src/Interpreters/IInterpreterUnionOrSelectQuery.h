@@ -46,7 +46,7 @@ public:
     size_t getMaxStreams() const { return max_streams; }
 
     virtual bool isStreaming() const = 0;
-    virtual bool hasGlobalAggregation() const = 0;
+    virtual bool hasStreamingGlobalAggregation() const = 0;
 
     /// Returns whether the query uses the view source from the Context
     /// The view source is a virtual storage that currently only materialized views use to replace the source table

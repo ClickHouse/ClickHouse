@@ -1,7 +1,4 @@
 #include <Interpreters/Streaming/EmitInterpreter.h>
-#include <Common/IntervalKind.h>
-#include <Common/logger_useful.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/Streaming/ASTEmitQuery.h>
 #include <Interpreters/Streaming/WindowCommon.h>

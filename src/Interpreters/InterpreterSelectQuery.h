@@ -117,7 +117,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     bool isStreaming() const override;
-    bool hasGlobalAggregation() const override;
+    bool hasStreamingGlobalAggregation() const override;
 
     static void addEmptySourceToQueryPlan(
         QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
