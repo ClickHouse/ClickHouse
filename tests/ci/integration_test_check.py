@@ -15,6 +15,7 @@ from github import Github
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
+    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -37,20 +38,19 @@ from upload_result_helper import upload_results
 
 
 # When update, update
-# tests/integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
+# integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
 IMAGES = [
-    "clickhouse/dotnet-client",
-    "clickhouse/integration-helper",
-    "clickhouse/integration-test",
     "clickhouse/integration-tests-runner",
-    "clickhouse/kerberized-hadoop",
-    "clickhouse/kerberos-kdc",
     "clickhouse/mysql-golang-client",
     "clickhouse/mysql-java-client",
     "clickhouse/mysql-js-client",
     "clickhouse/mysql-php-client",
-    "clickhouse/nginx-dav",
     "clickhouse/postgresql-java-client",
+    "clickhouse/integration-test",
+    "clickhouse/kerberos-kdc",
+    "clickhouse/kerberized-hadoop",
+    "clickhouse/integration-helper",
+    "clickhouse/dotnet-client",
 ]
 
 
@@ -76,7 +76,6 @@ def get_json_params_dict(
 
 
 def get_env_for_runner(
-    check_name: str,
     build_path: Path,
     repo_path: Path,
     result_path: Path,
@@ -97,9 +96,6 @@ def get_env_for_runner(
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
     my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = f"{work_path}/params.json"
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
-
-    if "analyzer" in check_name.lower():
-        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
 
     return my_env
 
@@ -230,9 +226,7 @@ def main():
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
-    my_env = get_env_for_runner(
-        check_name, build_path, repo_path, result_path, work_path
-    )
+    my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
 
     json_path = work_path / "params.json"
     with open(json_path, "w", encoding="utf-8") as json_params:
@@ -278,6 +272,7 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, check_name, test_results)
 
     s3_helper = S3Helper()
     report_url = upload_results(

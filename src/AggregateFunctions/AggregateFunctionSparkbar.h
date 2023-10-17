@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
-
 #include <array>
 #include <string_view>
 #include <DataTypes/DataTypeString.h>
@@ -11,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/PODArray.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
@@ -44,19 +43,7 @@ struct AggregateFunctionSparkbarData
 
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
-        {
-            if constexpr (std::is_floating_point_v<Y>)
-            {
-                it->getMapped() += y;
-                return it->getMapped();
-            }
-            else
-            {
-                Y res;
-                bool has_overfllow = common::addOverflow(it->getMapped(), y, res);
-                it->getMapped() = has_overfllow ? std::numeric_limits<Y>::max() : res;
-            }
-        }
+            it->getMapped() += y;
         return it->getMapped();
     }
 
@@ -130,7 +117,6 @@ class AggregateFunctionSparkbar final
 {
 
 private:
-    static constexpr size_t BAR_LEVELS = 8;
     const size_t width = 0;
 
     /// Range for x specified in parameters.
@@ -140,8 +126,8 @@ private:
 
     size_t updateFrame(ColumnString::Chars & frame, Y value) const
     {
-        static constexpr std::array<std::string_view, BAR_LEVELS + 1> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
-        const auto & bar = (isNaN(value) || value < 1 || static_cast<Y>(BAR_LEVELS) < value) ? bars[0] : bars[static_cast<UInt8>(value)];
+        static constexpr std::array<std::string_view, 9> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        const auto & bar = (isNaN(value) || value < 1 || 8 < value) ? bars[0] : bars[static_cast<UInt8>(value)];
         frame.insert(bar.begin(), bar.end());
         return bar.size();
     }
@@ -175,7 +161,7 @@ private:
         }
 
         PaddedPODArray<Y> histogram(width, 0);
-        PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
+        PaddedPODArray<UInt64> fhistogram(width, 0);
 
         for (const auto & point : data.points)
         {
@@ -190,30 +176,22 @@ private:
             Float64 w = histogram.size();
             size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
 
-            Y res;
-            bool has_overfllow = false;
-            if constexpr (std::is_floating_point_v<Y>)
-                res = histogram[index] + point.getMapped();
-            else
-                has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
-
-            if (unlikely(has_overfllow))
+            if (std::numeric_limits<Y>::max() - histogram[index] > point.getMapped())
             {
-                /// In case of overflow, just saturate
-                /// Do not count new values, because we do not know how many of them were added
-                histogram[index] = std::numeric_limits<Y>::max();
+                histogram[index] += point.getMapped();
+                fhistogram[index] += 1;
             }
             else
             {
-                histogram[index] = res;
-                count_histogram[index] += 1;
+                /// In case of overflow, just saturate
+                histogram[index] = std::numeric_limits<Y>::max();
             }
         }
 
         for (size_t i = 0; i < histogram.size(); ++i)
         {
-            if (count_histogram[i] > 0)
-                histogram[i] /= count_histogram[i];
+            if (fhistogram[i] > 0)
+                histogram[i] /= fhistogram[i];
         }
 
         Y y_max = 0;
@@ -231,30 +209,12 @@ private:
             return;
         }
 
-        /// Scale the histogram to the range [0, BAR_LEVELS]
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
-            {
                 y = 0;
-                continue;
-            }
-
-            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
-            if constexpr (std::is_floating_point_v<Y>)
-            {
-                y = y / (y_max / levels_num) + 1;
-            }
             else
-            {
-                Y scaled;
-                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
-
-                if (has_overfllow)
-                    y = y / (y_max / levels_num) + 1;
-                else
-                    y = scaled / y_max + 1;
-            }
+                y = y * 7 / y_max + 1;
         }
 
         size_t sz = 0;

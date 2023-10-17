@@ -3,6 +3,9 @@
 #include <Processors/Formats/Impl/ODBCDriver2BlockOutputFormat.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+
+
+#include <Core/iostream_debug_helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
@@ -16,7 +19,7 @@ ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
 
 static void writeODBCString(WriteBuffer & out, const std::string & str)
 {
-    writeBinaryLittleEndian(Int32(str.size()), out);
+    writeIntBinary(Int32(str.size()), out);
     out.write(str.data(), str.size());
 }
 
@@ -30,7 +33,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_
 
         if (column->isNullAt(row_idx))
         {
-            writeBinaryLittleEndian(Int32(-1), out);
+            writeIntBinary(Int32(-1), out);
         }
         else
         {
@@ -69,11 +72,11 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     const size_t columns = header.columns();
 
     /// Number of header rows.
-    writeBinaryLittleEndian(Int32(2), out);
+    writeIntBinary(Int32(2), out);
 
     /// Names of columns.
     /// Number of columns + 1 for first name column.
-    writeBinaryLittleEndian(Int32(columns + 1), out);
+    writeIntBinary(Int32(columns + 1), out);
     writeODBCString(out, "name");
     for (size_t i = 0; i < columns; ++i)
     {
@@ -82,7 +85,7 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     }
 
     /// Types of columns.
-    writeBinaryLittleEndian(Int32(columns + 1), out);
+    writeIntBinary(Int32(columns + 1), out);
     writeODBCString(out, "type");
     for (size_t i = 0; i < columns; ++i)
     {

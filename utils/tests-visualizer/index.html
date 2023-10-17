@@ -20,7 +20,9 @@
             width: 130px;
             display: block;
             margin: 30px auto;
-            animation: spin 10s ease-in-out infinite;
+            -webkit-animation: spin 2s ease-in-out infinite;
+            -moz-animation: spin 2s ease-in-out infinite;
+            animation: spin 2s ease-in-out infinite;
         }
 
         h1 {
@@ -43,9 +45,16 @@
             cursor: pointer;
         }
 
+        @-moz-keyframes spin {
+            100% { -moz-transform: rotate(360deg); }
+        }
+
+        @-webkit-keyframes spin {
+            100% { -webkit-transform: rotate(360deg); }
+        }
+
         @keyframes spin {
-            50% { transform:scale(150%); }
-            100% { transform:scale(100%); }
+            100% { transform:rotate(360deg); }
         }
     </style>
 </head>
@@ -58,26 +67,33 @@
 </div>
 <canvas id="canvas"></canvas>
 <script type="text/javascript">
-let start_date = '2021-12-01';
+///////////////////////
+//  GLOBAL VARIABLES
+///////////////////////
+let start_date = '2020-06-13';
 const canvasNode = document.getElementById('canvas');
 const infoNode = document.getElementById('info');
 const loadingNode = document.getElementById('loading');
 const failMessageNode = document.getElementById('fail-message');
 
+///////////////////////
+//      QUERIES
+///////////////////////
 let render_data_query = `
     WITH '${start_date}'::Date AS start_date
     SELECT groupArray([d, n, fail]) FROM
     (
         SELECT n, check_start_time::Date - start_date AS d, max(test_status LIKE 'F%' OR test_status LIKE 'E%') AS fail
-        FROM checks
+        FROM "default".checks
 
         INNER JOIN
         (
-            SELECT test_name, toUInt16(row_number() OVER (ORDER BY test_name)) AS n FROM
+            SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
             (
                 SELECT DISTINCT test_name
-                FROM checks
+                FROM "default".checks
                 WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
+                ORDER BY test_name
             )
         ) AS nums
 
@@ -93,12 +109,17 @@ let render_data_query = `
     FORMAT TSV`;
 
 let test_names_query = `
-    SELECT test_name, toUInt16(row_number() OVER (ORDER BY test_name)) AS n FROM
+    SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
     (
         SELECT DISTINCT test_name
-        FROM checks
+        FROM "default".checks
         WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
+        ORDER BY test_name
     ) FORMAT JSONCompact`;
+
+///////////////////////
+//       MAIN
+///////////////////////
 
 (async () => {
     try {
@@ -106,7 +127,7 @@ let test_names_query = `
             loadDataByQuery(render_data_query),
             loadDataByQuery(test_names_query),
         ]);
-
+        // we good
         renderResponse(render_data);
         saveTestNames(test_names_data);
     } catch (e) {
@@ -116,6 +137,10 @@ let test_names_query = `
         hideLoader();
     }
 })()
+
+///////////////////////
+//  SPECIAL FUNCTIONS
+///////////////////////
 
 async function loadDataByQuery(query) {
     const response = await fetch(

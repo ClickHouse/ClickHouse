@@ -58,4 +58,4 @@ ALTER TABLE example_table RESET SETTING max_part_loading_threads;
 
 **See Also**
 
-- [MergeTree settings](../../../operations/settings/merge-tree-settings.md)
+-   [MergeTree settings](../../../operations/settings/merge-tree-settings.md)

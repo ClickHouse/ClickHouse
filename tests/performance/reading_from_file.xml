@@ -1,9 +1,0 @@
-<test>
-
-<fill_query>INSERT INTO function file(reading_from_file.parquet) SELECT URL FROM test.hits LIMIT 100000 SETTINGS engine_file_truncate_on_insert=1</fill_query>
-
-<query>SELECT sum(length(base58Encode(URL))) FROM file(reading_from_file.parquet) FORMAT Null</query>
-
-<drop_query>INSERT INTO FUNCTION file(reading_from_file.parquet) SELECT * FROM numbers(0) SETTINGS engine_file_truncate_on_insert=1</drop_query>
-
-</test>

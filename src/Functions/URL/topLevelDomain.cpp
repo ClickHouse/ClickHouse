@@ -53,22 +53,22 @@ using FunctionTopLevelDomainRFC = FunctionStringToString<ExtractSubstringImpl<Ex
 
 REGISTER_FUNCTION(TopLevelDomain)
 {
-    factory.registerFunction<FunctionTopLevelDomain>(FunctionDocumentation
+    factory.registerFunction<FunctionTopLevelDomain>(
     {
-        .description=R"(
+        R"(
 Extracts the the top-level domain from a URL.
 
 Returns an empty string if the argument cannot be parsed as a URL or does not contain a top-level domain.
         )",
-        .examples{{"topLevelDomain", "SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')", ""}},
-        .categories{"URL"}
+        Documentation::Examples{{"topLevelDomain", "SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')"}},
+        Documentation::Categories{"URL"}
     });
 
-    factory.registerFunction<FunctionTopLevelDomainRFC>(FunctionDocumentation
+    factory.registerFunction<FunctionTopLevelDomainRFC>(
     {
-        .description=R"(Similar to topLevelDomain, but conforms to RFC 3986.)",
-        .examples{},
-        .categories{"URL"}
+        R"(Similar to topLevelDomain, but conforms to RFC 3986.)",
+        Documentation::Examples{},
+        Documentation::Categories{"URL"}
     });
 }
 

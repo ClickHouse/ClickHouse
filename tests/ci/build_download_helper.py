@@ -222,12 +222,3 @@ def download_performance_build(check_name, reports_path, result_path):
         result_path,
         lambda x: x.endswith("performance.tar.zst"),
     )
-
-
-def download_fuzzers(check_name, reports_path, result_path):
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
-    )

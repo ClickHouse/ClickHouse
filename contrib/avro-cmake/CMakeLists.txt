@@ -6,7 +6,7 @@ if (NOT ENABLE_AVRO)
     return()
 endif()
 
-set(AVROCPP_ROOT_DIR "${PROJECT_SOURCE_DIR}/contrib/avro/lang/c++")
+set(AVROCPP_ROOT_DIR "${CMAKE_SOURCE_DIR}/contrib/avro/lang/c++")
 set(AVROCPP_INCLUDE_DIR "${AVROCPP_ROOT_DIR}/api")
 set(AVROCPP_SOURCE_DIR "${AVROCPP_ROOT_DIR}/impl")
 

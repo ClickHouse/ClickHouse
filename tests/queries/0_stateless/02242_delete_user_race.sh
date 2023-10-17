@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-fasttest, no-parallel
+# Tags: race, no-fasttest, no-parallel, no-upgrade-check
 
 # Test tries to reproduce a race between threads:
 # - deletes user
@@ -22,27 +22,18 @@ $CLICKHOUSE_CLIENT -nm -q "
 
 function delete_user()
 {
-    while true; do 
-        $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
-        sleep 0.$RANDOM; 
-    done
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
 }
 
 function create_and_login_user()
 {
-    while true; do 
-        $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
-        $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE user == 'test_user_02242'" > /dev/null ||:
-        sleep 0.$RANDOM; 
-    done
+    $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
+    $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE user == 'test_user_02242'" > /dev/null ||:
 }
 
 function set_role()
 {
-    while true; do 
-        $CLICKHOUSE_CLIENT -q "SET DEFAULT ROLE test_role_02242 TO test_user_02242" ||:
-        sleep 0.$RANDOM; 
-    done
+    $CLICKHOUSE_CLIENT -q "SET ROLE test_role_02242 TO test_user_02242" ||:
 }
 
 export -f delete_user
@@ -51,10 +42,12 @@ export -f set_role
 
 TIMEOUT=10
 
-
-timeout $TIMEOUT bash -c create_and_login_user 2> /dev/null &
-timeout $TIMEOUT bash -c delete_user 2> /dev/null &
-timeout $TIMEOUT bash -c set_role 2> /dev/null &
+for (( i = 0 ; i < 100; ++i ))
+do
+    clickhouse_client_loop_timeout $TIMEOUT create_and_login_user 2> /dev/null &
+    clickhouse_client_loop_timeout $TIMEOUT delete_user 2> /dev/null &
+    clickhouse_client_loop_timeout $TIMEOUT set_role 2> /dev/null &
+done
 
 wait
 
