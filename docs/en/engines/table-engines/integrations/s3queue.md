@@ -243,17 +243,17 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 ## Limitations {#limitations}
 
-Duplicated rows can be as a result of:
+1. Duplicated rows can be as a result of:
 
-- an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`, duplicate rows are inevitabe;
+- an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
 - `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
 
-- abnormal server termination (with SIGABRT, for example).
+- abnormal server termination.
 
-:::note
-If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
+
+
 ## Introspection {#introspection}
 
 For introspection use `system.s3queue` stateless table and `system.s3queue_log` persistent table.
