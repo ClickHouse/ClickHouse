@@ -252,17 +252,13 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::P
     {
         current_schema_id = metadata_object->getValue<int>("current-schema-id");
         auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
-        if (schemas->size() > 1)
+        if (schemas->size() != 1)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not supported");
-        for (size_t i = 0; i != schemas->size(); ++i)
-        {
-            auto current_schema = schemas->getObject(static_cast<UInt32>(i));
-            if (current_schema->getValue<int>("schema-id") == current_schema_id)
-            {
-                schema = current_schema;
-                break;
-            }
-        }
+
+        /// Now we sure that there is only one schema.
+        schema = schemas->getObject(0);
+        if (schema->getValue<int>("schema-id") != current_schema_id)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(Field "schema-id" of the schema doesn't match "current-schema-id" in metadata)");
     }
     else
     {
