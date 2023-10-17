@@ -30,11 +30,7 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
     output = {nullptr, 0, 0};
 }
 
-ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
-{
-    if (cctx)
-        ZSTD_freeCCtx(cctx);
-}
+ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer() = default;
 
 void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 {
@@ -92,7 +88,6 @@ void ZstdDeflatingWriteBuffer::finalizeAfter()
     try
     {
         size_t err = ZSTD_freeCCtx(cctx);
-        cctx = nullptr;
         /// This is just in case, since it is impossible to get an error by using this wrapper.
         if (unlikely(err))
             throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}",

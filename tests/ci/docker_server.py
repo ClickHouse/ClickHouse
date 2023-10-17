@@ -265,7 +265,7 @@ def build_and_push_image(
                 f"--build-arg=VERSION='{version.string}'",
                 "--progress=plain",
                 f"--file={dockerfile}",
-                image.full_path.as_posix(),
+                image.full_path,
             ]
         )
         cmd = " ".join(cmd_args)

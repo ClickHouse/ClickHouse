@@ -1,4 +1,5 @@
 #include <Processors/ResizeProcessor.h>
+#include <iostream>
 
 namespace DB
 {

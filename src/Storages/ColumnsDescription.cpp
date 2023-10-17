@@ -30,14 +30,10 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
 {
-
-CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
-
 
 namespace ErrorCodes
 {
@@ -144,17 +140,6 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
-{
-    for (const auto & elem : ordinary)
-        add(ColumnDescription(elem.name, elem.type));
-}
-
-ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
-{
-    for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
-}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
@@ -247,7 +232,9 @@ void ColumnsDescription::remove(const String & column_name)
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
     {
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table{}", column_name, getHintsMessage(column_name));
+        String exception_message = fmt::format("There is no column {} in table", column_name);
+        appendHintsMessage(exception_message, column_name);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 
     for (auto list_it = range.first; list_it != range.second;)
@@ -262,8 +249,9 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
-                        column_from, getHintsMessage(column_from));
+        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
+        appendHintsMessage(exception_message, column_from);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
     }
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
@@ -691,14 +679,6 @@ bool ColumnsDescription::hasDefaults() const
     return false;
 }
 
-bool ColumnsDescription::hasOnlyOrdinary() const
-{
-    for (const auto & column : columns)
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            return false;
-    return true;
-}
-
 ColumnDefaults ColumnsDescription::getDefaults() const
 {
     ColumnDefaults ret;
@@ -744,13 +724,11 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
-    assert (column_name != BlockNumberColumn::name);
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 ASTPtr ColumnsDescription::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    assert (column_name != BlockNumberColumn::name);
     const auto it = columns.get<1>().find(column_name);
 
     if (it == columns.get<1>().end() || !it->codec)

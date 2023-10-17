@@ -55,7 +55,7 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
     """
     assert (
         node1.query(
-            "SELECT count() from test_view SETTINGS max_rows_to_read_leaf=200, prefer_localhost_replica=0"
+            "SELECT count() from test_view SETTINGS max_rows_to_read_leaf=200"
         ).rstrip()
         == "400"
     )
@@ -66,9 +66,7 @@ def test_max_rows_to_read_leaf_via_view(started_cluster):
         node2.query(
             "INSERT INTO local_table (id) select * from system.numbers limit 10"
         )
-        node2.query(
-            "SELECT count() from test_view SETTINGS max_rows_to_read_leaf=200, prefer_localhost_replica=0"
-        )
+        node2.query("SELECT count() from test_view SETTINGS max_rows_to_read_leaf=200")
 
 
 if __name__ == "__main__":

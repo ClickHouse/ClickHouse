@@ -37,7 +37,8 @@ SipHash getHashOfLoadedBinary()
 std::string getHashOfLoadedBinaryHex()
 {
     SipHash hash = getHashOfLoadedBinary();
-    const auto checksum = hash.get128();
+    UInt128 checksum;
+    hash.get128(checksum);
     return getHexUIntUppercase(checksum);
 }
 

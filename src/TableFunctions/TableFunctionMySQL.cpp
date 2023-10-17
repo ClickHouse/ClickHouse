@@ -57,7 +57,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
 
-ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
 {
     return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
 }
@@ -66,8 +66,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
-    ColumnsDescription /*cached_columns*/,
-    bool /*is_insert_query*/) const
+    ColumnsDescription /*cached_columns*/) const
 {
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),

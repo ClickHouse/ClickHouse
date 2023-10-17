@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-upgrade-check
 
 DROP DATABASE IF EXISTS db_01391;
 CREATE DATABASE db_01391;

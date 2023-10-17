@@ -115,9 +115,9 @@ public:
         return getNested()->alterPartition(metadata_snapshot, commands, context);
     }
 
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings, ContextPtr context) const override
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override
     {
-        getNested()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context);
+        getNested()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
     }
 
     bool optimize(
@@ -150,7 +150,7 @@ public:
     }
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override { return getNested()->checkData(query, context); }
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
+    void checkTableCanBeDropped() const override { getNested()->checkTableCanBeDropped(); }
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }

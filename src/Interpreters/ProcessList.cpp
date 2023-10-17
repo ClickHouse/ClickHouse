@@ -223,10 +223,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 /// Set up memory profiling
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
-
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
-                thread_group->memory_tracker.setSampleMinAllocationSize(settings.memory_profiler_sample_min_allocation_size);
-                thread_group->memory_tracker.setSampleMaxAllocationSize(settings.memory_profiler_sample_max_allocation_size);
                 thread_group->performance_counters.setTraceProfileEvents(settings.trace_profile_events);
             }
 
@@ -590,10 +587,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
-        {
             res.thread_ids = thread_group->getInvolvedThreadIds();
-            res.peak_threads_usage = thread_group->getPeakThreadsUsage();
-        }
+
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }

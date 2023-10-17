@@ -1,21 +1,23 @@
 # Laion-400M dataset
 
-The [Laion-400M dataset](https://laion.ai/blog/laion-400-open-dataset/) contains 400 million images with English image captions. Laion nowadays provides [an even larger dataset](https://laion.ai/blog/laion-5b/) but working with it will be similar.
+The dataset contains 400 million images with English text. For more information follow this [link](https://laion.ai/blog/laion-400-open-dataset/). Laion provides even larger datasets (e.g. [5 billion](https://laion.ai/blog/laion-5b/)). Working with them will be similar.
 
-The dataset contains the image URL, embeddings for both the image and the image caption, a similarity score between the image and the image caption, as well as metadata, e.g. the image width/height, the licence and a NSFW flag. We can use the dataset to demonstrate [approximate nearest neighbor search](../../engines/table-engines/mergetree-family/annindexes.md) in ClickHouse.
+The dataset has prepared embeddings for texts and images. This will be used to demonstrate [Approximate nearest neighbor search indexes](../../engines/table-engines/mergetree-family/annindexes.md).
 
-## Data preparation
+## Prepare data
 
-The embeddings and the metadata are stored in separate files in the raw data. A data preparation step downloads the data, merges the files,
-converts them to CSV and imports them into ClickHouse. You can use the following `download.sh` script for that:
+Embeddings are stored in `.npy` files, so we have to read them with python and merge with other data.
+
+Download data and process it with simple `download.sh` script:
 
 ```bash
-wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_${1}.npy          # download image embedding
-wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_${1}.npy        # download text embedding
-wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_${1}.parquet    # download metadata
-python3 process.py ${1} # merge files and convert to CSV
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_${1}.npy
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_${1}.parquet
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_${1}.npy
+python3 process.py ${1}
 ```
-Script `process.py` is defined as follows:
+
+Where `process.py`:
 
 ```python
 import pandas as pd
@@ -33,11 +35,11 @@ im_emb = np.load(npy_file)
 text_emb = np.load(text_npy) 
 data = pd.read_parquet(metadata_file)
 
-# combine files
+# combine them
 data = pd.concat([data, pd.DataFrame({"image_embedding" : [*im_emb]}), pd.DataFrame({"text_embedding" : [*text_emb]})], axis=1, copy=False)
 
-# columns to be imported into ClickHouse
-data = data[['url', 'caption', 'NSFW', 'similarity', "image_embedding", "text_embedding"]]
+# you can save more columns
+data = data[['url', 'caption', 'similarity', "image_embedding", "text_embedding"]]
 
 # transform np.arrays to lists
 data['image_embedding'] = data['image_embedding'].apply(lambda x: list(x))
@@ -46,34 +48,30 @@ data['text_embedding'] = data['text_embedding'].apply(lambda x: list(x))
 # this small hack is needed becase caption sometimes contains all kind of quotes
 data['caption'] = data['caption'].apply(lambda x: x.replace("'", " ").replace('"', " "))
 
-# export data as CSV file
+# save data to file
 data.to_csv(str_i + '.csv', header=False)
 
-# removed raw data files
+# previous files can be removed
 os.system(f"rm {npy_file} {metadata_file} {text_npy}")
 ```
 
-To start the data preparation pipeline, run:
-
+You can download data with
 ```bash
-seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
+seq 0 409 | xargs -P100 -I{} bash -c './download.sh {}'
 ```
 
-The dataset is split into 410 files, each file contains ca. 1 million rows. If you like to work with a smaller subset of the data, simply adjust the limits, e.g. `seq 0 9 | ...`.
+The dataset is divided into 409 files. If you want to work only with a certain part of the dataset, just change the limits.
 
-(The python script above is very slow (~2-10 minutes per file), takes a lot of memory (41 GB per file), and the resulting csv files are big (10 GB each), so be careful. If you have enough RAM, increase the `-P1` number for more parallelism. If this is still too slow, consider coming up with a better ingestion procedure - maybe converting the .npy files to parquet, then doing all the other processing with clickhouse.)
+## Create table for laion
 
-## Create table
-
-To create a table without indexes, run:
+Without indexes table can be created by
 
 ```sql
-CREATE TABLE laion
+CREATE TABLE laion_dataset
 (
     `id` Int64,
     `url` String,
     `caption` String,
-    `NSFW` String,
     `similarity` Float32,
     `image_embedding` Array(Float32),
     `text_embedding` Array(Float32)
@@ -83,23 +81,23 @@ ORDER BY id
 SETTINGS index_granularity = 8192
 ```
 
-To import the CSV files into ClickHouse:
+Fill table with data:
 
 ```sql
-INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
+INSERT INTO laion_dataset FROM INFILE '{path_to_csv_files}/*.csv'
 ```
 
-## Run a brute-force ANN search (without ANN index)
+## Check data in table without indexes
 
-To run a brute-force approximate nearest neighbor search, run:
+Let's check the work of the following query on the part of the dataset (8 million records):
 
 ```sql
-SELECT url, caption FROM laion ORDER BY L2Distance(image_embedding, {target:Array(Float32)}) LIMIT 30
+select url, caption from test_laion where similarity > 0.2 order by L2Distance(image_embedding, {target:Array(Float32)}) limit 30
 ```
 
-`target` is an array of 512 elements and a client parameter. A convenient way to obtain such arrays will be presented at the end of the article. For now, we can run the embedding of a random cat picture as `target`.
+Since the embeddings for images and texts may not match, let's also require a certain threshold of matching accuracy to get images that are more likely to satisfy our queries. The client parameter `target`, which is an array of 512 elements. See later in this article for a convenient way of obtaining such vectors. I used a random picture of a cat from the Internet as a target vector.
 
-**Result**
+**The result**
 
 ```
 ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption────────────────────────────────────────────────────────────────┐
@@ -116,34 +114,32 @@ SELECT url, caption FROM laion ORDER BY L2Distance(image_embedding, {target:Arra
 8 rows in set. Elapsed: 6.432 sec. Processed 19.65 million rows, 43.96 GB (3.06 million rows/s., 6.84 GB/s.)
 ```
 
-## Run a ANN with an ANN index
+## Add indexes
 
-Create a new table with an ANN index and insert the data from the existing table:
+Create a new table or follow instructions from [alter documentation](../../sql-reference/statements/alter/skipping-index.md).
 
 ```sql
-CREATE TABLE laion_annoy
+CREATE TABLE laion_dataset
 (
     `id` Int64,
     `url` String,
     `caption` String,
-    `NSFW` String,
     `similarity` Float32,
     `image_embedding` Array(Float32),
     `text_embedding` Array(Float32),
-    INDEX annoy_image image_embedding TYPE annoy(),
-    INDEX annoy_text text_embedding TYPE annoy()
+    INDEX annoy_image image_embedding TYPE annoy(1000) GRANULARITY 1000,
+    INDEX annoy_text text_embedding TYPE annoy(1000) GRANULARITY 1000
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192;
-
-INSERT INTO laion_annoy SELECT * FROM laion;
+SETTINGS index_granularity = 8192
 ```
 
-By default, Annoy indexes use the L2 distance as metric. Further tuning knobs for index creation and search are described in the Annoy index [documentation](../../engines/table-engines/mergetree-family/annindexes.md). Let's check now again with the same query:
+When created, the index will be built by L2Distance. You can read more about the parameters in the [annoy documentation](../../engines/table-engines/mergetree-family/annindexes.md#annoy-annoy). It makes sense to build indexes for a large number of granules. If you need good speed, then GRANULARITY should be several times larger than the expected number of results in the search. 
+Now let's check again with the same query:
 
 ```sql
-SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {target:Array(Float32)}) LIMIT 8
+select url, caption from test_indexes_laion where similarity > 0.2 order by L2Distance(image_embedding, {target:Array(Float32)}) limit 8
 ```
 
 **Result**
@@ -163,18 +159,15 @@ SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {targe
 8 rows in set. Elapsed: 0.641 sec. Processed 22.06 thousand rows, 49.36 MB (91.53 thousand rows/s., 204.81 MB/s.)
 ```
 
-The speed increased significantly at the cost of less accurate results. This is because the ANN index only provide approximate search results. Note the example searched for similar image embeddings, yet it is also possible to search for positive image caption embeddings.
+The speed has increased significantly. But now, the results sometimes differ from what you are looking for. This is due to the approximation of the search and the quality of the constructed embedding. Note that the example was given for picture embeddings, but there are also text embeddings in the dataset, which can also be used for searching.
 
-## Creating embeddings with UDFs
+## Scripts for embeddings
 
-One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
+Usually, we do not want to get embeddings from existing data, but to get them for new data and look for similar ones in old data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) for this purpose. They will allow you to set the `target` vector without leaving the client. All of the following scripts will be written for the `ViT-B/32` model, as it was used for this dataset. You can use any model, but it is necessary to build embeddings in the dataset and for new objects using the same model.
 
 ### Text embeddings
 
-First, store the following Python script in the `user_scripts/` directory of your ClickHouse data path and make it executable (`chmod +x encode_text.py`).
-
 `encode_text.py`:
-
 ```python
 #!/usr/bin/python3
 import clip
@@ -189,12 +182,10 @@ if __name__ == '__main__':
         inputs = clip.tokenize(text)
         with torch.no_grad():
             text_features = model.encode_text(inputs)[0].tolist()
-            print(text_features)
         sys.stdout.flush()
 ```
 
-Then create `encode_text_function.xml` in a location referenced by `<user_defined_executable_functions_config>/path/to/*_function.xml</user_defined_executable_functions_config>` in your ClickHouse server configuration file.
-
+`encode_text_function.xml`:
 ```xml
 <functions>
     <function>
@@ -212,19 +203,19 @@ Then create `encode_text_function.xml` in a location referenced by `<user_define
 </functions>
 ```
 
-You can now simply use:
+Now we can simply use:
 
 ```sql
 SELECT encode_text('cat');
 ```
-The first run will be slow because it loads the model, but repeated runs will be fast. We can then copy the output to `SET param_target=...` and can easily write queries.
+
+The first use will be slow because the model needs to be loaded. But repeated queries will be fast. Then we copy the results to ``set param_target=...`` and can easily write queries 
 
 ### Image embeddings
 
-Image embeddings can be created similarly but we will provide the Python script the path to a local image instead of the image caption text.
+For pictures, the process is similar, but you send the path instead of the picture (if necessary, you can implement a download picture with processing, but it will take longer)
 
-`encode_image.py`
-
+`encode_picture.py`
 ```python
 #!/usr/bin/python3
 import clip
@@ -240,31 +231,29 @@ if __name__ == '__main__':
         image = preprocess(Image.open(text.strip())).unsqueeze(0).to(device)
         with torch.no_grad():
             image_features = model.encode_image(image)[0].tolist()
-            print(image_features)
+        print(image_features)
         sys.stdout.flush()
 ```
 
-`encode_image_function.xml`
-
+`encode_picture_function.xml`
 ```xml
 <functions>
     <function>
         <type>executable_pool</type>
-        <name>encode_image</name>
+        <name>encode_picture</name>
         <return_type>Array(Float32)</return_type>
         <argument>
             <type>String</type>
             <name>path</name>
         </argument>
         <format>TabSeparated</format>
-        <command>encode_image.py</command>
+        <command>encode_picture.py</command>
         <command_read_timeout>1000000</command_read_timeout>
     </function>
 </functions>
 ```
 
-Then run this query:
-
+The query:
 ```sql
-SELECT encode_image('/path/to/your/image');
+SELECT encode_picture('some/path/to/your/picture');
 ```

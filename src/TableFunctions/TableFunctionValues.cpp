@@ -119,14 +119,14 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     structure = ColumnsDescription(names_and_types);
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/) const
 {
     return structure;
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = getActualTableStructure(context);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())

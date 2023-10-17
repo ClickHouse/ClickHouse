@@ -40,8 +40,6 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    bool supportsCountRows() const override { return true; }
-
 protected:
     std::shared_ptr<PeekableReadBuffer> buf;
 };
@@ -61,8 +59,6 @@ public:
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
-    void skipRow() override;
-
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
 
@@ -74,7 +70,7 @@ public:
     void skipPrefixBeforeHeader() override;
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override;
+    bool allowVariableNumberOfColumns() override;
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
@@ -106,10 +102,8 @@ public:
     CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.csv.allow_variable_number_of_columns; }
-
-    std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
-    std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;
+    DataTypes readRowAndGetDataTypesImpl() override;
+    std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes() override;
 
     PeekableReadBuffer buf;
     CSVFormatReader reader;

@@ -12,7 +12,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -113,68 +112,6 @@ void CSVRowInputFormat::resetParser()
 {
     RowInputFormatWithNamesAndTypes::resetParser();
     buf->reset();
-}
-
-void CSVFormatReader::skipRow()
-{
-    bool quotes = false;
-    ReadBuffer & istr = *buf;
-
-    while (!istr.eof())
-    {
-        if (quotes)
-        {
-            auto * pos = find_first_symbols<'"'>(istr.position(), istr.buffer().end());
-            istr.position() = pos;
-
-            if (pos > istr.buffer().end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-            else if (pos == istr.buffer().end())
-                continue;
-            else if (*pos == '"')
-            {
-                ++istr.position();
-                if (!istr.eof() && *istr.position() == '"')
-                    ++istr.position();
-                else
-                    quotes = false;
-            }
-        }
-        else
-        {
-            auto * pos = find_first_symbols<'"', '\r', '\n'>(istr.position(), istr.buffer().end());
-            istr.position() = pos;
-
-            if (pos > istr.buffer().end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-            else if (pos == istr.buffer().end())
-                continue;
-
-            if (*pos == '"')
-            {
-                quotes = true;
-                ++istr.position();
-                continue;
-            }
-
-            if (*pos == '\n')
-            {
-                ++istr.position();
-                if (!istr.eof() && *istr.position() == '\r')
-                    ++istr.position();
-                return;
-            }
-            else if (*pos == '\r')
-            {
-                ++istr.position();
-                if (!istr.eof() && *pos == '\n')
-                {
-                    ++pos;
-                    return;
-                }
-            }
-        }
-    }
 }
 
 static void skipEndOfLine(ReadBuffer & in)
@@ -347,7 +284,7 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-bool CSVFormatReader::allowVariableNumberOfColumns() const
+bool CSVFormatReader::allowVariableNumberOfColumns()
 {
     return format_settings.csv.allow_variable_number_of_columns;
 }
@@ -473,22 +410,19 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::pair<std::vector<String>, DataTypes> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, format_settings, FormatSettings::EscapingRule::CSV);
-    return std::make_pair(std::move(fields), std::move(data_types));
+    return {fields, data_types};
 }
 
-std::optional<DataTypes> CSVSchemaReader::readRowAndGetDataTypesImpl()
+DataTypes CSVSchemaReader::readRowAndGetDataTypesImpl()
 {
-    auto fields_with_types = readRowAndGetFieldsAndDataTypes();
-    if (!fields_with_types)
-        return {};
-    return std::move(fields_with_types->second);
+    return std::move(readRowAndGetFieldsAndDataTypes().second);
 }
 
 

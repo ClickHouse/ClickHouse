@@ -60,12 +60,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_, const std::optional<UUID> & user_id_, const std::vector<UUID> & current_roles_)
+AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
     : query(query_->clone())
     , query_str(queryToString(query))
     , settings(settings_)
-    , user_id(user_id_)
-    , current_roles(current_roles_)
     , hash(calculateHash())
 {
 }
@@ -74,8 +72,6 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     : query(other.query->clone())
     , query_str(other.query_str)
     , settings(other.settings)
-    , user_id(other.user_id)
-    , current_roles(other.current_roles)
     , hash(other.hash)
 {
 }
@@ -87,8 +83,6 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
     {
         query = other.query->clone();
         query_str = other.query_str;
-        user_id = other.user_id;
-        current_roles = other.current_roles;
         settings = other.settings;
         hash = other.hash;
     }
@@ -101,13 +95,6 @@ UInt128 AsynchronousInsertQueue::InsertQuery::calculateHash() const
     SipHash siphash;
     query->updateTreeHash(siphash);
 
-    if (user_id)
-    {
-        siphash.update(*user_id);
-        for (const auto & current_role : current_roles)
-            siphash.update(current_role);
-    }
-
     for (const auto & setting : settings.allChanged())
     {
         /// We don't consider this setting because it is only for deduplication,
@@ -118,12 +105,14 @@ UInt128 AsynchronousInsertQueue::InsertQuery::calculateHash() const
         applyVisitor(FieldVisitorHash(siphash), setting.getValue());
     }
 
-    return siphash.get128();
+    UInt128 res;
+    siphash.get128(res);
+    return res;
 }
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
-    return query_str == other.query_str && user_id == other.user_id && current_roles == other.current_roles && settings == other.settings;
+    return query_str == other.query_str && settings == other.settings;
 }
 
 AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, const String & async_dedup_token_, MemoryTracker * user_memory_tracker_)
@@ -264,15 +253,17 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
             return PushResult
             {
                 .status = PushResult::TOO_MUCH_DATA,
-                .future = {},
                 .insert_data_buffer = std::make_unique<ConcatReadBuffer>(std::move(buffers)),
             };
         }
     }
 
+    if (auto quota = query_context->getQuota())
+        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
+
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), settings.insert_deduplication_token, CurrentThread::getUserMemoryTracker());
 
-    InsertQuery key{query, settings, query_context->getUserID(), query_context->getCurrentRoles()};
+    InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
 
@@ -329,7 +320,6 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     {
         .status = PushResult::OK,
         .future = std::move(insert_future),
-        .insert_data_buffer = nullptr,
     };
 }
 
@@ -448,7 +438,7 @@ try
         elem.flush_query_id = flush_query_id;
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
-        log.add(std::move(elem));
+        log.add(elem);
     }
 }
 catch (...)
@@ -470,6 +460,7 @@ try
     const auto * log = &Poco::Logger::get("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto insert_context = Context::createCopy(global_context);
+    DB::CurrentThread::QueryScope query_scope_holder(insert_context);
     bool internal = false; // To enable logging this query
     bool async_insert = true;
 
@@ -479,11 +470,6 @@ try
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings.set("input_format_parallel_parsing", false);
     insert_context->makeQueryContext();
-
-    /// Access rights must be checked for the user who executed the initial INSERT query.
-    if (key.user_id)
-        insert_context->setUser(*key.user_id, key.current_roles);
-
     insert_context->setSettings(key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
@@ -496,9 +482,6 @@ try
     insert_context->setInitialQueryStartTime(query_start_time);
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
-
-    DB::CurrentThread::QueryScope query_scope_holder(insert_context);
-
     size_t log_queries_cut_to_length = insert_context->getSettingsRef().log_queries_cut_to_length;
     String query_for_logging = insert_query.hasSecretParts()
         ? insert_query.formatForLogging(log_queries_cut_to_length)
@@ -625,7 +608,7 @@ try
             if (!elem.exception.empty())
             {
                 elem.status = AsynchronousInsertLogElement::ParsingError;
-                insert_log->add(std::move(elem));
+                insert_log->add(elem);
             }
             else
             {
@@ -674,7 +657,7 @@ try
             total_rows, total_bytes, key.query_str);
 
         bool pulling_pipeline = false;
-        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, internal);
     }
     catch (...)
     {

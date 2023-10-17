@@ -60,8 +60,6 @@ struct StorageSnapshot
         init();
     }
 
-    std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
-
     /// Get all available columns with types according to options.
     NamesAndTypesList getColumns(const GetColumnsOptions & options) const;
 
@@ -73,7 +71,7 @@ struct StorageSnapshot
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
-    Block getSampleBlockForColumns(const Names & column_names) const;
+    Block getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values = {}) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
 

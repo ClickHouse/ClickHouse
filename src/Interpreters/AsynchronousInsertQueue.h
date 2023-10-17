@@ -53,11 +53,9 @@ private:
         ASTPtr query;
         String query_str;
         Settings settings;
-        std::optional<UUID> user_id;
-        std::vector<UUID> current_roles;
         UInt128 hash;
 
-        InsertQuery(const ASTPtr & query_, const Settings & settings_, const std::optional<UUID> & user_id_, const std::vector<UUID> & current_roles_);
+        InsertQuery(const ASTPtr & query_, const Settings & settings_);
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;

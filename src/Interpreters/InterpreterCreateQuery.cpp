@@ -9,7 +9,6 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
-#include <Common/logger_useful.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -31,7 +30,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -73,6 +71,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFixedString.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -96,7 +95,6 @@ namespace ErrorCodes
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_INDEX;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
@@ -221,12 +219,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
+        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
-        /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
-        /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
-        /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
+        /// Ignore UUID if it's ON CLUSTER query
         create.uuid = UUIDHelpers::Nil;
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
@@ -699,8 +695,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & index : create.columns_list->indices->children)
             {
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
-                if (properties.indices.has(index_desc.name))
-                    throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use different index names.", backQuoteIfNeed(index_desc.name));
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                 {
@@ -710,12 +704,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
 
-                if (index_desc.type == "usearch" && !settings.allow_experimental_usearch_index)
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "USearch index is disabled. Turn on allow_experimental_usearch_index");
-
                 properties.indices.push_back(index_desc);
             }
-
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
@@ -774,7 +764,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
-        properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+        properties.columns = table_function->getActualTableStructure(getContext());
     }
     else if (create.is_dictionary)
     {
@@ -838,13 +828,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                             "Cannot create table with column '{}' for *MergeTree engines because it "
                             "is reserved for lightweight delete feature",
                             LightweightDeleteDescription::FILTER_COLUMN.name);
-
-        auto search_block_number = all_columns.find(BlockNumberColumn::name);
-        if (search_block_number != all_columns.end())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Cannot create table with column '{}' for *MergeTree engines because it "
-                            "is reserved for storing block number",
-                            BlockNumberColumn::name);
     }
 
     const auto & settings = getContext()->getSettingsRef();
@@ -884,7 +867,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         for (const auto & [name, type] : properties.columns.getAllPhysical())
         {
-            auto basic_type = removeLowCardinalityAndNullable(type);
+            auto basic_type = removeLowCardinality(removeNullable(type));
             if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
             {
                 if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
@@ -997,6 +980,19 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     setDefaultTableEngine(*create.storage, getContext()->getSettingsRef().default_table_engine.value);
 }
 
+static void generateUUIDForTable(ASTCreateQuery & create)
+{
+    if (create.uuid == UUIDHelpers::Nil)
+        create.uuid = UUIDHelpers::generateV4();
+
+    /// If destination table (to_table_id) is not specified for materialized view,
+    /// then MV will create inner table. We should generate UUID of inner table here,
+    /// so it will be the same on all hosts if query in ON CLUSTER or database engine is Replicated.
+    bool need_uuid_for_inner_table = !create.attach && create.is_materialized_view && !create.to_table_id;
+    if (need_uuid_for_inner_table && create.to_inner_uuid == UUIDHelpers::Nil)
+        create.to_inner_uuid = UUIDHelpers::generateV4();
+}
+
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
 {
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
@@ -1029,26 +1025,17 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             kind_upper, create.table);
         }
 
-        create.generateRandomUUID();
+        generateUUIDForTable(create);
     }
     else
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
-        if (has_uuid && !is_on_cluster && !internal)
-        {
-            /// We don't show the following error message either
-            /// 1) if it's a secondary query (an initiator of a CREATE TABLE ON CLUSTER query
-            /// doesn't know the exact database engines on replicas and generates an UUID, and then the replicas are free to ignore that UUID); or
-            /// 2) if it's an internal query (for example RESTORE uses internal queries to create tables and it generates an UUID
-            /// before creating a table to be possibly ignored if the database engine doesn't need it).
+        if (has_uuid && !is_on_cluster)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
-        }
 
-        /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
-        /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
-        /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
+        /// Ignore UUID if it's ON CLUSTER query
         create.uuid = UUIDHelpers::Nil;
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
@@ -1342,32 +1329,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
-    {
-        if (getContext()->getZooKeeperMetadataTransaction() &&
-            !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
-            !DatabaseCatalog::instance().hasUUIDMapping(create.uuid) &&
-            Context::getGlobalContextInstance()->isServerCompletelyStarted() &&
-            Context::getGlobalContextInstance()->getConfigRef().getBool("allow_moving_table_directory_to_trash", false))
-        {
-            /// This is a secondary query from a Replicated database. It cannot be retried with another UUID, we must execute it as is.
-            /// We don't have a table with this UUID (and all metadata is loaded),
-            /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
-
-            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
-            LOG_WARNING(&Poco::Logger::get("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
-                        Poco::toLower(storage_name), String(data_path), trash_path);
-            fs::create_directories(trash_path.parent_path());
-            renameNoReplace(full_data_path, trash_path);
-        }
-        else
-        {
-            throw Exception(storage_already_exists_error_code,
-                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
-        }
-    }
+    if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
+        throw Exception(storage_already_exists_error_code,
+            "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
 
     bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;
@@ -1629,7 +1594,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    create.generateRandomUUID();
+    generateUUIDForTable(create);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);

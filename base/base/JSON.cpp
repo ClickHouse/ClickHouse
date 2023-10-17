@@ -7,6 +7,8 @@
 #include <base/find_symbols.h>
 #include <base/preciseExp10.h>
 
+#include <iostream>
+
 #define JSON_MAX_DEPTH 100
 
 

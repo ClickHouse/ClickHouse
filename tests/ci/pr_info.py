@@ -94,7 +94,7 @@ class PRInfo:
         self.event = github_event
         self.changed_files = set()  # type: Set[str]
         self.body = ""
-        self.diff_urls = []  # type: List[str]
+        self.diff_urls = []
         # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
         self.merged_pr = 0
@@ -104,7 +104,7 @@ class PRInfo:
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
-            self.sha = github_event["workflow_run"]["head_sha"]  # type: str
+            self.sha = github_event["workflow_run"]["head_sha"]
             prs_for_sha = get_gh_api(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
                 "/pulls",
@@ -114,7 +114,7 @@ class PRInfo:
                 github_event["pull_request"] = prs_for_sha[0]
 
         if "pull_request" in github_event:  # pull request and other similar events
-            self.number = github_event["pull_request"]["number"]  # type: int
+            self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
                 try:
                     response = get_gh_api(
@@ -144,24 +144,20 @@ class PRInfo:
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
-            self.base_ref = github_event["pull_request"]["base"]["ref"]  # type: str
+            self.base_ref = github_event["pull_request"]["base"]["ref"]
             # ClickHouse/ClickHouse
-            self.base_name = github_event["pull_request"]["base"]["repo"][
-                "full_name"
-            ]  # type: str
+            self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
             # any_branch-name - the name of working branch name
-            self.head_ref = github_event["pull_request"]["head"]["ref"]  # type: str
+            self.head_ref = github_event["pull_request"]["head"]["ref"]
             # UserName/ClickHouse or ClickHouse/ClickHouse
-            self.head_name = github_event["pull_request"]["head"]["repo"][
-                "full_name"
-            ]  # type: str
+            self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
             }  # type: Set[str]
 
-            self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
-            self.user_orgs = set()  # type: Set[str]
+            self.user_login = github_event["pull_request"]["user"]["login"]
+            self.user_orgs = set([])
             if need_orgs:
                 user_orgs_response = get_gh_api(
                     github_event["pull_request"]["user"]["organizations_url"],
@@ -174,7 +170,7 @@ class PRInfo:
             self.diff_urls.append(github_event["pull_request"]["diff_url"])
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
-            commit_message = github_event["head_commit"]["message"]  # type: str
+            commit_message = github_event["head_commit"]["message"]
             if commit_message.startswith("Merge pull request #"):
                 merged_pr = commit_message.split(maxsplit=4)[3]
                 try:
@@ -238,9 +234,7 @@ class PRInfo:
         else:
             print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
-            self.sha = os.getenv(
-                "GITHUB_SHA", "0000000000000000000000000000000000000000"
-            )
+            self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
             self.labels = set()
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
@@ -285,7 +279,7 @@ class PRInfo:
             "user_orgs": self.user_orgs,
         }
 
-    def has_changes_in_documentation(self) -> bool:
+    def has_changes_in_documentation(self):
         # If the list wasn't built yet the best we can do is to
         # assume that there were changes.
         if self.changed_files is None or not self.changed_files:
@@ -293,9 +287,10 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            path_in_docs = f.startswith("docs/")
+            path_in_docs = "docs" in f
+            path_in_website = "website" in f
             if (
-                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
+                ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
             ) or "docker/docs" in f:
                 return True
         return False
