@@ -46,7 +46,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , definer(other.definer)
-    , ignore_sql_security_check(other.ignore_sql_security_check)
+    , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -77,7 +77,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes.reset();
     select = other.select;
     definer = other.definer;
-    ignore_sql_security_check = other.ignore_sql_security_check;
+    sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
@@ -93,11 +93,10 @@ void StorageInMemoryMetadata::setDefiner(std::shared_ptr<ASTSQLSecurity> sql_sec
     if (!sql_security)
         return;
 
-    if (sql_security->type == ASTSQLSecurity::SQLSecurity::DEFINER)
+    if (sql_security->type == ASTSQLSecurity::Type::DEFINER)
         definer = sql_security->definer->toString();
 
-    if (sql_security->type == ASTSQLSecurity::SQLSecurity::NONE)
-        ignore_sql_security_check = true;
+    sql_security_type = sql_security->type;
 }
 
 UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
@@ -122,7 +121,11 @@ bool StorageInMemoryMetadata::hasDefiner() const
 ContextMutablePtr StorageInMemoryMetadata::getDefinerContext(ContextPtr context) const
 {
     auto new_context = Context::createCopy(context);
-    if (shouldIgnoreSQLSecurity())
+
+    if (!sql_security_type.has_value())
+        return new_context;
+
+    if (sql_security_type == ASTSQLSecurity::Type::NONE)
         new_context->resetUser();
     else if (hasDefiner())
         new_context->setUser(getDefinerID(context));

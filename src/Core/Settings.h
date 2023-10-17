@@ -810,8 +810,8 @@ class IColumn;
     M(Bool, allow_create_index_without_type, false, "Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.", 0) \
     M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0) \
     M(Bool, print_pretty_type_names, false, "Print pretty type names in DESCRIBE query and toTypeName() function", 0) \
-    M(String, default_view_sql_security, "INVOKER", "Allows to set a default value for SQL SECURITY option when creating VIEW.", 0) \
-    M(String, default_matview_sql_security, "CURRENT_USER", "Allows to set a default value for SQL SECURITY option when creating MATERIALIZED VIEW.", 0) \
+    M(String, default_view_sql_security, "DEFINER", "Allows to set a default value for SQL SECURITY option when creating view.", 0) \
+    M(String, default_view_definer, "CURRENT_USER", "Allows to set a default value for DEFINER option when creating view.", 0) \
     M(Bool, stop_insert_if_fail_to_update_dependent_view, true, "If true, insert queries will fail if any of the underlying materialized view inserts have failed.", 0) \
 
 // End of COMMON_SETTINGS

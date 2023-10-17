@@ -5,10 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-user1="user02884_1_$RANDOM"
-user2="user02884_2_$RANDOM"
-user3="user02884_3_$RANDOM"
-db="db02884_$RANDOM"
+user1="user02884_1_$RANDOM$RANDOM"
+user2="user02884_2_$RANDOM$RANDOM"
+user3="user02884_3_$RANDOM$RANDOM"
+db="db02884_$RANDOM$RANDOM"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP DATABASE IF EXISTS $db;
@@ -28,29 +28,36 @@ AS SELECT * FROM $db.test_table;
 CREATE DEFINER $user1 VIEW $db.test_view_2 (s String)
 AS SELECT * FROM $db.test_table;
 
-CREATE DEFINER = $user1 SQL SECURITY DEFINER VIEW $db.test_view_3 (s String)
+CREATE VIEW $db.test_view_3 (s String)
+DEFINER = $user1 SQL SECURITY DEFINER
 AS SELECT * FROM $db.test_table;
 
-CREATE DEFINER = $user1 SQL SECURITY INVOKER VIEW $db.test_view_4 (s String)
+CREATE VIEW $db.test_view_4 (s String)
+DEFINER = $user1 SQL SECURITY INVOKER
 AS SELECT * FROM $db.test_table;
 
-CREATE SQL SECURITY INVOKER VIEW $db.test_view_5 (s String)
+CREATE VIEW $db.test_view_5 (s String)
+SQL SECURITY INVOKER
 AS SELECT * FROM $db.test_table;
 
-CREATE SQL SECURITY DEFINER VIEW $db.test_view_6 (s String)
+CREATE VIEW $db.test_view_6 (s String)
+SQL SECURITY DEFINER
 AS SELECT * FROM $db.test_table;
 
-CREATE DEFINER CURRENT_USER VIEW $db.test_view_7 (s String)
+CREATE VIEW $db.test_view_7 (s String)
+DEFINER CURRENT_USER
 AS SELECT * FROM $db.test_table;
 
-CREATE DEFINER $user3 VIEW $db.test_view_8 (s String)
+CREATE VIEW $db.test_view_8 (s String)
+DEFINER $user3
 AS SELECT * FROM $db.test_table;
 
-CREATE SQL SECURITY NONE VIEW $db.test_view_9 (s String)
+CREATE VIEW $db.test_view_9 (s String)
+SQL SECURITY NONE
 AS SELECT * FROM $db.test_table;
 EOF
 
-(( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_1" 2>&1 | grep -c "DEFINER") >= 1 )) && echo "UNEXPECTED" || echo "OK"
+(( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_1" 2>&1 | grep -c "DEFINER") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_2" 2>&1 | grep -c "DEFINER = $user1") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -67,7 +74,7 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');"
 
-(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_1" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_1"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_2"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_3"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
@@ -80,32 +87,32 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_9"
 
 echo "===== MaterializedView ====="
 ${CLICKHOUSE_CLIENT} --query "
-  CREATE DEFINER = $user1 SQL SECURITY DEFINER
-  MATERIALIZED VIEW $db.test_mv_1 (s String)
+  CREATE MATERIALIZED VIEW $db.test_mv_1 (s String)
   ENGINE = MergeTree ORDER BY s
+  DEFINER = $user1 SQL SECURITY DEFINER
   AS SELECT * FROM $db.test_table;
 "
 
 (( $(${CLICKHOUSE_CLIENT} --query "
-  CREATE SQL SECURITY INVOKER
-  MATERIALIZED VIEW $db.test_mv_2 (s String)
+  CREATE MATERIALIZED VIEW $db.test_mv_2 (s String)
   ENGINE = MergeTree ORDER BY s
+  SQL SECURITY INVOKER
   AS SELECT * FROM $db.test_table;
 " 2>&1 | grep -c "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 ${CLICKHOUSE_CLIENT} --query "
-  CREATE SQL SECURITY NONE
-  MATERIALIZED VIEW $db.test_mv_3 (s String)
+  CREATE MATERIALIZED VIEW $db.test_mv_3 (s String)
   ENGINE = MergeTree ORDER BY s
+  SQL SECURITY NONE
   AS SELECT * FROM $db.test_table;
 "
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE $db.test_mv_data (s String) ENGINE = MergeTree ORDER BY s;"
 
 ${CLICKHOUSE_CLIENT} --query "
-  CREATE DEFINER = $user1 SQL SECURITY DEFINER
-  MATERIALIZED VIEW $db.test_mv_4
+  CREATE MATERIALIZED VIEW $db.test_mv_4
   TO $db.test_mv_data
+  DEFINER = $user1 SQL SECURITY DEFINER
   AS SELECT * FROM $db.test_table;
 "
 
@@ -130,5 +137,39 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.test_table FROM $user1"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
+
+echo "===== TestGrants ====="
+${CLICKHOUSE_CLIENT} --query "GRANT CREATE ON *.* TO $user1"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_table TO $user1, $user2"
+
+${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_g_1
+  DEFINER = CURRENT_USER SQL SECURITY DEFINER
+  AS SELECT * FROM $db.test_table;
+"
+
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_g_2
+  DEFINER = $user2
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
+
+${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_g_2
+  DEFINER = $user2
+  AS SELECT * FROM $db.test_table;
+"
+
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "
+  CREATE VIEW $db.test_view_g_3
+  SQL SECURITY NONE
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
+
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS $db;"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";
+

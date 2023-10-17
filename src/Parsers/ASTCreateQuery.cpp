@@ -18,33 +18,35 @@ void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & s
     if (!definer && !is_definer_current_user && !type.has_value())
         return;
 
-    if (type.has_value() && type == SQLSecurity::DEFINER)
+    if (type.has_value() && type == Type::DEFINER)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEFINER" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
         settings.ostr << " = ";
         if (definer)
             definer->formatImpl(settings, state, frame);
         else
             settings.ostr << "CURRENT_USER";
+        settings.ostr << " ";
     }
 
     if (type.has_value())
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SQL SECURITY" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
 
         switch (*type)
         {
-            case SQLSecurity::INVOKER:
+            case Type::INVOKER:
                 settings.ostr << " INVOKER";
                 break;
-            case SQLSecurity::DEFINER:
+            case Type::DEFINER:
                 settings.ostr << " DEFINER";
                 break;
-            case SQLSecurity::NONE:
+            case Type::NONE:
                 settings.ostr << " NONE";
                 break;
         }
     }
+    settings.ostr << (settings.one_line ? "" : "\n");
 }
 
 ASTPtr ASTStorage::clone() const
@@ -328,9 +330,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "WINDOW VIEW";
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << action << (settings.hilite ? hilite_none : "");
-        if (sql_security)
-            sql_security->formatImpl(settings, state, frame);
-
         settings.ostr << " ";
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (temporary ? "TEMPORARY " : "")
                 << what << " "
@@ -475,10 +474,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     else if (is_create_empty)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
+    settings.ostr << (settings.one_line ? "" : "\n");
+    if (sql_security)
+        sql_security->formatImpl(settings, state, frame);
+
     if (select)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
-                      << settings.nl_or_ws
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "AS "
                       << (comment ? "(" : "") << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
         settings.ostr << (settings.hilite ? hilite_keyword : "") << (comment ? ")" : "") << (settings.hilite ? hilite_none : "");

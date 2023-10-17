@@ -50,14 +50,13 @@ struct StorageInMemoryMetadata
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
 
-    /// DEFINER <user_name>. Allows to specify a definer of the table other than the current user.
+    /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.
-    /// std::nullopt means that the definer was not specified, and the current user will be used for the query execution.
     std::optional<String> definer;
 
-    /// SQL SECURITY NONE. This is a deprecated setting, added only for backward compatibility.
-    /// This setting allows the invoker to run all view's sub-queries using global context (e.g., without checking any rights).
-    bool ignore_sql_security_check = false;
+    /// SQL SECURITY <DEFINER | INVOKER | NONE>
+    /// Supported for MaterializedView and View.
+    std::optional<ASTSQLSecurity::Type> sql_security_type;
 
     String comment;
 
@@ -114,7 +113,8 @@ struct StorageInMemoryMetadata
     void setDefiner(std::shared_ptr<ASTSQLSecurity> sql_security);
     UUID getDefinerID(ContextPtr context) const;
     bool hasDefiner() const;
-    bool shouldIgnoreSQLSecurity() const { return ignore_sql_security_check; }
+    bool shouldIgnoreSQLSecurity() const { return sql_security_type == ASTSQLSecurity::Type::NONE; }
+
     /// Returns a copy of the context with co
     ContextMutablePtr getDefinerContext(ContextPtr context) const;
 

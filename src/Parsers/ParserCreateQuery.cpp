@@ -89,7 +89,7 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool is_definer_current_user = false;
     ASTPtr definer;
-    std::optional<ASTSQLSecurity::SQLSecurity> type;
+    std::optional<ASTSQLSecurity::Type> type;
 
     if (s_definer.ignore(pos, expected))
     {
@@ -99,25 +99,28 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
             return false;
 
-        type = ASTSQLSecurity::SQLSecurity::DEFINER;
+        type = ASTSQLSecurity::Type::DEFINER;
     }
 
     if (ParserKeyword{"SQL SECURITY"}.ignore(pos, expected))
     {
         if (s_definer.ignore(pos, expected))
         {
-            type = ASTSQLSecurity::SQLSecurity::DEFINER;
+            type = ASTSQLSecurity::Type::DEFINER;
 
             if (!definer)
                 is_definer_current_user = true;
         }
         else if (ParserKeyword{"INVOKER"}.ignore(pos, expected))
-            type = ASTSQLSecurity::SQLSecurity::INVOKER;
+            type = ASTSQLSecurity::Type::INVOKER;
         else if (ParserKeyword{"NONE"}.ignore(pos, expected))
-            type = ASTSQLSecurity::SQLSecurity::NONE;
+            type = ASTSQLSecurity::Type::NONE;
         else
             return false;
     }
+
+    if (!type.has_value())
+        return false;
 
     auto result = std::make_shared<ASTSQLSecurity>();
     result->is_definer_current_user = is_definer_current_user;
@@ -891,8 +894,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             return false;
     }
 
-    if (!sql_security_p.parse(pos, sql_security, expected))
-        return false;
+    sql_security_p.parse(pos, sql_security, expected);
 
     if (!s_live.ignore(pos, expected))
         return false;
@@ -945,6 +947,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (!s_rparen.ignore(pos, expected))
             return false;
     }
+
+    if (!sql_security && !sql_security_p.parse(pos, sql_security, expected))
+        sql_security = std::make_shared<ASTSQLSecurity>();
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1442,8 +1447,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         replace_view = true;
     }
 
-    if (!sql_security_p.parse(pos, sql_security, expected))
-        return false;
+    sql_security_p.parse(pos, sql_security, expected);
 
     if (!replace_view && s_materialized.ignore(pos, expected))
     {
@@ -1502,6 +1506,9 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             is_create_empty = true;
     }
 
+    if (!sql_security && !sql_security_p.parse(pos, sql_security, expected))
+        sql_security = std::make_shared<ASTSQLSecurity>();
+
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
         return false;
@@ -1542,8 +1549,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->set(query->storage, storage);
     if (comment)
         query->set(query->comment, comment);
-    if (sql_security)
-        query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
+    query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
 
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);

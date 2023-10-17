@@ -15,11 +15,13 @@ class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
 
-
+/// DEFINER = <user_name | CURRENT_USER> SQL SECURITY <DEFINER | INVOKER | NONE>
+/// If type was not set during parsing, the default type from settings will be used.
+/// Currently supports only views.
 class ASTSQLSecurity : public IAST
 {
 public:
-    enum class SQLSecurity: UInt8
+    enum class Type: UInt8
     {
         INVOKER = 0,
         DEFINER = 1,
@@ -28,7 +30,7 @@ public:
 
     bool is_definer_current_user{false};
     std::shared_ptr<ASTUserNameWithHost> definer = nullptr;
-    std::optional<SQLSecurity> type = std::nullopt;
+    std::optional<Type> type = std::nullopt;
 
     String getID(char) const override { return "View SQL Security"; }
     ASTPtr clone() const override { return std::make_shared<ASTSQLSecurity>(*this); }
