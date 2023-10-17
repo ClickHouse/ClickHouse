@@ -35,6 +35,9 @@ void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & setti
                 settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
             else
                 settings.ostr << " = '[HIDDEN]'";
+            Field override_value;
+            if (overridability.tryGet(change.name, override_value))
+                settings.ostr << " " << (override_value.get<bool>() ? "" : "NOT ") << "OVERRIDABLE";
         }
     }
     if (!delete_keys.empty())

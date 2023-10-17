@@ -123,6 +123,9 @@ template <typename T> void copyConfigValue(
             ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported type in copyConfigValue(). "
             "Supported types are String, UInt64, Int64, Float64");
+    const auto overridable = getOverridable(from_config, from_path);
+    if (overridable)
+        setOverridable(to_config, to_path, *overridable);
 }
 
 void removeConfigValue(
@@ -147,13 +150,16 @@ ConfigurationPtr createEmptyConfiguration(const std::string & root_name)
     return config;
 }
 
-ConfigurationPtr createConfiguration(const std::string & root_name, const SettingsChanges & settings)
+ConfigurationPtr
+createConfiguration(const std::string & root_name, const SettingsChanges & settings, const SettingsChanges & overridability)
 {
     namespace Configuration = NamedCollectionConfiguration;
 
     auto config = Configuration::createEmptyConfiguration(root_name);
     for (const auto & [name, value] : settings)
         Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
+    for (const auto & [name, value] : overridability)
+        Configuration::setOverridable(*config, name, value.get<bool>());
 
     return config;
 }
@@ -202,6 +208,20 @@ void listKeys(
         return;
 
     listKeys(config, enumerate_paths, result, depth);
+}
+
+std::optional<bool> getOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    std::string overridable_path = path + "[@overridable]";
+    if (config.has(overridable_path))
+        return config.getBool(overridable_path);
+    return {};
+}
+
+void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, const bool value)
+{
+    std::string overridable_path = path + "[@overridable]";
+    config.setBool(overridable_path, value);
 }
 
 template String getConfigValue<String>(const Poco::Util::AbstractConfiguration & config,

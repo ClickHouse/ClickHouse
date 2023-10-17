@@ -15,6 +15,7 @@ public:
     SettingsChanges changes;
     std::vector<std::string> delete_keys;
     bool if_exists = false;
+    SettingsChanges overridability;
 
     String getID(char) const override { return "AlterNamedCollectionQuery"; }
 

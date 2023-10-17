@@ -223,6 +223,16 @@ public:
             keys.insert(key);
     }
 
+    bool getOverridable(const Key & key, const bool default_value)
+    {
+        const auto overridable = Configuration::getOverridable(*config, key);
+        if (overridable)
+            return *overridable;
+        return default_value;
+    }
+
+    void setOverridable(const Key & key, const bool value) { Configuration::setOverridable(*config, key, value); }
+
     ImplPtr createCopy(const std::string & collection_name_) const
     {
         return create(*config, collection_name_, "", keys);
@@ -414,6 +424,22 @@ template <typename T, bool Locked> void NamedCollection::setOrUpdate(const Key &
     pimpl->set<T>(key, value, true);
 }
 
+bool NamedCollection::getOverridable(const Key & key, bool default_value) const
+{
+    std::lock_guard lock(mutex);
+    return pimpl->getOverridable(key, default_value);
+}
+
+template <bool Locked>
+void NamedCollection::setOverridable(const Key & key, bool value)
+{
+    assertMutable();
+    std::unique_lock lock(mutex, std::defer_lock);
+    if constexpr (!Locked)
+        lock.lock();
+    return pimpl->setOverridable(key, value);
+}
+
 template <bool Locked> void NamedCollection::remove(const Key & key)
 {
     assertMutable();
@@ -518,6 +544,9 @@ template void NamedCollection::setOrUpdate<Int64, false>(const NamedCollection::
 template void NamedCollection::setOrUpdate<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
 template void NamedCollection::setOrUpdate<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
 template void NamedCollection::setOrUpdate<bool, false>(const NamedCollection::Key & key, const bool & value);
+
+template void NamedCollection::setOverridable<false>(const NamedCollection::Key & key, const bool value);
+template void NamedCollection::setOverridable<true>(const NamedCollection::Key & key, const bool value);
 
 template void NamedCollection::remove<true>(const Key & key);
 template void NamedCollection::remove<false>(const Key & key);

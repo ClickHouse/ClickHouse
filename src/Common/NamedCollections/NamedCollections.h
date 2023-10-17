@@ -51,6 +51,11 @@ public:
 
     template <typename T, bool locked = false> void setOrUpdate(const Key & key, const T & value);
 
+    bool getOverridable(const Key & key, bool default_value) const;
+
+    template <bool locked = false>
+    void setOverridable(const Key & key, bool value);
+
     template <bool locked = false> void remove(const Key & key);
 
     MutableNamedCollectionPtr duplicate() const;

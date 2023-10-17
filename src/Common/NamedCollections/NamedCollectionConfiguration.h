@@ -43,7 +43,8 @@ void removeConfigValue(
     Poco::Util::AbstractConfiguration & config,
     const std::string & path);
 
-ConfigurationPtr createConfiguration(const std::string & root_name, const SettingsChanges & settings);
+ConfigurationPtr
+createConfiguration(const std::string & root_name, const SettingsChanges & settings, const SettingsChanges & overridability);
 
 /// Enumerate keys paths of the config recursively.
 /// E.g. if `enumerate_paths` = {"root.key1"} and config like
@@ -67,6 +68,10 @@ void listKeys(
     std::queue<std::string> enumerate_paths,
     std::set<std::string, std::less<>> & result,
     ssize_t depth);
+
+std::optional<bool> getOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path);
+
+void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, bool value);
 }
 
 }

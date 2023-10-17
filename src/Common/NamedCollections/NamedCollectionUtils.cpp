@@ -199,6 +199,12 @@ public:
         for (const auto & [name, value] : create_query.changes)
             result_changes_map.emplace(name, value);
 
+        std::unordered_map<std::string, Field> result_overridability_map;
+        for (const auto & [name, value] : query.overridability)
+            result_overridability_map.emplace(name, value);
+        for (const auto & [name, value] : create_query.overridability)
+            result_overridability_map.emplace(name, value);
+
         for (const auto & delete_key : query.delete_keys)
         {
             auto it = result_changes_map.find(delete_key);
@@ -210,12 +216,20 @@ public:
                     delete_key);
             }
             else
+            {
                 result_changes_map.erase(it);
+                auto it_override = result_overridability_map.find(delete_key);
+                if (it_override != result_overridability_map.end())
+                    result_overridability_map.erase(it_override);
+            }
         }
 
         create_query.changes.clear();
         for (const auto & [name, value] : result_changes_map)
             create_query.changes.emplace_back(name, value);
+        create_query.overridability.clear();
+        for (const auto & [name, value] : result_overridability_map)
+            create_query.overridability.emplace_back(name, value);
 
         writeCreateQueryToMetadata(
             create_query,
@@ -244,8 +258,7 @@ private:
         const ASTCreateNamedCollectionQuery & query)
     {
         const auto & collection_name = query.collection_name;
-        const auto config = NamedCollectionConfiguration::createConfiguration(
-            collection_name, query.changes);
+        const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, query.changes, query.overridability);
 
         std::set<std::string, std::less<>> keys;
         for (const auto & [name, _] : query.changes)
@@ -447,6 +460,9 @@ void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr contex
 
     for (const auto & [name, value] : query.changes)
         collection->setOrUpdate<String, true>(name, convertFieldToString(value));
+
+    for (const auto & [name, value] : query.overridability)
+        collection->setOverridable<true>(name, value.get<bool>());
 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);
