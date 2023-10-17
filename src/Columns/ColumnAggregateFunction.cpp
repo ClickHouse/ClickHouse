@@ -83,7 +83,7 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, std::optio
 
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
-    if (!func->hasTrivialDestructor() && !src)
+    if (!func->hasTrivialDestructor() && !src && !keep_state)
         for (auto * val : data)
             func->destroy(val);
 }

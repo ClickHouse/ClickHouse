@@ -83,7 +83,7 @@ private:
 
     std::optional<size_t> version;
 
-    bool streaming = false;
+    bool keep_state = false;
 
     ColumnAggregateFunction() = default;
 
@@ -254,6 +254,6 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
-    void setStreaming(bool streaming_) { streaming = streaming_; }
+    void setKeepState(bool keep_state_) noexcept { keep_state = keep_state_; }
 };
 }

@@ -1262,29 +1262,15 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     auto clear_states = shouldClearStates(action, true);
     data.forEachValue([&](const auto & key, auto & mapped)
     {
-        /// For UDA with own emit strategy, there are two special cases to be handled:
-        /// 1. not all groups need to  be emitted. therefore proton needs to pick groups
-        /// that should emits, and only emit those groups while keep other groups unchanged.
-        /// 2. a single block trigger multiple emits. In this case, proton need insert the
-        /// same key multiple times for each emit result of this group.
+        method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
 
-        /// for non-UDA or UDA without emit strategy, 'should_emit' is always true.
-        /// For UDA with emit strategy, it is true only if the group should emit.
-        size_t emit_times = 1;
+        places.emplace_back(mapped);
 
-        if (emit_times > 0)
-        {
-            /// duplicate key for each emit
-            for (size_t i = 0; i < emit_times; i++)
-                method.insertKeyIntoColumns(key, key_columns, key_sizes_ref);
-            places.emplace_back(mapped);
-
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            /// Here we push the `mapped` to `places`, for streaming
-            /// case, we don't want aggregate function to destroy the places
-            if (clear_states)
-                mapped = nullptr;
-        }
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        /// Here we push the `mapped` to `places`, for streaming
+        /// case, we don't want aggregate function to destroy the places
+        if (clear_states)
+            mapped = nullptr;
     });
 
     std::exception_ptr exception;
@@ -1425,7 +1411,7 @@ Block Aggregator::prepareBlockAndFill(
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
 
-            column_aggregate_func.setStreaming(params.keep_state);
+            column_aggregate_func.setKeepState(params.keep_state);
 
             /// Add arenas to ColumnAggregateFunction, which can result in moving ownership to it if reference count
             /// get dropped in other places
