@@ -18,7 +18,7 @@ extern const int TOO_LARGE_STRING_SIZE;
 }
 
 template <typename Op>
-struct FunctionDistanceImpl
+struct FunctionStringDistanceImpl
 {
     using ResultType = typename Op::ResultType;
 
@@ -108,27 +108,6 @@ struct ByteHammingDistanceImpl
     }
 };
 
-struct ByteJaccardIndexImpl
-{
-    using ResultType = Float64;
-    static ResultType inline process(
-        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
-    {
-        if (haystack_size == 0 || needle_size == 0)
-            return 0;
-
-        std::unordered_set<char> haystack_set(haystack, haystack + haystack_size);
-        std::unordered_set<char> needle_set(needle, needle + needle_size);
-
-        size_t intersect = 0;
-        for (auto elem : haystack_set)
-        {
-            intersect += needle_set.contains(elem);
-        }
-        return static_cast<Float64>(intersect) / (haystack_set.size() + needle_set.size() - intersect);
-    }
-};
-
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
@@ -185,34 +164,24 @@ struct NameByteHammingDistance
     static constexpr auto name = "byteHammingDistance";
 };
 
-struct NameByteJaccardIndex
+struct NameEditDistance
 {
-    static constexpr auto name = "byteJaccardIndex";
+    static constexpr auto name = "editDistance";
 };
 
-struct NameByteEditDistance
-{
-    static constexpr auto name = "byteEditDistance";
-};
+using FunctionByteHammingDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
 
-using FunctionByteHammingDistance
-    = FunctionsStringSimilarity<FunctionDistanceImpl<ByteHammingDistanceImpl>, NameByteHammingDistance>;
+using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
 
-using FunctionByteJaccardIndex = FunctionsStringSimilarity<FunctionDistanceImpl<ByteJaccardIndexImpl>, NameByteJaccardIndex>;
-
-using FunctionByteEditDistance = FunctionsStringSimilarity<FunctionDistanceImpl<ByteEditDistanceImpl>, NameByteEditDistance>;
-
-REGISTER_FUNCTION(StringHammingDistance)
+REGISTER_FUNCTION(StringDistance)
 {
     factory.registerFunction<FunctionByteHammingDistance>(
-        FunctionDocumentation{.description = R"(Calculates the hamming distance between two bytes strings.)"});
+        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
-    factory.registerFunction<FunctionByteJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the jaccard similarity index between two bytes strings.)"});
-
     factory.registerFunction<FunctionByteEditDistance>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two bytes strings.)"});
-    factory.registerAlias("byteLevenshteinDistance", NameByteEditDistance::name);
+        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
+
+    factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 }
 }

@@ -9,16 +9,14 @@
 #include <functional>
 
 #include <elf.h>
-#include <link.h>
 
 
-using ElfAddr = ElfW(Addr);
-using ElfEhdr = ElfW(Ehdr);
-using ElfOff = ElfW(Off);
-using ElfPhdr = ElfW(Phdr);
-using ElfShdr = ElfW(Shdr);
-using ElfNhdr = ElfW(Nhdr);
-using ElfSym = ElfW(Sym);
+using ElfEhdr = Elf64_Ehdr;
+using ElfOff = Elf64_Off;
+using ElfPhdr = Elf64_Phdr;
+using ElfShdr = Elf64_Shdr;
+using ElfNhdr = Elf64_Nhdr;
+using ElfSym = Elf64_Sym;
 
 
 namespace DB
@@ -44,7 +42,8 @@ public:
         const Elf & elf;
     };
 
-    explicit Elf(const std::string & path);
+    explicit Elf(const std::string & path_);
+    Elf(const char * data, size_t size, const std::string & path_);
 
     bool iterateSections(std::function<bool(const Section & section, size_t idx)> && pred) const;
     std::optional<Section> findSection(std::function<bool(const Section & section, size_t idx)> && pred) const;
@@ -64,13 +63,16 @@ public:
     String getStoredBinaryHash() const;
 
 private:
-    MMapReadBufferFromFile in;
+    std::string path; // just for error messages
+    std::optional<MMapReadBufferFromFile> in;
     size_t elf_size;
     const char * mapped;
     const ElfEhdr * header;
     const ElfShdr * section_headers;
     const ElfPhdr * program_headers;
     const char * section_names = nullptr;
+
+    void init(const char * data, size_t size, const std::string & path_);
 };
 
 }

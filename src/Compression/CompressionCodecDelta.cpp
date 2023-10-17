@@ -112,7 +112,7 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
-    switch (delta_bytes_size)
+    switch (delta_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -151,7 +151,7 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size)
+    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
