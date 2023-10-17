@@ -83,12 +83,23 @@ add_subdirectory (Formats)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/SSH)
-add_headers_and_sources(clickhouse_common_io Compression)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Resource)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+
+#set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
+
+
+
+add_headers_and_sources(clickhouse_compression Compression)
+add_headers_and_sources(clickhouse_compression Parsers)
+add_headers_and_sources(clickhouse_compression Core)
+add_headers_and_sources(clickhouse_compression Server)
+add_headers_and_sources(clickhouse_compression Common/SSH)
+add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
+
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -286,7 +297,6 @@ set_source_files_properties(
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
-            clickhouse_parsers
             string_utils
             widechar_width
             ${LINK_LIBRARIES_ONLY_ON_X86_64}
@@ -295,6 +305,24 @@ target_link_libraries (clickhouse_common_io
             ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
             ch_contrib::libdivide
+)
+
+
+target_link_libraries (clickhouse_compression
+        PUBLIC
+        string_utils
+        pcg_random
+        clickhouse_parsers
+        PRIVATE
+        ch_contrib::lz4
+        ch_contrib::llvm
+        clickhouse_grpc_protos
+        ch_contrib::nuraft
+        ch_contrib::ldap
+        ch_contrib::lber
+        ch_contrib::roaring
+        ch_contrib::ssh
+        ch_contrib::krb5
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
