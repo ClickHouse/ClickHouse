@@ -127,7 +127,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     else
     {
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), settings.filesystem_cache_getorset_batch_size, create_settings);
+        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_getorset_batch_size);
     }
     return !file_segments->empty();
 }

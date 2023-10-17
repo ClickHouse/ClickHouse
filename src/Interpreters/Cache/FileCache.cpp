@@ -412,8 +412,8 @@ FileCache::getOrSet(
     size_t offset,
     size_t size,
     size_t file_size,
-    size_t file_segments_limit,
-    const CreateFileSegmentSettings & settings)
+    const CreateFileSegmentSettings & settings,
+    size_t file_segments_limit)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
