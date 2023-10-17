@@ -21,7 +21,7 @@ from commit_status_helper import (
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
+from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import S3_BUILDS_BUCKET, TEMP_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
@@ -37,7 +37,14 @@ NAME = "Fast test"
 csv.field_size_limit(sys.maxsize)
 
 
-def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, image):
+def get_fasttest_cmd(
+    workspace: Path,
+    output_path: Path,
+    repo_path: Path,
+    pr_number: int,
+    commit_sha: str,
+    image: DockerImage,
+) -> str:
     return (
         f"docker run --cap-add=SYS_PTRACE "
         "--network=host "  # required to get access to IAM credentials
@@ -52,43 +59,32 @@ def get_fasttest_cmd(workspace, output_path, repo_path, pr_number, commit_sha, i
     )
 
 
-def process_results(result_folder: Path) -> Tuple[str, str, TestResults, List[str]]:
+def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     test_results = []  # type: TestResults
-    additional_files = []
-    # Just upload all files from result_folder.
+    # Just upload all files from result_directory.
     # If task provides processed results, then it's responsible for content of
-    # result_folder
-    if result_folder.exists():
-        test_files = [
-            f for f in result_folder.iterdir() if f.is_file()
-        ]  # type: List[Path]
-        additional_files = [f.absolute().as_posix() for f in test_files]
+    # result_directory
 
     status = []
-    status_path = result_folder / "check_status.tsv"
+    status_path = result_directory / "check_status.tsv"
     if status_path.exists():
         logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        return "error", "Invalid check_status.tsv", test_results, additional_files
+        logging.info("Files in result folder %s", os.listdir(result_directory))
+        return "error", "Invalid check_status.tsv", test_results
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = result_folder / "test_results.tsv"
+        results_path = result_directory / "test_results.tsv"
         test_results = read_test_results(results_path)
         if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
+            return "error", "Empty test_results.tsv", test_results
     except Exception as e:
-        return (
-            "error",
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+        return ("error", f"Cannot parse test_results.tsv ({e})", test_results)
 
-    return state, description, test_results, additional_files
+    return state, description, test_results
 
 
 def main():
@@ -149,7 +145,8 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_logs = [os.path.join(output_path, f) for f in test_output_files]
+    additional_logs = [f for f in output_path.iterdir() if f.is_file()]
+    additional_logs.append(run_log_path)
 
     test_log_exists = (
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
@@ -172,7 +169,7 @@ def main():
         description = "Cannot install or start ClickHouse"
         state = "failure"
     else:
-        state, description, test_results, additional_logs = process_results(output_path)
+        state, description, test_results = process_results(output_path)
 
     ch_helper = ClickHouseHelper()
 
@@ -181,7 +178,7 @@ def main():
         pr_info.number,
         pr_info.sha,
         test_results,
-        [run_log_path.as_posix()] + additional_logs,
+        additional_logs,
         NAME,
     )
     print(f"::notice ::Report url: {report_url}")
