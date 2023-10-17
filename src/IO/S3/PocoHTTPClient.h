@@ -34,6 +34,7 @@ class Context;
 namespace DB::S3
 {
 class ClientFactory;
+class PocoHTTPClient;
 
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
@@ -55,9 +56,9 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     /// See PoolBase::BehaviourOnLimit
     bool wait_on_pool_size_limit = true;
 
-    void updateSchemeAndRegion();
-
     std::function<void(const DB::ProxyConfiguration &)> error_report;
+
+    void updateSchemeAndRegion();
 
 private:
     PocoHTTPClientConfiguration(

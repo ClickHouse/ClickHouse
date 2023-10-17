@@ -110,12 +110,15 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
     format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
     format_settings.json.read_objects_as_strings = settings.input_format_json_read_objects_as_strings;
+    format_settings.json.read_arrays_as_strings = settings.input_format_json_read_arrays_as_strings;
     format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
+    format_settings.json.infer_incomplete_types_as_strings = settings.input_format_json_infer_incomplete_types_as_strings;
     format_settings.json.validate_types_from_metadata = settings.input_format_json_validate_types_from_metadata;
     format_settings.json.validate_utf8 = settings.output_format_json_validate_utf8;
     format_settings.json_object_each_row.column_for_object_name = settings.format_json_object_each_row_column_for_object_name;
     format_settings.json.allow_object_type = context->getSettingsRef().allow_experimental_object_type;
     format_settings.json.compact_allow_variable_number_of_columns = settings.input_format_json_compact_allow_variable_number_of_columns;
+    format_settings.json.try_infer_objects_as_tuples = settings.input_format_json_try_infer_named_tuples_from_objects;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_rows = settings.output_format_parquet_row_group_size;
@@ -167,6 +170,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.skip_trailing_empty_lines = settings.input_format_tsv_skip_trailing_empty_lines;
     format_settings.tsv.allow_variable_number_of_columns = settings.input_format_tsv_allow_variable_number_of_columns;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
+    format_settings.values.allow_data_after_semicolon = settings.input_format_values_allow_data_after_semicolon;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
@@ -253,7 +257,8 @@ InputFormatPtr FormatFactory::getInput(
     std::optional<size_t> _max_parsing_threads,
     std::optional<size_t> _max_download_threads,
     bool is_remote_fs,
-    CompressionMethod compression) const
+    CompressionMethod compression,
+    bool need_only_count) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
@@ -281,7 +286,9 @@ InputFormatPtr FormatFactory::getInput(
 
     // Decide whether to use ParallelParsingInputFormat.
 
-    bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine && !creators.random_access_input_creator;
+    bool parallel_parsing =
+        max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine &&
+        !creators.random_access_input_creator && !need_only_count;
 
     if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
