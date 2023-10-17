@@ -3,14 +3,13 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/PlanStepVisitor.h>
+#include <QueryCoordination/Optimizer/Cost/Cost.h>
 
 namespace DB
 {
 
 using ChildrenProp = std::vector<PhysicalProperties>;
-
 using AlternativeChildrenProp = std::vector<ChildrenProp>;
-
 using PropAndAlternativeChildrenProp = std::unordered_map<PhysicalProperties, AlternativeChildrenProp, PhysicalProperties::HashFunction>;
 
 class Group;
@@ -21,7 +20,7 @@ public:
     struct ChildrenPropCost
     {
         std::vector<PhysicalProperties> child_prop;
-        Float64 cost;
+        Cost cost;
     };
 
     using PropAndChildrenProp = std::unordered_map<PhysicalProperties, ChildrenPropCost, PhysicalProperties::HashFunction>;
@@ -44,7 +43,7 @@ public:
 
     void setGroup(Group * group_);
 
-    void updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Float64 child_cost);
+    void updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost);
 
     const std::vector<PhysicalProperties> & getChildrenProp(const PhysicalProperties & physical_properties);
 

@@ -4,114 +4,172 @@
 namespace DB
 {
 
-Float64 CostCalculator::visit(QueryPlanStepPtr step)
+Cost CostCalculator::visit(QueryPlanStepPtr step)
 {
     return Base::visit(step);
 }
 
-Float64 CostCalculator::visit(ReadFromMergeTree & /*step*/)
+Cost CostCalculator::visitDefault(IQueryPlanStep & step)
 {
-    /// TODO get rows by statistics
-    return std::max(1.0, 3 * statistics.getOutputRowSize());
+    if (typeid_cast<ISourceStep *>(&step))
+    {
+        return Cost(statistics.getDataSize());
+    }
+
+    Float64 total_input_data_size{};
+    for (auto & input : input_statistics)
+        total_input_data_size += input.getDataSize();
+
+    return Cost(total_input_data_size);
 }
 
-Float64 CostCalculator::visitDefault(IQueryPlanStep & /*step*/)
+Cost CostCalculator::visit(ReadFromMergeTree &)
 {
-    return std::max(1.0, 3 * input_statistics.front().getOutputRowSize());
+    return Cost(statistics.getDataSize());
 }
 
-Float64 CostCalculator::visit(AggregatingStep & step)
+Cost CostCalculator::visit(AggregatingStep & step)
 {
+    auto & input = input_statistics.front();
+
+    /// Two stage aggregating, first stage
     if (!step.isPreliminaryAgg())
     {
-        /// TODO get rows, cardinality by statistics
-        if (child_prop.front().distribution.type == PhysicalProperties::DistributionType::Hashed)
-        {
-            return 6 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/); /// fake shard_num
-        }
-        else
-            return 6 * (input_statistics.front().getOutputRowSize());
+        Cost cost(input.getDataSize(), statistics.getDataSize());
+        cost.dividedBy(node_count); /// calculated by all nodes
+        return cost;
     }
+    /// Single stage aggregating
     else
     {
-        /// TODO get rows, cardinality by statistics
-        return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
+        Cost cost(input.getDataSize(), statistics.getDataSize());
+        return cost;
     }
 }
 
-Float64 CostCalculator::visit(MergingAggregatedStep & /*step*/)
+/// Two stage aggregating, second stage
+Cost CostCalculator::visit(MergingAggregatedStep &)
 {
-    /// TODO get rows, cardinality by statistics
-    if (child_prop.front().distribution.type == PhysicalProperties::DistributionType::Hashed)
-    {
-        return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
-    }
-    return 3 * input_statistics.front().getOutputRowSize();
+    auto & input = input_statistics.front();
+    Cost cost(input.getDataSize(), statistics.getDataSize());
+    cost.dividedBy(node_count); /// calculated by all nodes
+    return cost;
 }
 
-Float64 CostCalculator::visit(ExchangeDataStep & step)
+Cost CostCalculator::visit(ExpressionStep &)
 {
-    /// TODO get rows, cardinality by statistics
-    /// TODO by type
-    if (step.getDistributionType() == PhysicalProperties::DistributionType::Replicated)
-    {
-        return std::max(1.0, 2 * (statistics.getOutputRowSize() * 3/*shard_num*/));
-    }
-    return std::max(1.0, 2 * statistics.getOutputRowSize());
+    return Cost(input_statistics.front().getDataSize());
 }
 
-Float64 CostCalculator::visit(SortingStep & step)
+Cost CostCalculator::visit(FilterStep &)
 {
+    return Cost(input_statistics.front().getDataSize());
+}
+
+Cost CostCalculator::visit(SortingStep & step)
+{
+    auto & input = input_statistics.front();
+
+    /// Two stage sorting, first stage
     if (step.getPhase() == SortingStep::Phase::Preliminary)
     {
-        return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
+        auto cpu_coefficient = log2(input.getOutputRowSize());
+        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
+    /// Two stage sorting, second stage
     else if (step.getPhase() == SortingStep::Phase::Final)
     {
-        return 3 * input_statistics.front().getOutputRowSize();
+        return Cost(input.getDataSize(), input.getDataSize());
     }
+    /// Single stage sorting
     else
     {
-        return 100 * input_statistics.front().getOutputRowSize();
+        auto cpu_coefficient = log2(input.getOutputRowSize());
+        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }
 
-Float64 CostCalculator::visit(JoinStep & /*step*/)
+Cost CostCalculator::visit(LimitStep &)
 {
-    /// TODO Hash join memory cost low
-
-    return 4 * (Float64(statistics.getOutputRowSize()) / 3/*shard_num*/);
+    auto & input = input_statistics.front();
+    return Cost(input.getDataSize());
 }
 
-Float64 CostCalculator::visit(LimitStep & step)
+Cost CostCalculator::visit(JoinStep &)
 {
-    if (step.getPhase() == LimitStep::Phase::Preliminary)
-    {
-        return 1 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
-    }
-    else if (step.getPhase() == LimitStep::Phase::Final)
-    {
-        return 1 * input_statistics.front().getOutputRowSize();
-    }
-    else
-    {
-        return 100 * input_statistics.front().getOutputRowSize();
-    }
+    /// Now only hash join, this is a very simple algo, but it works.
+    auto & input = input_statistics.front();
+    return Cost(input.getDataSize(), statistics.getDataSize());
 }
 
-Float64 CostCalculator::visit(TopNStep & step)
+Cost CostCalculator::visit(UnionStep & step)
 {
+    return visitDefault(step);
+}
+
+Cost CostCalculator::visit(ExchangeDataStep & step)
+{
+    /// ExchangeDataStep is a source step which has no input.
+    auto & input = statistics;
+    auto & distribution_type = step.getDistribution().type;
+
+    Cost cost(input.getDataSize(), 0.0, input.getDataSize());
+
+    if (distribution_type == PhysicalProperties::DistributionType::Hashed)
+        cost.dividedBy(node_count);
+    else if (distribution_type == PhysicalProperties::DistributionType::Replicated)
+        cost.multiplyBy(node_count);
+    else if (distribution_type == PhysicalProperties::DistributionType::Singleton)
+    {
+    }
+    return cost;
+}
+
+Cost CostCalculator::visit(CreatingSetStep &)
+{
+    auto & input = input_statistics.front();
+    return Cost(input.getDataSize(), input.getDataSize());
+}
+
+Cost CostCalculator::visit(ExtremesStep & step)
+{
+    return visitDefault(step);
+}
+
+Cost CostCalculator::visit(RollupStep &)
+{
+    auto & input = input_statistics.front();
+    return Cost(input.getDataSize(), input.getDataSize());
+}
+
+Cost CostCalculator::visit(CubeStep &)
+{
+    auto & input = input_statistics.front();
+    return Cost(input.getDataSize(), input.getDataSize());
+}
+
+Cost CostCalculator::visit(TotalsHavingStep & step)
+{
+    return visitDefault(step);
+}
+
+Cost CostCalculator::visit(TopNStep & step)
+{
+    auto & input = input_statistics.front();
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
-        return 3 * (Float64(input_statistics.front().getOutputRowSize()) / 3/*shard_num*/);
+        auto cpu_coefficient = log2(input.getOutputRowSize());
+        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
     else if (step.getPhase() == TopNStep::Phase::Final)
     {
-        return 3 * input_statistics.front().getOutputRowSize();
+        return Cost(input.getDataSize(), input.getDataSize());
     }
+    /// Single stage sorting
     else
     {
-        return 100 * input_statistics.front().getOutputRowSize();
+        auto cpu_coefficient = log2(input.getOutputRowSize());
+        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }
 

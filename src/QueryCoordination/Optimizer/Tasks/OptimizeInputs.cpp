@@ -1,13 +1,11 @@
 #include <QueryCoordination/Optimizer/Cost/CostCalculator.h>
 #include <QueryCoordination/Optimizer/DeriveOutputProp.h>
-#include <QueryCoordination/Optimizer/DeriveRequiredChildProp.h>
 #include <QueryCoordination/Optimizer/Group.h>
 #include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/Memo.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeGroup.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeInputs.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeTask.h>
-#include "QueryCoordination/Optimizer/Statistics/DeriveStatistics.h"
 
 
 namespace DB
@@ -40,7 +38,7 @@ void OptimizeInputs::execute()
 
         if (frame->newAlternativeCalc())
         {
-            CostCalculator cost_calc(group.getStatistics(), children_statistics, required_child_props);
+            CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext(), children_statistics, required_child_props);
             frame->local_cost = group_node->accept(cost_calc);
             frame->total_cost = frame->local_cost;
         }
@@ -81,7 +79,7 @@ void OptimizeInputs::execute()
             DeriveOutputProp output_prop_visitor(group_node, required_prop, frame->actual_children_prop, task_context->getQueryContext());
             auto output_prop = group_node->accept(output_prop_visitor);
 
-            Float64 child_cost = frame->total_cost - frame->local_cost;
+            auto child_cost = frame->total_cost - frame->local_cost;
             group_node->updateBestChild(output_prop, frame->actual_children_prop, child_cost);
 
             group.updatePropBestNode(output_prop, group_node->shared_from_this(), frame->total_cost);
@@ -102,7 +100,7 @@ void OptimizeInputs::execute()
 }
 
 
-Float64 OptimizeInputs::enforceGroupNode(
+Cost OptimizeInputs::enforceGroupNode(
     const PhysicalProperties & required_prop,
     const PhysicalProperties & output_prop)
 {
@@ -119,8 +117,8 @@ Float64 OptimizeInputs::enforceGroupNode(
 
     auto child_cost = group.getCostByProp(output_prop);
 
-    CostCalculator cost_calc(group.getStatistics());
-    Float64 total_cost = group_enforce_node->accept(cost_calc) + child_cost;
+    CostCalculator cost_calc(group.getStatistics(), task_context->getQueryContext());
+    Cost total_cost = group_enforce_node->accept(cost_calc) + child_cost;
 
     DeriveOutputProp output_prop_visitor(group_enforce_node, required_prop, {output_prop}, task_context->getQueryContext());
 

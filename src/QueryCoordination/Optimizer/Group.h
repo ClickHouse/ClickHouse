@@ -3,6 +3,7 @@
 #include <QueryCoordination/Optimizer/GroupNode.h>
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
+#include <QueryCoordination/Optimizer/Cost/Cost.h>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ public:
     struct GroupNodeCost
     {
         GroupNodePtr group_node;
-        Float64 cost;
+        Cost cost;
     };
 
     Group() = default;
@@ -32,13 +33,13 @@ public:
 
     std::list<GroupNodePtr> & getGroupNodes();
 
-    void updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Float64 cost);
+    void updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
 
-    Float64 getCostByProp(const PhysicalProperties & properties);
+    Cost getCostByProp(const PhysicalProperties & properties);
 
     std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
 
-    Float64 getSatisfyBestCost(const PhysicalProperties & required_properties) const;
+    Cost getSatisfyBestCost(const PhysicalProperties & required_properties) const;
 
     UInt32 getId() const;
 

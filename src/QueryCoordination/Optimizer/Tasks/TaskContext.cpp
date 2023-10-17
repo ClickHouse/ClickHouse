@@ -6,7 +6,7 @@ namespace DB
 {
 
 TaskContext::TaskContext(
-    Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_, Float64 upper_bound_cost_)
+    Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_)
     : group(group_), required_properties(required_properties_), upper_bound_cost(upper_bound_cost_), optimize_context(optimize_context_)
 {
 }
@@ -41,12 +41,12 @@ void TaskContext::pushTask(OptimizeTaskPtr task)
     optimize_context->pushTask(std::move(task));
 }
 
-Float64 TaskContext::getUpperBoundCost() const
+Cost TaskContext::getUpperBoundCost() const
 {
     return upper_bound_cost;
 }
 
-void TaskContext::setUpperBoundCost(Float64 upper_bound_cost_)
+void TaskContext::setUpperBoundCost(Cost upper_bound_cost_)
 {
     upper_bound_cost = upper_bound_cost_;
 }

@@ -2,6 +2,7 @@
 
 #include <QueryCoordination/Optimizer/PhysicalProperties.h>
 #include <QueryCoordination/Optimizer/Tasks/OptimizeContext.h>
+#include <QueryCoordination/Optimizer/Cost/Cost.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ public:
         Group & group_,
         const PhysicalProperties & required_properties_,
         OptimizeContextPtr optimize_context_,
-        Float64 upper_bound_cost_ = std::numeric_limits<Float64>::max());
+        Cost upper_bound_cost_ = Cost::infinite());
 
     Group & getCurrentGroup();
 
@@ -29,9 +30,9 @@ public:
 
     Memo & getMemo();
 
-    Float64 getUpperBoundCost() const;
+    Cost getUpperBoundCost() const;
 
-    void setUpperBoundCost(Float64 upper_bound_cost_);
+    void setUpperBoundCost(Cost upper_bound_cost_);
 
     void pushTask(OptimizeTaskPtr task);
 
@@ -40,7 +41,7 @@ private:
 
     PhysicalProperties required_properties;
 
-    Float64 upper_bound_cost;
+    Cost upper_bound_cost;
 
     OptimizeContextPtr optimize_context;
 };

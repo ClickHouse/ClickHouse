@@ -151,4 +151,14 @@ void Statistics::reset()
     columns_stats_map.clear();
 }
 
+Float64 Statistics::getDataSize() const
+{
+    Float64 total_row_size{};
+    for (auto & [_, column_stats] : columns_stats_map)
+    {
+        total_row_size += column_stats->isUnKnown() ? 8 : column_stats->getAvgRowSize();
+    }
+    return total_row_size * output_row_size;
+}
+
 }

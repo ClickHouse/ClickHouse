@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Cluster.h>
 #include <QueryCoordination/Optimizer/PlanStepVisitor.h>
 #include <QueryCoordination/Optimizer/Statistics/Statistics.h>
 
@@ -14,6 +15,9 @@ public:
     explicit DeriveStatistics(const StatisticsList & input_statistics_, ContextPtr context_)
         : input_statistics(input_statistics_), context(context_), log(&Poco::Logger::get("DeriveStatistics"))
     {
+        auto query_coordination_info = context->getQueryCoordinationMetaInfo();
+        auto cluster = context->getCluster(query_coordination_info.cluster_name);
+        node_count = cluster->getShardCount();
     }
 
     Statistics visit(QueryPlanStepPtr step) override;
@@ -43,9 +47,15 @@ public:
     Statistics visit(TopNStep & step) override;
 
 private:
+    /// Inputs for step
     const StatisticsList & input_statistics;
 
+    /// Query context
     ContextPtr context;
+
+    /// node count which participating the query.
+    size_t node_count;
+
     Poco::Logger * log;
 };
 

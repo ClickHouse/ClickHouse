@@ -1,5 +1,6 @@
 #include <QueryCoordination/Optimizer/Group.h>
 
+
 namespace DB
 {
 
@@ -29,7 +30,7 @@ void Group::addGroupNode(GroupNodePtr group_node, UInt32 group_node_id)
     group_nodes.emplace_back(std::move(group_node));
 }
 
-Float64 Group::getSatisfyBestCost(const PhysicalProperties & required_properties) const
+Cost Group::getSatisfyBestCost(const PhysicalProperties & required_properties) const
 {
     auto best_node = getSatisfyBestGroupNode(required_properties);
     if (best_node)
@@ -41,7 +42,7 @@ Float64 Group::getSatisfyBestCost(const PhysicalProperties & required_properties
 
 std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const
 {
-    Float64 min_cost = std::numeric_limits<Float64>::max();
+    auto min_cost = Cost::infinite();
 
     std::pair<PhysicalProperties, GroupNodeCost> res;
 
@@ -64,7 +65,7 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Group::getSat
     return {res};
 }
 
-void Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Float64 cost)
+void Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost)
 {
     if (!prop_to_best_node.contains(properties) || cost < prop_to_best_node[properties].cost)
     {
@@ -72,7 +73,7 @@ void Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodeP
     }
 }
 
-Float64 Group::getCostByProp(const PhysicalProperties & properties)
+Cost Group::getCostByProp(const PhysicalProperties & properties)
 {
     return prop_to_best_node[properties].cost;
 }
@@ -118,7 +119,7 @@ String Group::toString() const
     String prop_map;
     for(const auto & [prop, cost_group_node] : prop_to_best_node)
     {
-        prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost) + "，" + std::to_string(cost_group_node.group_node->getId()) + ")}, ";
+        prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost.get()) + "，" + std::to_string(cost_group_node.group_node->getId()) + ")}, ";
     }
 
     res += "prop_to_best_node: " + prop_map;

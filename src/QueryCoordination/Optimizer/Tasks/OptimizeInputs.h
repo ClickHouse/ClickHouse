@@ -41,8 +41,8 @@ public:
         /// alternative calc frame
         Int32 pre_child_idx{-1};
         Int32 child_idx{0};
-        Float64 local_cost{0};
-        Float64 total_cost{0};
+        Cost local_cost{0};
+        Cost total_cost{0};
 
         std::vector<PhysicalProperties> actual_children_prop;
     };
@@ -58,7 +58,7 @@ private:
 
     bool isInitialTask() const;
 
-    Float64 enforceGroupNode(
+    Cost enforceGroupNode(
         const PhysicalProperties & required_prop,
         const PhysicalProperties & output_prop);
 

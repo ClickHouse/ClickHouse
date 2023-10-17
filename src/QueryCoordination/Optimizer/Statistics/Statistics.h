@@ -44,6 +44,9 @@ public:
 
     void reset();
 
+    /// Used to calculate cost
+    Float64 getDataSize() const;
+
 private:
     Float64 output_row_size;
     ColumnStatisticsMap columns_stats_map;

@@ -211,13 +211,26 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
 
     /// The selectivity calculated is global, but for the first stage,
     /// the output row count is larger than the final stage.
-    if (!step.isFinal())
-        selectivity *= 5; /// TODO add to settings
+    if (step.isPreliminaryAgg())
+        selectivity *= node_count;
+
+    if (selectivity > 1.0)
+        selectivity = 1.0;
 
     statistics.setOutputRowSize(selectivity * input.getOutputRowSize());
 
     /// 3. adjust ndv
     statistics.adjustStatistics();
+
+    /// 4. update aggregating column data type
+    for (auto & aggregate : step.getParams().aggregates)
+    {
+        auto * output_column = step.getOutputStream().header.findByName(aggregate.column_name);
+        auto output_column_stats = statistics.getColumnStatistics(aggregate.column_name);
+
+        chassert(output_column && output_column_stats);
+        output_column_stats->setDataType(output_column->type);
+    }
 
     return statistics;
 }
@@ -228,7 +241,7 @@ Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
         chassert(input_statistics.front().containsColumnStatistics(output_column));
 
     Statistics statistics = input_statistics.front().clone();
-    statistics.setOutputRowSize(statistics.getOutputRowSize() / 5);
+    statistics.setOutputRowSize(statistics.getOutputRowSize() / node_count);
 
     return statistics;
 }
@@ -244,15 +257,35 @@ Statistics DeriveStatistics::visit(LimitStep & step)
     chassert(input_statistics.size() == 1);
     Statistics statistics = input_statistics.front().clone();
 
+    Float64 row_count = statistics.getOutputRowSize();
+
     if (step.getLimit())
     {
-        Float64 input_row_size = input_statistics.front().getOutputRowSize();
         size_t length = step.getOffset() + step.getLimit();
-        if (length < input_row_size)
-            statistics.setOutputRowSize(length);
+        /// Two stage limiting, first stage
+        if (step.getPhase() == LimitStep::Phase::Preliminary)
+        {
+            if (length < row_count)
+                row_count = length;
+            row_count = row_count * node_count;
+        }
+        /// Two stage limiting, second stage
+        else if (step.getPhase() == LimitStep::Phase::Final)
+        {
+            if (length < row_count)
+                row_count = length;
+        }
+        /// Single stage limiting
+        else
+        {
+            if (length < row_count)
+                row_count = length;
+        }
     }
 
+    statistics.setOutputRowSize(row_count);
     statistics.adjustStatistics();
+
     return statistics;
 }
 
@@ -330,15 +363,34 @@ Statistics DeriveStatistics::visit(TopNStep & step)
     chassert(input_statistics.size() == 1);
     Statistics statistics = input_statistics.front().clone();
 
+    Float64 row_count = statistics.getOutputRowSize();
+
     size_t length = step.getLimitForSorting();
     if (length)
     {
-        Float64 input_row_size = input_statistics.front().getOutputRowSize();
-        if (length < input_row_size)
-            statistics.setOutputRowSize(length);
+        /// Two stage topn, first stage
+        if (step.getPhase() == TopNStep::Phase::Preliminary)
+        {
+            if (length < row_count)
+                row_count = length;
+            row_count = row_count * node_count;
+        }
+        /// Two stage topn, second stage
+        else if (step.getPhase() == TopNStep::Phase::Final)
+        {
+            if (length < row_count)
+                row_count = length;
+        }
+        else
+        {
+            if (length < row_count)
+                row_count = length;
+        }
     }
 
+    statistics.setOutputRowSize(row_count);
     statistics.adjustStatistics();
+
     return statistics;
 }
 
