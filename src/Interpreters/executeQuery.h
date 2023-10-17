@@ -15,7 +15,6 @@ namespace DB
 class IInterpreter;
 class ReadBuffer;
 class WriteBuffer;
-class IOutputFormat;
 struct QueryStatusInfo;
 
 struct QueryResultDetails
@@ -27,7 +26,6 @@ struct QueryResultDetails
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
-using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format)>;
 
 /// Parse and execute a query.
 void executeQuery(
@@ -36,8 +34,7 @@ void executeQuery(
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
-    const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {} /// If a non-empty callback is passed, it will be called on exception with created output format.
+    const std::optional<FormatSettings> & output_format_settings = std::nullopt /// Format settings for output format, will be calculated from the context if not set.
 );
 
 

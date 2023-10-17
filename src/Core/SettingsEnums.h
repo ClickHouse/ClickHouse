@@ -16,10 +16,8 @@ enum class LoadBalancing
     /// among replicas with a minimum number of errors selected randomly
     RANDOM = 0,
     /// a replica is selected among the replicas with the minimum number of errors
-    /// with the minimum number of distinguished characters in the replica name prefix and local hostname prefix
+    /// with the minimum number of distinguished characters in the replica name and local hostname
     NEAREST_HOSTNAME,
-    /// just like NEAREST_HOSTNAME, but it count distinguished characters in a levenshtein distance manner
-    HOSTNAME_LEVENSHTEIN_DISTANCE,
     // replicas with the same number of errors are accessed in the same order
     // as they are specified in the configuration.
     IN_ORDER,
@@ -209,6 +207,7 @@ enum class Dialect
 {
     clickhouse,
     kusto,
+    kusto_auto,
     prql,
 };
 
