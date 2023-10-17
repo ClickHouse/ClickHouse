@@ -568,6 +568,7 @@ Strings IcebergMetadata::getDataFiles()
         }
     }
 
+    data_files = std::vector<std::string>(files.begin(), files.end());
     return data_files;
 }
 
