@@ -18,6 +18,7 @@ StoragePtr StorageIceberg::create(
     configuration.update(context_);
     auto metadata = parseIcebergMetadata(configuration, context_);
     auto schema_from_metadata = metadata->getTableSchema();
+    configuration.keys = metadata->getDataFiles();
     return std::make_shared<StorageIceberg>(std::move(metadata), configuration, context_, table_id_, columns_.empty() ? ColumnsDescription(schema_from_metadata) : columns_, constraints_, comment, format_settings_);
 }
 
@@ -52,7 +53,7 @@ void StorageIceberg::updateConfigurationImpl(ContextPtr local_context)
     const bool updated = base_configuration.update(local_context);
     auto new_metadata = parseIcebergMetadata(base_configuration, local_context);
     /// Check if nothing was changed.
-    if (!updated && new_metadata->getVersion() == current_metadata->getVersion())
+    if (updated && new_metadata->getVersion() == current_metadata->getVersion())
         return;
 
     if (new_metadata->getVersion() != current_metadata->getVersion())
