@@ -1,0 +1,3 @@
+<clickhouse>
+	<interserver_listen_host replace="replace">10.0.0.10</interserver_listen_host>
+</clickhouse>

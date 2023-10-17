@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+
+import os
+import sys
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from tcp_client import TCPClient
+
+
+def get_keys(results):
+    return [key for key, _ in results]
+
+
+def check_new_result(new_results, old_results, invariants, rows_limit):
+    if rows_limit is not None:
+        assert (
+            len(new_results[0].value) <= rows_limit
+        ), f"Result should have no more then {rows_limit} rows. But it has {len(new_results[0].value)} rows"
+
+    for new_result, old_result in zip(new_results, old_results):
+        assert (
+            new_result.key == old_result.key
+        ), f"Keys in blocks should be in the same order. Full results keys {get_keys(full_results)}. Partial results keys  {get_keys(partial_results)}"
+
+        key = new_result.key
+        if key in invariants:
+            new_value = new_result.value
+            old_value = old_result.value
+            assert invariants[key](
+                old_value, new_value
+            ), f"Problem with the invariant between new and old result for key: {key}. New value {new_value}. Old value {old_value}"
+
+
+def run_query_without_errors(
+    query, support_partial_result, invariants=None, rows_limit=None
+):
+    if invariants is None:
+        invariants = {}
+
+    with TCPClient() as client:
+        client.sendQuery(query, settings={"allow_experimental_partial_result": True})
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+
+        # Partial result
+        partial_results = client.readDataWithoutProgress()
+        if support_partial_result:
+            assert (
+                len(partial_results) > 0 and len(partial_results[0].value) > 0
+            ), "Expected at least one block with a non-empty partial result before getting the full result"
+            while True:
+                new_partial_results = client.readDataWithoutProgress(
+                    need_print_info=False
+                )
+                if len(new_partial_results[0].value) == 0:
+                    break
+
+                check_new_result(
+                    new_partial_results, partial_results, invariants, rows_limit
+                )
+                partial_results = new_partial_results
+        else:
+            block_rows = len(partial_results[0].value)
+            assert (
+                block_rows == 0
+            ), f"Expected only empty partial result block before getting the full result, but block has {block_rows} rows"
+
+        # Full result
+        full_results = client.readDataWithoutProgress()
+        if support_partial_result:
+            check_new_result(full_results, partial_results, invariants, rows_limit)
+
+        for data in full_results:
+            if isinstance(data.value[0], int):
+                print(data.key, data.value)
+
+
+def supported_scenarios_without_key():
+    rows_number = 2e7 + 1
+
+    # Simple aggregation query
+    query = f"select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) from numbers_mt({rows_number}) settings max_threads = 1, partial_result_update_duration_ms = 1"
+    invariants = {
+        "median(number)": lambda old_value, new_value: old_value <= new_value,
+        "max(number)": lambda old_value, new_value: old_value <= new_value,
+        "min(number)": lambda old_value, new_value: old_value >= new_value,
+        "count(number)": lambda old_value, new_value: old_value <= new_value,
+        "avg(number)": lambda old_value, new_value: old_value <= new_value,
+        "sum(number)": lambda old_value, new_value: old_value <= new_value,
+    }
+    run_query_without_errors(
+        query, support_partial_result=True, invariants=invariants, rows_limit=1
+    )
+
+    # Aggregation query with a nested ORDER BY subquery
+    query = f"select median(number), stddevSamp(number), stddevPop(number), max(number), min(number), any(number), count(number), avg(number), sum(number) FROM (SELECT number FROM numbers_mt({rows_number}) ORDER BY -number LIMIT 3) settings max_threads = 1, partial_result_update_duration_ms=1"
+
+    # Aggregation receives small partial result blocks from ORDER BY which always sends blocks with bigger values
+    invariants["min(number)"] = lambda old_value, new_value: old_value <= new_value
+    run_query_without_errors(
+        query, support_partial_result=True, invariants=invariants, rows_limit=1
+    )
+
+
+def unsupported_scenarios():
+    rows_number = 2e7 + 1
+
+    # Currently aggregator for partial result supports only single thread aggregation without key
+    # Update test when multithreading or aggregation with GROUP BY will be supported for partial result updates
+    multithread_query = f"select sum(number) from numbers_mt({rows_number}) settings max_threads = 2, partial_result_update_duration_ms = 100"
+    run_query_without_errors(multithread_query, support_partial_result=False)
+
+    group_with_key_query = f"select mod2, sum(number) from numbers_mt({rows_number}) group by number % 2 as mod2 settings max_threads = 1, partial_result_update_duration_ms = 100"
+    run_query_without_errors(group_with_key_query, support_partial_result=False)
+
+
+def main():
+    supported_scenarios_without_key()
+    unsupported_scenarios()
+
+
+if __name__ == "__main__":
+    main()

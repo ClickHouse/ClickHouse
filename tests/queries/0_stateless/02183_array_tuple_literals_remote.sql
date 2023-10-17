@@ -1,0 +1,11 @@
+SELECT any(array(0)) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(tuple(0, 1)) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(array(array(0, 1), array(2, 3))) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(array(tuple(0, 1), tuple(2, 3))) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(array((0, 1), (2, 3))) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(tuple(array(0, 1), tuple(2, 3), [4], (5, 'a'), 6, 'b')) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(array(number, 1)) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(tuple(number, 1)) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(array(array(0, 1), [2, 3])) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any(array(array(0, 1), [number, number])) AS k FROM remote('127.0.0.{1,2}', numbers(10));
+SELECT any([[[number]],[[number + 1], [number + 2, number + 3]]]) AS k FROM remote('127.0.0.{1,2}', numbers(10));

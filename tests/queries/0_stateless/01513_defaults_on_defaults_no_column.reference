@@ -1,0 +1,7 @@
+1
+1
+1
+1
+1	[]	[]	[]	0
+CREATE TABLE default.defaults_on_defaults\n(\n    `key` UInt64,\n    `Arr.C1` Array(UInt32) DEFAULT emptyArrayUInt32(),\n    `Arr.C2` Array(UInt32) DEFAULT arrayResize(emptyArrayUInt32(), length(Arr.C1)),\n    `Arr.C3` Array(UInt32) ALIAS arrayResize(emptyArrayUInt32(), length(Arr.C2)),\n    `Arr.C4` Array(UInt32) DEFAULT arrayResize(emptyArrayUInt32(), length(Arr.C3)),\n    `ArrLen` UInt64 DEFAULT length(Arr.C4)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+1

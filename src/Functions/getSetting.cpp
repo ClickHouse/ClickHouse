@@ -1,0 +1,73 @@
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/FieldToDataType.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Context.h>
+#include <Core/Field.h>
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+/// Get the value of a setting.
+class FunctionGetSetting : public IFunction, WithContext
+{
+public:
+    static constexpr auto name = "getSetting";
+
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetSetting>(context_); }
+    explicit FunctionGetSetting(ContextPtr context_) : WithContext(context_) {}
+
+    String getName() const override { return name; }
+    bool isDeterministic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 1; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto value = getValue(arguments);
+        return applyVisitor(FieldToDataType{}, value);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        auto value = getValue(arguments);
+        return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
+    }
+
+private:
+    Field getValue(const ColumnsWithTypeAndName & arguments) const
+    {
+        if (!isString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The argument of function {} should be a constant string with the name of a setting",
+                            String{name});
+        const auto * column = arguments[0].column.get();
+        if (!column || !checkAndGetColumnConstStringOrFixedString(column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The argument of function {} should be a constant string with the name of a setting",
+                            String{name});
+
+        std::string_view setting_name{column->getDataAt(0).toView()};
+        return getContext()->getSettingsRef().get(setting_name);
+    }
+};
+
+}
+
+REGISTER_FUNCTION(GetSetting)
+{
+    factory.registerFunction<FunctionGetSetting>();
+}
+
+}

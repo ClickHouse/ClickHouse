@@ -1,0 +1,17 @@
+CounterID	UInt32					
+dummy	String					
+StartDate	Date					
+Sign	Int8					
+VisitID	UInt64					
+UserID	UInt64					
+StartTime	DateTime					
+ClickLogID	UInt64					
+CREATE TABLE default.merge\n(\n    `CounterID` UInt32,\n    `dummy` String,\n    `StartDate` Date,\n    `Sign` Int8,\n    `VisitID` UInt64,\n    `UserID` UInt64,\n    `StartTime` DateTime,\n    `ClickLogID` UInt64\n)\nENGINE = Merge(\'default\', \'merge\\\\[0-9\\\\]\')
+CounterID	UInt32					
+StartDate	Date					
+Sign	Int8					
+VisitID	UInt64					
+UserID	UInt64					
+StartTime	DateTime					
+ClickLogID	UInt64					
+CREATE TABLE default.merge\n(\n    `CounterID` UInt32,\n    `StartDate` Date,\n    `Sign` Int8,\n    `VisitID` UInt64,\n    `UserID` UInt64,\n    `StartTime` DateTime,\n    `ClickLogID` UInt64\n)\nENGINE = Merge(\'default\', \'merge\\\\[0-9\\\\]\')

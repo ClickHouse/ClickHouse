@@ -1,0 +1,3 @@
+<test>
+    <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(encodeXMLComponent(URL))</query>
+</test>

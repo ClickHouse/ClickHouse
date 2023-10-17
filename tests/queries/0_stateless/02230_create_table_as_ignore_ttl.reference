@@ -1,0 +1,32 @@
+CREATE TABLE default.data_02230_ttl
+(
+    `date` Date,
+    `key` Int32
+)
+ENGINE = MergeTree
+ORDER BY key
+TTL date + 14
+SETTINGS index_granularity = 8192
+CREATE TABLE default.null_02230_ttl
+(
+    `date` Date,
+    `key` Int32
+)
+ENGINE = Null
+CREATE TABLE default.data_02230_column_ttl
+(
+    `date` Date,
+    `value` Int32 TTL date + 7,
+    `key` Int32
+)
+ENGINE = MergeTree
+ORDER BY key
+TTL date + 14
+SETTINGS index_granularity = 8192
+CREATE TABLE default.null_02230_column_ttl
+(
+    `date` Date,
+    `value` Int32,
+    `key` Int32
+)
+ENGINE = Null

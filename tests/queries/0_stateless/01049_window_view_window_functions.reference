@@ -1,0 +1,69 @@
+-- { echo }
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 SECOND, 'US/Samoa');
+('2020-01-09 12:00:01','2020-01-09 12:00:02')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 MINUTE, 'US/Samoa');
+('2020-01-09 12:00:00','2020-01-09 12:01:00')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' HOUR, 'US/Samoa');
+('2020-01-09 12:00:00','2020-01-09 13:00:00')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa');
+('2020-01-09 00:00:00','2020-01-10 00:00:00')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 WEEK, 'US/Samoa');
+('2020-01-06','2020-01-13')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' MONTH, 'US/Samoa');
+('2020-01-01','2020-02-01')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' QUARTER, 'US/Samoa');
+('2020-01-01','2020-04-01')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' YEAR, 'US/Samoa');
+('2020-01-01','2021-01-01')
+SELECT tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa');
+('2020-01-09 00:00:00','2020-01-10 00:00:00')
+SELECT tumbleStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa');
+2020-01-09 00:00:00
+SELECT toDateTime(tumbleStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-09 00:00:00
+SELECT toDateTime(tumbleStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-09 00:00:00
+SELECT tumbleStart(tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa'));
+2020-01-09 00:00:00
+SELECT tumbleEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa');
+2020-01-10 00:00:00
+SELECT toDateTime(tumbleEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-10 00:00:00
+SELECT toDateTime(tumbleEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-10 00:00:00
+SELECT tumbleEnd(tumble(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, 'US/Samoa'));
+2020-01-10 00:00:00
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 SECOND, INTERVAL 3 SECOND, 'US/Samoa');
+('2020-01-09 11:59:59','2020-01-09 12:00:02')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 MINUTE, INTERVAL 3 MINUTE, 'US/Samoa');
+('2020-01-09 11:58:00','2020-01-09 12:01:00')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 HOUR, INTERVAL 3 HOUR, 'US/Samoa');
+('2020-01-09 10:00:00','2020-01-09 13:00:00')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 DAY, INTERVAL 3 DAY, 'US/Samoa');
+('2020-01-07 00:00:00','2020-01-10 00:00:00')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 WEEK, INTERVAL 3 WEEK, 'US/Samoa');
+('2019-12-23','2020-01-13')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 MONTH, INTERVAL 3 MONTH, 'US/Samoa');
+('2019-11-01','2020-02-01')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 QUARTER, INTERVAL 3 QUARTER, 'US/Samoa');
+('2019-07-01','2020-04-01')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL 1 YEAR, INTERVAL 3 YEAR, 'US/Samoa');
+('2018-01-01','2021-01-01')
+SELECT hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa');
+('2020-01-07 00:00:00','2020-01-10 00:00:00')
+SELECT hopStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa');
+2020-01-07 00:00:00
+SELECT toDateTime(hopStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-07 00:00:00
+SELECT toDateTime(hopStart(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-07 00:00:00
+SELECT hopStart(hop(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'));
+2020-01-07 00:00:00
+SELECT hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa');
+2020-01-10 00:00:00
+SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-10 00:00:00
+SELECT toDateTime(hopEnd(toDateTime('2020-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'), 'US/Samoa');
+2020-01-10 00:00:00
+SELECT hopEnd(hop(toDateTime('2019-01-09 12:00:01', 'US/Samoa'), INTERVAL '1' DAY, INTERVAL '3' DAY, 'US/Samoa'));
+2019-01-10 00:00:00

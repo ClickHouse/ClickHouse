@@ -1,0 +1,2 @@
+SELECT sleep(1) FROM system.numbers LIMIT 300
+SELECT sleep(1) FROM system.numbers LIMIT 301

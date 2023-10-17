@@ -1,0 +1,1 @@
+Column 11,  name: c11, type: UInt8, ERROR: text "a" is not like UInt8

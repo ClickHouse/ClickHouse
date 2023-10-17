@@ -1,0 +1,14 @@
+*** MergeTree ***
+1	a
+5	b
+2	c
+4	d
+3	e
+*** ReplacingMergeTree ***
+1	a	5
+---
+1	a	5
+*** CollapsingMergeTree ***
+3	c	1
+---
+3	c	1

@@ -1,0 +1,12 @@
+SELECT count()
+FROM t_02156_merge1
+PREWHERE notEmpty(v) AND (k = 3)
+2
+SELECT count()
+FROM t_02156_merge2
+WHERE (k = 3) AND notEmpty(v)
+2
+SELECT count()
+FROM t_02156_merge3
+WHERE (k = 3) AND notEmpty(v)
+2

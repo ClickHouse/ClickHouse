@@ -1,0 +1,3 @@
+Array(Nothing), Const(size = 1, Array(size = 1, UInt64(size = 1), Nothing(size = 0)))
+Array(Array(Array(Nothing))), Const(size = 1, Array(size = 1, UInt64(size = 1), Array(size = 1, UInt64(size = 1), Array(size = 1, UInt64(size = 1), Nothing(size = 0)))))
+Array(Array(UInt8)), Const(size = 2, Array(size = 1, UInt64(size = 1), Array(size = 2, UInt64(size = 2), UInt8(size = 1))))

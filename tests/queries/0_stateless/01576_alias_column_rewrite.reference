@@ -1,0 +1,56 @@
+test-partition-prune
+1
+1
+1
+1
+1
+test-join
+1
+1
+alias2alias
+1
+1
+1
+1
+1
+1
+1
+array-join
+1
+0	0
+lambda
+1
+optimize_read_in_order
+Expression
+  Limit
+    Sorting
+      Expression
+        ReadFromMergeTree
+Expression
+  Limit
+    Sorting
+      Expression
+        ReadFromMergeTree
+Expression
+  Limit
+    Sorting
+      Expression
+        ReadFromMergeTree
+optimize_aggregation_in_order
+Expression
+  Aggregating
+    Expression
+      ReadFromMergeTree
+Expression
+  Aggregating
+    Expression
+      ReadFromMergeTree
+Expression
+  Aggregating
+    Expression
+      ReadFromMergeTree
+second-index
+1
+1
+1
+1	1

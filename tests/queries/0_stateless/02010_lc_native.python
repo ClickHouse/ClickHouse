@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from tcp_client import (
+    TCPClient,
+    CLICKHOUSE_DATABASE,
+    writeVarUInt,
+    writeStringBinary,
+    serializeBlockInfo,
+    assertPacket,
+)
+
+
+def insertValidLowCardinalityRow():
+    with TCPClient() as client:
+        client.sendQuery(
+            "insert into {}.tab settings input_format_defaults_for_omitted_fields=0 format TSV".format(
+                CLICKHOUSE_DATABASE
+            ),
+        )
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+
+        # Data
+        ba = bytearray()
+        writeVarUInt(2, ba)  # Data
+        writeStringBinary("", ba)
+        serializeBlockInfo(ba)
+        writeVarUInt(1, ba)  # rows
+        writeVarUInt(1, ba)  # columns
+        writeStringBinary("x", ba)
+        writeStringBinary("LowCardinality(String)", ba)
+        ba.extend([1] + [0] * 7)  # SharedDictionariesWithAdditionalKeys
+        ba.extend(
+            [3, 2] + [0] * 6
+        )  # indexes type: UInt64 [3], with additional keys [2]
+        ba.extend([1] + [0] * 7)  # num_keys in dict
+        writeStringBinary("hello", ba)  # key
+        ba.extend([1] + [0] * 7)  # num_indexes
+        ba.extend([0] * 8)  # UInt64 index (0 for 'hello')
+        client.send(ba)
+
+        # Fin block
+        client.sendEmptyBlock()
+
+        assertPacket(client.readVarUInt(), 5)  # End of stream
+
+
+def insertLowCardinalityRowWithIndexOverflow():
+    with TCPClient() as client:
+        client.sendQuery(
+            "insert into {}.tab settings input_format_defaults_for_omitted_fields=0 format TSV".format(
+                CLICKHOUSE_DATABASE
+            ),
+        )
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+
+        # Data
+        ba = bytearray()
+        writeVarUInt(2, ba)  # Data
+        writeStringBinary("", ba)
+        serializeBlockInfo(ba)
+        writeVarUInt(1, ba)  # rows
+        writeVarUInt(1, ba)  # columns
+        writeStringBinary("x", ba)
+        writeStringBinary("LowCardinality(String)", ba)
+        ba.extend([1] + [0] * 7)  # SharedDictionariesWithAdditionalKeys
+        ba.extend(
+            [3, 2] + [0] * 6
+        )  # indexes type: UInt64 [3], with additional keys [2]
+        ba.extend([1] + [0] * 7)  # num_keys in dict
+        writeStringBinary("hello", ba)  # key
+        ba.extend([1] + [0] * 7)  # num_indexes
+        ba.extend([0] * 7 + [1])  # UInt64 index (overflow)
+        client.send(ba)
+
+        assertPacket(client.readVarUInt(), 2)  # Exception
+        print(client.readException())
+
+
+def insertLowCardinalityRowWithIncorrectDictType():
+    with TCPClient() as client:
+        client.sendQuery(
+            "insert into {}.tab settings input_format_defaults_for_omitted_fields=0 format TSV".format(
+                CLICKHOUSE_DATABASE
+            ),
+        )
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+
+        # Data
+        ba = bytearray()
+        writeVarUInt(2, ba)  # Data
+        writeStringBinary("", ba)
+        serializeBlockInfo(ba)
+        writeVarUInt(1, ba)  # rows
+        writeVarUInt(1, ba)  # columns
+        writeStringBinary("x", ba)
+        writeStringBinary("LowCardinality(String)", ba)
+        ba.extend([1] + [0] * 7)  # SharedDictionariesWithAdditionalKeys
+        ba.extend(
+            [3, 3] + [0] * 6
+        )  # indexes type: UInt64 [3], with global dict and add keys [1 + 2]
+        ba.extend([1] + [0] * 7)  # num_keys in dict
+        writeStringBinary("hello", ba)  # key
+        ba.extend([1] + [0] * 7)  # num_indexes
+        ba.extend([0] * 8)  # UInt64 index (overflow)
+        client.send(ba)
+
+        assertPacket(client.readVarUInt(), 2)  # Exception
+        print(client.readException())
+
+
+def insertLowCardinalityRowWithIncorrectAdditionalKeys():
+    with TCPClient() as client:
+        client.sendQuery(
+            "insert into {}.tab settings input_format_defaults_for_omitted_fields=0 format TSV".format(
+                CLICKHOUSE_DATABASE
+            ),
+        )
+
+        # external tables
+        client.sendEmptyBlock()
+        client.readHeader()
+
+        # Data
+        ba = bytearray()
+        writeVarUInt(2, ba)  # Data
+        writeStringBinary("", ba)
+        serializeBlockInfo(ba)
+        writeVarUInt(1, ba)  # rows
+        writeVarUInt(1, ba)  # columns
+        writeStringBinary("x", ba)
+        writeStringBinary("LowCardinality(String)", ba)
+        ba.extend([1] + [0] * 7)  # SharedDictionariesWithAdditionalKeys
+        ba.extend(
+            [3, 0] + [0] * 6
+        )  # indexes type: UInt64 [3], with  NO additional keys [0]
+        ba.extend([1] + [0] * 7)  # num_keys in dict
+        writeStringBinary("hello", ba)  # key
+        ba.extend([1] + [0] * 7)  # num_indexes
+        ba.extend([0] * 8)  # UInt64 index (0 for 'hello')
+        client.send(ba)
+
+        assertPacket(client.readVarUInt(), 2)  # Exception
+        print(client.readException())
+
+
+def main():
+    insertValidLowCardinalityRow()
+    insertLowCardinalityRowWithIndexOverflow()
+    insertLowCardinalityRowWithIncorrectDictType()
+    insertLowCardinalityRowWithIncorrectAdditionalKeys()
+
+
+if __name__ == "__main__":
+    main()

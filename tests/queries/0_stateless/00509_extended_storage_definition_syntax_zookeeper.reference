@@ -1,0 +1,13 @@
+*** Replicated with sampling ***
+1
+*** Replacing with implicit version ***
+2017-10-23	1	c
+*** Replicated Collapsing ***
+2017-10-23	2	1
+*** Replicated VersionedCollapsing ***
+2017-10-23	2	1	0
+2017-10-23	1	-1	1
+2017-10-23	2	1	2
+*** Table definition with SETTINGS ***
+0
+0

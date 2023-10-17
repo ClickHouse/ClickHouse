@@ -1,0 +1,3 @@
+SELECT a + b AS x, x
+SELECT a + b AS x, a + c AS x
+SELECT a + b AS x, x

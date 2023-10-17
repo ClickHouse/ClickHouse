@@ -1,0 +1,4 @@
+my_table
+.inner.my_materialized_view
+my_materialized_view
+my_table

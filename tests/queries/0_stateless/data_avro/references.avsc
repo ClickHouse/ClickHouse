@@ -1,0 +1,39 @@
+{
+    "type": "record",
+    "name": "row",
+    "fields": [
+        {
+            "name": "a",
+            "type": {
+                "name": "fixed_2",
+                "type": "fixed",
+                "size": 2
+            }
+        },
+        {
+            "name": "b",
+            "type": {
+                "type": "record",
+                "name": "LongList",
+                "fields": [
+                    {
+                        "name": "value",
+                        "type": "long"
+                    },
+                    {
+                        "name": "next",
+                        "type": [
+                            "null",
+                            "LongList",
+                            "fixed_2"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "name": "c",
+            "type": "fixed_2"
+        }
+    ]
+}
