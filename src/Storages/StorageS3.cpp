@@ -210,11 +210,11 @@ private:
 
             /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
             /// So we get object info lazily here on 'next()' request.
-            if (!answer.info)
+            if (!answer->info)
             {
-                answer.info = S3::getObjectInfo(*client, globbed_uri.bucket, answer.key, globbed_uri.version_id, request_settings);
+                answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
                 if (file_progress_callback)
-                    file_progress_callback(FileProgress(0, answer.info->size));
+                    file_progress_callback(FileProgress(0, answer->info->size));
             }
 
             return answer;

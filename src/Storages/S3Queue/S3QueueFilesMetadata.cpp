@@ -474,7 +474,7 @@ void S3QueueFilesMetadata::setFileProcessedForUnorderedMode(ProcessingNodeHolder
     if (holder->remove(&requests, &responses))
     {
         LOG_TEST(log, "Moved file `{}` to processed", path);
-        zk_client->tryRemove(zookeeper_failed_path / node_name + ".retriable", -1);
+        zk_client->tryRemove(zookeeper_failed_path / (node_name + ".retriable"), -1);
         return;
     }
 
@@ -537,7 +537,7 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
         if (holder->remove(&requests, &responses))
         {
             LOG_TEST(log, "Moved file `{}` to processed", path);
-            zk_client->tryRemove(zookeeper_failed_path / node_name + ".retriable", -1);
+            zk_client->tryRemove(zookeeper_failed_path / (node_name + ".retriable"), -1);
             return;
         }
 
