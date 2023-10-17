@@ -804,7 +804,7 @@ void S3QueueFilesMetadata::cleanupThreadFuncImpl()
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
-    auto ephemeral_node = zkutil::EphemeralNodeHolder::create(zookeeper_cleanup_lock_path, *zk_client, toString(getCurrentTime()));
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_cleanup_lock_path, *zk_client, toString(getCurrentTime()));
     if (!ephemeral_node)
     {
         LOG_TEST(log, "Cleanup is already being executed by another node");
