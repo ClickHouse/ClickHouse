@@ -56,8 +56,6 @@ struct ManyAggregatedData
     std::atomic<Int64> finalized_watermark = INVALID_WATERMARK;
     std::atomic<Int64> finalized_window_end = INVALID_WATERMARK;
 
-    std::atomic<Int64> version = 0;
-
     std::vector<std::unique_ptr<std::atomic<UInt64>>> rows_since_last_finalizations;
 
     /// std::atomic<AggregatingTransform *> last_checkpointing_transform = nullptr;
@@ -165,7 +163,7 @@ protected:
     virtual std::pair<bool, bool> executeOrMergeColumns(Chunk & chunk, size_t num_rows);
     void setCurrentChunk(Chunk chunk, const ChunkContextPtr & chunk_ctx);
 
-    /// Quickly check if need finalization
+    /// Check if need finalization
     virtual bool needFinalization(Int64 /*min_watermark*/) const { return true; }
 
     /// Prepare and check whether can finalization many_data (called after acquired finalizing lock)
@@ -204,7 +202,6 @@ protected:
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
 
-    /// TODO: calculate time only for aggregation.
     Stopwatch watch;
 
     bool is_consume_finished = false;

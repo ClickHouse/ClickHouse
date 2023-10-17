@@ -1,7 +1,5 @@
 #include <Processors/Transforms/Streaming/AggregatingTransform.h>
 
-#include <base/ClockUtils.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -11,22 +9,6 @@ extern const int LOGICAL_ERROR;
 
 namespace Streaming
 {
-
-/// Convert block to chunk.
-/// Adds additional info about aggregation.
-Chunk convertToChunk(const Block & block)
-{
-    auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = block.info.bucket_num;
-    info->is_overflows = block.info.is_overflows;
-
-    UInt64 num_rows = block.rows();
-    Chunk chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfo(std::move(info));
-
-    return chunk;
-}
-
 AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformParamsPtr params_, const String & log_name)
     : AggregatingTransform(std::move(header), std::move(params_), std::make_shared<ManyAggregatedData>(1), 0, 1, log_name)
 {
@@ -57,9 +39,6 @@ AggregatingTransform::AggregatingTransform(
 
 IProcessor::Status AggregatingTransform::prepare()
 {
-    /// There are one or two input ports.
-    /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
-
     auto & output = outputs.front();
     /// Last output is current. All other outputs should already be closed.
     auto & input = inputs.back();
@@ -153,7 +132,8 @@ void AggregatingTransform::consume(Chunk chunk)
     else if (need_finalization)
         finalize(chunk.getChunkContext());
 
-    /// If the last attempt to finalize failed (because other threads were finalizing), then we will continue to try in this processing.
+    /// If the last attempt to finalize failed (because other threads were finalizing),
+    /// then we will continue to try in this processing.
     /// But there is already output, we will try in the next `work()`
     if (try_finalizing_watermark.has_value() && !has_input)
         finalizeAlignment(std::make_shared<ChunkContext>());
@@ -166,7 +146,7 @@ void AggregatingTransform::consume(Chunk chunk)
         propagateHeartbeatChunk();
 }
 
-std::pair<bool, bool> AggregatingTransform::executeOrMergeColumns(Chunk & chunk, [[maybe_unused]] size_t num_rows)
+std::pair<bool, bool> AggregatingTransform::executeOrMergeColumns(Chunk & chunk, size_t num_rows)
 {
     auto columns = chunk.detachColumns();
 
@@ -183,9 +163,7 @@ void AggregatingTransform::setCurrentChunk(Chunk chunk, const ChunkContextPtr & 
     current_chunk_aggregated = std::move(chunk);
 
     if (chunk_ctx)
-    {
         current_chunk_aggregated.setChunkContext(std::move(chunk_ctx));
-    }
 }
 
 IProcessor::Status AggregatingTransform::preparePushToOutput()
@@ -222,9 +200,9 @@ void AggregatingTransform::finalizeAlignment(const ChunkContextPtr & chunk_ctx)
         {
             /// Firstly, acquired finalizing lock, blocking update `many_data->finalized_watermark` in other threads
             /// Secondly, acquired watermark lock, blocking watermark alignment in other threads
-            /// NOTICE: Keeping the order of locking, since the watermark lock shall be acquired in `GlobalAggregatingTransform::prepareFinalization()`
-            std::lock_guard lock1(many_data->finalizing_mutex);
-            std::lock_guard lock2(many_data->watermarks_mutex);
+            /// NOTICE: Keeping the order of locking, since the watermark lock shall be acquired in
+            /// `GlobalAggregatingTransform::prepareFinalization()`
+            std::scoped_lock lock(many_data->finalizing_mutex, many_data->watermarks_mutex);
             watermark = many_data->finalized_watermark.load(std::memory_order_relaxed);
         }
 
@@ -233,7 +211,7 @@ void AggregatingTransform::finalizeAlignment(const ChunkContextPtr & chunk_ctx)
             /// Found min watermark to finalize
             try_finalizing_watermark = updateAndAlignWatermark(new_watermark);
         else if (new_watermark < watermark)
-            LOG_ERROR(log, "Found outdate watermark. current watermark={}, but got watermark={}", watermark, new_watermark);
+            LOG_ERROR(log, "Found outdated watermark. current watermark={}, but got watermark={}", watermark, new_watermark);
     }
 
     if (!try_finalizing_watermark.has_value())
@@ -248,24 +226,25 @@ void AggregatingTransform::finalizeAlignment(const ChunkContextPtr & chunk_ctx)
 
     std::unique_lock<std::mutex> lock(many_data->finalizing_mutex, std::try_to_lock);
     if (!lock.owns_lock())
-        return; /// Anothor thread is finalizing, so we try in next `work()`
+        return; /// Another thread is finalizing, so we try in next `work()`
 
-    /// After acquired the lock, we need to prepare and check whether `try_finalizing_watermark` has been finalized in by another AggregatingTransform
+    /// After acquired the lock, we need to prepare and check whether `try_finalizing_watermark`
+    /// has been finalized in by another AggregatingTransform
     if (!prepareFinalization(*try_finalizing_watermark))
     {
         try_finalizing_watermark.reset();
         return;
     }
 
-    auto start = MonotonicMilliseconds::now();
+    watch.restart();
 
-    /// Blocking all variants's processing of AggregatingTransform
+    /// Blocking all variants' processing of AggregatingTransform
     std::vector<std::unique_lock<std::timed_mutex>> lock_holders;
     lock_holders.reserve(many_data->variants_mutexes.size());
     for (auto & mutex : many_data->variants_mutexes)
         lock_holders.emplace_back(*mutex, std::try_to_lock);
 
-    /// Lock for each varitants mutex
+    /// Lock for each variant's mutex
     bool all_locks_acquired = true;
     do
     {
@@ -285,11 +264,10 @@ void AggregatingTransform::finalizeAlignment(const ChunkContextPtr & chunk_ctx)
     finalize(chunk_ctx);
     try_finalizing_watermark.reset();
 
-    auto end = MonotonicMilliseconds::now();
     LOG_INFO(
         log,
         "Took {} milliseconds to finalize {} shard aggregation, finalized watermark={}",
-        end - start,
+        watch.elapsedMilliseconds(),
         many_data->variants.size(),
         many_data->finalized_watermark.load(std::memory_order_relaxed));
 }
@@ -313,6 +291,21 @@ bool AggregatingTransform::propagateWatermarkAndClear()
         return true;
     }
     return false;
+}
+
+/// Convert block to chunk.
+/// Adds additional info about aggregation.
+Chunk convertToChunk(const Block & block)
+{
+    auto info = std::make_shared<AggregatedChunkInfo>();
+    info->bucket_num = block.info.bucket_num;
+    info->is_overflows = block.info.is_overflows;
+
+    UInt64 num_rows = block.rows();
+    Chunk chunk(block.getColumns(), num_rows);
+    chunk.setChunkInfo(std::move(info));
+
+    return chunk;
 }
 
 }

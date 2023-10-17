@@ -1,6 +1,5 @@
 #include <Processors/Transforms/Streaming/GlobalAggregatingTransform.h>
 
-
 namespace DB
 {
 namespace Streaming
@@ -11,28 +10,16 @@ GlobalAggregatingTransform::GlobalAggregatingTransform(Block header, Aggregating
 }
 
 GlobalAggregatingTransform::GlobalAggregatingTransform(
-    Block header,
-    AggregatingTransformParamsPtr params_,
-    ManyAggregatedDataPtr many_data_,
-    size_t current_variant_,
-    size_t max_threads_)
+    Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_, size_t current_variant_, size_t max_threads_)
     : AggregatingTransform(
-        std::move(header),
-        std::move(params_),
-        std::move(many_data_),
-        current_variant_,
-        max_threads_,
-        "GlobalAggregatingTransform")
+        std::move(header), std::move(params_), std::move(many_data_), current_variant_, max_threads_, "GlobalAggregatingTransform")
 {
     assert(params->params.group_by == Aggregator::Params::GroupBy::OTHER);
 }
 
 bool GlobalAggregatingTransform::needFinalization(Int64 min_watermark) const
 {
-    if (min_watermark == INVALID_WATERMARK)
-        return false;
-
-    return true;
+    return min_watermark != INVALID_WATERMARK;
 }
 
 bool GlobalAggregatingTransform::prepareFinalization(Int64 min_watermark)

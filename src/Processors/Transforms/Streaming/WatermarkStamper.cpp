@@ -117,45 +117,6 @@ void WatermarkStamper::processPeriodic(Chunk & chunk)
     chunk.getOrCreateChunkContext()->setWatermark(now);
 }
 
-template <typename TimeColumnType, bool apply_watermark_per_row>
-void WatermarkStamper::processWatermark(Chunk & chunk)
-{
-    if (!chunk.hasRows())
-        return;
-
-    std::function<Int64(Int64)> calc_watermark_ts;
-
-    if constexpr (apply_watermark_per_row)
-        calc_watermark_ts = [](Int64 event_ts) { return event_ts; };
-    else
-        calc_watermark_ts = [this](Int64 event_ts) { return calculateWatermark(event_ts); };
-
-    Int64 event_ts_watermark = watermark_ts;
-
-    /// [Process chunks]
-    /// 1) filter and collect late events by param watermark_ts
-    /// 2) update max event timestamp
-    auto columns = chunk.detachColumns();
-    const auto & time_vec = assert_cast<const TimeColumnType &>(*columns[time_col_pos]).getData();
-
-    auto rows = time_vec.size();
-    IColumn::Filter filter(rows, 1);
-
-    if constexpr (!apply_watermark_per_row)
-        event_ts_watermark = calc_watermark_ts(max_event_ts);
-
-    chunk.setColumns(columns, columns[0]->size());
-
-    /// [Update new watermark]
-    /// Use max event time as new watermark
-    if (event_ts_watermark > watermark_ts)
-    {
-        auto chunk_ctx = chunk.getOrCreateChunkContext();
-        chunk_ctx->setWatermark(event_ts_watermark);
-        watermark_ts = event_ts_watermark;
-    }
-}
-
 Int64 WatermarkStamper::calculateWatermark([[maybe_unused]] Int64 event_ts) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "calculateWatermark() not implemented in {}", getName());

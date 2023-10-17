@@ -1,9 +1,8 @@
 #pragma once
 
-#include <numeric>
-
 #include <Common/HashTable/HashTable.h>
 
+#include <numeric>
 
 /** Two-level hash table.
   * Represents 256 (or 1ULL << BITS_FOR_BUCKET) small hash tables (buckets of the first level).

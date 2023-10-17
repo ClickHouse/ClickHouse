@@ -1,4 +1,4 @@
-#include "WatermarkStep.h"
+#include <Processors/QueryPlan/Streaming/WatermarkStep.h>
 
 #include <Processors/Transforms/Streaming/WatermarkTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -29,7 +29,8 @@ WatermarkStep::WatermarkStep(const DataStream & input_stream_, WatermarkStamperP
 
 void WatermarkStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /* settings */)
 {
-    pipeline.addSimpleTransform([&](const Block & header) { /// STYLE_CHECK_ALLOW_BRACE_SAME_LINE_LAMBDA
+    pipeline.addSimpleTransform([&](const Block & header)
+    {
         return std::make_shared<WatermarkTransform>(header, params, log);
     });
 }
