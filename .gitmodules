@@ -351,3 +351,6 @@
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/conviva-timeline-cpp"]
+	path = contrib/conviva-timeline-cpp
+	url = git@github.com:zhangruiddn/timeline-cpp.git

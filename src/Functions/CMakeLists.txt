@@ -18,6 +18,7 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     FunctionsLogical.h
 )
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-everything")
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
 
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_obj>)
@@ -34,6 +35,7 @@ list (APPEND PUBLIC_LIBS
         ch_contrib::metrohash
         ch_contrib::murmurhash
         ch_contrib::morton_nd
+        dag_engine
 )
 
 list (APPEND PRIVATE_LIBS
@@ -149,6 +151,19 @@ if (USE_GPERF)
 endif ()
 
 target_link_libraries(clickhouse_functions_obj PUBLIC ${PUBLIC_LIBS} PRIVATE ${PRIVATE_LIBS})
+add_compile_options(
+        "-Wno-error=covered-switch-default"
+        "-Wno-reserved-identifier"
+        "-Wno-shadow"
+        "-Wno-covered-switch-default"
+        "-Wno-suggest-override"
+        "-Wno-shorten-64-to-32"
+        "-Wno-sign-compare"
+        "-Wno-suggest-destructor-override"
+        "-Wno-documentation"
+        "-Wno-everything"
+)  # suppress submodule library warnings
+target_link_libraries(clickhouse_functions_obj PUBLIC dag_engine)
 
 # Used to forward the linking information to the final binaries such as clickhouse / unit_tests_dbms,
 # since such information are lost after we convert to OBJECT target

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(ClickHouse LANGUAGES C CXX ASM)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-everything")
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
@@ -560,6 +561,19 @@ add_subdirectory (src)
 add_subdirectory (programs)
 add_subdirectory (tests)
 add_subdirectory (utils)
+add_compile_options(
+        "-Wno-error=covered-switch-default"
+        "-Wno-reserved-identifier"
+        "-Wno-shadow"
+        "-Wno-covered-switch-default"
+        "-Wno-suggest-override"
+        "-Wno-shorten-64-to-32"
+        "-Wno-sign-compare"
+        "-Wno-suggest-destructor-override"
+        "-Wno-documentation"
+        "-Wno-everything"
+)  # suppress submodule library warnings
+#add_subdirectory(contrib/conviva-timeline-cpp)
 
 if (FUZZER)
     # Bundle fuzzers target
