@@ -723,7 +723,11 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr local_context) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
