@@ -37,7 +37,7 @@ StorageIceberg::StorageIceberg(
 {
 }
 
-ColumnsDescription StorageIceberg::getTableStructureFromMetadata(
+ColumnsDescription StorageIceberg::getTableStructureFromData(
     Configuration & base_configuration,
     const std::optional<FormatSettings> &,
     ContextPtr local_context)

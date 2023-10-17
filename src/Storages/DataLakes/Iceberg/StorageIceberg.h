@@ -48,7 +48,7 @@ public:
 
     String getName() const override { return name; }
 
-    static ColumnsDescription getTableStructureFromMetadata(
+    static ColumnsDescription getTableStructureFromData(
         Configuration & base_configuration,
         const std::optional<FormatSettings> &,
         ContextPtr local_context);

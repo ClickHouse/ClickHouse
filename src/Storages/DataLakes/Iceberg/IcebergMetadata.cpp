@@ -2,34 +2,34 @@
 
 #if USE_AWS_S3 && USE_AVRO
 
-#    include <Common/logger_useful.h>
+#include <Common/logger_useful.h>
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/IColumn.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeFactory.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#    include <Storages/DataLakes/Iceberg/IcebergMetadata.h>
-#    include <Storages/DataLakes/S3MetadataReader.h>
-#    include <Storages/StorageS3.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#include <Storages/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/DataLakes/S3MetadataReader.h>
+#include <Storages/StorageS3.h>
 
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 
 namespace DB
@@ -37,10 +37,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int FILE_DOESNT_EXIST;
-extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
-extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -182,7 +182,7 @@ DataTypePtr getSimpleTypeByName(const String & type_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr getFieldType(const Poco::Dynamic::Var & type, bool required);
+DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
 
 DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
 {
@@ -190,15 +190,15 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
     if (type_name == "list")
     {
         bool element_required = type->getValue<bool>("element-required");
-        auto element_type = getFieldType(type->get("element"), element_required);
+        auto element_type = getFieldType(type, "element", element_required);
         return std::make_shared<DataTypeArray>(element_type);
     }
 
     if (type_name == "map")
     {
-        auto key_type = getFieldType(type->get("key"), true);
+        auto key_type = getFieldType(type, "key", true);
         auto value_required = type->getValue<bool>("value-required");
-        auto value_type = getFieldType(type->get("value"), value_required);
+        auto value_type = getFieldType(type, "value", value_required);
         return std::make_shared<DataTypeMap>(key_type, value_type);
     }
 
@@ -214,7 +214,7 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
             auto field = fields->getObject(static_cast<Int32>(i));
             element_names.push_back(field->getValue<String>("name"));
             auto required = field->getValue<bool>("required");
-            element_types.push_back(getFieldType(field->get("type"), required));
+            element_types.push_back(getFieldType(field, "type", required));
         }
 
         return std::make_shared<DataTypeTuple>(element_types, element_names);
@@ -223,8 +223,12 @@ DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
-DataTypePtr getFieldType(const Poco::Dynamic::Var & type, bool required)
+DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required)
 {
+    if (field->isObject(type_key))
+        return getComplexTypeFromObject(field->getObject(type_key));
+
+    auto type = field->get(type_key);
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
@@ -232,10 +236,8 @@ DataTypePtr getFieldType(const Poco::Dynamic::Var & type, bool required)
         return required ? data_type : makeNullable(data_type);
     }
 
-    if (type.isStruct())
-        return getComplexTypeFromObject(type.extract<Poco::JSON::Object::Ptr>());
-
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
+
 }
 
 std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, int format_version)
@@ -252,10 +254,7 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::P
         current_schema_id = metadata_object->getValue<int>("current-schema-id");
         auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
         if (schemas->size() != 1)
-            throw Exception(
-                ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
-                "supported");
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not supported");
 
         /// Now we sure that there is only one schema.
         schema = schemas->getObject(0);
@@ -269,10 +268,7 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::P
         /// Field "schemas" is optional for version 1, but after version 2 was introduced,
         /// in most cases this field is added for new tables in version 1 as well.
         if (metadata_object->has("schemas") && metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>()->size() > 1)
-            throw Exception(
-                ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
-                "supported");
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not supported");
     }
 
     NamesAndTypesList names_and_types;
@@ -282,13 +278,16 @@ std::pair<NamesAndTypesList, Int32> parseTableSchema(const Poco::JSON::Object::P
         auto field = fields->getObject(static_cast<UInt32>(i));
         auto name = field->getValue<String>("name");
         bool required = field->getValue<bool>("required");
-        names_and_types.push_back({name, getFieldType(field->get("type"), required)});
+        names_and_types.push_back({name, getFieldType(field, "type", required)});
     }
 
     return {std::move(names_and_types), current_schema_id};
 }
 
-MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)
+MutableColumns parseAvro(
+    avro::DataFileReaderBase & file_reader,
+    const Block & header,
+    const FormatSettings & settings)
 {
     auto deserializer = std::make_unique<AvroDeserializer>(header, file_reader.dataSchema(), true, true, settings);
     MutableColumns columns = header.cloneEmptyColumns();
@@ -313,7 +312,9 @@ std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuratio
     if (metadata_files.empty())
     {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.url.key);
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The metadata file for Iceberg table with path {} doesn't exist",
+            configuration.url.key);
     }
 
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
@@ -323,8 +324,7 @@ std::pair<Int32, String> getMetadataFileAndVersion(const StorageS3::Configuratio
         String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
         String version_str(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
         if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
         metadata_files_with_versions.emplace_back(std::stoi(version_str), path);
     }
 
@@ -364,8 +364,7 @@ std::unique_ptr<IcebergMetadata> parseIcebergMetadata(const StorageS3::Configura
         }
     }
 
-    return std::make_unique<IcebergMetadata>(
-        configuration, context_, metadata_version, format_version, manifest_list_file, schema_id, schema);
+    return std::make_unique<IcebergMetadata>(configuration, context_, metadata_version, format_version, manifest_list_file, schema_id, schema);
 }
 
 /**
@@ -405,8 +404,7 @@ Strings IcebergMetadata::getDataFiles()
     LOG_TEST(log, "Collect manifest files from manifest list {}", manifest_list_file);
 
     auto manifest_list_buf = S3DataLakeMetadataReadHelper::createReadBuffer(manifest_list_file, getContext(), configuration);
-    auto manifest_list_file_reader
-        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
+    auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
     Block header{{data_type->createColumn(), data_type, "manifest_path"}};
@@ -447,10 +445,7 @@ Strings IcebergMetadata::getDataFiles()
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
         Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
         if (schema_object->getValue<int>("schema-id") != current_schema_id)
-            throw Exception(
-                ErrorCodes::UNSUPPORTED_METHOD,
-                "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not "
-                "supported");
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: the table schema has been changed at least 1 time, reading tables with evolved schema is not supported");
 
         avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
         size_t leaves_num = root_node->leaves();
@@ -458,7 +453,9 @@ Strings IcebergMetadata::getDataFiles()
         if (leaves_num < expected_min_num)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Unexpected number of columns {}. Expected at least {}", root_node->leaves(), expected_min_num);
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected number of columns {}. Expected at least {}",
+                root_node->leaves(), expected_min_num);
         }
 
         avro::NodePtr status_node = root_node->leafAt(0);
@@ -481,9 +478,9 @@ Strings IcebergMetadata::getDataFiles()
 
         auto status_col_data_type = AvroSchemaReader::avroNodeToDataType(status_node);
         auto data_col_data_type = AvroSchemaReader::avroNodeToDataType(data_file_node);
-        Block manifest_file_header{
-            {status_col_data_type->createColumn(), status_col_data_type, "status"},
-            {data_col_data_type->createColumn(), data_col_data_type, "data_file"}};
+        Block manifest_file_header
+            = {{status_col_data_type->createColumn(), status_col_data_type, "status"},
+               {data_col_data_type->createColumn(), data_col_data_type, "data_file"}};
 
         columns = parseAvro(*manifest_file_reader, manifest_file_header, getFormatSettings(getContext()));
         if (columns.size() != 2)
@@ -551,8 +548,7 @@ Strings IcebergMetadata::getDataFiles()
             {
                 Int32 content_type = content_int_column->getElement(i);
                 if (DataFileContent(content_type) != DataFileContent::DATA)
-                    throw Exception(
-                        ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
             }
 
             const auto status = status_int_column->getInt(i);
