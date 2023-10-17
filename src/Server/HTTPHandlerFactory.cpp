@@ -183,10 +183,12 @@ void addDefaultHandlersFactory(
     query_handler->addFilter([](const auto & request)
         {
             return (startsWith(request.getURI(), "/?")
-                && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
-                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
-                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+                    && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
+                || ((startsWith(request.getURI(), "/?")
+                    || request.getURI() == "/")
+                    && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
+                        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST));
         }
     );
     factory.addHandler(query_handler);
