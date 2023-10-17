@@ -1045,7 +1045,7 @@ public:
         size_t num_columns_to_add = block_with_columns_to_add.columns();
         if (is_asof_join)
             ++num_columns_to_add;
-
+        has_columns_to_add = num_columns_to_add > 0;
         columns.reserve(num_columns_to_add);
         type_name.reserve(num_columns_to_add);
         right_indexes.reserve(num_columns_to_add);
@@ -1087,7 +1087,7 @@ public:
 
     size_t lazy_row_size() const { return lazy_right_columns.size(); }
 
-    ColumnWithTypeAndName moveColumn(size_t i)
+    ColumnWithTypeAndName getEmptyColumn(size_t i)
     {
         return ColumnWithTypeAndName(columns[i]->cloneEmpty(), type_name[i].type, type_name[i].qualified_name);
     }
@@ -1120,7 +1120,8 @@ public:
                     demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
         }
 #endif
-        lazy_right_columns.emplace_back(RowRef(&block, row_num));
+        if (has_columns_to_add)
+            lazy_right_columns.emplace_back(RowRef(&block, row_num));
     }
 
     ColumnsWithTypeAndName getColumns(size_t offset, size_t length)
@@ -1182,13 +1183,14 @@ private:
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
     std::vector<RowRef> lazy_right_columns;
+    bool has_columns_to_add;
 
     bool is_join_get;
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(src_column.column->size());
+//        columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
@@ -1780,7 +1782,7 @@ IBlocksStreamPtr HashJoin::joinBlockImpl(
     std::vector<size_t> right_col_idx;
     for (size_t i = 0; i < added_columns->size(); ++i)
     {
-        block.insert(added_columns->moveColumn(i));
+        block.insert(added_columns->getEmptyColumn(i));
         right_col_idx.emplace_back(existing_columns + i);
     }
 
