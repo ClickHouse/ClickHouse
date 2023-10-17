@@ -48,7 +48,7 @@ public:
     OutputPort * getOutputPort(size_t pos) const { return output_ports[pos]; }
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
-    OutputPort * getPartialResultPort(size_t pos) const { return partial_result_ports.empty() ? nullptr : partial_result_ports[pos]; }
+    OutputPort * getPartialResultPort(size_t pos) const;
 
     bool isPartialResultActive() { return is_partial_result_active; }
 

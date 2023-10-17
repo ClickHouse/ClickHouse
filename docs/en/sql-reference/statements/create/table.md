@@ -487,7 +487,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 - The DB can’t be specified for a temporary table. It is created outside of databases.
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
-- For distributed query processing, temporary tables used in a query are passed to remote servers.
+- For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
 
 To create a temporary table, use the following syntax:
 

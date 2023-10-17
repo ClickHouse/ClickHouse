@@ -420,6 +420,10 @@
             color: var(--auth-error-color);
         }
 
+        #charts > div:only-child .display-only-if-more-than-one-chart {
+            display: none;
+        }
+
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
          * It is copy-pasted to lower the number of requests.
          */
@@ -930,6 +934,9 @@ function insertChart(i) {
         resize();
         saveState();
     });
+
+    move.classList.add('display-only-if-more-than-one-chart');
+    maximize.classList.add('display-only-if-more-than-one-chart');
 
     edit_buttons.appendChild(move);
     edit_buttons.appendChild(maximize);
