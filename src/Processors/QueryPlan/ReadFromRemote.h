@@ -5,7 +5,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Core/UUID.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include "Core/UUID.h"
 
 namespace DB
 {
@@ -15,9 +16,6 @@ using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
-
-class ParallelReplicasReadingCoordinator;
-using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 /// Reading step from remote servers.
 /// Unite query results from several shards.

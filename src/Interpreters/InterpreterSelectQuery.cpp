@@ -684,15 +684,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze)
         {
             if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
-            {
-                if (storage)
-                    throw Exception(
-                        ErrorCodes::SAMPLING_NOT_SUPPORTED,
-                        "Storage {} doesn't support sampling",
-                        storage->getStorageID().getNameForLogs());
-                else
-                    throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: sampling is only allowed with the table engines that support it");
-            }
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
             {

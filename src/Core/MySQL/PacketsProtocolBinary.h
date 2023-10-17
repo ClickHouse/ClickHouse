@@ -16,8 +16,14 @@ namespace ProtocolBinary
 {
 class ResultSetRow : public IMySQLWritePacket
 {
+    using DateTime64ComponentsWithScale = std::pair<DecimalUtils::DecimalComponents<DateTime64>, UInt32>;
+
+private:
+    DateTime64ComponentsWithScale getDateTime64ComponentsWithScale(DataTypePtr data_type, ColumnPtr col) const;
+    ColumnPtr getColumn(size_t i) const;
+
 protected:
-    size_t row_num;
+    int row_num;
     const Columns & columns;
     const DataTypes & data_types;
     const Serializations & serializations;
@@ -35,7 +41,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, size_t row_num_);
+    ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, int row_num_);
 };
 }
 }

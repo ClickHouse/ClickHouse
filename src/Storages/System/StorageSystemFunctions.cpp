@@ -141,7 +141,6 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         std::optional<UInt64> is_deterministic;
         try
         {
-            DO_NOT_UPDATE_ERROR_STATISTICS();
             is_deterministic = functions_factory.tryGet(function_name, context)->isDeterministic();
         }
         catch (const Exception & e)

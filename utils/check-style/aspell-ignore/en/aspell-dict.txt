@@ -432,7 +432,6 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
-Levenshtein
 LGPL
 LLDB
 LLVM's
@@ -1047,7 +1046,6 @@ arrayFilter
 arrayFirst
 arrayFirstIndex
 arrayFlatten
-arrayFold
 arrayIntersect
 arrayJaccardIndex
 arrayJoin
@@ -1063,7 +1061,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -1179,14 +1176,12 @@ buildId
 buildable
 builtins
 byteSize
-byteSwap
 bytebase
 bytesToCutForIPv
-editDistance
+byteEditDistance
 byteHammingDistance
-jaccardIndex
-levenshteinDistance
-clickcache
+byteJaccardIndex
+byteLevenshteinDistance
 cLoki
 caConfig
 cacheSessions
@@ -1423,7 +1418,6 @@ encodeXMLComponent
 encodings
 encryptions
 endian
-endianness
 endsWith
 endsWithUTF
 enum
@@ -1514,7 +1508,6 @@ geohashesInBox
 geoip
 geospatial
 getMacro
-getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1632,8 +1625,6 @@ injective
 innogames
 inodes
 instantiation
-instantiations
-DIEs
 intDiv
 intDivOrZero
 intExp
@@ -1717,7 +1708,6 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
-levenshtein
 lexicographically
 lgamma
 libFuzzer

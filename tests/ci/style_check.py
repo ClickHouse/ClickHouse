@@ -140,7 +140,7 @@ def main():
     stopwatch = Stopwatch()
 
     repo_path = Path(GITHUB_WORKSPACE)
-    temp_path = Path(TEMP_PATH)
+    temp_path = Path(TEMP_PATH) / "style_check"
     temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()

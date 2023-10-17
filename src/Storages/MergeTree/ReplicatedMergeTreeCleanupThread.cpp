@@ -153,7 +153,9 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
+        cleaned_other += storage.clearOldWriteAheadLogs();
         cleaned_part_like += storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        cleaned_part_like += storage.clearOldBrokenPartsFromDetachedDirectory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment

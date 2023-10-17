@@ -46,8 +46,6 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Storages/StorageDummy.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -86,10 +84,6 @@ namespace
 /// Check if current user has privileges to SELECT columns from table
 void checkAccessRights(const TableNode & table_node, const Names & column_names, const ContextPtr & query_context)
 {
-    /// StorageDummy is created on preliminary stage, ignore access check for it.
-    if (typeid_cast<const StorageDummy *>(table_node.getStorage().get()))
-        return;
-
     const auto & storage_id = table_node.getStorageID();
     const auto & storage_snapshot = table_node.getStorageSnapshot();
 
@@ -559,7 +553,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
-        table_expression_query_info.filter_actions_dag = table_expression_data.getFilterActions();
 
         size_t max_streams = settings.max_threads;
         size_t max_threads_execute_query = settings.max_threads;
@@ -1255,26 +1248,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             const auto & join_clause = table_join->getOnlyClause();
 
             bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-
-            auto has_non_const = [](const Block & block, const auto & keys)
-            {
-                for (const auto & key : keys)
-                {
-                    const auto & column = block.getByName(key).column;
-                    if (column && !isColumnConst(*column))
-                        return true;
-                }
-                return false;
-            };
-
-            /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
-            /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
-            /// Note: it's also doesn't work with the read-in-order optimization.
-            /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
-            bool has_non_const_keys = has_non_const(left_plan.getCurrentDataStream().header, join_clause.key_names_left)
-                && has_non_const(right_plan.getCurrentDataStream().header, join_clause.key_names_right);
-
-            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
+            if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
             {
                 auto * left_set = add_create_set(left_plan, join_clause.key_names_left, JoinTableSide::Left);
                 auto * right_set = add_create_set(right_plan, join_clause.key_names_right, JoinTableSide::Right);
