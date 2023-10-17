@@ -94,7 +94,15 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         }
         else
         {
-            String column_name = applyVisitor(FieldVisitorToString(), value);
+            String column_name;
+            if (value.getType() == Field::Types::AggregateFunctionState)
+            {
+                column_name = value.template get<AggregateFunctionStateData>().name + applyVisitor(FieldVisitorToString(), value);
+            }
+            else
+            {
+                column_name = applyVisitor(FieldVisitorToString(), value);
+            }
             writeString(column_name, ostr);
         }
     }
