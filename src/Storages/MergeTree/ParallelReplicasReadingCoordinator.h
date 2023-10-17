@@ -38,6 +38,7 @@ private:
     CoordinationMode mode{CoordinationMode::Default};
     std::atomic<bool> initialized{false};
     std::unique_ptr<ImplInterface> pimpl;
+    ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

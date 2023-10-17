@@ -250,6 +250,8 @@ void DefaultCoordinator::finalizeReadingState()
         Progress progress;
         progress.total_rows_to_read = total_rows_to_read;
         progress_callback(progress);
+
+        LOG_DEBUG(log, "Total rows to read: {}", total_rows_to_read);
     }
 
     LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
@@ -380,6 +382,7 @@ public:
     void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
+    size_t total_rows_to_read = 0;
 
     Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
@@ -399,6 +402,8 @@ template <CoordinationMode mode>
 void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     LOG_TRACE(log, "Received an announcement {}", announcement.describe());
+
+    size_t new_rows_to_read = 0;
 
     /// To get rid of duplicates
     for (const auto & part: announcement.description)
@@ -420,6 +425,8 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
+        new_rows_to_read += part.rows;
+
         auto new_part = Part{
             .description = part,
             .replicas = {announcement.replica_num}
@@ -428,6 +435,17 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         auto insert_it = all_parts_to_read.insert(new_part);
         auto & ranges = insert_it.first->description.ranges;
         std::sort(ranges.begin(), ranges.end());
+    }
+
+    if (new_rows_to_read > 0)
+    {
+        Progress progress;
+        progress.total_rows_to_read = new_rows_to_read;
+        progress_callback(progress);
+
+        total_rows_to_read += new_rows_to_read;
+
+        LOG_DEBUG(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
     }
 }
 
@@ -566,14 +584,16 @@ void ParallelReplicasReadingCoordinator::initialize()
     {
         case CoordinationMode::Default:
             pimpl = std::make_unique<DefaultCoordinator>(replicas_count);
-            return;
+            break;
         case CoordinationMode::WithOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
-            return;
+            break;
         case CoordinationMode::ReverseOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::ReverseOrder>>(replicas_count);
-            return;
+            break;
     }
+    if (progress_callback)
+        pimpl->setProgressCallback(std::move(progress_callback));
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_) {}
@@ -582,10 +602,10 @@ ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = defa
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
 {
-    if (!pimpl)
-        initialize();
-
-    pimpl->setProgressCallback(std::move(callback));
+    // store callback since pimpl can be not instantiated yet
+    progress_callback = std::move(callback);
+    if (pimpl)
+        pimpl->setProgressCallback(std::move(progress_callback));
 }
 
 }
