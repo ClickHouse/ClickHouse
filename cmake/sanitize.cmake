@@ -54,9 +54,6 @@ if (SANITIZE)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
 
-        # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
-        set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")
-
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
     endif ()

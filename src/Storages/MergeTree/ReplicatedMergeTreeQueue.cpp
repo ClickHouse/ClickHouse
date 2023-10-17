@@ -749,7 +749,7 @@ QueueRepresentation getQueueRepresentation(const std::list<ReplicatedMergeTreeLo
         const auto & key = entry->znode_name;
         switch (entry->type)
         {
-            /// explicetely specify all types of entries without default, so if
+            /// explicitly specify all types of entries without default, so if
             /// someone decide to add new type it will produce a compiler warning (error in our case)
             case LogEntryType::GET_PART:
             case LogEntryType::ATTACH_PART:

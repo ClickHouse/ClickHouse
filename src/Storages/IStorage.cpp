@@ -211,7 +211,10 @@ void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, co
 }
 
 void IStorage::checkAlterPartitionIsPossible(
-    const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
+    const PartitionCommands & /*commands*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr /*context*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
 }

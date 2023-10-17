@@ -239,13 +239,69 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     return p.returncode == 0
 
 
-def check_rabbitmq_is_available(rabbitmq_id):
+def check_rabbitmq_is_available(rabbitmq_id, cookie):
     p = subprocess.Popen(
-        ("docker", "exec", "-i", rabbitmq_id, "rabbitmqctl", "await_startup"),
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmqctl",
+            "await_startup",
+        ),
         stdout=subprocess.PIPE,
     )
     p.communicate()
     return p.returncode == 0
+
+
+def rabbitmq_debuginfo(rabbitmq_id, cookie):
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "status",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "listeners",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            "-i",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "environment",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
 
 
 async def check_nats_is_available(nats_port, ssl_ctx=None):
@@ -271,11 +327,13 @@ async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
     return nc
 
 
-def enable_consistent_hash_plugin(rabbitmq_id):
+def enable_consistent_hash_plugin(rabbitmq_id, cookie):
     p = subprocess.Popen(
         (
             "docker",
             "exec",
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
             "-i",
             rabbitmq_id,
             "rabbitmq-plugins",
@@ -527,7 +585,9 @@ class ClickHouseCluster:
         self.rabbitmq_ip = None
         self.rabbitmq_port = 5672
         self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
+        self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
+        self.rabbitmq_cookie = self.get_instance_docker_id(self.rabbitmq_host)
 
         self.nats_host = "nats1"
         self.nats_port = 4444
@@ -1250,6 +1310,8 @@ class ClickHouseCluster:
         env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
         env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
         env_variables["RABBITMQ_LOGS_FS"] = "bind"
+        env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
+        env_variables["RABBITMQ_COOKIE_FILE_FS"] = "bind"
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml")]
@@ -1515,6 +1577,7 @@ class ClickHouseCluster:
         allow_analyzer=True,
         hostname=None,
         env_variables=None,
+        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag=None,
         stay_alive=False,
@@ -1557,7 +1620,6 @@ class ClickHouseCluster:
             tag = self.docker_base_tag
         if not env_variables:
             env_variables = {}
-
         self.use_keeper = use_keeper
 
         # Code coverage files will be placed in database directory
@@ -1625,6 +1687,7 @@ class ClickHouseCluster:
             copy_common_configs=copy_common_configs,
             hostname=hostname,
             env_variables=env_variables,
+            instance_env_variables=instance_env_variables,
             image=image,
             tag=tag,
             stay_alive=stay_alive,
@@ -2221,25 +2284,36 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
-    def wait_rabbitmq_to_start(self, timeout=180, throw=True):
+    def wait_rabbitmq_to_start(self, timeout=30):
+        self.print_all_docker_pieces()
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
         while time.time() - start < timeout:
             try:
-                if check_rabbitmq_is_available(self.rabbitmq_docker_id):
+                if check_rabbitmq_is_available(
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie
+                ):
                     logging.debug("RabbitMQ is available")
-                    if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
+                    if enable_consistent_hash_plugin(
+                        self.rabbitmq_docker_id, self.rabbitmq_cookie
+                    ):
                         logging.debug("RabbitMQ consistent hash plugin is available")
-                        return True
+                    return True
                 time.sleep(0.5)
             except Exception as ex:
                 logging.debug("Can't connect to RabbitMQ " + str(ex))
                 time.sleep(0.5)
 
-        if throw:
-            raise Exception("Cannot wait RabbitMQ container")
-        return False
+        try:
+            with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_rabbitmq_cmd + ["logs"], stdout=f
+                )
+            rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
+        raise Exception("Cannot wait RabbitMQ container")
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -2748,15 +2822,18 @@ class ClickHouseCluster:
                 os.makedirs(self.rabbitmq_logs_dir)
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
-                for i in range(5):
-                    subprocess_check_call(
-                        self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
-                    )
-                    self.up_called = True
-                    self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
-                    logging.debug(f"RabbitMQ checking container try: {i}")
-                    if self.wait_rabbitmq_to_start(throw=(i == 4)):
-                        break
+                with open(self.rabbitmq_cookie_file, "w") as f:
+                    f.write(self.rabbitmq_cookie)
+                os.chmod(self.rabbitmq_cookie_file, stat.S_IRUSR)
+
+                subprocess_check_call(
+                    self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+                time.sleep(2)
+                logging.debug(f"RabbitMQ checking container try")
+                self.wait_rabbitmq_to_start()
 
             if self.with_nats and self.base_nats_cmd:
                 logging.debug("Setup NATS")
@@ -3166,6 +3243,7 @@ class ClickHouseInstance:
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
+        instance_env_variables=False,
         image="clickhouse/integration-test",
         tag="latest",
         stay_alive=False,
@@ -3255,6 +3333,7 @@ class ClickHouseInstance:
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, "docker-compose.yml")
         self.env_variables = env_variables or {}
+        self.instance_env_variables = instance_env_variables
         self.env_file = self.cluster.env_file
         if with_odbc_drivers:
             self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
@@ -4386,7 +4465,16 @@ class ClickHouseInstance:
         if self.with_azurite:
             depends_on.append("azurite1")
 
-        self.cluster.env_variables.update(self.env_variables)
+        # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
+        # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
+        if self.instance_env_variables is True:
+            # Create a dictionary containing cluster & instance env variables.
+            # Instance env variables will override cluster's.
+            temp_env_variables = self.cluster.env_variables.copy()
+            temp_env_variables.update(self.env_variables)
+            self.env_variables = temp_env_variables
+        else:
+            self.cluster.env_variables.update(self.env_variables)
 
         odbc_ini_path = ""
         if self.odbc_ini_path:
@@ -4458,6 +4546,14 @@ class ClickHouseInstance:
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )
+
+        # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
+        # are shared with all nodes within the same cluster, even if it is specified for a single node.
+        # In order not to break the existing tests, the `self.instance_env_variables` option was added as a workaround.
+        # IMHO, it would be better to make `self.env_variables` exclusive by default and remove the `self.instance_env_variables` option.
+        if self.instance_env_variables:
+            self.env_file = p.abspath(p.join(self.path, ".env"))
+            _create_env_file(self.env_file, self.env_variables)
 
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(

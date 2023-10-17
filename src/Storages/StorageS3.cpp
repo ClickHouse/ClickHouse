@@ -207,6 +207,16 @@ private:
         {
             auto answer = *buffer_iter;
             ++buffer_iter;
+
+            /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
+            /// So we get object info lazily here on 'next()' request.
+            if (!answer.info)
+            {
+                answer.info = S3::getObjectInfo(*client, globbed_uri.bucket, answer.key, globbed_uri.version_id, request_settings);
+                if (file_progress_callback)
+                    file_progress_callback(FileProgress(0, answer.info->size));
+            }
+
             return answer;
         }
 
@@ -604,10 +614,11 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
             getContext(),
             max_block_size,
             format_settings,
-            need_only_count ? 1 : max_parsing_threads,
+            max_parsing_threads,
             /* max_download_threads= */ std::nullopt,
             /* is_remote_fs */ true,
-            compression_method);
+            compression_method,
+            need_only_count);
 
         if (key_condition)
             input_format->setKeyCondition(key_condition);
