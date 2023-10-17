@@ -21,18 +21,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-GinFilterParameters::GinFilterParameters(size_t ngrams_, UInt64 max_rows_)
+GinFilterParameters::GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_)
     : ngrams(ngrams_)
-    , max_rows_in_postings_list(max_rows_)
+    , max_rows_per_postings_list(max_rows_per_postings_list_)
 {
-    /// 0 indicates no limitation of postings list's size
-    if (max_rows_in_postings_list == 0)
-        max_rows_in_postings_list = std::numeric_limits<UInt64>::max();
+    if (max_rows_per_postings_list == UNLIMITED_ROWS_PER_POSTINGS_LIST)
+        max_rows_per_postings_list = std::numeric_limits<UInt64>::max();
 
     if (ngrams > 8)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of inverted index filter cannot be greater than 8");
-    if (max_rows_in_postings_list < MIN_ROWS_IN_POSTINGS_LIST)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The maximum rows in postings list must be no less than {}", MIN_ROWS_IN_POSTINGS_LIST);
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)
@@ -55,7 +52,7 @@ void GinFilter::add(const char * data, size_t len, UInt32 rowID, GinIndexStorePt
     }
     else
     {
-        auto builder = std::make_shared<GinIndexPostingsBuilder>(params.max_rows_in_postings_list);
+        auto builder = std::make_shared<GinIndexPostingsBuilder>(params.max_rows_per_postings_list);
         builder->add(rowID);
 
         store->setPostingsBuilder(term, builder);
