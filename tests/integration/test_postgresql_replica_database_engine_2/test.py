@@ -762,6 +762,7 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
 
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
+    pg_manager_instance2.restart()
 
     for pm in [pg_manager, pg_manager_instance2]:
         pm.create_and_fill_postgres_table(table)
