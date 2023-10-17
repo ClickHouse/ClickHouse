@@ -735,7 +735,7 @@ MergeTreeIndexPtr invertedIndexCreator(
     const IndexDescription & index)
 {
     size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_ROWS_IN_POSTINGS_LIST : index.arguments[1].get<UInt64>();
+    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].get<UInt64>();
     GinFilterParameters params(n, max_rows);
 
     /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
@@ -780,14 +780,16 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The first Inverted index argument must be positive integer.");
 
-    if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::UInt64 ||
-            (index.arguments[1].get<UInt64>() != 0 && index.arguments[1].get<UInt64>() < MIN_ROWS_IN_POSTINGS_LIST)))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows in postings list must be no less than {}", MIN_ROWS_IN_POSTINGS_LIST);
-
+    if (index.arguments.size() == 2)
+    {
+        if (index.arguments[1].getType() != Field::Types::UInt64)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be UInt64");
+        if (index.arguments[1].get<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].get<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
+    }
     /// Just validate
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_ROWS_IN_POSTINGS_LIST : index.arguments[1].get<UInt64>();
-    GinFilterParameters params(ngrams, max_rows);
+    UInt64 max_rows_per_postings_list = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].get<UInt64>();
+    GinFilterParameters params(ngrams, max_rows_per_postings_list);
 }
-
 }

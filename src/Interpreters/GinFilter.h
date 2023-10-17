@@ -8,15 +8,16 @@ namespace DB
 {
 
 static inline constexpr auto INVERTED_INDEX_NAME = "inverted";
-static inline constexpr UInt64 MIN_ROWS_IN_POSTINGS_LIST = 8 * 1024;
-static inline constexpr UInt64 DEFAULT_ROWS_IN_POSTINGS_LIST = 64 * 1024;
+static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
+static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
+static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
 struct GinFilterParameters
 {
-    GinFilterParameters(size_t ngrams_, UInt64 max_rows_);
+    GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_);
 
     size_t ngrams;
-    UInt64 max_rows_in_postings_list;
+    UInt64 max_rows_per_postings_list;
 };
 
 struct GinSegmentWithRowIdRange
