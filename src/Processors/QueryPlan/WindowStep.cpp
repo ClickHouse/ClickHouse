@@ -7,11 +7,6 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
-#include "Columns/ColumnConst.h"
-#include "DataTypes/DataTypesNumber.h"
-#include "Functions/FunctionFactory.h"
-#include "Processors/Transforms/ScatterByPartitionTransform.h"
-
 namespace DB
 {
 
