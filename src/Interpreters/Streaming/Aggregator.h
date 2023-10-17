@@ -40,8 +40,8 @@
 
 #include <numeric>
 
-/// This is a copy of `Aggregator.h` and adjust for streaming windows aggregation, we shall keep this file and its implementation file's
-/// layouts are as identical as the origins to easy future diff / merge
+/// This is a copy of `Interpreters/Aggregator.h` and adjust for streaming windows aggregation.
+/// We choose a copy of the existing Aggregator for streaming processing for perf and regression concerns.
 namespace DB
 {
 class CompiledAggregateFunctionsHolder;
@@ -737,11 +737,6 @@ private:
 
     /// For external aggregation.
     mutable TemporaryFiles temporary_files;
-
-// #if USE_EMBEDDED_COMPILER
-#if 0
-    std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
-#endif
 
     std::vector<bool> is_aggregate_function_compiled;
 
