@@ -347,7 +347,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         ++it;
     }
 
-    if (file_segments.size() >= file_segments_limit)
+    if (file_segments_limit && file_segments.size() >= file_segments_limit)
         return;
 
     if (current_pos <= range.right)
