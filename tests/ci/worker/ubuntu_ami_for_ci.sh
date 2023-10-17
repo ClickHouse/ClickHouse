@@ -81,6 +81,7 @@ systemctl restart docker
 sudo -u ubuntu docker buildx version
 sudo -u ubuntu docker buildx create --use --name default-builder
 
+# FIXME: remove unidiff as soon as no old PRs could use it, here and in Dockerfile
 pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
 
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
