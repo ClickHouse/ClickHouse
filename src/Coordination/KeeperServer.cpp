@@ -643,7 +643,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 LOG_INFO(log, "All local log entries preprocessed");
             }
             keeper_context->local_logs_preprocessed = true;
-            keeper_context->local_logs_preprocessed.notify_all();
         };
 
         switch (type)
@@ -657,28 +656,29 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             {
                 auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
 
-                if (req.get_commit_idx() == 0)
-                    break;
-
-                if (req.log_entries().empty())
+                if (req.get_commit_idx() == 0 || req.log_entries().empty())
                     break;
 
                 auto last_committed_index = state_machine->last_commit_index();
                 // Actual log number.
                 auto index_to_commit = std::min({last_log_idx_on_disk, req.get_last_log_idx(), req.get_commit_idx()});
-                LOG_TRACE(log, "Index to commit {}, last committed index {}", index_to_commit, last_committed_index);
 
                 if (index_to_commit > last_committed_index)
                 {
                     LOG_TRACE(log, "Trying to commit local log entries, committing upto {}", index_to_commit);
                     raft_instance->commitLogs(index_to_commit, true);
-                    keeper_context->local_logs_preprocessed.wait(false);
+                    if (!keeper_context->local_logs_preprocessed)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Local logs are not preprocessed");
                 }
-                else if (index_to_commit == last_committed_index && last_log_idx_on_disk > index_to_commit)
+                else if (last_log_idx_on_disk <= last_committed_index)
                 {
-                    preprocess_logs();
+                    keeper_context->local_logs_preprocessed = true;
                 }
-                else if (index_to_commit == 0) /// we need to rollback all the logs so we preprocess all of them
+                else if
+                (
+                    index_to_commit == 0 ||
+                    (index_to_commit == last_committed_index && last_log_idx_on_disk > index_to_commit)  /// we need to rollback all the logs so we preprocess all of them
+                )
                 {
                     preprocess_logs();
                 }
