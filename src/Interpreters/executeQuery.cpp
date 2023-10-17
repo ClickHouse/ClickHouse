@@ -1340,7 +1340,7 @@ void executeQuery(
             {
                 String format_name = context->getDefaultFormat();
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
-                if (output_format)
+                if (output_format && output_format->supportsWritingException())
                 {
                     /// Force an update of the headers before we start writing
                     result_details.content_type = output_format->getContentType();
