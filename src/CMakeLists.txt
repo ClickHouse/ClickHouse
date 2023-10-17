@@ -89,9 +89,6 @@ add_headers_and_sources(clickhouse_common_io IO/Resource)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
-#set(CLICKHOUSE_KEEPER_STANDALONE_SOURCES
-
-
 
 add_headers_and_sources(clickhouse_compression Compression)
 add_headers_and_sources(clickhouse_compression Parsers)
@@ -310,19 +307,19 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (clickhouse_compression
         PUBLIC
-        string_utils
-        pcg_random
-        clickhouse_parsers
+            string_utils
+            pcg_random
+            clickhouse_parsers
+            clickhouse_grpc_protos
         PRIVATE
-        ch_contrib::lz4
-        ch_contrib::llvm
-        clickhouse_grpc_protos
-        ch_contrib::nuraft
-        ch_contrib::ldap
-        ch_contrib::lber
-        ch_contrib::roaring
-        ch_contrib::ssh
-        ch_contrib::krb5
+            ch_contrib::lz4
+            ch_contrib::llvm
+            ch_contrib::nuraft
+            ch_contrib::ldap
+            ch_contrib::lber
+            ch_contrib::roaring
+            ch_contrib::ssh
+            ch_contrib::krb5
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations

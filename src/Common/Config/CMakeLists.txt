@@ -11,7 +11,6 @@ add_library(clickhouse_common_config ${SRCS})
 target_link_libraries(clickhouse_common_config
     PUBLIC
         clickhouse_common_zookeeper
-        clickhouse_compression
         common
         Poco::XML
     PRIVATE
@@ -22,7 +21,6 @@ add_library(clickhouse_common_config_no_zookeeper_log ${SRCS})
 target_link_libraries(clickhouse_common_config_no_zookeeper_log
     PUBLIC
         clickhouse_common_zookeeper_no_log
-        clickhouse_compression
         common
         Poco::XML
     PRIVATE
