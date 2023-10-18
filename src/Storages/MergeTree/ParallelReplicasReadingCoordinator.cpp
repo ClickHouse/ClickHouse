@@ -385,7 +385,7 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
     LOG_TRACE(log, "Received an announcement {}", announcement.describe());
 
     /// To get rid of duplicates
-    for (const auto & part: announcement.description)
+    for (auto && part: announcement.description)
     {
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info == part.info; });
@@ -404,13 +404,8 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
-        auto new_part = Part{
-            .description = part,
-            .replicas = {announcement.replica_num}
-        };
-
-        auto insert_it = all_parts_to_read.insert(new_part);
-        auto & ranges = insert_it.first->description.ranges;
+        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        auto & ranges = inserted_it->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }
 }
@@ -517,7 +512,7 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     }
 
 
-    return pimpl->handleInitialAllRangesAnnouncement(announcement);
+    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
