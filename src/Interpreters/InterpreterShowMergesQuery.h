@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Return list of currently executing queries.
+/** Return list of merges and part mutations currently in process for tables in the MergeTree family
   */
 class InterpreterShowMergesQuery : public IInterpreter, WithMutableContext
 {

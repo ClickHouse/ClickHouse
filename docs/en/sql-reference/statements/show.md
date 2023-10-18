@@ -659,7 +659,7 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 SHOW MERGES
 ```
 
-Outputs the content of the [system.merges](../../operations/system-tables/merges.md) table, that contains dinformation about merges and part mutations currently in process for tables in the MergeTree family.
+Outputs the content of the [system.merges](../../operations/system-tables/merges.md) table, that contains information about merges and part mutations currently in process for tables in the MergeTree family.
 
 **See Also**
 
