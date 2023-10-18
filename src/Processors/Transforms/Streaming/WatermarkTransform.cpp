@@ -3,10 +3,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int INVALID_EMIT_MODE;
-}
 
 namespace Streaming
 {

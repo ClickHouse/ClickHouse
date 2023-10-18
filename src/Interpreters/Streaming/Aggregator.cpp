@@ -1,6 +1,5 @@
-#include "Aggregator.h"
+#include <Interpreters/Streaming/Aggregator.h>
 
-#include <future>
 #include <Poco/Util/Application.h>
 
 #include <AggregateFunctions/AggregateFunctionArray.h>
@@ -13,8 +12,6 @@
 #include <Formats/NativeWriter.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/JIT/compileFunction.h>
 #include <Common/CurrentThread.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/JSONBuilder.h>
@@ -65,8 +62,6 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
-    extern const int RECOVER_CHECKPOINT_FAILED;
-    extern const int AGGREGATE_FUNCTION_NOT_APPLICABLE;
 }
 
 namespace Streaming
@@ -1822,7 +1817,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         {
             /// If there are multiple sources, there are more than one AggregatedDataVariant. Aggregator always creates a new AggregatedDataVariant and merge all other
             /// AggregatedDataVariants to the new created one. After finalize(), it does not clean up aggregate state except the new create AggregatedDataVariant.
-            /// If it does not alloc new memory for the 'dst' (i.e. aggregate state of the new AggregatedDataVariant which get destoryed after finalize()) but reuse
+            /// If it does not alloc new memory for the 'dst' (i.e. aggregate state of the new AggregatedDataVariant which get destroyed after finalize()) but reuse
             /// that from the 'src' to store the final aggregated result, it will cause the data from other AggregatedDataVariant will be merged multiple times and
             /// generate incorrect aggregated result.
             dst = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);

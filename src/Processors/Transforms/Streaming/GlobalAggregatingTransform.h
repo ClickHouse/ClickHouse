@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Processors/Transforms/Streaming/AggregatingTransform.h>
 
 namespace DB

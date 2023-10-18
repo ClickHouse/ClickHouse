@@ -22,7 +22,7 @@ namespace DB
 /// 'weeks' - 'w'
 /// 'months' - 'M'
 /// 'quarter' - 'q'
-/// 'year' - 'y' 
+/// 'year' - 'y'
 class ParserIntervalAliasExpression : public IParserBase
 {
 public:

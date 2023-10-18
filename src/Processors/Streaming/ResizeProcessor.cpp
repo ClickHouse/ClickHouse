@@ -234,7 +234,7 @@ IProcessor::Status ExpandResizeProcessor::prepare(const PortNumbers & /*updated_
                 std::ranges::for_each(
                     output_ports, [](auto & output) { output.propagate_flag |= OutputPortWithStatus::PROPAGATE_HEARTBEAT; });
             }
-            
+
             if (data.chunk.hasRows())
             {
                 auto & waiting_output = *waiting_outputs.front();

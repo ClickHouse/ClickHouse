@@ -4,9 +4,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/FunctionHelpers.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/intExp.h>
 
 namespace DB
 {
@@ -14,11 +12,6 @@ namespace ErrorCodes
 {
 extern const int CANNOT_CONVERT_TYPE;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-extern const int BAD_ARGUMENTS;
-extern const int MISSING_SESSION_KEY;
 }
 
 namespace Streaming

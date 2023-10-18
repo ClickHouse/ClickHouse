@@ -5,12 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int SYNTAX_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 namespace Streaming
 {
 

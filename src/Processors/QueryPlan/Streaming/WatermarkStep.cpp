@@ -11,7 +11,8 @@ namespace
 {
 DB::ITransformingStep::Traits getTraits()
 {
-    return DB::ITransformingStep::Traits{
+    return DB::ITransformingStep::Traits
+    {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -19,7 +20,8 @@ DB::ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }};
+        }
+    };
 }
 }
 WatermarkStep::WatermarkStep(const DataStream & input_stream_, WatermarkStamperParamsPtr params_, Poco::Logger * log_)
@@ -37,8 +39,7 @@ void WatermarkStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
 
 void WatermarkStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),  input_streams.front().header, getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 }
 }

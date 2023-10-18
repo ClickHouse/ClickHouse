@@ -14,7 +14,8 @@ namespace
 }
 ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .returns_single_stream = true,
             .preserves_number_of_streams = false,
@@ -22,7 +23,8 @@ ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = false,
-        }};
+        }
+    };
 }
 
 inline void convertToNullable(Block & header, const Names & keys)
@@ -76,7 +78,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
         size_t counter = 0;
-        pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor> {
+        pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor>
+        {
             return std::make_shared<GlobalAggregatingTransform>(
                 header, transform_params, many_data, counter++, merge_threads);
         });
@@ -87,7 +90,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     {
         pipeline.resize(1);
 
-        pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor> {
+        pipeline.addSimpleTransform([&](const Block & header) -> std::shared_ptr<IProcessor>
+        {
             return std::make_shared<GlobalAggregatingTransform>(header, transform_params);
         });
     }
