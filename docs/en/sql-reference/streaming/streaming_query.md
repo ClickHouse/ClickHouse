@@ -12,7 +12,7 @@ Kafka topic continuously and emit the (intermediate) results continuoulsy.
 EMIT STREAM [PERIODIC interval] 
 ```
 
-The **interval** could be regular ClickHouse interval clause like `INTERVAL 1 SECOND` or shortcuts like `1s`.
+The **interval** could be regular ClickHouse interval expression like `INTERVAL 1 SECOND` or shortcuts like `1s`.
 
 Examples:
 
