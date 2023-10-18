@@ -327,8 +327,8 @@ void FindBigFamily::execute(const ASTKeeperQuery * query, KeeperClient * client)
         queue.pop();
 
         auto children = client->zookeeper->getChildren(next_path);
-        std::transform(children.cbegin(), children.cend(), children.begin(), [&](const String & child) { return next_path / child; });
-
+        for (auto & child : children)
+            child = next_path / child;
         auto response = client->zookeeper->get(children);
 
         for (size_t i = 0; i < response.size(); ++i)
@@ -483,6 +483,47 @@ bool FourLetterWordCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQ
 void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     std::cout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
+}
+
+bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+
+    std::queue<fs::path> queue;
+    queue.push(path);
+    Coordination::Stat stat;
+    client->zookeeper->get(path, &stat);
+
+    int totalNumChildren = stat.numChildren;
+    while (!queue.empty())
+    {
+        auto next_path = queue.front();
+        queue.pop();
+
+        auto children = client->zookeeper->getChildren(next_path);
+        for (auto & child : children)
+            child = next_path / child;
+        auto response = client->zookeeper->get(children);
+
+        for (size_t i = 0; i < response.size(); ++i)
+        {
+            totalNumChildren += response[i].stat.numChildren;
+            queue.push(children[i]);
+        }
+    }
+
+    std::cout << totalNumChildren << "\n";
 }
 
 }

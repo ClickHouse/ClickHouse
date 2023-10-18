@@ -1632,6 +1632,8 @@ injective
 innogames
 inodes
 instantiation
+instantiations
+DIEs
 intDiv
 intDivOrZero
 intExp
