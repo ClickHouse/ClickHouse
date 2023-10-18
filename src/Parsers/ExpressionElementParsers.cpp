@@ -43,6 +43,7 @@
 
 #include <Interpreters/StorageID.h>
 
+
 namespace DB
 {
 
@@ -239,38 +240,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
     return false;
-}
-
-
-bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (pos->type != TokenType::StringLiteral)
-        return false;
-
-    ReadBufferFromMemory in(pos->begin, pos->size());
-    String s;
-
-    if (!tryReadQuotedStringInto(s, in))
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (in.count() != pos->size())
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (s.empty())
-    {
-        expected.add(pos, "non-empty string literal");
-        return false;
-    }
-
-    node = std::make_shared<ASTTableIdentifier>(s);
-    ++pos;
-    return true;
 }
 
 
@@ -1468,12 +1437,10 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
-    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
-
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word && !is_quoted)
+    if (!has_as_word)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,

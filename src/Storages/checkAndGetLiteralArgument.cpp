@@ -12,15 +12,7 @@ namespace ErrorCodes
 template <typename T>
 T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
 {
-    if (arg && arg->as<ASTLiteral>())
-        return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
-
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Argument '{}' must be a literal, get {} (value: {})",
-        arg_name,
-        arg ? arg->getID() : "NULL",
-        arg ? arg->formatForErrorMessage() : "NULL");
+    return checkAndGetLiteralArgument<T>(*arg->as<ASTLiteral>(), arg_name);
 }
 
 template <typename T>

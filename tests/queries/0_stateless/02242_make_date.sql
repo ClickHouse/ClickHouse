@@ -79,10 +79,8 @@ select makeDate(1980, NULL, 4);
 select makeDate(1980, 3, NULL);
 
 select makeDate(1980); -- { serverError 42 }
+select makeDate(1980, 1); -- { serverError 42 }
 select makeDate(1980, 1, 1, 1); -- { serverError 42 }
-
-select MAKEDATE(1980, 1, 1);
-select MAKEDATE(1980, 1);
 
 select makeDate(year, month, day) from (select NULL as year, 2 as month, 3 as day union all select 1984 as year, 2 as month, 3 as day) order by year, month, day;
 

@@ -1,6 +1,7 @@
 #if defined(OS_LINUX)
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 #include <sys/timerfd.h>
 #include <fcntl.h>
@@ -30,12 +31,6 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
 TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(other.timer_fd)
 {
     other.timer_fd = -1;
-}
-
-TimerDescriptor & TimerDescriptor::operator=(DB::TimerDescriptor && other) noexcept
-{
-    std::swap(timer_fd, other.timer_fd);
-    return *this;
 }
 
 TimerDescriptor::~TimerDescriptor()

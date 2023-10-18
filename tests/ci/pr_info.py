@@ -171,11 +171,7 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_urls.append(
-                f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                f"compare/master...{github_event['pull_request']['head']['label']}"
-            )
-
+            self.diff_urls.append(github_event["pull_request"]["diff_url"])
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
             commit_message = github_event["head_commit"]["message"]  # type: str
@@ -219,12 +215,12 @@ class PRInfo:
                     # files changed in upstream AND master...{self.head_ref}
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{pull_request['head']['label']}"
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/master...{self.head_ref}.diff"
                     )
                     self.diff_urls.append(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{pull_request['head']['label']}...master"
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master.diff"
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
@@ -236,8 +232,8 @@ class PRInfo:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{pull_request['head']['label']}...master"
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master.diff"
                     )
         else:
             print("event.json does not match pull_request or push:")
@@ -268,11 +264,16 @@ class PRInfo:
             response = get_gh_api(
                 diff_url,
                 sleep=RETRY_SLEEP,
-                headers={"Accept": "application/vnd.github.v3.diff"},
             )
             response.raise_for_status()
-            diff_object = PatchSet(response.text)
-            self.changed_files.update({f.path for f in diff_object})
+            if "commits" in self.event and self.number == 0:
+                diff = response.json()
+
+                if "files" in diff:
+                    self.changed_files = {f["filename"] for f in diff["files"]}
+            else:
+                diff_object = PatchSet(response.text)
+                self.changed_files.update({f.path for f in diff_object})
         print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
@@ -284,7 +285,7 @@ class PRInfo:
             "user_orgs": self.user_orgs,
         }
 
-    def has_changes_in_documentation(self) -> bool:
+    def has_changes_in_documentation(self):
         # If the list wasn't built yet the best we can do is to
         # assume that there were changes.
         if self.changed_files is None or not self.changed_files:
@@ -292,9 +293,10 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            path_in_docs = f.startswith("docs/")
+            path_in_docs = "docs" in f
+            path_in_website = "website" in f
             if (
-                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
+                ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
             ) or "docker/docs" in f:
                 return True
         return False

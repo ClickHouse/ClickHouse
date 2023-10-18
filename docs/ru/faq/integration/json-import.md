@@ -19,7 +19,7 @@ $ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test
 При помощи [интефейса CLI](../../interfaces/cli.md):
 
 ``` bash
-$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
+$ echo '{"foo":"bar"}'  | clickhouse-client ---query="INSERT INTO test FORMAT JSONEachRow"
 ```
 
 Чтобы не вставлять данные вручную, используйте одну из [готовых библиотек](../../interfaces/index.md).
@@ -29,6 +29,6 @@ $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSO
 -   `input_format_skip_unknown_fields` позволяет импортировать JSON, даже если он содержит дополнительные поля, которых нет в таблице (отбрасывая лишние поля).
 -   `input_format_import_nested_json` позволяет импортировать вложенные JSON-объекты в столбцы типа [Nested](../../sql-reference/data-types/nested-data-structures/nested.md).
 
-:::note Примечание
-В HTTP-интерфейсе настройки передаются через параметры `GET` запроса, в `CLI` interface — как дополнительные аргументы командной строки, начинающиеся с `--`.
-:::
+    :::note "Примечание"
+    В HTTP-интерфейсе настройки передаются через параметры `GET` запроса, в `CLI` interface — как дополнительные аргументы командной строки, начинающиеся с `--`.
+    :::

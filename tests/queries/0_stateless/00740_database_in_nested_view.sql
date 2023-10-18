@@ -1,5 +1,10 @@
+-- Tags: no-parallel
 
-DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE IF EXISTS test_00740;
+CREATE DATABASE test_00740;
+USE test_00740;
+
+DROP TABLE IF EXISTS test_00740;
 DROP TABLE IF EXISTS test_view_00740;
 DROP TABLE IF EXISTS test_nested_view_00740;
 DROP TABLE IF EXISTS test_joined_view_00740;
@@ -14,10 +19,12 @@ SELECT * FROM test_nested_view_00740;
 SELECT * FROM test_joined_view_00740;
 
 USE default;
-SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_view_00740;
-SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_nested_view_00740;
-SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.test_joined_view_00740;
+SELECT * FROM test_00740.test_view_00740;
+SELECT * FROM test_00740.test_nested_view_00740;
+SELECT * FROM test_00740.test_joined_view_00740;
 
-DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.test_00740;
-DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.test_view_00740;
-DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.test_nested_view_00740;
+DROP TABLE IF EXISTS test_00740.test_00740;
+DROP TABLE IF EXISTS test_00740.test_view_00740;
+DROP TABLE IF EXISTS test_00740.test_nested_view_00740;
+
+DROP DATABASE test_00740;

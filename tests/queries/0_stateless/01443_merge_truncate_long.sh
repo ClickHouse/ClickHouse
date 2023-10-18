@@ -3,38 +3,22 @@
 
 set -e
 
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=none/g')
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE t (x Int8) ENGINE = MergeTree ORDER BY ()"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE t (x Int8) ENGINE = MergeTree ORDER BY tuple()"
 
-
-function thread_optimize()
-{
-    while true;
-    do
-        ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t FINAL;" 2>&1 | tr -d '\n' | rg -v 'Cancelled merging parts' ||:
-    done
-}
-
-TIMEOUT=15
-export -f thread_optimize
-timeout $TIMEOUT bash -c thread_optimize 2> /dev/null &
-
-for i in {1..100};
-do
-    echo "
-        INSERT INTO t VALUES (0);
-        INSERT INTO t VALUES (0);
-        TRUNCATE TABLE t;
-        SELECT count() FROM t HAVING count() > 0;
-        SELECT ${i};
-        "
-done | ${CLICKHOUSE_CLIENT} --multiquery
+for _ in {1..70}; do
+    ${CLICKHOUSE_CLIENT} --query="INSERT INTO t VALUES (0)"
+    ${CLICKHOUSE_CLIENT} --query="INSERT INTO t VALUES (0)"
+    ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t FINAL" 2>/dev/null &
+    ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE t"
+    ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t HAVING count() > 0"
+done
 
 wait
 

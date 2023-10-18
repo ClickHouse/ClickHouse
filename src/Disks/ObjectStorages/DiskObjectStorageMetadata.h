@@ -21,7 +21,7 @@ private:
     const std::string & common_metadata_path;
 
     /// Relative paths of blobs.
-    RelativePathsWithMetadata storage_objects;
+    RelativePathsWithSize storage_objects;
 
     const std::string object_storage_root_path;
 
@@ -33,7 +33,7 @@ private:
 
     /// Number of references (hardlinks) to this metadata file.
     ///
-    /// FIXME: Why we are tracking it explicitly, without
+    /// FIXME: Why we are tracking it explicetly, without
     /// info from filesystem????
     uint32_t ref_count = 0;
 
@@ -63,7 +63,7 @@ public:
         return object_storage_root_path;
     }
 
-    RelativePathsWithMetadata getBlobsRelativePaths() const
+    RelativePathsWithSize getBlobsRelativePaths() const
     {
         return storage_objects;
     }

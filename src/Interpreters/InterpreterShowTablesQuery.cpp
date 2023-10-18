@@ -1,4 +1,4 @@
-#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
@@ -24,8 +24,7 @@ namespace ErrorCodes
 
 
 InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_)
-    , query_ptr(query_ptr_)
+    : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -116,10 +115,10 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
-    if (query.temporary && !query.getFrom().empty())
+    if (query.temporary && !query.from.empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String database = getContext()->resolveDatabase(query.from);
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
@@ -177,7 +176,7 @@ BlockIO InterpreterShowTablesQuery::execute()
 
         Block sample_block{ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "Caches")};
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
-        auto caches = FileCacheFactory::instance().getAll();
+        auto caches = FileCacheFactory::instance().getAllByName();
         for (const auto & [name, _] : caches)
             res_columns[0]->insert(name);
         BlockIO res;

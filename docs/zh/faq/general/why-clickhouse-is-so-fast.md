@@ -60,4 +60,3 @@ Last but not least, the ClickHouse team always monitors the Internet on people c
 -   Benchmark on real datasets.
 -   Test for performance regressions in CI.
 -   Measure and observe everything.
-:::

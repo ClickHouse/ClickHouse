@@ -358,7 +358,7 @@ public:
         std::pair<LookupResult, bool> res;
         emplace(Cell::getKey(x), res.first, res.second);
         if (res.second)
-            res.first->setMapped(x);
+            insertSetMapped(res.first->getMapped(), x);
 
         return res;
     }
