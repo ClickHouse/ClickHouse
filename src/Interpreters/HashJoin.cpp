@@ -1085,7 +1085,7 @@ public:
 
     size_t size() const { return columns.size(); }
 
-    size_t lazy_row_size() const { return lazy_right_columns.size(); }
+    size_t lazyRowSize() const { return lazy_right_rows.size(); }
 
     ColumnWithTypeAndName getEmptyColumn(size_t i)
     {
@@ -1121,7 +1121,7 @@ public:
         }
 #endif
         if (has_columns_to_add)
-            lazy_right_columns.emplace_back(RowRef(&block, row_num));
+            lazy_right_rows.emplace_back(RowRef(&block, row_num));
     }
 
     ColumnsWithTypeAndName getColumns(size_t offset, size_t length)
@@ -1132,10 +1132,10 @@ public:
             MutableColumnPtr col = type_name[i].type->createColumn();
             col->reserve(length);
             size_t end = offset + length;
-            chassert(end <= lazy_right_columns.size());
+            chassert(end <= lazy_right_rows.size());
             for (size_t j = offset; j < end; ++j)
             {
-                auto row = lazy_right_columns[j];
+                auto row = lazy_right_rows[j];
                 if (!row.block)
                 {
                     type_name[i].type->insertDefaultInto(*col);
@@ -1162,7 +1162,7 @@ public:
     void appendDefaultRow()
     {
         if (has_columns_to_add)
-            lazy_right_columns.emplace_back(RowRef(nullptr, 0));
+            lazy_right_rows.emplace_back(RowRef(nullptr, 0));
     }
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
@@ -1181,7 +1181,9 @@ private:
     std::vector<size_t> right_indexes;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
-    std::vector<RowRef> lazy_right_columns;
+    // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
+    // default_count cannot represent the position of the row
+    std::vector<RowRef> lazy_right_rows;
     bool has_columns_to_add;
 
     bool is_join_get;
@@ -1189,7 +1191,6 @@ private:
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
-//        columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
@@ -1212,7 +1213,7 @@ private:
         if (added_columns)
         {
             if (length == 0)
-                length = added_columns->lazy_row_size();
+                length = added_columns->lazyRowSize();
             auto columns = added_columns->getColumns(offset, length);
             size_t i = 0;
             for (const auto & idx : right_col_idx)
