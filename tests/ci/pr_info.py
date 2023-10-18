@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Dict, List, Set, Union, Literal
 
+from unidiff import PatchSet  # type: ignore
+
 from build_download_helper import get_gh_api
 from env_helper import (
     GITHUB_REPOSITORY,
@@ -171,7 +173,7 @@ class PRInfo:
 
             self.diff_urls.append(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                f"compare/master...{self.head_ref}"
+                f"compare/master...{github_event['pull_request']['head']['label']}"
             )
 
         elif "commits" in github_event:
@@ -218,11 +220,11 @@ class PRInfo:
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{self.head_ref}"
+                        f"compare/master...{pull_request['head']['label']}"
                     )
                     self.diff_urls.append(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master"
+                        f"compare/{pull_request['head']['label']}...master"
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
@@ -235,7 +237,7 @@ class PRInfo:
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
                         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master"
+                        f"compare/{pull_request['head']['label']}...master"
                     )
         else:
             print("event.json does not match pull_request or push:")
@@ -263,11 +265,14 @@ class PRInfo:
             raise TypeError("The event does not have diff URLs")
 
         for diff_url in self.diff_urls:
-            response = get_gh_api(diff_url, sleep=RETRY_SLEEP)
+            response = get_gh_api(
+                diff_url,
+                sleep=RETRY_SLEEP,
+                headers={"Accept": "application/vnd.github.v3.diff"},
+            )
             response.raise_for_status()
-            diff = response.json()
-            if "files" in diff:
-                self.changed_files = {f["filename"] for f in diff["files"]}
+            diff_object = PatchSet(response.text)
+            self.changed_files.update({f.path for f in diff_object})
         print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
