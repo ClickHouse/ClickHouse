@@ -6,9 +6,7 @@ import logging
 import os
 import subprocess
 
-from pathlib import Path
 from typing import List, Dict, Tuple
-
 from github import Github
 
 from clickhouse_helper import (
@@ -18,7 +16,7 @@ from clickhouse_helper import (
 )
 from commit_status_helper import format_description, get_commit, post_commit_status
 from docker_images_helper import IMAGES_FILE_PATH, get_image_names
-from env_helper import RUNNER_TEMP, REPO_COPY
+from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from git_helper import Runner
 from pr_info import PRInfo
@@ -49,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--path",
-        type=Path,
+        type=str,
         default=RUNNER_TEMP,
         help="path to changed_images_*.json files",
     )
@@ -77,8 +75,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_images(path: Path, suffix: str) -> Images:
-    with open(path / CHANGED_IMAGES.format(suffix), "rb") as images:
+def load_images(path: str, suffix: str) -> Images:
+    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
         return json.load(images)  # type: ignore
 
 
@@ -176,7 +174,7 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
 
 
 def enrich_images(changed_images: Dict[str, str]) -> None:
-    all_image_names = get_image_names(Path(REPO_COPY), IMAGES_FILE_PATH)
+    all_image_names = get_image_names(GITHUB_WORKSPACE, IMAGES_FILE_PATH)
 
     images_to_find_tags_for = [
         image for image in all_image_names if image not in changed_images
@@ -274,15 +272,16 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
-    enriched_images = changed_images.copy()
     try:
         # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
-        enrich_images(enriched_images)
+        enrich_images(changed_images)
     except CHException as ex:
         logging.warning("Couldn't get proper tags for not changed images: %s", ex)
 
-    with open(args.path / "changed_images.json", "w", encoding="utf-8") as ci:
-        json.dump(enriched_images, ci)
+    with open(
+        os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
+    ) as ci:
+        json.dump(changed_images, ci)
 
     pr_info = PRInfo()
     s3_helper = S3Helper()

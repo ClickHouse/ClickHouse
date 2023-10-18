@@ -118,7 +118,7 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.http_method);
 }
 
-ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
     {

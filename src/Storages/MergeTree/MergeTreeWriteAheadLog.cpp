@@ -113,7 +113,7 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
-    DataPartsLock & parts_lock,
+    std::unique_lock<std::mutex> & parts_lock,
     bool readonly)
 {
     std::unique_lock lock(write_mutex);

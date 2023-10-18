@@ -13,10 +13,9 @@ JSONRowOutputFormat::JSONRowOutputFormat(
     const Block & header,
     const FormatSettings & settings_,
     bool yield_strings_)
-    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header, out_, settings_.json.valid_output_on_exception, true), settings(settings_), yield_strings(yield_strings_)
+    : RowOutputFormatWithUTF8ValidationAdaptor(true, header, out_), settings(settings_), yield_strings(yield_strings_)
 {
     names = JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, true);
-    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
 
@@ -118,14 +117,8 @@ void JSONRowOutputFormat::finalizeImpl()
         statistics.applied_limit,
         statistics.watch,
         statistics.progress,
-        settings.write_statistics && exception_message.empty(),
+        settings.write_statistics,
         *ostr);
-
-    if (!exception_message.empty())
-    {
-        writeCString(",\n\n", *ostr);
-        JSONUtils::writeException(exception_message, *ostr, settings, 1);
-    }
 
     JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);
@@ -134,8 +127,7 @@ void JSONRowOutputFormat::finalizeImpl()
 
 void JSONRowOutputFormat::resetFormatterImpl()
 {
-    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
-    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+    RowOutputFormatWithUTF8ValidationAdaptor::resetFormatterImpl();
     row_count = 0;
     statistics = Statistics();
 }

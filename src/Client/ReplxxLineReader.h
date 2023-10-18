@@ -15,7 +15,6 @@ public:
         bool multiline,
         Patterns extenders_,
         Patterns delimiters_,
-        const char word_break_characters_[],
         replxx::Replxx::highlighter_callback_t highlighter_);
     ~ReplxxLineReader() override;
 
@@ -33,8 +32,6 @@ private:
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;
-
-    const char * word_break_characters;
 
     // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;

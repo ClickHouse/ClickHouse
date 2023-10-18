@@ -102,8 +102,6 @@
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <Storages/BlockNumberColumn.h>
-
 #include <memory>
 #include <filesystem>
 #include <optional>
@@ -300,7 +298,6 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
-        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -334,9 +331,6 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
-    if (!distributed_settings.flush_on_detach && distributed_settings.monitor_batch_inserts)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and monitor_batch_inserts=1 are incompatible");
-
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
@@ -440,9 +434,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            const auto & select = query_info.query->as<const ASTSelectQuery &>();
-            auto syntax_analyzer_result = query_info.syntax_analyzer_result;
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, select, syntax_analyzer_result);
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -699,11 +691,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (remote_storage_id.hasDatabase())
             resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
-
-        auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
-
-        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, ColumnsDescription{column_names_and_types});
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns(), distributed_storage_snapshot->object_columns);
         auto table_node = std::make_shared<TableNode>(std::move(storage), query_context);
 
         if (table_expression_modifiers)
@@ -745,16 +733,12 @@ void StorageDistributed::read(
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
-        /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
-          * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
-          */
-        for (auto & column : header)
-            column.column = column.column->convertToFullColumnIfConst();
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
     }
     else
     {
-        header = InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        header =
+            InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         query_ast = query_info.query;
     }
 
@@ -1000,7 +984,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -1312,8 +1296,8 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
-ClusterPtr StorageDistributed::getOptimizedCluster(ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot,
-                                                   const ASTSelectQuery & select, const TreeRewriterResultPtr & syntax_analyzer_result) const
+ClusterPtr StorageDistributed::getOptimizedCluster(
+    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1322,7 +1306,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(ContextPtr local_context, con
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, select, syntax_analyzer_result, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_info, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1371,16 +1355,16 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
-    const ASTSelectQuery & select,
-    const TreeRewriterResultPtr & syntax_analyzer_result,
+    const SelectQueryInfo & query_info,
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
 
     /// FIXME: support analyzer
-    if (!syntax_analyzer_result)
+    if (!query_info.syntax_analyzer_result)
         return nullptr;
 
     ASTPtr condition_ast;
@@ -1389,7 +1373,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     {
         ASTPtr select_without_join_ptr = select.clone();
         ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *syntax_analyzer_result;
+        TreeRewriterResult analyzer_result_without_join = *query_info.syntax_analyzer_result;
 
         removeJoin(select_without_join, analyzer_result_without_join, local_context);
         if (!select_without_join.prewhere() && !select_without_join.where())
@@ -1475,18 +1459,9 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
             directory_monitors.push_back(node.second.directory_monitor);
     }
 
-    bool need_flush = getDistributedSettingsRef().flush_on_detach;
-    if (!need_flush)
-        LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
-
     /// TODO: Maybe it should be executed in parallel
     for (auto & node : directory_monitors)
-    {
-        if (need_flush)
-            node->flushAllData();
-        else
-            node->shutdownWithoutFlush();
-    }
+        node->flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)

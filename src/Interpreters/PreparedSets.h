@@ -47,7 +47,7 @@ public:
     /// Returns set if set is ready (created and filled) or nullptr if not.
     virtual SetPtr get() const = 0;
     /// Returns set->getElementsTypes(), even if set is not created yet.
-    virtual DataTypes getTypes() const = 0;
+    virtual const DataTypes & getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 };
@@ -62,7 +62,7 @@ public:
     FutureSetFromStorage(SetPtr set_);
 
     SetPtr get() const override;
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
 
 private:
@@ -79,7 +79,7 @@ public:
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
 
 private:
     SetPtr set;
@@ -105,7 +105,7 @@ public:
         const Settings & settings);
 
     SetPtr get() const override;
-    DataTypes getTypes() const override;
+    const DataTypes & getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
@@ -127,10 +127,10 @@ class PreparedSets
 {
 public:
 
-    using Hash = CityHash_v1_0_2::uint128;
+    using Hash = std::pair<UInt64, UInt64>;
     struct Hashing
     {
-        UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
+        UInt64 operator()(const Hash & key) const { return key.first ^ key.second; }
     };
 
     using SetsFromTuple = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSetFromTuple>>, Hashing>;

@@ -1571,7 +1571,7 @@ void StorageWindowView::writeIntoWindowView(
     });
 
     auto executor = builder.execute();
-    executor->execute(builder.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
+    executor->execute(builder.getNumThreads());
 }
 
 void StorageWindowView::startup()
@@ -1599,7 +1599,7 @@ void StorageWindowView::shutdown()
     DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 }
 
-void StorageWindowView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
+void StorageWindowView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);

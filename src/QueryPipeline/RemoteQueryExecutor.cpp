@@ -21,7 +21,6 @@
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageMemory.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 
 namespace ProfileEvents
@@ -109,7 +108,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_)
     , extension(extension_)
 {
-    create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
+    create_connections = [this, pool, throttler, extension_](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -122,32 +121,26 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
             auto res = std::make_unique<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback));
-            if (extension && extension->replica_info)
-                res->setReplicaInfo(*extension->replica_info);
+            if (extension_ && extension_->replica_info)
+                res->setReplicaInfo(*extension_->replica_info);
             return res;
         }
 #endif
 
         std::vector<IConnectionPool::Entry> connection_entries;
-        std::optional<bool> skip_unavailable_endpoints;
-        if (extension && extension->parallel_reading_coordinator)
-            skip_unavailable_endpoints = true;
-
         if (main_table)
         {
-            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName(), std::move(async_callback), skip_unavailable_endpoints);
+            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName(), std::move(async_callback));
             connection_entries.reserve(try_results.size());
             for (auto & try_result : try_results)
                 connection_entries.emplace_back(std::move(try_result.entry));
         }
         else
-        {
-            connection_entries = pool->getMany(timeouts, &current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints);
-        }
+            connection_entries = pool->getMany(timeouts, &current_settings, pool_mode, std::move(async_callback));
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
-        if (extension && extension->replica_info)
-            res->setReplicaInfo(*extension->replica_info);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
         return res;
     };
 }
@@ -244,7 +237,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
 
     const auto & settings = context->getSettingsRef();
-    if (isReplicaUnavailable() || needToSkipUnavailableShard())
+    if (needToSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -370,7 +363,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
         read_context->resume();
 
-        if (isReplicaUnavailable() || needToSkipUnavailableShard())
+        if (needToSkipUnavailableShard())
         {
             /// We need to tell the coordinator not to wait for this replica.
             /// But at this point it may lead to an incomplete result set, because
@@ -445,9 +438,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             processMergeTreeReadTaskRequest(packet.request.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
-        case Protocol::Server::MergeTreeAllRangesAnnouncement:
+        case Protocol::Server::MergeTreeAllRangesAnnounecement:
             chassert(packet.announcement.has_value());
-            processMergeTreeInitialReadAnnouncement(packet.announcement.value());
+            processMergeTreeInitialReadAnnounecement(packet.announcement.value());
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
@@ -569,12 +562,12 @@ void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest re
     connections->sendMergeTreeReadTaskResponse(response);
 }
 
-void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement)
+void RemoteQueryExecutor::processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement)
 {
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(announcement);
 }
 
 void RemoteQueryExecutor::finish()
@@ -603,51 +596,39 @@ void RemoteQueryExecutor::finish()
         return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
-    /// packets that had been sent before the connection is fully finished in order to have final statistics of what
-    /// was executed in the remote queries
-    while (connections->hasActiveConnections() && !finished)
+    Packet packet = connections->drain();
+    switch (packet.type)
     {
-        Packet packet = connections->receivePacket();
+        case Protocol::Server::EndOfStream:
+            finished = true;
+            break;
 
-        switch (packet.type)
-        {
-            case Protocol::Server::EndOfStream:
-                finished = true;
-                break;
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
 
-            case Protocol::Server::Exception:
-                got_exception_from_replica = true;
-                packet.exception->rethrow();
-                break;
+        case Protocol::Server::Exception:
+            got_exception_from_replica = true;
+            packet.exception->rethrow();
+            break;
 
-            case Protocol::Server::Log:
-                /// Pass logs from remote server to client
-                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                    log_queue->pushBlock(std::move(packet.block));
-                break;
+        case Protocol::Server::ProfileEvents:
+            /// Pass profile events from remote server to client
+            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+                if (!profile_queue->emplace(std::move(packet.block)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
 
-            case Protocol::Server::ProfileEvents:
-                /// Pass profile events from remote server to client
-                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                    if (!profile_queue->emplace(std::move(packet.block)))
-                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
-                break;
+        case Protocol::Server::TimezoneUpdate:
+            break;
 
-            case Protocol::Server::ProfileInfo:
-                /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
-                if (profile_info_callback)
-                    profile_info_callback(packet.profile_info);
-                break;
-
-            case Protocol::Server::Progress:
-                if (progress_callback)
-                    progress_callback(packet.progress);
-                break;
-
-            default:
-                break;
-        }
+        default:
+            got_unknown_packet_from_replica = true;
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
+                connections->dumpAddresses());
     }
 }
 

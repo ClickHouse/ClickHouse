@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import boto3  # type: ignore
 from github import Github
 from github.AuthenticatedUser import AuthenticatedUser
-from github.NamedUser import NamedUser
 
 
 @dataclass
 class Token:
-    user: Union[AuthenticatedUser, NamedUser]
+    user: AuthenticatedUser
     value: str
     rest: int
 

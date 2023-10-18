@@ -119,7 +119,7 @@ public:
                          std::string row_between_delimiter,
                          const FormatSettings & format_settings_);
 
-    std::optional<DataTypes> readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypes() override;
 
 private:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

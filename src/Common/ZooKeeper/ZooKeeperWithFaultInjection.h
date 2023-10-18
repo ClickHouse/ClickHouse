@@ -29,7 +29,7 @@ public:
         if (distribution(rndgen) || must_fail_before_op)
         {
             must_fail_before_op = false;
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Fault injection before operation");
+            throw zkutil::KeeperException("Fault injection before operation", Coordination::Error::ZSESSIONEXPIRED);
         }
     }
     void afterOperation()
@@ -37,7 +37,7 @@ public:
         if (distribution(rndgen) || must_fail_after_op)
         {
             must_fail_after_op = false;
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT, "Fault injection after operation");
+            throw zkutil::KeeperException("Fault injection after operation", Coordination::Error::ZOPERATIONTIMEOUT);
         }
     }
 
@@ -263,7 +263,7 @@ public:
         auto code = tryCreate(path, data, mode, path_created);
 
         if (code != Coordination::Error::ZOK)
-            throw zkutil::KeeperException::fromPath(code, path);
+            throw zkutil::KeeperException(code, path);
 
         return path_created;
     }
@@ -327,7 +327,7 @@ public:
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
             return;
 
-        throw zkutil::KeeperException::fromPath(code, path);
+        throw zkutil::KeeperException(code, path);
     }
 
     Coordination::Responses multi(const Coordination::Requests & requests)
@@ -507,8 +507,8 @@ private:
             ++calls_total;
 
             if (!keeper)
-                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED,
-                    "Session is considered to be expired due to fault injection");
+                throw zkutil::KeeperException(
+                    "Session is considered to be expired due to fault injection", Coordination::Error::ZSESSIONEXPIRED);
 
             if constexpr (inject_failure_before_op)
             {

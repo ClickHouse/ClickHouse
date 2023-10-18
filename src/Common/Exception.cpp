@@ -50,10 +50,6 @@ void abortOnFailedAssertion(const String & description)
     abort();
 }
 
-bool terminate_on_any_exception = false;
-
-thread_local bool update_error_statistics = true;
-
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
 void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
@@ -66,9 +62,6 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
         abortOnFailedAssertion(msg);
     }
 #endif
-
-    if (!update_error_statistics) [[unlikely]]
-        return;
 
     ErrorCodes::increment(code, remote, msg, trace);
 }
@@ -91,8 +84,6 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    if (terminate_on_any_exception)
-        std::terminate();
     capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
@@ -101,8 +92,6 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
-    if (terminate_on_any_exception)
-        std::terminate();
     capture_thread_frame_pointers = thread_frame_pointers;
     handle_error_code(message(), code, remote, getStackFramePointers());
 }
@@ -110,8 +99,6 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
     : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION)
 {
-    if (terminate_on_any_exception)
-        std::terminate();
     capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
@@ -124,8 +111,6 @@ Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
 Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     : Poco::Exception(demangle(typeid(exc).name()) + ": " + String(exc.what()), ErrorCodes::STD_EXCEPTION)
 {
-    if (terminate_on_any_exception)
-        std::terminate();
     capture_thread_frame_pointers = thread_frame_pointers;
 #ifdef STD_EXCEPTION_HAS_STACK_TRACE
     auto * stack_trace_frames = exc.get_stack_trace_frames();
@@ -239,7 +224,7 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 
         LOG_ERROR(logger, message);
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
     }
 }
@@ -415,7 +400,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {}
     }
     catch (const std::exception & e)
     {
@@ -432,22 +417,19 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {}
 
-#ifdef ABORT_ON_LOGICAL_ERROR
-        try
-        {
-            throw;
-        }
-        catch (const std::logic_error &)
-        {
-            if (!with_stacktrace)
-                stream << ", Stack trace:\n\n" << getExceptionStackTraceString(e);
-
-            abortOnFailedAssertion(stream.str());
-        }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
-#endif
+// #ifdef ABORT_ON_LOGICAL_ERROR
+//         try
+//         {
+//             throw;
+//         }
+//         catch (const std::logic_error &)
+//         {
+//             abortOnFailedAssertion(stream.str());
+//         }
+//         catch (...) {}
+// #endif
     }
     catch (...)
     {
@@ -461,7 +443,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, b
 
             stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
         }
-        catch (...) {} // NOLINT(bugprone-empty-catch)
+        catch (...) {}
     }
 
     return PreformattedMessage{stream.str(), message_format_string};
@@ -576,7 +558,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
+    catch (...) {}
 
     return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
@@ -662,7 +644,7 @@ std::string ParsingException::displayText() const
         if (need_newline)
             formatted_message += "\n";
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
+    catch (...) {}
 
     if (!formatted_message.empty())
     {

@@ -45,7 +45,6 @@ public:
 
     std::shared_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
-    String storage_name;
 
     std::shared_ptr<ASTAuthenticationData> auth_data;
 
@@ -58,8 +57,6 @@ public:
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     std::shared_ptr<ASTDatabaseOrNone> default_database;
-
-    ASTPtr valid_until;
 
     String getID(char) const override;
     ASTPtr clone() const override;

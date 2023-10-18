@@ -134,7 +134,7 @@ public:
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
-    void updateReadingState(InitialAllRangesAnnouncement announcement);
+    void updateReadingState(const InitialAllRangesAnnouncement & announcement);
     void finalizeReadingState();
 
     size_t computeConsistentHash(const MergeTreePartInfo & info) const
@@ -152,12 +152,12 @@ DefaultCoordinator::~DefaultCoordinator()
     LOG_DEBUG(log, "Coordination done: {}", toString(stats));
 }
 
-void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement & announcement)
 {
     PartRefs parts_diff;
 
     /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    for (const auto & part: announcement.description)
     {
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info.getPartNameV1() == part.info.getPartNameV1(); });
@@ -176,7 +176,12 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
-        auto [insert_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        auto new_part = Part{
+            .description = part,
+            .replicas = {announcement.replica_num}
+        };
+
+        auto [insert_it, _] = all_parts_to_read.insert(new_part);
         parts_diff.push_back(insert_it);
     }
 
@@ -237,14 +242,12 @@ void DefaultCoordinator::finalizeReadingState()
 
 void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    const auto replica_num = announcement.replica_num;
+    updateReadingState(announcement);
 
-    updateReadingState(std::move(announcement));
+    if (announcement.replica_num >= stats.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", announcement.replica_num, stats.size());
 
-    if (replica_num >= stats.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
-
-    ++stats[replica_num].number_of_requests;
+    stats[announcement.replica_num].number_of_requests +=1;
 
     ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
@@ -382,7 +385,7 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
     LOG_TRACE(log, "Received an announcement {}", announcement.describe());
 
     /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    for (const auto & part: announcement.description)
     {
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info == part.info; });
@@ -401,8 +404,13 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
-        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
-        auto & ranges = inserted_it->description.ranges;
+        auto new_part = Part{
+            .description = part,
+            .replicas = {announcement.replica_num}
+        };
+
+        auto insert_it = all_parts_to_read.insert(new_part);
+        auto & ranges = insert_it.first->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }
 }
@@ -509,7 +517,7 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
     }
 
 
-    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
+    return pimpl->handleInitialAllRangesAnnouncement(announcement);
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)

@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <memory>
 #include <Core/NamesAndTypes.h>
-#include <Core/TypeId.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
@@ -21,10 +20,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
-
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -233,8 +228,22 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     return unmodified;
 }
 
-static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & context)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
 {
+    if (block.rows() == 0)
+        return;
+
+    if (!expression_ast)
+        prepareFilterBlockWithQuery(query, context, block, expression_ast);
+
+    if (!expression_ast)
+        return;
+
+    /// Let's analyze and calculate the prepared expression.
+    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
+    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
+    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
+
     for (const auto & node : actions->getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
@@ -251,10 +260,6 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
                     {
                         auto plan = set_from_subquery->build(context);
-
-                        if (!plan)
-                            continue;
-
                         auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
                         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
                         pipeline.complete(std::make_shared<EmptySink>(Block()));
@@ -266,17 +271,12 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
             }
         }
     }
-}
 
-void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context)
-{
-    auto actions = std::make_shared<ExpressionActions>(dag);
-    makeSets(actions, context);
     Block block_with_filter = block;
     actions->execute(block_with_filter);
 
     /// Filter the block.
-    String filter_column_name = dag->getOutputs().at(0)->result_name;
+    String filter_column_name = expression_ast->getColumnName();
     ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
 
     ConstantFilterDescription constant_filter(*filter_column);
@@ -298,150 +298,6 @@ void filterBlockWithQuery(ActionsDAGPtr dag, Block & block, ContextPtr context)
     {
         ColumnPtr & column = block.safeGetByPosition(i).column;
         column = column->filter(*filter.data, -1);
-    }
-}
-
-void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
-{
-    if (block.rows() == 0)
-        return;
-
-    if (!expression_ast)
-        prepareFilterBlockWithQuery(query, context, block, expression_ast);
-
-    if (!expression_ast)
-        return;
-
-    /// Let's analyze and calculate the prepared expression.
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
-    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
-    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
-
-    makeSets(actions, context);
-
-    Block block_with_filter = block;
-    actions->execute(block_with_filter);
-
-    /// Filter the block.
-    String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullIfNeeded();
-    if (filter_column->getDataType() != TypeIndex::UInt8)
-        return;
-
-    ConstantFilterDescription constant_filter(*filter_column);
-
-    if (constant_filter.always_true)
-    {
-        return;
-    }
-
-    if (constant_filter.always_false)
-    {
-        block = block.cloneEmpty();
-        return;
-    }
-
-    FilterDescription filter(*filter_column);
-
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnPtr & column = block.safeGetByPosition(i).column;
-        column = column->filter(*filter.data, -1);
-    }
-}
-
-NamesAndTypesList getPathAndFileVirtualsForStorage(NamesAndTypesList storage_columns)
-{
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-
-    default_virtuals.sort();
-    storage_columns.sort();
-
-    NamesAndTypesList result_virtuals;
-    std::set_difference(
-        default_virtuals.begin(), default_virtuals.end(), storage_columns.begin(), storage_columns.end(),
-        std::back_inserter(result_virtuals),
-        [](const NameAndTypePair & lhs, const NameAndTypePair & rhs){ return lhs.name < rhs.name; });
-
-    return result_virtuals;
-}
-
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx)
-{
-    if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
-
-    if (block.has("_file"))
-    {
-        auto pos = path.find_last_of('/');
-        String file;
-        if (pos != std::string::npos)
-            file = path.substr(pos + 1);
-        else
-            file = path;
-
-        block.getByName("_file").column->assumeMutableRef().insert(file);
-    }
-
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
-}
-
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context)
-{
-    if (!query || virtual_columns.empty())
-        return {};
-
-    Block block;
-    for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
-    /// Create a block with one row to construct filter
-    /// Append "idx" column as the filter result
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    addPathAndFileToVirtualColumns(block, path_example, 0);
-    ASTPtr filter_ast;
-    prepareFilterBlockWithQuery(query, context, block, filter_ast);
-    return filter_ast;
-}
-
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
-{
-    Block block;
-    for (const auto & column : virtual_columns)
-        block.insert({column.type->createColumn(), column.type, column.name});
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-    for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i);
-
-    filterBlockWithQuery(query, block, context, filter_ast);
-
-    return block.getByName("_idx").column;
-}
-
-void addRequestedPathAndFileVirtualsToChunk(
-    Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, const String * filename)
-{
-    for (const auto & virtual_column : requested_virtual_columns)
-    {
-        if (virtual_column.name == "_path")
-        {
-            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), path)->convertToFullColumnIfConst());
-        }
-        else if (virtual_column.name == "_file")
-        {
-            if (filename)
-            {
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *filename)->convertToFullColumnIfConst());
-            }
-            else
-            {
-                size_t last_slash_pos = path.find_last_of('/');
-                auto filename_from_path = path.substr(last_slash_pos + 1);
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
-            }
-        }
     }
 }
 

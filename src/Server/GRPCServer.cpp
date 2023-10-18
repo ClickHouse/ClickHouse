@@ -610,7 +610,6 @@ namespace
 
 
     /// Handles a connection after a responder is started (i.e. after getting a new call).
-// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
     class Call
     {
     public:
@@ -716,7 +715,6 @@ namespace
 
         ThreadFromGlobalPool call_thread;
     };
-// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
         : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
@@ -835,7 +833,7 @@ namespace
         {
             settings_changes.push_back({key, value});
         }
-        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->checkSettingsConstraints(settings_changes);
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
@@ -1120,7 +1118,7 @@ namespace
                         SettingsChanges settings_changes;
                         for (const auto & [key, value] : external_table.settings())
                             settings_changes.push_back({key, value});
-                        external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+                        external_table_context->checkSettingsConstraints(settings_changes);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
@@ -1136,7 +1134,7 @@ namespace
                     });
 
                     auto executor = cur_pipeline.execute();
-                    executor->execute(1, false);
+                    executor->execute(1);
                 }
             }
 
@@ -1340,7 +1338,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
             }
         }

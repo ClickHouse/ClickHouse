@@ -45,7 +45,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -77,7 +76,6 @@
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace ProfileEvents
 {
@@ -95,12 +93,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -175,7 +172,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
     {
         elem.stack_trace = getExceptionStackTraceString(e);
     }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
+    catch (...) {}
 }
 
 
@@ -212,7 +209,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 }
 
 static void
-addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
+addStatusInfoToQueryElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr)
 {
     const auto time_now = std::chrono::system_clock::now();
     UInt64 elapsed_microseconds = info.elapsed_microseconds;
@@ -243,7 +240,6 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
     element.thread_ids = info.thread_ids;
-    element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
@@ -351,7 +347,6 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -369,7 +364,7 @@ void logQueryFinish(
         QueryStatusInfo info = process_list_elem->getInfo(true, context->getSettingsRef().log_profile_events);
         elem.type = QueryLogElementType::QUERY_FINISH;
 
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
+        addStatusInfoToQueryElement(elem, info, query_ast, context);
 
         if (pulling_pipeline)
         {
@@ -403,8 +398,6 @@ void logQueryFinish(
                 rows_per_second,
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
-
-        elem.query_cache_usage = query_cache_usage;
 
         if (log_queries && elem.type >= log_queries_min_type
             && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
@@ -506,14 +499,12 @@ void logQueryException(
     if (process_list_elem)
     {
         QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events, false);
-        addStatusInfoToQueryLogElement(elem, info, query_ast, context);
+        addStatusInfoToQueryElement(elem, info, query_ast, context);
     }
     else
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
-
-    elem.query_cache_usage = QueryCache::Usage::None;
 
     if (settings.calculate_text_stack_trace && log_error)
         setExceptionStackTrace(elem);
@@ -709,7 +700,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
 
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
         }
         else if (settings.dialect == Dialect::prql && !internal)
         {
@@ -732,16 +723,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             is_create_parameterized_view = create_query->isParameterizedView();
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
-        bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (!is_create_parameterized_view && probably_has_params)
+        if (!is_create_parameterized_view && context->hasQueryParameters())
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
-            if (visitor.getNumberOfReplacedParameters())
-                query = serializeAST(*ast);
-            else
-                query.assign(begin, query_end);
+            query = serializeAST(*ast);
         }
         else
         {
@@ -988,16 +974,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         QueryCachePtr query_cache = context->getQueryCache();
-        const bool can_use_query_cache = query_cache != nullptr
-            && settings.use_query_cache
-            && !internal
-            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-            && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
-        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
+        const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+        bool write_into_query_cache = false;
 
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
+            /// If it is a non-internal SELECT, and passive/read use of the query cache is enabled, and the cache knows the query, then set
             /// a pipeline with a source populated by the query cache.
             auto get_result_from_query_cache = [&]()
             {
@@ -1010,7 +992,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        query_cache_usage = QueryCache::Usage::Read;
                         return true;
                     }
                 }
@@ -1046,11 +1027,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 }
 
-                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
-                // We need to force to build it here to check if we need to ignore quota.
-                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
-                    interpreter_with_analyzer->getQueryPlan();
-
                 if (!interpreter->ignoreQuota() && !quota_checked)
                 {
                     quota = context->getQuota();
@@ -1080,7 +1056,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// Save insertion table (not table function). TODO: support remote() table function.
                     auto table_id = insert_interpreter->getDatabaseTable();
                     if (!table_id.empty())
-                        context->setInsertionTable(std::move(table_id), insert_interpreter->getInsertColumnNames());
+                        context->setInsertionTable(std::move(table_id));
 
                     if (insert_data_buffer_holder)
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
@@ -1097,14 +1073,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
+                    /// If it is a non-internal SELECT query, and active/write use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings.enable_writes_to_query_cache)
+                    if (can_use_query_cache && settings.enable_writes_to_query_cache
+                        && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
                     {
-                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
-                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting `query_cache_store_results_of_queries_with_nondeterministic_functions = 1` to cache the query result regardless");
-
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
                             context->getUserName(), settings.query_cache_share_between_users,
@@ -1112,11 +1085,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             settings.query_cache_compress_entries);
 
                         const size_t num_query_runs = query_cache->recordQueryRun(key);
-                        if (num_query_runs <= settings.query_cache_min_query_runs)
-                        {
-                            LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}", num_query_runs, settings.query_cache_min_query_runs);
-                        }
-                        else
+                        if (num_query_runs > settings.query_cache_min_query_runs)
                         {
                             auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
                                              key,
@@ -1126,7 +1095,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                              settings.query_cache_max_size_in_bytes,
                                              settings.query_cache_max_entries));
                             res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                            query_cache_usage = QueryCache::Usage::Write;
+                            write_into_query_cache = true;
                         }
                     }
 
@@ -1178,19 +1147,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    query_cache_usage,
+                                    write_into_query_cache,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCache::Usage::Write)
+                if (write_into_query_cache)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
 
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
@@ -1275,8 +1244,7 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
-    const std::optional<FormatSettings> & output_format_settings,
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
+    const std::optional<FormatSettings> & output_format_settings)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1334,7 +1302,6 @@ void executeQuery(
 
     ASTPtr ast;
     BlockIO streams;
-    OutputFormatPtr output_format;
 
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
@@ -1377,30 +1344,30 @@ void executeQuery(
                                     ? getIdentifierName(ast_query_with_output->format)
                                     : context->getDefaultFormat();
 
-            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+            auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
                 compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
 
-            output_format->setAutoFlush();
+            out->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
 
             /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([output_format, previous_progress_callback] (const Progress & progress)
+            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
             {
                 if (previous_progress_callback)
                     previous_progress_callback(progress);
-                output_format->onProgress(progress);
+                out->onProgress(progress);
             });
 
-            result_details.content_type = output_format->getContentType();
+            result_details.content_type = out->getContentType();
             result_details.format = format_name;
 
-            pipeline.complete(output_format);
+            pipeline.complete(std::move(out));
         }
         else
         {
@@ -1430,8 +1397,6 @@ void executeQuery(
     }
     catch (...)
     {
-        if (handle_exception_in_output_format && output_format)
-            handle_exception_in_output_format(*output_format);
         streams.onException();
         throw;
     }

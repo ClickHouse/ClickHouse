@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List
 
 import requests  # type: ignore
 
@@ -14,10 +14,6 @@ import get_robot_token as grt  # we need an updated ROBOT_TOKEN
 from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
-
-
-class DownloadException(Exception):
-    pass
 
 
 def get_with_retries(
@@ -107,10 +103,10 @@ def get_gh_api(
 
 
 def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG.test_configs[check_name].required_build
+    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
 
 
-def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
+def read_build_urls(build_name: str, reports_path: str) -> List[str]:
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:
@@ -156,18 +152,16 @@ def download_build_with_progress(url: str, path: Path) -> None:
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
             break
-        except Exception as e:
+        except Exception:
             if sys.stdout.isatty():
                 sys.stdout.write("\n")
-            if os.path.exists(path):
-                os.remove(path)
-
             if i + 1 < DOWNLOAD_RETRIES_COUNT:
                 time.sleep(3)
-            else:
-                raise DownloadException(
-                    f"Cannot download dataset from {url}, all retries exceeded"
-                ) from e
+
+            if os.path.exists(path):
+                os.remove(path)
+    else:
+        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
@@ -192,7 +186,7 @@ def download_builds_filter(
     print(urls)
 
     if not urls:
-        raise DownloadException("No build URLs found")
+        raise Exception("No build URLs found")
 
     download_builds(result_path, urls, filter_fn)
 
@@ -221,13 +215,4 @@ def download_performance_build(check_name, reports_path, result_path):
         reports_path,
         result_path,
         lambda x: x.endswith("performance.tar.zst"),
-    )
-
-
-def download_fuzzers(check_name, reports_path, result_path):
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
     )

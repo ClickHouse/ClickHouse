@@ -153,7 +153,7 @@ public:
     }
 
     bool isView() const override { return false; }
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override {}
+    void checkTableCanBeDropped() const override {}
 
 private:
     mutable std::recursive_mutex nested_mutex;
