@@ -37,7 +37,7 @@ def get_additional_envs() -> List[str]:
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
-    result.append(f"RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
+    result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
 
     return result
 
