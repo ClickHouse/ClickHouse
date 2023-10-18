@@ -1161,8 +1161,8 @@ public:
 
     void appendDefaultRow()
     {
-        ++lazy_defaults_count;
-        lazy_right_columns.emplace_back(RowRef(nullptr, 0));
+        if (has_columns_to_add)
+            lazy_right_columns.emplace_back(RowRef(nullptr, 0));
     }
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
@@ -1179,7 +1179,6 @@ private:
     std::vector<ColumnNullable *> nullable_column_ptrs;
 
     std::vector<size_t> right_indexes;
-    size_t lazy_defaults_count = 0;
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
     std::vector<RowRef> lazy_right_columns;
