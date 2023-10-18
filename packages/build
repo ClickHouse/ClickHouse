@@ -112,7 +112,8 @@ EOF
         tar -czf "$TARBALL" -C "$OUTPUT_DIR" "$PKG_DIR"
     fi
 
-    sha512sum "$TARBALL" > "$TARBALL".sha512
+    # Cut the $OUTPUT_DIR/ from the sha512sum output to make it universal
+    sha512sum "$TARBALL" | sed "s|$OUTPUT_DIR/||" > "$TARBALL".sha512
 
     rm -r "$PKG_PATH"
 }
