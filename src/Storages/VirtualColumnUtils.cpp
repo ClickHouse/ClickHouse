@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <Core/NamesAndTypes.h>
 #include <Core/TypeId.h>
@@ -81,14 +82,33 @@ bool extractFunctions(const ASTPtr & expression, const std::function<bool(const 
         }
         else if (function->name == "or")
         {
-            bool ret = true;
+            bool ret = false;
             ASTs or_args;
             for (const auto & child : function->arguments->children)
-                ret &= extractFunctions(child, is_constant, or_args);
-            /// We can keep condition only if it still OR condition (i.e. we
-            /// have dependent conditions for columns at both sides)
-            if (or_args.size() == 2)
+                ret |= extractFunctions(child, is_constant, or_args);
+
+            if (!or_args.empty())
+            {
+                /// In case of there are less number of arguments for which
+                /// is_constant() == true, we need to add always-true
+                /// implicitly to avoid breaking AND invariant.
+                ///
+                /// Consider the following:
+                ///
+                ///     ((value = 10) OR (_table = 'v2')) AND ((_table = 'v1') OR (value = 20))
+                ///
+                /// Without implicit always-true:
+                ///
+                ///     (_table = 'v2') AND (_table = 'v1')
+                ///
+                /// With:
+                ///
+                ///     (_table = 'v2' OR 1) AND (_table = 'v1' OR 1) -> (_table = 'v2') OR (_table = 'v1')
+                ///
+                if (or_args.size() != function->arguments->children.size())
+                    or_args.push_back(std::make_shared<ASTLiteral>(Field(1)));
                 result.push_back(makeASTForLogicalOr(std::move(or_args)));
+            }
             return ret;
         }
     }
@@ -165,8 +185,10 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (!select.where() && !select.prewhere())
         return unmodified;
 
-    // Provide input columns as constant columns to check if an expression is constant.
-    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
+    // Provide input columns as constant columns to check if an expression is
+    // constant and depends on the columns from provided block (the last is
+    // required to allow skipping some conditions for handling OR).
+    std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & expr)
     {
         auto actions = std::make_shared<ActionsDAG>(block.getColumnsWithTypeAndName());
         PreparedSetsPtr prepared_sets = std::make_shared<PreparedSets>();
@@ -178,13 +200,26 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
             context, SizeLimits{}, 1, source_columns, std::move(actions), prepared_sets, true, true, true,
             { aggregation_keys, grouping_set_keys, GroupByKind::NONE });
 
-        ActionsVisitor(visitor_data).visit(node);
+        ActionsVisitor(visitor_data).visit(expr);
         actions = visitor_data.getActions();
+        auto expr_column_name = expr->getColumnName();
+
+        const auto * expr_const_node = actions->tryFindInOutputs(expr_column_name);
+        if (!expr_const_node)
+            return false;
+        auto filter_actions = ActionsDAG::buildFilterActionsDAG({expr_const_node}, {}, context);
+        const auto & nodes = filter_actions->getNodes();
+        bool has_dependent_columns = std::any_of(nodes.begin(), nodes.end(), [&](const auto & node)
+        {
+            return block.has(node.result_name);
+        });
+        if (!has_dependent_columns)
+            return false;
+
         auto expression_actions = std::make_shared<ExpressionActions>(actions);
         auto block_with_constants = block;
         expression_actions->execute(block_with_constants);
-        auto column_name = node->getColumnName();
-        return block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column);
+        return block_with_constants.has(expr_column_name) && isColumnConst(*block_with_constants.getByName(expr_column_name).column);
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
