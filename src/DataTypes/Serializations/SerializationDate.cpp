@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Formats/ProtobufReader.h>
 
 #include <Common/assert_cast.h>
 
