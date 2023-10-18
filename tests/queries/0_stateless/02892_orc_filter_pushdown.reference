@@ -57,27 +57,27 @@ select count(1), min(i64), max(i64) from file('02892.orc') where i64 between -15
 select count(), sum(number) from file('02892.orc') where indexHint(date32 between '1992-01-01' and '2023-08-02');
 2100	5563950
 select count(1), min(date32), max(date32) from file('02892.orc') where date32 between '1992-01-01' and '2023-08-02';
-1993	1992-01-04	2023-07-28
+1994	1992-01-04	2023-08-02
 select count(), sum(number) from file('02892.orc') where indexHint(dt64_ms between '2000-01-01' and '2005-01-01');
 300	1184850
 select count(1), min(dt64_ms), max(dt64_ms) from file('02892.orc') where dt64_ms between '2000-01-01' and '2005-01-01';
-158	2000-01-04 23:33:20.000000000	2004-12-26 02:40:00.000000000
-select count(), sum(number) from file('02892.orc') where indexHint(dt64_us between toDateTime64(900000000, 2, 'UTC') and '2005-01-01');
+158	2000-01-04 15:33:20.000000000	2004-12-25 18:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_us between toDateTime64(900000000, 2) and '2005-01-01');
 500	2104750
-select count(1), min(dt64_us), max(dt64_us) from file('02892.orc') where (dt64_us between toDateTime64(900000000, 2, 'UTC') and '2005-01-01');
-205	1998-07-10 00:00:00.000000000	2004-12-26 02:40:00.000000000
+select count(1), min(dt64_us), max(dt64_us) from file('02892.orc') where (dt64_us between toDateTime64(900000000, 2) and '2005-01-01');
+205	1998-07-09 16:00:00.000000000	2004-12-25 18:40:00.000000000
 select count(), sum(number) from file('02892.orc') where indexHint(dt64_ns between '2000-01-01' and '2005-01-01');
 400	1689800
 select count(1), min(dt64_ns), max(dt64_ns) from file('02892.orc') where (dt64_ns between '2000-01-01' and '2005-01-01');
-158	2000-01-04 23:33:20.000000000	2004-12-26 02:40:00.000000000
-select count(), sum(number) from file('02892.orc') where indexHint(dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0, 'UTC') and toDateTime64(1.5e8::Decimal64(0), 0, 'UTC'));
+158	2000-01-04 15:33:20.000000000	2004-12-25 18:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0) and toDateTime64(1.5e8::Decimal64(0), 0));
 5200	38477400
-select count(1), min(dt64_s), max(dt64_s) from file('02892.orc') where (dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0, 'UTC') and toDateTime64(1.5e8::Decimal64(0), 0, 'UTC'));
-5150	1970-01-01 08:00:00.000000000	1974-10-03 10:40:00.000000000
-select count(), sum(number) from file('02892.orc') where indexHint(dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1, 'UTC') and toDateTime64(1.5e8::Decimal64(2), 2, 'UTC'));
+select count(1), min(dt64_s), max(dt64_s) from file('02892.orc') where (dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0) and toDateTime64(1.5e8::Decimal64(0), 0));
+5150	1970-01-01 00:00:00.000000000	1974-10-03 02:40:00.000000000
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1) and toDateTime64(1.5e8::Decimal64(2), 2));
 500	2524750
-select count(1), min(dt64_cs), max(dt64_cs) from file('02892.orc') where (dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1, 'UTC') and toDateTime64(1.5e8::Decimal64(2), 2, 'UTC'));
-352	1963-08-19 22:40:04.000000000	1974-10-03 10:40:00.000000000
+select count(1), min(dt64_cs), max(dt64_cs) from file('02892.orc') where (dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1) and toDateTime64(1.5e8::Decimal64(2), 2));
+352	1963-08-19 14:40:04.000000000	1974-10-03 02:40:00.000000000
 select count(), sum(number) from file('02892.orc') where indexHint(f32 between -0.11::Float32 and 0.06::Float32);
 300	1514850
 select count(1), min(f32), max(f32) from file('02892.orc') where (f32 between -0.11::Float32 and 0.06::Float32);
