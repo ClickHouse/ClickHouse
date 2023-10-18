@@ -55,7 +55,11 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=["configs/access.xml", "configs/users.xml", "configs/s3_retry.xml"],
+            user_configs=[
+                "configs/access.xml",
+                "configs/users.xml",
+                "configs/s3_retry.xml",
+            ],
         )
         cluster.add_instance(
             "dummy_without_named_collections",
