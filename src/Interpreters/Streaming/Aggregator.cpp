@@ -832,8 +832,6 @@ std::pair<bool, bool> Aggregator::executeOnBlock(
         }
     }
 
-    setupAggregatesPoolTimestamps(row_begin, row_end, key_columns, result.aggregates_pool);
-
     NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
@@ -2686,25 +2684,7 @@ void Aggregator::initStatesForWithoutKeyOrOverflow(AggregatedDataVariants & data
     }
 }
 
-/// Loop the window column to find out the lower bound and set this lower bound to aggregates pool
-/// Any new memory allocation (MemoryChunk) will attach this lower bound timestamp which means
-/// the MemoryChunk contains states which is at and beyond this lower bound timestamp
-void Aggregator::setupAggregatesPoolTimestamps([[maybe_unused]] size_t row_begin, [[maybe_unused]] size_t row_end, [[maybe_unused]] const ColumnRawPtrs & key_columns, [[maybe_unused]] Arena * aggregates_pool) const
-{
-    return;
-}
-
-void Aggregator::removeBucketsBefore([[maybe_unused]] AggregatedDataVariants & result, [[maybe_unused]] Int64 max_bucket) const
-{
-    return;
-}
-
-std::vector<Int64> Aggregator::bucketsBefore([[maybe_unused]] const AggregatedDataVariants & result, [[maybe_unused]] Int64 max_bucket) const
-{
-    return {};
-}
-
-bool Aggregator::shouldClearStates([[maybe_unused]] ConvertAction action, [[maybe_unused]] bool final_) const
+bool Aggregator::shouldClearStates(ConvertAction /*action*/, bool /*final_*/) const
 {
     return !params.keep_state;
 }

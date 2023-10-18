@@ -996,8 +996,6 @@ private:
         MutableColumns & final_key_columns) const;
 
     void setupAggregatesPoolTimestamps(size_t row_begin, size_t row_end, const ColumnRawPtrs & key_columns, Arena * aggregates_pool) const;
-    void removeBucketsBefore(AggregatedDataVariants & result, Int64 max_bucket) const;
-    std::vector<Int64> bucketsBefore(const AggregatedDataVariants & result, Int64 max_bucket) const;
 
     inline bool shouldClearStates(ConvertAction action, bool final_) const;
 };
