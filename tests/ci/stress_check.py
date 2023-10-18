@@ -34,6 +34,9 @@ from upload_result_helper import upload_results
 
 def get_additional_envs() -> List[str]:
     result = []
+    # some cloud-specific features require feature flags enabled
+    # so we need this ENV to be able to disable the randomization
+    # of feature flags
     result.append(f"RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
 
     return result
