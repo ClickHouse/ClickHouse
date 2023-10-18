@@ -36,8 +36,9 @@ String ASTPartition::getID(char delim) const
 {
     if (value)
         return "Partition";
-    else
-        return "Partition_ID" + (delim + id->getID());
+
+    std::string id_string = id ? id->getID() : "";
+    return "Partition_ID" + (delim + id_string);
 }
 
 ASTPtr ASTPartition::clone() const
