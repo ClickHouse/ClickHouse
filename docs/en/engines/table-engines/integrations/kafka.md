@@ -262,6 +262,10 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
 
+## Streaming query support
+
+Kafka engine supports streaming query. User can run streaming tail and streaming aggregation over Kafka stream with the engine. See more at [streaming query](../../../sql-reference/streaming/streaming_query.md).
+
 **See Also**
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
