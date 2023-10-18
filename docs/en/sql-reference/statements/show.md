@@ -651,3 +651,16 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 
 **See Also**
 - [system.functions](../../operations/system-tables/functions.md) table
+
+
+## SHOW MERGES
+
+``` sql
+SHOW MERGES
+```
+
+Outputs the content of the [system.merges](../../operations/system-tables/merges.md) table, that contains dinformation about merges and part mutations currently in process for tables in the MergeTree family.
+
+**See Also**
+
+-   [system.merges](../../operations/system-tables/merges.md) table
