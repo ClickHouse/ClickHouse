@@ -55,21 +55,97 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
 {
     while (!shutdown_called)
     {
-        KeyWithInfoPtr val = glob_iterator->next();
+        KeyWithInfoPtr key_with_info = glob_iterator->next();
 
-        if (!val || shutdown_called)
+        if (!key_with_info || shutdown_called)
             return {};
 
-        if (auto [processing_holder, processing_file_status] = metadata->trySetFileAsProcessing(val->key);
+        if (auto [processing_holder, processing_file_status, _] = metadata->trySetFileAsProcessing(key_with_info->key);
             processing_holder && !shutdown_called)
         {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder, processing_file_status);
+            return std::make_shared<S3QueueKeyWithInfo>(key_with_info->key, key_with_info->info, processing_holder, processing_file_status);
         }
     }
     return {};
 }
 
 size_t StorageS3QueueSource::FileIterator::estimatedKeysCount()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
+}
+
+StorageS3QueueSource::FileIteratorWindowProcessing::FileIteratorWindowProcessing(
+    std::shared_ptr<S3QueueFilesMetadata> metadata_,
+    std::unique_ptr<GlobIterator> glob_iterator_,
+    size_t window_size_,
+    std::atomic<bool> & shutdown_called_)
+    : metadata(metadata_)
+    , glob_iterator(std::move(glob_iterator_))
+    , window_size(window_size_)
+    , shutdown_called(shutdown_called_)
+{
+}
+
+StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIteratorWindowProcessing::next()
+{
+    while (!shutdown_called)
+    {
+        std::vector<KeyWithInfoPtr> current_window_copy;
+        {
+            std::lock_guard lock(mutex);
+
+            if (current_window.empty())
+            {
+                LOG_TEST(&Poco::Logger::get("ksen"), "Window is processed, getting a new one (1)");
+                current_window = glob_iterator->nextBatch(window_size);
+            }
+
+            if (current_window.empty() || shutdown_called)
+                return {};
+
+            current_window_copy = current_window;
+        }
+
+        std::deque<std::string> files;
+        for (const auto & key_with_info : current_window_copy)
+            files.push_back(key_with_info->key);
+
+        auto [processing_holder, processing_file_status, window_finished] = metadata->trySetFileAsProcessing(files);
+
+        if (shutdown_called)
+            return {};
+
+        if (processing_holder)
+        {
+            for (const auto & key_with_info : current_window_copy)
+            {
+                if (key_with_info->key == processing_holder->path)
+                {
+                    return std::make_shared<S3QueueKeyWithInfo>(key_with_info->key, key_with_info->info, processing_holder, processing_file_status);
+                }
+            }
+            chassert(false);
+        }
+        else if (window_finished)
+        {
+            std::lock_guard lock(mutex);
+            if (current_window_copy == current_window)
+            {
+                LOG_TEST(&Poco::Logger::get("ksen"), "Window is processed, getting a new one");
+                current_window = glob_iterator->nextBatch(window_size);
+            }
+            continue;
+        }
+        else
+        {
+            LOG_TEST(&Poco::Logger::get("ksen"), "Nothing to process");
+            return {};
+        }
+    }
+    return {};
+}
+
+size_t StorageS3QueueSource::FileIteratorWindowProcessing::estimatedKeysCount()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
 }

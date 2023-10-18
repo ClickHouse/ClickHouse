@@ -50,6 +50,25 @@ namespace
         pcg64 rng(randomSeed());
         return min + rng() % (max - min + 1);
     }
+
+    std::string toFilesList(const std::deque<std::string> & paths)
+    {
+        std::string batch_str;
+        for (const auto & p : paths)
+        {
+            if (!batch_str.empty())
+                batch_str += ",";
+            batch_str += p;
+        }
+        return batch_str;
+    }
+
+    std::deque<std::string> fromFilesList(const std::string & paths_str)
+    {
+        std::deque<std::string> paths;
+        splitInto<','>(paths, paths_str);
+        return paths;
+    }
 }
 
 std::unique_lock<std::mutex> S3QueueFilesMetadata::LocalFileStatuses::lock() const
@@ -129,10 +148,16 @@ S3QueueFilesMetadata::S3QueueFilesMetadata(const fs::path & zookeeper_path_, con
     , max_loading_retries(settings_.s3queue_loading_retries.value)
     , min_cleanup_interval_ms(settings_.s3queue_cleanup_interval_min_ms.value)
     , max_cleanup_interval_ms(settings_.s3queue_cleanup_interval_max_ms.value)
+    , parallel_processing_window(settings_.s3queue_parallel_processing_window)
     , zookeeper_processing_path(zookeeper_path_ / "processing")
     , zookeeper_processed_path(zookeeper_path_ / "processed")
     , zookeeper_failed_path(zookeeper_path_ / "failed")
+    , zookeeper_batch_min_path(zookeeper_processing_path / "batch_window_min")
+    , zookeeper_batch_max_path(zookeeper_processing_path / "batch_window_max")
+    , zookeeper_batch_waitlist_path(zookeeper_processing_path / "batch_waitlist")
+    , zookeeper_batch_max_processed_path(zookeeper_processing_path / "batch_max_processed")
     , zookeeper_cleanup_lock_path(zookeeper_path_ / "cleanup_lock")
+    , zookeeper_max_processed_path(zookeeper_processed_path / "max")
     , log(&Poco::Logger::get("S3QueueFilesMetadata"))
 {
     if (mode == S3QueueMode::UNORDERED && (max_set_size || max_set_age_sec))
@@ -197,8 +222,41 @@ S3QueueFilesMetadata::NodeMetadata S3QueueFilesMetadata::createNodeMetadata(
     return metadata;
 }
 
-std::pair<S3QueueFilesMetadata::ProcessingNodeHolderPtr,
-          S3QueueFilesMetadata::FileStatusPtr> S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
+void S3QueueFilesMetadata::updateCachedFileStatus(SetFileProcessingResult result, FileStatus & file_status)
+{
+    /// Cache file status, save some statistics.
+    switch (result)
+    {
+        case SetFileProcessingResult::Success:
+        {
+            std::lock_guard lock(file_status.metadata_lock);
+            file_status.state = FileStatus::State::Processing;
+            if (!file_status.processing_start_time)
+                file_status.processing_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+            break;
+        }
+        case SetFileProcessingResult::AlreadyProcessed:
+        {
+            std::lock_guard lock(file_status.metadata_lock);
+            file_status.state = FileStatus::State::Processed;
+            break;
+        }
+        case SetFileProcessingResult::AlreadyFailed:
+        {
+            std::lock_guard lock(file_status.metadata_lock);
+            file_status.state = FileStatus::State::Failed;
+            break;
+        }
+        case SetFileProcessingResult::ProcessingByOtherNode:
+        {
+            /// We cannot save any local state here, see comment above.
+            break;
+        }
+    }
+}
+
+S3QueueFilesMetadata::Result S3QueueFilesMetadata::trySetFileAsProcessing(const std::string & path)
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessingMicroseconds);
     auto file_status = local_file_statuses.get(path, /* create */true);
@@ -271,43 +329,13 @@ std::pair<S3QueueFilesMetadata::ProcessingNodeHolderPtr,
         }
     }
 
-    /// Cache file status, save some statistics.
-    switch (result)
-    {
-        case SetFileProcessingResult::Success:
-        {
-            std::lock_guard lock(file_status->metadata_lock);
-            file_status->state = FileStatus::State::Processing;
+    updateCachedFileStatus(result, *file_status);
 
-            file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessingMicroseconds, timer.get());
-            timer.cancel();
-
-            if (!file_status->processing_start_time)
-                file_status->processing_start_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-
-            break;
-        }
-        case SetFileProcessingResult::AlreadyProcessed:
-        {
-            std::lock_guard lock(file_status->metadata_lock);
-            file_status->state = FileStatus::State::Processed;
-            break;
-        }
-        case SetFileProcessingResult::AlreadyFailed:
-        {
-            std::lock_guard lock(file_status->metadata_lock);
-            file_status->state = FileStatus::State::Failed;
-            break;
-        }
-        case SetFileProcessingResult::ProcessingByOtherNode:
-        {
-            /// We cannot save any local state here, see comment above.
-            break;
-        }
-    }
+    file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessingMicroseconds, timer.get());
+    timer.cancel();
 
     if (result == SetFileProcessingResult::Success)
-        return std::pair(processing_node_holder, file_status);
+        return { processing_node_holder, file_status, false };
 
     return {};
 }
@@ -346,14 +374,17 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
 
     if (responses[0]->error != Coordination::Error::ZOK)
     {
+        LOG_TEST(log, "File {} is already processed", path);
         return std::pair{SetFileProcessingResult::AlreadyProcessed, nullptr};
     }
     else if (responses[2]->error != Coordination::Error::ZOK)
     {
+        LOG_TEST(log, "File {} is failed and no longer retriable", path);
         return std::pair{SetFileProcessingResult::AlreadyFailed, nullptr};
     }
     else if (responses[4]->error != Coordination::Error::ZOK)
     {
+        LOG_TEST(log, "File {} is already processing", path);
         return std::pair{SetFileProcessingResult::ProcessingByOtherNode, nullptr};
     }
     else
@@ -387,7 +418,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
         /// in the same zookeeper transaction, so we use a while loop with tries).
 
         Coordination::Stat processed_node_stat;
-        auto data = zk_client->get(zookeeper_processed_path, &processed_node_stat);
+        auto data = zk_client->get(zookeeper_max_processed_path, &processed_node_stat);
         NodeMetadata processed_node_metadata;
         if (!data.empty())
             processed_node_metadata = NodeMetadata::fromString(data);
@@ -401,7 +432,7 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
         requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name, -1));
 
         requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
-        requests.push_back(zkutil::makeCheckRequest(zookeeper_processed_path, processed_node_stat.version));
+        requests.push_back(zkutil::makeCheckRequest(zookeeper_max_processed_path, processed_node_stat.version));
 
         Coordination::Responses responses;
         auto code = zk_client->tryMulti(requests, responses);
@@ -425,6 +456,211 @@ std::pair<S3QueueFilesMetadata::SetFileProcessingResult,
         {
             LOG_TEST(log, "Version of max processed file changed. Retring the check for file `{}`", path);
         }
+    }
+}
+
+S3QueueFilesMetadata::Result S3QueueFilesMetadata::trySetFileAsProcessing(const std::deque<std::string> & paths)
+{
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::S3QueueSetFileProcessingMicroseconds);
+
+    if (mode != S3QueueMode::ORDERED)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Batched processing is allowed only for Ordered mode");
+
+    auto [result, processing_holder, window_finished] = trySetFileAsProcessingForOrderedMode(paths);
+    if (!processing_holder)
+        return { nullptr, nullptr, window_finished };
+
+    auto file_status = local_file_statuses.get(processing_holder->path, /* create */true);
+    updateCachedFileStatus(result, *file_status);
+
+    // file_status->profile_counters.increment(ProfileEvents::S3QueueSetFileProcessingMicroseconds, timer.get());
+    timer.cancel();
+
+    return { processing_holder, file_status, window_finished };
+}
+
+std::tuple<S3QueueFilesMetadata::SetFileProcessingResult,
+          S3QueueFilesMetadata::ProcessingNodeHolderPtr, bool>
+S3QueueFilesMetadata::trySetFileAsProcessingForOrderedMode(const std::deque<std::string> & paths_)
+{
+    auto paths{paths_};
+    const auto zk_client = getZooKeeper();
+
+    LOG_TEST(log, "Choosing between: {}",fmt::join(paths, ", "));
+    while (true)
+    {
+        Coordination::Error code;
+        std::string window_min, window_max;
+        std::string max_processed_file;
+        std::optional<int> window_version;
+        std::deque<std::string> waitlist;
+        {
+            Coordination::Requests requests;
+            requests.push_back(zkutil::makeGetRequest(zookeeper_batch_min_path));
+            requests.push_back(zkutil::makeGetRequest(zookeeper_batch_max_path));
+            requests.push_back(zkutil::makeGetRequest(zookeeper_batch_waitlist_path));
+            requests.push_back(zkutil::makeGetRequest(zookeeper_batch_max_processed_path));
+
+            Coordination::Responses responses;
+            code = zk_client->tryMulti(requests, responses);
+            if (code == Coordination::Error::ZOK)
+            {
+                window_min = dynamic_cast<const Coordination::GetResponse *>(responses[0].get())->data;
+                window_max = dynamic_cast<const Coordination::GetResponse *>(responses[1].get())->data;
+                window_version = dynamic_cast<const Coordination::GetResponse *>(responses[0].get())->stat.version;
+                max_processed_file = dynamic_cast<const Coordination::GetResponse *>(responses[3].get())->data;
+
+                if (!window_min.empty())
+                {
+                    LOG_TEST(log, "Got processing window: [{}, {}]", window_min, window_max);
+
+                    if (paths.back() < window_min)
+                    {
+                        LOG_TEST(log, "Window from file {} to file {} is already processed", paths.front(), paths.back());
+                        return { {}, nullptr, true };
+                    }
+                    if (paths.front() > window_max && window_max > max_processed_file)
+                    {
+                        LOG_TEST(log, "Window from file {} to file {} cannot be processed at the moment", paths.front(), paths.back());
+                        return { {}, nullptr, false };
+                    }
+
+                    auto max_processed_path_version = dynamic_cast<const Coordination::GetResponse *>(responses[3].get())->stat.version;
+                    auto waitlist_str = dynamic_cast<const Coordination::GetResponse *>(responses[2].get())->data;
+                    waitlist = fromFilesList(waitlist_str);
+
+                    LOG_TEST(log, "Window version: {}, max processed file: {}, waitlist: {}", *window_version, max_processed_file, waitlist_str);
+
+                    if (waitlist.empty())
+                    {
+                        LOG_TEST(log, "Wait list is empty, window is fully processed");
+
+                        max_processed_file = window_max;
+                        window_min = "";
+                        window_max = "";
+
+                        code = zk_client->trySet(zookeeper_batch_max_processed_path, max_processed_file, max_processed_path_version);
+                        if (code == Coordination::Error::ZOK)
+                        {
+                            if (paths.back() <= max_processed_file)
+                            {
+                                LOG_TEST(log, "Window from file {} to file {} is fully processed", paths.front(), paths.back());
+                                return { {}, nullptr, true };
+                            }
+
+                        }
+                        else if (code == Coordination::Error::ZBADVERSION)
+                        {
+                            LOG_TEST(log, "Window version changed");
+                            return { {}, nullptr, true };
+                        }
+                        else
+                            throw zkutil::KeeperException::fromPath(code, zookeeper_batch_min_path);
+                    }
+
+                }
+            }
+
+            if (window_min.empty())
+            {
+                if (!max_processed_file.empty())
+                {
+                    while (!paths.empty() && paths.front() <= max_processed_file)
+                        paths.pop_front();
+
+                    if (paths.empty())
+                    {
+                        LOG_TEST(log, "Window from file {} to file {} is fully processed", paths.front(), paths.back());
+                        return { {}, nullptr, true };
+                    }
+                }
+
+                window_min = paths.front();
+                window_max = paths.back();
+
+                LOG_TEST(log, "Will set a new processing window: [{}, {}]", window_min, window_max);
+
+                requests.clear();
+                if (window_version.has_value())
+                {
+                    requests.push_back(zkutil::makeSetRequest(zookeeper_batch_min_path, window_min, *window_version));
+                    requests.push_back(zkutil::makeSetRequest(zookeeper_batch_max_path, window_max, -1));
+                    requests.push_back(zkutil::makeSetRequest(zookeeper_batch_waitlist_path, toFilesList(paths), -1));
+                    *window_version += 1;
+                }
+                else
+                {
+                    requests.push_back(zkutil::makeCreateRequest(zookeeper_batch_min_path, window_min, zkutil::CreateMode::Persistent));
+                    requests.push_back(zkutil::makeCreateRequest(zookeeper_batch_max_path, window_max, zkutil::CreateMode::Persistent));
+                    requests.push_back(zkutil::makeCreateRequest(zookeeper_batch_waitlist_path, toFilesList(paths), zkutil::CreateMode::Persistent));
+                    requests.push_back(zkutil::makeCreateRequest(zookeeper_batch_max_processed_path, "", zkutil::CreateMode::Persistent));
+                    window_version = 0;
+                }
+
+                responses.clear();
+                code = zk_client->tryMulti(requests, responses);
+                if (code != Coordination::Error::ZOK)
+                {
+                    if (code == Coordination::Error::ZNODEEXISTS)
+                    {
+                        LOG_TEST(log, "Batch window was concurrently created, will retry");
+                        continue;
+                    }
+                    throw zkutil::KeeperException::fromPath(code, zookeeper_batch_min_path);
+                }
+            }
+        }
+
+        for (const auto & path : paths)
+        {
+            const auto node_name = getNodeName(path);
+            auto node_metadata = createNodeMetadata(path);
+
+            Coordination::Requests requests;
+            requests.push_back(zkutil::makeCheckRequest(zookeeper_batch_min_path, *window_version));
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_processing_path / node_name, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_failed_path / node_name, "", zkutil::CreateMode::Persistent));
+            requests.push_back(zkutil::makeRemoveRequest(zookeeper_failed_path / node_name, -1));
+            requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, "", zkutil::CreateMode::Persistent));
+            requests.push_back(zkutil::makeRemoveRequest(zookeeper_processed_path / node_name, -1));
+
+            Coordination::Responses responses;
+            code = zk_client->tryMulti(requests, responses);
+            if (code == Coordination::Error::ZOK)
+            {
+                auto holder = std::make_unique<ProcessingNodeHolder>(node_metadata.processing_id, path, zookeeper_processing_path / node_name, zk_client);
+                LOG_TEST(log, "Will process file (2) : {}", path);
+                return {SetFileProcessingResult::Success, std::move(holder), false};
+            }
+
+            if (code != Coordination::Error::ZOK)
+            {
+                if (responses[0]->error != Coordination::Error::ZOK)
+                {
+                    LOG_TEST(log, "Window version changed");
+                    break;
+                }
+                if (responses[1]->error != Coordination::Error::ZOK)
+                {
+                    LOG_TEST(log, "Skipping file `{}`: already processing", path);
+                    continue;
+                }
+                else if (responses[2]->error != Coordination::Error::ZOK)
+                {
+                    LOG_TEST(log, "Skipping file `{}`: failed", path);
+                    continue;
+                }
+                else if (responses[4]->error != Coordination::Error::ZOK)
+                {
+                    LOG_TEST(log, "Skipping file `{}`: already processed", path);
+                    continue;
+                }
+
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error code {}", code);
+            }
+        }
+
+        return { {}, nullptr, false };
     }
 }
 
@@ -502,37 +738,83 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
 
     while (true)
     {
-        std::string res;
-        Coordination::Stat stat;
-        bool exists = zk_client->tryGet(zookeeper_processed_path, res, &stat);
-        Coordination::Requests requests;
-        if (exists)
-        {
-            if (!res.empty())
-            {
-                auto metadata = NodeMetadata::fromString(res);
-                if (metadata.file_path >= path)
-                {
-                    /// Here we get in the case that maximum processed file is bigger than ours.
-                    /// This is possible to achieve in case of parallel processing
-                    /// but for local processing we explicitly disable parallel mode and do everything in a single thread
-                    /// (see constructor of StorageS3Queue where s3queue_processing_threads_num is explicitly set to 1 in case of Ordered mode).
-                    /// Nevertheless, in case of distributed processing we cannot do anything with parallelism.
-                    /// What this means?
-                    /// It means that in scenario "distributed processing + Ordered mode"
-                    /// a setting s3queue_loading_retries will not work. It is possible to fix, it is in TODO.
+        auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_processing_path / "batch_lock", *zk_client, toString(getCurrentTime()));
+        if (!ephemeral_node)
+            continue;
 
-                    /// Return because there is nothing to change,
-                    /// the max processed file is already bigger than ours.
+        Coordination::Requests requests;
+
+        {
+            Coordination::Stat batch_node_stat;
+            std::string paths_str;
+            Coordination::Error code;
+            bool batch_node_exists = zk_client->tryGet(zookeeper_batch_waitlist_path, paths_str, &batch_node_stat, nullptr, &code);
+
+            if (!batch_node_exists)
+                throw zkutil::KeeperException::fromPath(code, zookeeper_batch_waitlist_path);
+
+            {
+                auto current_batch = fromFilesList(paths_str);
+
+                auto it = std::find_if(current_batch.begin(), current_batch.end(), [&](const auto & p) { return p == path; } );
+                if (it == current_batch.end())
+                {
+                    LOG_TEST(log, "Current path: {}, batch: {}", path, fmt::join(current_batch, ", "));
+                    chassert(false);
                     return;
                 }
+
+                current_batch.erase(it);
+
+                requests.push_back(zkutil::makeSetRequest(zookeeper_batch_waitlist_path, toFilesList(current_batch), batch_node_stat.version));
+                LOG_TEST(log, "Setting batch: {}", toFilesList(current_batch));
+
+                // if (current_batch.empty())
+                // {
+                //     auto data = zk_client->get(zookeeper_processing_path / "batch_max");
+                //     auto exists = zk_client->exists(zookeeper_max_processed_path);
+
+                //     if (exists)
+                //         requests.push_back(zkutil::makeSetRequest(zookeeper_max_processed_path, data, batch_node_stat.version));
+                //     else
+                //         requests.push_back(zkutil::makeCreateRequest(zookeeper_max_processed_path, data, zkutil::CreateMode::Persistent));
+                // }
             }
-            requests.push_back(zkutil::makeSetRequest(zookeeper_processed_path, node_metadata, stat.version));
         }
-        else
-        {
-            requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path, node_metadata, zkutil::CreateMode::Persistent));
-        }
+
+        requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path / node_name, node_metadata, zkutil::CreateMode::Persistent));
+
+        // std::string res;
+        // Coordination::Stat stat;
+        // bool exists = zk_client->tryGet(zookeeper_processed_path, res, &stat);
+        // Coordination::Requests requests;
+        // if (exists)
+        // {
+        //     if (!res.empty())
+        //     {
+        //         auto metadata = NodeMetadata::fromString(res);
+        //         if (metadata.file_path >= path)
+        //         {
+        //             /// Here we get in the case that maximum processed file is bigger than ours.
+        //             /// This is possible to achieve in case of parallel processing
+        //             /// but for local processing we explicitly disable parallel mode and do everything in a single thread
+        //             /// (see constructor of StorageS3Queue where s3queue_processing_threads_num is explicitly set to 1 in case of Ordered mode).
+        //             /// Nevertheless, in case of distributed processing we cannot do anything with parallelism.
+        //             /// What this means?
+        //             /// It means that in scenario "distributed processing + Ordered mode"
+        //             /// a setting s3queue_loading_retries will not work. It is possible to fix, it is in TODO.
+
+        //             /// Return because there is nothing to change,
+        //             /// the max processed file is already bigger than ours.
+        //             return;
+        //         }
+        //     }
+        //     requests.push_back(zkutil::makeSetRequest(zookeeper_processed_path, node_metadata, stat.version));
+        // }
+        // else
+        // {
+        //     requests.push_back(zkutil::makeCreateRequest(zookeeper_processed_path, node_metadata, zkutil::CreateMode::Persistent));
+        // }
 
         Coordination::Responses responses;
         if (holder->remove(&requests, &responses))
@@ -544,12 +826,15 @@ void S3QueueFilesMetadata::setFileProcessedForOrderedMode(ProcessingNodeHolderPt
         }
 
         /// Failed to update max processed node, retry.
-        if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
-            continue;
+        // if (!responses.empty() && responses[0]->error != Coordination::Error::ZOK)
+        //     continue;
 
         LOG_WARNING(log, "Cannot set file ({}) as processed since processing node "
                     "does not exist with expected processing id does not exist, "
-                    "this could be a result of expired zookeeper session", path);
+                    "this could be a result of expired zookeeper session. Code: {} - {} - {}",
+                    path, magic_enum::enum_name(responses[0]->error),
+                    magic_enum::enum_name(responses[1]->error), magic_enum::enum_name(responses[2]->error));
+        chassert(false);
         return;
     }
 }
@@ -683,10 +968,10 @@ S3QueueFilesMetadata::ProcessingNodeHolder::ProcessingNodeHolder(
     const std::string & path_,
     const std::string & zk_node_path_,
     zkutil::ZooKeeperPtr zk_client_)
-    : zk_client(zk_client_)
-    , path(path_)
+    : path(path_)
     , zk_node_path(zk_node_path_)
     , processing_id(processing_id_)
+    , zk_client(zk_client_)
     , log(&Poco::Logger::get("ProcessingNodeHolder"))
 {
 }

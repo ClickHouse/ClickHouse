@@ -85,6 +85,7 @@ public:
             std::function<void(FileProgress)> progress_callback_ = {});
 
         KeyWithInfoPtr next() override;
+        std::vector<KeyWithInfoPtr> nextBatch(size_t n);
         size_t estimatedKeysCount() override;
 
     private:

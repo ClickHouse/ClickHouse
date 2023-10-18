@@ -17,8 +17,7 @@ class StorageS3Queue;
 
 /**
  * A class for managing S3Queue metadata in zookeeper, e.g.
- * the following folders:
- * - <path_to_metadata>/processing
+ * the following folders: * - <path_to_metadata>/processing
  * - <path_to_metadata>/processed
  * - <path_to_metadata>/failed
  *
@@ -70,7 +69,14 @@ public:
     using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
 
     /// Set file as processing, if it is not alreaty processed, failed or processing.
-    std::pair<ProcessingNodeHolderPtr, FileStatusPtr> trySetFileAsProcessing(const std::string & path);
+    struct Result
+    {
+        ProcessingNodeHolderPtr processing_node_holder;
+        FileStatusPtr file_status;
+        bool window_finished = false;
+    };
+    Result trySetFileAsProcessing(const std::string & path);
+    Result trySetFileAsProcessing(const std::deque<std::string> & paths_);
 
     FileStatusPtr getFileStatus(const std::string & path);
 
@@ -87,11 +93,19 @@ private:
     const UInt64 max_loading_retries;
     const size_t min_cleanup_interval_ms;
     const size_t max_cleanup_interval_ms;
+    const size_t parallel_processing_window; /// For Ordered mode.
 
     const fs::path zookeeper_processing_path;
     const fs::path zookeeper_processed_path;
     const fs::path zookeeper_failed_path;
+
+    const fs::path zookeeper_batch_min_path;
+    const fs::path zookeeper_batch_max_path;
+    const fs::path zookeeper_batch_waitlist_path;
+    const fs::path zookeeper_batch_max_processed_path;
+
     const fs::path zookeeper_cleanup_lock_path;
+    const fs::path zookeeper_max_processed_path;
 
     Poco::Logger * log;
 
@@ -115,6 +129,8 @@ private:
     std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
     std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
 
+    std::tuple<SetFileProcessingResult, ProcessingNodeHolderPtr, bool> trySetFileAsProcessingForOrderedMode(const std::deque<std::string> & paths);
+
     struct NodeMetadata
     {
         std::string file_path;
@@ -128,6 +144,7 @@ private:
     };
 
     NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = "", size_t retries = 0);
+    static void updateCachedFileStatus(SetFileProcessingResult result, S3QueueFilesMetadata::FileStatus & file_status);
 
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
@@ -157,13 +174,14 @@ public:
 
     ~ProcessingNodeHolder();
 
+    const std::string path;
+    const std::string zk_node_path;
+    const std::string processing_id;
+
 private:
     bool remove(Coordination::Requests * requests = nullptr, Coordination::Responses * responses = nullptr);
 
     zkutil::ZooKeeperPtr zk_client;
-    std::string path;
-    std::string zk_node_path;
-    std::string processing_id;
     bool removed = false;
     Poco::Logger * log;
 };

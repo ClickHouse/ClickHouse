@@ -40,7 +40,10 @@ public:
     class FileIterator : public IIterator
     {
     public:
-        FileIterator(std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_, std::atomic<bool> & shutdown_called_);
+        FileIterator(
+            std::shared_ptr<S3QueueFilesMetadata> metadata_,
+            std::unique_ptr<GlobIterator> glob_iterator_,
+            std::atomic<bool> & shutdown_called_);
 
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
@@ -53,6 +56,30 @@ public:
         const std::shared_ptr<S3QueueFilesMetadata> metadata;
         const std::unique_ptr<GlobIterator> glob_iterator;
         std::atomic<bool> & shutdown_called;
+    };
+
+    class FileIteratorWindowProcessing : public IIterator
+    {
+    public:
+        FileIteratorWindowProcessing(
+            std::shared_ptr<S3QueueFilesMetadata> metadata_,
+            std::unique_ptr<GlobIterator> glob_iterator_,
+            size_t window_size_,
+            std::atomic<bool> & shutdown_called_);
+
+        /// Note:
+        /// List results in s3 are always returned in UTF-8 binary order.
+        /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
+        KeyWithInfoPtr next() override;
+
+        size_t estimatedKeysCount() override;
+
+    private:
+        const std::shared_ptr<S3QueueFilesMetadata> metadata;
+        const std::unique_ptr<GlobIterator> glob_iterator;
+        const size_t window_size;
+        std::atomic<bool> & shutdown_called;
+        std::vector<KeyWithInfoPtr> current_window;
         std::mutex mutex;
     };
 

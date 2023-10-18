@@ -653,13 +653,13 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
     for _ in range(100):
-        if (
-            get_count(f"{dst_table_name}_1")
-            + get_count(f"{dst_table_name}_2")
-            + get_count(f"{dst_table_name}_3")
-        ) == files_to_generate:
+        count = get_count(f"{dst_table_name}_1") + get_count(f"{dst_table_name}_2") + get_count(f"{dst_table_name}_3")
+        if count == files_to_generate:
             break
+        print(f"{count}/{files_to_generate}")
         time.sleep(1)
+
+    assert get_count(f"{dst_table_name}_1") + get_count(f"{dst_table_name}_2") + get_count(f"{dst_table_name}_3") == files_to_generate
 
     res1 = [
         list(map(int, l.split()))

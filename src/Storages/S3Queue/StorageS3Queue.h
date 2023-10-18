@@ -55,7 +55,7 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
 private:
-    using FileIterator = StorageS3QueueSource::FileIterator;
+    using FileIterator = StorageS3QueueSource::IIterator;
 
     const std::unique_ptr<S3QueueSettings> s3queue_settings;
     const fs::path zk_path;

@@ -188,6 +188,20 @@ public:
         return nextAssumeLocked();
     }
 
+    std::vector<KeyWithInfoPtr> nextBatch(size_t n)
+    {
+        std::lock_guard lock(mutex);
+        std::vector<KeyWithInfoPtr> result;
+        while (n--)
+        {
+            auto key_with_info = nextAssumeLocked();
+            if (!key_with_info || key_with_info->key.empty())
+                break;
+            result.push_back(key_with_info);
+        }
+        return result;
+    }
+
     size_t objectsCount()
     {
         return buffer.size();
@@ -384,6 +398,11 @@ StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
 StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next()
 {
     return pimpl->next();
+}
+
+std::vector<StorageS3Source::KeyWithInfoPtr> StorageS3Source::DisclosedGlobIterator::nextBatch(size_t n)
+{
+    return pimpl->nextBatch(n);
 }
 
 size_t StorageS3Source::DisclosedGlobIterator::estimatedKeysCount()
