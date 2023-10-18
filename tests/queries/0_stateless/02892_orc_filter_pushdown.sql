@@ -32,11 +32,11 @@ select
     n::Int64 as i64,
 
     toDate32(n*500000) as date32,
-    toDateTime64(n*1e6, 3) as dt64_ms,
-    toDateTime64(n*1e6, 6) as dt64_us,
-    toDateTime64(n*1e6, 9) as dt64_ns,
-    toDateTime64(n*1e6, 0) as dt64_s,
-    toDateTime64(n*1e6, 2) as dt64_cs,
+    toDateTime64(n*1e6, 3, 'UTC') as dt64_ms,
+    toDateTime64(n*1e6, 6, 'UTC') as dt64_us,
+    toDateTime64(n*1e6, 9, 'UTC') as dt64_ns,
+    toDateTime64(n*1e6, 0, 'UTC') as dt64_s,
+    toDateTime64(n*1e6, 2, 'UTC') as dt64_cs,
     (n/1000)::Float32 as f32,
     (n/1000)::Float64 as f64,
     n::String as s,
@@ -81,17 +81,17 @@ select count(1), min(date32), max(date32) from file('02892.orc') where date32 be
 select count(), sum(number) from file('02892.orc') where indexHint(dt64_ms between '2000-01-01' and '2005-01-01');
 select count(1), min(dt64_ms), max(dt64_ms) from file('02892.orc') where dt64_ms between '2000-01-01' and '2005-01-01';
 
-select count(), sum(number) from file('02892.orc') where indexHint(dt64_us between toDateTime64(900000000, 2) and '2005-01-01');
-select count(1), min(dt64_us), max(dt64_us) from file('02892.orc') where (dt64_us between toDateTime64(900000000, 2) and '2005-01-01');
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_us between toDateTime64(900000000, 2, 'UTC') and '2005-01-01');
+select count(1), min(dt64_us), max(dt64_us) from file('02892.orc') where (dt64_us between toDateTime64(900000000, 2, 'UTC') and '2005-01-01');
 
 select count(), sum(number) from file('02892.orc') where indexHint(dt64_ns between '2000-01-01' and '2005-01-01');
 select count(1), min(dt64_ns), max(dt64_ns) from file('02892.orc') where (dt64_ns between '2000-01-01' and '2005-01-01');
 
-select count(), sum(number) from file('02892.orc') where indexHint(dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0) and toDateTime64(1.5e8::Decimal64(0), 0));
-select count(1), min(dt64_s), max(dt64_s) from file('02892.orc') where (dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0) and toDateTime64(1.5e8::Decimal64(0), 0));
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0, 'UTC') and toDateTime64(1.5e8::Decimal64(0), 0, 'UTC'));
+select count(1), min(dt64_s), max(dt64_s) from file('02892.orc') where (dt64_s between toDateTime64('-2.01e8'::Decimal64(0), 0, 'UTC') and toDateTime64(1.5e8::Decimal64(0), 0, 'UTC'));
 
-select count(), sum(number) from file('02892.orc') where indexHint(dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1) and toDateTime64(1.5e8::Decimal64(2), 2));
-select count(1), min(dt64_cs), max(dt64_cs) from file('02892.orc') where (dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1) and toDateTime64(1.5e8::Decimal64(2), 2));
+select count(), sum(number) from file('02892.orc') where indexHint(dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1, 'UTC') and toDateTime64(1.5e8::Decimal64(2), 2, 'UTC'));
+select count(1), min(dt64_cs), max(dt64_cs) from file('02892.orc') where (dt64_cs between toDateTime64('-2.01e8'::Decimal64(1), 1, 'UTC') and toDateTime64(1.5e8::Decimal64(2), 2, 'UTC'));
 
 select count(), sum(number) from file('02892.orc') where indexHint(f32 between -0.11::Float32 and 0.06::Float32);
 select count(1), min(f32), max(f32) from file('02892.orc') where (f32 between -0.11::Float32 and 0.06::Float32);
