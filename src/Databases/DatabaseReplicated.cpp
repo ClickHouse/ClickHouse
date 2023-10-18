@@ -559,7 +559,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool
     if (local_context->isInternalSubquery())
         return true;
 
-    /// Check does not make sense to check digest in Keeper during recovering
+    /// It does not make sense to check digest in Keeper during recovering
     if (is_recovering)
         return true;
 
@@ -1039,7 +1039,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     std::lock_guard lock{metadata_mutex};
-    chassert(checkDigestValid(getContext()));
+    if (checkDigestValid(getContext(), /* debug_check */ false))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after recovering replica");
     current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
