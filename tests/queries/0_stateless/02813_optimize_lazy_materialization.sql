@@ -22,6 +22,6 @@ SELECT a AS a, b AS b, c AS c, d AS d FROM optimize_lazy_materialization WHERE d
 SELECT a+1 AS a, b AS b, c+1 AS c, d+1 AS d FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
 SELECT a+1 AS a, b AS b, c+1 AS c, d+1 AS d FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3;
 -- queries with non-trivial action's chain in expression
-SELECT y, z FROM (SELECT a as y, b as z FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3) ORDER BY z + 1;
+SELECT y, z FROM (SELECT a as y, b as z FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3) ORDER BY y + 1;
 -- { echoOff }
 DROP TABLE IF EXISTS optimize_lazy_materialization;

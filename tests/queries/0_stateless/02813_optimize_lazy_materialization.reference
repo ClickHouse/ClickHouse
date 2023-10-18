@@ -48,7 +48,7 @@ SELECT a+1 AS a, b AS b, c+1 AS c, d+1 AS d FROM optimize_lazy_materialization W
 3	0	3	3
 5	0	5	2
 -- queries with non-trivial action's chain in expression
-SELECT y, z FROM (SELECT a as y, b as z FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3) ORDER BY z + 1;
+SELECT y, z FROM (SELECT a as y, b as z FROM optimize_lazy_materialization WHERE d > 1 ORDER BY c LIMIT 3) ORDER BY y + 1;
 2	0
-8	0
 5	1
+8	0

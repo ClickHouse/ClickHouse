@@ -11,6 +11,7 @@ namespace DB::QueryPlanOptimizations
 {
 
 constexpr size_t MAX_LIMIT_FOR_LAZY_MATERIALIZATION = 128;
+using StepStack = std::vector<IQueryPlanStep *>;
 
 static bool canUseLazyProjectionForReadingStep(ReadFromMergeTree * reading)
 {
@@ -35,12 +36,12 @@ static bool canUseLazyProjectionForReadingStep(ReadFromMergeTree * reading)
     return true;
 }
 
-using StepStack = std::vector<IQueryPlanStep * >;
-
-static void removeUsedColumnNames(const ActionsDAGPtr & actions, Names & lazily_read_column_names)
+static void removeUsedColumnNames(
+    const ActionsDAGPtr & actions,
+    NameSet & lazily_read_column_name_set,
+    AliasToNamePtr & alias_index)
 {
     const auto & actions_outputs = actions->getOutputs();
-    NameSet used_column_names;
 
     for (const auto * output_node : actions_outputs)
     {
@@ -69,7 +70,11 @@ static void removeUsedColumnNames(const ActionsDAGPtr & actions, Names & lazily_
                 stack.pop();
 
                 if (current_node->type == ActionsDAG::ActionType::INPUT)
-                    used_column_names.insert(current_node->result_name);
+                {
+                    const auto it = alias_index->find(current_node->result_name);
+                    if (it != alias_index->end())
+                        lazily_read_column_name_set.erase(it->second);
+                }
 
                 for (const auto * child : current_node->children)
                 {
@@ -83,40 +88,66 @@ static void removeUsedColumnNames(const ActionsDAGPtr & actions, Names & lazily_
         }
     }
 
-    std::erase_if(lazily_read_column_names, [&used_column_names] (const String & name)
+    /// Update alias name index.
+    for (const auto * output_node : actions_outputs)
     {
-        return used_column_names.contains(name);
-    });
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node != output_node && node->type == ActionsDAG::ActionType::INPUT)
+        {
+            const auto it = alias_index->find(node->result_name);
+            if (it != alias_index->end())
+            {
+                const auto real_column_name = it->second;
+                alias_index->emplace(output_node->result_name, real_column_name);
+                alias_index->erase(node->result_name);
+            }
+        }
+    }
 }
 
-static void collectLazilyReadColumnNames(const StepStack & steps, Names & lazily_read_column_names)
+static void collectLazilyReadColumnNames(
+    const StepStack & steps,
+    Names & lazily_read_column_names,
+    AliasToNamePtr & alias_index)
 {
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(steps.back());
-    lazily_read_column_names = read_from_merge_tree->getRealColumnNames();
+    const Names & real_column_names = read_from_merge_tree->getRealColumnNames();
+    NameSet lazily_read_column_name_set(real_column_names.begin(), real_column_names.end());
+
+    for (auto & column_name : real_column_names)
+        alias_index->emplace(column_name, column_name);
 
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         if (prewhere_info->row_level_filter)
-            removeUsedColumnNames(prewhere_info->row_level_filter, lazily_read_column_names);
+            removeUsedColumnNames(prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index);
 
         if (prewhere_info->prewhere_actions)
-            removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_names);
+            removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index);
     }
 
-    for (auto * step : steps)
+    for (auto step_it = steps.rbegin(); step_it != steps.rend(); ++step_it)
     {
-        if (lazily_read_column_names.empty())
+        auto * step = *step_it;
+
+        if (lazily_read_column_name_set.empty())
             return;
 
         if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {
-            removeUsedColumnNames(expression_step->getExpression(), lazily_read_column_names);
+            removeUsedColumnNames(expression_step->getExpression(), lazily_read_column_name_set, alias_index);
             continue;
         }
 
         if (auto * filter_step = typeid_cast<FilterStep *>(step))
         {
-            removeUsedColumnNames(filter_step->getExpression(), lazily_read_column_names);
+            removeUsedColumnNames(filter_step->getExpression(), lazily_read_column_name_set, alias_index);
             continue;
         }
 
@@ -125,14 +156,18 @@ static void collectLazilyReadColumnNames(const StepStack & steps, Names & lazily
             auto & sort_description = sorting_step->getSortDescription();
             for (auto & sort_column_description : sort_description)
             {
-                std::erase_if(lazily_read_column_names, [&sort_column_description] (const String & name)
-                {
-                    return sort_column_description.column_name == name;
-                });
+                const auto it = alias_index->find(sort_column_description.column_name);
+                if (it == alias_index->end())
+                    continue;
+                lazily_read_column_name_set.erase(it->second);
             }
             continue;
         }
     }
+
+    lazily_read_column_names.insert(lazily_read_column_names.end(),
+                                    lazily_read_column_name_set.begin(),
+                                    lazily_read_column_name_set.end());
 }
 
 static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
@@ -201,7 +236,8 @@ void optimizeLazyProjection(Stack & stack, QueryPlan::Nodes & nodes)
         return;
 
     LazilyReadInfoPtr lazily_read_info = std::make_shared<LazilyReadInfo>();
-    collectLazilyReadColumnNames(steps_to_update, lazily_read_info->lazily_read_columns_names);
+    AliasToNamePtr alias_index = std::make_shared<AliasToName>();
+    collectLazilyReadColumnNames(steps_to_update, lazily_read_info->lazily_read_columns_names, alias_index);
 
     if (lazily_read_info->lazily_read_columns_names.empty())
         return;
@@ -230,8 +266,8 @@ void optimizeLazyProjection(Stack & stack, QueryPlan::Nodes & nodes)
         reading_step->getMergeTreeData(),
         reading_step->getStorageSnapshot(),
         lazily_read_info,
-        reading_step->getContext()
-    );
+        reading_step->getContext(),
+        alias_index);
     lazily_read_step->setStepDescription("Lazily Read");
     replace_node.step = std::move(lazily_read_step);
 }

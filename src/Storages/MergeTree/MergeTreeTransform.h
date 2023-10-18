@@ -5,6 +5,9 @@
 namespace DB
 {
 
+using AliasToName = std::unordered_map<std::string, std::string>;
+using AliasToNamePtr = std::shared_ptr<AliasToName>;
+
 class MergeTreeTransform : public ISimpleTransform
 {
 public:
@@ -13,7 +16,8 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const LazilyReadInfoPtr & lazily_read_info_,
-        const ContextPtr & context);
+        const ContextPtr & context_,
+        const AliasToNamePtr & alias_index_);
 
     static Block transformHeader(Block header);
 
@@ -27,6 +31,7 @@ private:
     bool use_uncompressed_cache;
     DataPartsInfoPtr data_parts_info;
     NamesAndTypesList names_and_types_list;
+    Names alias_column_names;
 };
 
 }

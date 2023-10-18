@@ -1,8 +1,7 @@
 #include <Storages/MergeTree/MergeTreeTransform.h>
-#include "Storages/MergeTree/IMergeTreeReader.h"
-#include "Columns/ColumnLazy.h"
-// #include "Storages/MergeTree/IMergeTreeDataPart.h"
-#include "Common/logger_useful.h"
+
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Columns/ColumnLazy.h>
 
 namespace DB
 {
@@ -24,22 +23,25 @@ MergeTreeTransform::MergeTreeTransform(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const LazilyReadInfoPtr & lazily_read_info_,
-    const ContextPtr & context)
+    const ContextPtr & context_,
+    const AliasToNamePtr & alias_index_)
     : ISimpleTransform(
     header_,
     transformHeader(header_),
     true)
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
-    , use_uncompressed_cache(context->getSettings().use_uncompressed_cache)
+    , use_uncompressed_cache(context_->getSettings().use_uncompressed_cache)
     , data_parts_info(std::move(lazily_read_info_->data_parts_info))
     , names_and_types_list()
+    , alias_column_names()
 {
     for (auto & it : header_)
     {
         if (isColumnLazy(*(it.column)))
         {
-            names_and_types_list.emplace_back(it.name, it.type);
+            names_and_types_list.emplace_back((*alias_index_)[it.name], it.type);
+            alias_column_names.emplace_back(it.name);
         }
     }
 }
@@ -53,7 +55,7 @@ void MergeTreeTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     Block block = getInputPort().getHeader().cloneWithColumns(columns);
-    auto * column_lazy = typeid_cast<const ColumnLazy *>(block.getByName(names_and_types_list.begin()->name).column.get());
+    auto * column_lazy = typeid_cast<const ColumnLazy *>(block.getByName(alias_column_names[0]).column.get());
     const ColumnUInt64 * part_num_column = typeid_cast<const ColumnUInt64 *>(&column_lazy->getPartNumsColumn());
     const ColumnUInt64 * row_num_column = typeid_cast<const ColumnUInt64 *>(&column_lazy->getRowNumsColumn());
 
@@ -101,9 +103,9 @@ void MergeTreeTransform::transform(Chunk & chunk)
     }
 
     column_idx = 0;
-    for (auto & iter : names_and_types_list)
+    for (auto & alias_name : alias_column_names)
     {
-        block.getByName(iter.name).column = std::move(lazily_read_columns[column_idx++]);
+        block.getByName(alias_name).column = std::move(lazily_read_columns[column_idx++]);
     }
 
     chunk.setColumns(block.getColumns(), rows_size);

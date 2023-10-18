@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeTransform.h>
 
 namespace DB
 {
@@ -13,7 +14,8 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const LazilyReadInfoPtr & lazily_read_info_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        const AliasToNamePtr & alias_index_);
 
     String getName() const override { return "LazilyRead"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -28,6 +30,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     LazilyReadInfoPtr lazily_read_info;
     ContextPtr context;
+    AliasToNamePtr alias_index;
 };
 
 }
