@@ -68,6 +68,10 @@ private:
 
 void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 {
+    /// We do handle cycles via tracking current_asts
+    /// but in case of bug in that tricky logic we need to prevent stack overflow
+    checkStackSize();
+
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
