@@ -56,14 +56,4 @@ ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const Data
     return castColumn<CastType::accurateOrNull>(arg, type, cache);
 }
 
-FunctionBasePtr InternalCastFunctionCache::getOrSet(CastType cast_type, const String & from, const String & to, Getter && getter)
-{
-    std::lock_guard lock{mutex};
-    auto key = std::make_tuple(cast_type, from, to);
-    auto it = impl.find(key);
-    if (it == impl.end())
-        it = impl.emplace(key, getter()).first;
-    return it->second;
-}
-
 }
