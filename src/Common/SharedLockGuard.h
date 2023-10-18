@@ -6,18 +6,19 @@
 namespace DB
 {
 
+/// Same as std::lock_guard but for shared mutex
 template <typename Mutex>
-class __attribute__((scoped_lockable)) SharedLockGuard
+class TSA_SCOPED_LOCKABLE SharedLockGuard
 {
 public:
     explicit SharedLockGuard(Mutex & mutex_) TSA_ACQUIRE_SHARED(mutex_) : mutex(mutex_)
     {
-        mutex_.lock();
+        mutex_.lock_shared();
     }
 
     ~SharedLockGuard() TSA_RELEASE()
     {
-        mutex.unlock();
+        mutex.unlock_shared();
     }
 
 private:
