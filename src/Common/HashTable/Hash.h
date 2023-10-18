@@ -54,30 +54,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #endif
 
 #if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-#include <crc32-s390x.h>
-
-inline uint32_t s390x_crc32_u8(uint32_t crc, uint8_t v)
-{
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint32_t s390x_crc32_u16(uint32_t crc, uint16_t v)
-{
-    v = std::byteswap(v);
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint32_t s390x_crc32_u32(uint32_t crc, uint32_t v)
-{
-    v = std::byteswap(v);
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
-}
-
-inline uint64_t s390x_crc32(uint64_t crc, uint64_t v)
-{
-    v = std::byteswap(v);
-    return crc32c_le_vx(static_cast<uint32_t>(crc), reinterpret_cast<unsigned char *>(&v), sizeof(uint64_t));
-}
+#include <base/crc32_s390x.h>
 #endif
 
 /// NOTE: Intel intrinsic can be confusing.
@@ -557,7 +534,10 @@ struct IntHash32
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {
             DB::UInt64 out {0};
-            std::memcpy(&out, &key, sizeof(T));
+            if constexpr (std::endian::native == std::endian::little)
+                std::memcpy(&out, &key, sizeof(T));
+            else
+                std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
             return intHash32<salt>(out);
         }
 

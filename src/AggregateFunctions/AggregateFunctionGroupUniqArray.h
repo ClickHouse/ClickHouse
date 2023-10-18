@@ -95,7 +95,7 @@ public:
         size_t size = set.size();
         writeVarUInt(size, buf);
         for (const auto & elem : set)
-            writeIntBinary(elem, buf);
+            writeBinaryLittleEndian(elem.key, buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
