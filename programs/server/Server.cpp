@@ -1976,7 +1976,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, false));
         if (type == "postgres")
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
@@ -2225,6 +2225,16 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
+            bool require_secure_transport;
+            if (config.getBool("mysql_port_require_secure_transport")) {
+#if USE_SSL
+                require_secure_transport = true;
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for MySQL protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+            } else {
+                require_secure_transport = false;
+            }
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
@@ -2235,7 +2245,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "MySQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, require_secure_transport), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 

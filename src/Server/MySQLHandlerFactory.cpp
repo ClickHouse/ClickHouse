@@ -21,9 +21,10 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
+MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, bool require_secure_transport_)
     : server(server_)
     , log(&Poco::Logger::get("MySQLHandlerFactory"))
+    , require_secure_transport(require_secure_transport_)
 {
 #if USE_SSL
     try
@@ -130,7 +131,7 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
     uint32_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 #if USE_SSL
-    return new MySQLHandlerSSL(server, tcp_server, socket, ssl_enabled, connection_id, *public_key, *private_key);
+    return new MySQLHandlerSSL(server, tcp_server, socket, ssl_enabled, connection_id, *public_key, *private_key, require_secure_transport);
 #else
     return new MySQLHandler(server, tcp_server, socket, ssl_enabled, connection_id);
 #endif

@@ -2315,6 +2315,16 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
+## mysql_port_require_secure_transport {#mysql_port_require_secure_transport}
+
+Only allow connections to the [MySQL port](#mysql_port) that use TLS/SSL, connections that do not upgrade to TLS/SSL return an error `ER_SECURE_TRANSPORT_REQUIRED` to the client.  Similar to the MySQL server setting `require_secure_transport`.
+
+Example:
+
+``` xml
+<mysql_port_require_secure_transport>true</mysql_port_require_secure_transport>
+```
+
 ## postgresql_port {#postgresql_port}
 
 Port for communicating with clients over PostgreSQL protocol.

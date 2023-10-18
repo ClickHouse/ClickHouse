@@ -20,6 +20,7 @@ class MySQLHandlerFactory : public TCPServerConnectionFactory
 private:
     IServer & server;
     Poco::Logger * log;
+    bool require_secure_transport;
 
 #if USE_SSL
     struct RSADeleter
@@ -38,7 +39,7 @@ private:
 
     std::atomic<unsigned> last_connection_id = 0;
 public:
-    explicit MySQLHandlerFactory(IServer & server_);
+    explicit MySQLHandlerFactory(IServer & server_, bool require_secure_transport_);
 
     void readRSAKeys();
 

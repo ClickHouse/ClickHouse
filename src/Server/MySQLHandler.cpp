@@ -71,13 +71,15 @@ MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_)
+    bool ssl_enabled, uint32_t connection_id_,
+    bool require_secure_transport_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
+    , require_secure_transport(require_secure_transport_)
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
@@ -250,6 +252,15 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (require_secure_transport) {
+            /// Send error packet and close connection.
+            packet_size = PACKET_HEADER_SIZE + payload_size;
+            packet_endpoint->in->ignore(packet_size - pos);
+            static const char * error_msg = "Connections using insecure transport are prohibited.";
+            packet_endpoint->sequence_id++;
+            packet_endpoint->sendPacket(ERRPacket(3159, "HY000", error_msg), true);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, error_msg);
+        }
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
@@ -490,8 +501,9 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     uint32_t connection_id_,
     RSA & public_key_,
-    RSA & private_key_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
+    RSA & private_key_,
+    bool require_secure_transport_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, require_secure_transport_)
     , public_key(public_key_)
     , private_key(private_key_)
 {}
