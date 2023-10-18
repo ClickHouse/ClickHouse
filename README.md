@@ -26,7 +26,6 @@ curl https://clickhouse.com/ | sh
 * [**ClickHouse Meetup in Amsterdam**](https://www.meetup.com/clickhouse-netherlands-user-group/events/296334590/) - Oct 31
 * [**ClickHouse Meetup in Beijing**](https://www.meetup.com/clickhouse-beijing-user-group/events/296334856/) - Nov 4
 * [**ClickHouse Meetup in San Francisco**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/296334923/) - Nov 8
-* [**ClickHouse Meetup in Tel Aviv**](https://www.meetup.com/clickhouse-tel-aviv-user-group/events/296487639/) - Nov 8
 * [**ClickHouse Meetup in Singapore**](https://www.meetup.com/clickhouse-singapore-meetup-group/events/296334976/) - Nov 15
 * [**ClickHouse Meetup in Berlin**](https://www.meetup.com/clickhouse-berlin-user-group/events/296488501/) - Nov 30
 * [**ClickHouse Meetup in NYC**](https://www.meetup.com/clickhouse-new-york-user-group/events/296488779/) - Dec 11

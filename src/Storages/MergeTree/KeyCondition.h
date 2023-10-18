@@ -3,6 +3,8 @@
 #include <optional>
 
 #include <Core/SortDescription.h>
+#include <Core/Range.h>
+#include <Core/PlainRanges.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -12,6 +14,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+
 
 namespace DB
 {
@@ -23,168 +26,6 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
-
-/** A field, that can be stored in two representations:
-  * - A standalone field.
-  * - A field with reference to its position in a block.
-  *   It's needed for execution of functions on ranges during
-  *   index analysis. If function was executed once for field,
-  *   its result would be cached for whole block for which field's reference points to.
-  */
-struct FieldRef : public Field
-{
-    FieldRef() = default;
-
-    /// Create as explicit field without block.
-    template <typename T>
-    FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
-
-    /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
-          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
-
-    bool isExplicit() const { return columns == nullptr; }
-
-    ColumnsWithTypeAndName * columns = nullptr;
-    size_t row_idx = 0;
-    size_t column_idx = 0;
-};
-
-struct Range;
-using Ranges = std::vector<Range>;
-
-/** Range with open or closed ends; possibly unbounded.
-  */
-struct Range
-{
-public:
-    static bool equals(const Field & lhs, const Field & rhs);
-    static bool less(const Field & lhs, const Field & rhs);
-
-    FieldRef left;        /// the left border
-    FieldRef right;       /// the right border
-    bool left_included;   /// includes the left border
-    bool right_included;  /// includes the right border
-
-    /// One point.
-    Range(const FieldRef & point) /// NOLINT
-        : left(point), right(point), left_included(true), right_included(true) {}
-
-    /// A bounded two-sided range.
-    Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
-        : left(left_)
-        , right(right_)
-        , left_included(left_included_)
-        , right_included(right_included_)
-    {
-        shrinkToIncludedIfPossible();
-    }
-
-    static Range createWholeUniverse()
-    {
-        return Range(NEGATIVE_INFINITY, true, POSITIVE_INFINITY, true);
-    }
-
-    static Range createWholeUniverseWithoutNull()
-    {
-        return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
-    }
-
-    static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
-
-    /** Optimize the range. If it has an open boundary and the Field type is "loose"
-      * - then convert it to closed, narrowing by one.
-      * That is, for example, turn (0,2) into [1].
-      */
-    void shrinkToIncludedIfPossible();
-
-    bool empty() const;
-
-    /// x contained in the range
-    bool contains(const FieldRef & x) const
-    {
-        return !leftThan(x) && !rightThan(x);
-    }
-
-    /// x is to the left
-    bool rightThan(const FieldRef & x) const;
-    /// x is to the right
-    bool leftThan(const FieldRef & x) const;
-
-    /// completely right than x
-    bool rightThan(const Range & x) const;
-    /// completely left than x
-    bool leftThan(const Range & x) const;
-
-    /// range like [1, 2]
-    bool fullBounded() const;
-    /// (-inf, +inf)
-    bool isInfinite() const;
-
-    bool isBlank() const;
-
-    bool intersectsRange(const Range & r) const;
-    bool containsRange(const Range & r) const;
-
-    /// Invert left and right
-    void invert();
-
-    /// Invert the range.
-    /// Example:
-    ///     [1, 3] -> (-inf, 1), (3, +inf)
-    Ranges invertRange() const;
-
-    std::optional<Range> intersectWith(const Range & r) const;
-    std::optional<Range> unionWith(const Range & r) const;
-
-    /// If near by r, they can be combined to a continuous range.
-    /// TODO If field is integer, case like [2, 3], [4, 5] is excluded.
-    bool nearByWith(const Range & r) const;
-
-    String toString() const;
-};
-
-
-/** A plain ranges is a series of ranges who
- *      1. have no intersection in any two of the ranges
- *      2. ordered by left side
- *      3. does not contain blank range
- *
- * Example:
- *      query: (k > 1 and key < 5) or (k > 3 and k < 10) or key in (2, 12)
- *      original ranges: (1, 5), (3, 10), [2, 2], [12, 12]
- *      plain ranges: (1, 10), [12, 12]
- *
- * If it is blank, ranges is empty.
- */
-struct PlainRanges
-{
-    Ranges ranges;
-
-    explicit PlainRanges(const Range & range);
-
-    explicit PlainRanges(const Ranges & ranges_, bool may_have_intersection = false, bool ordered = true);
-
-    PlainRanges unionWith(const PlainRanges & other);
-    PlainRanges intersectWith(const PlainRanges & other);
-
-    /// Union ranges and return a new plain(ordered and no intersection) ranges.
-    /// Example:
-    ///         [1, 3], [2, 4], [6, 8] -> [1, 4], [6, 8]
-    ///         [1, 3], [2, 4], (4, 5] -> [1, 4], [5, 5]
-    static Ranges makePlainFromUnordered(Ranges ranges_);
-    static Ranges makePlainFromOrdered(const Ranges & ranges_);
-
-    static bool compareByLeftBound(const Range & lhs, const Range & rhs);
-    static bool compareByRightBound(const Range & lhs, const Range & rhs);
-
-    static std::vector<Ranges> invert(const Ranges & to_invert_ranges);
-
-    static PlainRanges makeBlank() { return PlainRanges({}); }
-    static PlainRanges makeUniverse() { return PlainRanges({Range::createWholeUniverseWithoutNull()}); }
-};
 
 /** Condition on the index.
   *
@@ -233,7 +74,7 @@ public:
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
-        const std::vector<Range> & hyperrectangle,
+        const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.

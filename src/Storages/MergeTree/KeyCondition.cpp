@@ -14,7 +14,6 @@
 #include <Functions/indexHint.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSet.h>
@@ -24,13 +23,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
-#include <Planner/Utils.h>
-
 #include <base/defines.h>
 
 #include <algorithm>
@@ -47,393 +42,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
 }
-
-
-String Range::toString() const
-{
-    WriteBufferFromOwnString str;
-
-    str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
-    str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-    return str.str();
-}
-
-std::optional<Range> Range::intersectWith(const Range & r) const
-{
-    if (!intersectsRange(r))
-        return {};
-
-    bool left_bound_use_mine = true;
-    bool right_bound_use_mine = true;
-
-    if (less(left, r.left) || ((!left_included && r.left_included) && equals(left, r.left)))
-        left_bound_use_mine = false;
-
-    if (less(r.right, right) || ((!r.right_included && right_included) && equals(r.right, right)))
-        right_bound_use_mine = false;
-
-    return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
-                 right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-}
-
-bool Range::nearByWith(const Range & r) const
-{
-    /// me locates at left
-    if (((right_included && !r.left_included) || (!right_included && r.left_included)) && equals(right, r.left))
-        return true;
-
-    /// r locate left
-    if (((r.right_included && !left_included) || (r.right_included && !left_included)) && equals(r.right, left))
-        return true;
-
-    return false;
-}
-
-std::optional<Range> Range::unionWith(const Range & r) const
-{
-    if (!intersectsRange(r) && !nearByWith(r))
-        return {};
-
-    bool left_bound_use_mine = false;
-    bool right_bound_use_mine = false;
-
-    if (less(left, r.left) || ((!left_included && r.left_included) && equals(left, r.left)))
-        left_bound_use_mine = true;
-
-    if (less(r.right, right) || ((!r.right_included && right_included) && equals(r.right, right)))
-        right_bound_use_mine = true;
-
-    return Range(left_bound_use_mine ? left : r.left, left_bound_use_mine ? left_included: r.left_included,
-                 right_bound_use_mine ? right : r.right, right_bound_use_mine ? right_included : r.right_included);
-}
-
-Ranges Range::invertRange() const
-{
-    Ranges ranges;
-    /// For full bounded range will generate two ranges.
-    if (fullBounded()) /// case: [1, 3] -> (-inf, 1), (3, +inf)
-    {
-        ranges.push_back({NEGATIVE_INFINITY, false, left, !left_included});
-        ranges.push_back({right, !right_included, POSITIVE_INFINITY, false});
-    }
-    else if (isInfinite())
-    {
-        /// blank ranges
-    }
-    else /// case: (-inf, 1] or [1, +inf)
-    {
-        Range r = *this;
-        std::swap(r.left, r.right);
-        if (r.left.isPositiveInfinity()) /// [1, +inf)
-        {
-            r.left = NEGATIVE_INFINITY;
-            r.right_included = !r.left_included;
-            r.left_included = false;
-        }
-        else if (r.right.isNegativeInfinity()) /// (-inf, 1]
-        {
-            r.right = POSITIVE_INFINITY;
-            r.left_included = !r.right_included;
-            r.right_included = false;
-        }
-        ranges.push_back(r);
-    }
-    return ranges;
-}
-
-void Range::shrinkToIncludedIfPossible()
-{
-    if (left.isExplicit() && !left_included)
-    {
-        if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
-        {
-            ++left.get<UInt64 &>();
-            left_included = true;
-        }
-        if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
-        {
-            ++left.get<Int64 &>();
-            left_included = true;
-        }
-    }
-    if (right.isExplicit() && !right_included)
-    {
-        if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
-        {
-            --right.get<UInt64 &>();
-            right_included = true;
-        }
-        if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
-        {
-            --right.get<Int64 &>();
-            right_included = true;
-        }
-    }
-}
-
-bool Range::intersectsRange(const Range & r) const
-{
-    if (this->isBlank() || r.isBlank())
-        return false;
-
-    /// r to the left of me.
-    if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
-        return false;
-
-    /// r to the right of me.
-    if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
-        return false;
-
-    return true;
-}
-
-bool Range::containsRange(const Range & r) const
-{
-    /// r starts to the left of me.
-    if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
-        return false;
-
-    /// r ends right of me.
-    if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
-        return false;
-
-    return true;
-}
-
-void Range::invert()
-{
-    std::swap(left, right);
-    if (left.isPositiveInfinity())
-        left = NEGATIVE_INFINITY;
-    if (right.isNegativeInfinity())
-        right = POSITIVE_INFINITY;
-    std::swap(left_included, right_included);
-}
-
-bool Range::rightThan(const FieldRef & x) const
-{
-    return less(left, x) || (left_included && equals(x, left));
-}
-
-bool Range::leftThan(const FieldRef & x) const
-{
-    return less(x, right) || (right_included && equals(x, right));
-}
-
-bool Range::rightThan(const Range & x) const
-{
-    return less(x.right, left) || (!(left_included && x.right_included) && equals(left, x.right));
-}
-
-bool Range::leftThan(const Range & x) const
-{
-    return less(right, x.left) || (!(x.left_included && right_included) && equals(right, x.left));
-}
-
-bool Range::empty() const
-{
-    return less(right, left) || ((!left_included || !right_included) && !less(left, right));
-}
-
-bool Range::fullBounded() const
-{
-    return left.getType() != Field::Types::Null && right.getType() != Field::Types::Null;
-}
-
-/// (-inf, +inf)
-bool Range::isInfinite() const
-{
-    return left.isNegativeInfinity() && right.isPositiveInfinity();
-}
-
-bool Range::isBlank() const
-{
-    return !(isInfinite() ||
-            less(left, right) ||
-            (equals(left, right) && left_included && right_included));
-}
-
-Range Range::createRightBounded(const FieldRef & right_point, bool right_included, bool with_null)
-{
-    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-    r.right = right_point;
-    r.right_included = right_included;
-    r.shrinkToIncludedIfPossible();
-    // Special case for [-Inf, -Inf]
-    if (r.right.isNegativeInfinity() && right_included)
-        r.left_included = true;
-    return r;
-}
-
-Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null)
-{
-    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-    r.left = left_point;
-    r.left_included = left_included;
-    r.shrinkToIncludedIfPossible();
-    // Special case for [+Inf, +Inf]
-    if (r.left.isPositiveInfinity() && left_included)
-        r.right_included = true;
-    return r;
-}
-
-PlainRanges::PlainRanges(const Range & range)
-{
-    ranges.push_back(range);
-}
-
-
-PlainRanges::PlainRanges(const Ranges & ranges_, bool may_have_intersection, bool ordered)
-{
-    if (may_have_intersection)
-        ranges = ordered ? makePlainFromOrdered(ranges_) : makePlainFromUnordered(ranges_);
-    else
-        ranges = ranges_;
-}
-
-Ranges PlainRanges::makePlainFromOrdered(const Ranges & ranges_)
-{
-    if (ranges_.size() <= 1)
-        return ranges_;
-
-    Ranges ret{ranges_.front()};
-
-    for (size_t i = 1; i < ranges_.size(); ++i)
-    {
-        const auto & cur = ranges_[i];
-        if (ret.back().intersectsRange(cur))
-            ret.back() = *ret.back().unionWith(cur);
-        else
-            ret.push_back(cur);
-    }
-
-    return ret;
-}
-
-Ranges PlainRanges::makePlainFromUnordered(Ranges ranges_)
-{
-    if (ranges_.size() <= 1)
-        return ranges_;
-
-    std::sort(ranges_.begin(), ranges_.end(), compareByLeftBound);
-    return makePlainFromOrdered(ranges_);
-}
-
-PlainRanges PlainRanges::unionWith(const PlainRanges & other)
-{
-    auto left_itr = ranges.begin();
-    auto right_itr = other.ranges.begin();
-
-    Ranges new_range;
-    for (; left_itr != ranges.end() && right_itr != other.ranges.end();)
-    {
-        if (left_itr->leftThan(*right_itr))
-        {
-            new_range.push_back(*left_itr);
-            left_itr++;
-        }
-        else if (left_itr->rightThan(*right_itr))
-        {
-            new_range.push_back(*right_itr);
-            right_itr++;
-        }
-        else /// union
-        {
-            new_range.emplace_back(*(left_itr->unionWith(*right_itr)));
-            if (compareByRightBound(*left_itr, *right_itr))
-                left_itr++;
-            else
-                right_itr++;
-        }
-    }
-
-    while (left_itr != ranges.end())
-    {
-        new_range.push_back(*left_itr);
-        left_itr++;
-    }
-
-    while (right_itr != other.ranges.end())
-    {
-        new_range.push_back(*right_itr);
-        right_itr++;
-    }
-
-    /// After union two PlainRanges, new ranges may like: [1, 4], [2, 5]
-    /// We must make them plain.
-
-    return PlainRanges(makePlainFromOrdered(new_range));
-}
-
-PlainRanges PlainRanges::intersectWith(const PlainRanges & other)
-{
-    auto left_itr = ranges.begin();
-    auto right_itr = other.ranges.begin();
-
-    Ranges new_ranges;
-    for (; left_itr != ranges.end() && right_itr != other.ranges.end();)
-    {
-        if (left_itr->leftThan(*right_itr))
-        {
-            left_itr++;
-        }
-        else if (left_itr->rightThan(*right_itr))
-        {
-            right_itr++;
-        }
-        else /// intersection
-        {
-            auto intersected = left_itr->intersectWith(*right_itr);
-
-            if (intersected) /// skip blank range
-                new_ranges.emplace_back(*intersected);
-
-            if (compareByRightBound(*left_itr, *right_itr))
-                left_itr++;
-            else
-                right_itr++;
-        }
-    }
-    return PlainRanges(new_ranges);
-}
-
-bool PlainRanges::compareByLeftBound(const Range & lhs, const Range & rhs)
-{
-    if (lhs.left == NEGATIVE_INFINITY && rhs.left == NEGATIVE_INFINITY)
-        return false;
-    return Range::less(lhs.left, rhs.left) ||
-        ((!lhs.left_included && rhs.left_included) && Range::equals(lhs.left, rhs.left));
-};
-
-bool PlainRanges::compareByRightBound(const Range & lhs, const Range & rhs)
-{
-    if (lhs.right == POSITIVE_INFINITY && rhs.right == POSITIVE_INFINITY)
-        return false;
-    return Range::less(lhs.right, rhs.right) ||
-        ((!lhs.right_included && rhs.right_included) && Range::equals(lhs.right, rhs.right));
-};
-
-
-std::vector<Ranges> PlainRanges::invert(const Ranges & to_invert_ranges)
-{
-    /// invert a blank ranges
-    if (to_invert_ranges.empty())
-    {
-        return { makeUniverse().ranges };
-    }
-
-    std::vector<Ranges> reverted_ranges;
-    for (const auto & range : to_invert_ranges)
-    {
-        if (range.isInfinite())
-            /// return a blank ranges
-            return {{}};
-        reverted_ranges.push_back(range.invertRange());
-    }
-    return reverted_ranges;
-};
-
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
 /// We call a pattern "perfect prefix" if:
@@ -842,7 +450,8 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
-static const std::map<std::string, std::string> inverse_relations = {
+static const std::map<std::string, std::string> inverse_relations =
+{
         {"equals", "notEquals"},
         {"notEquals", "equals"},
         {"less", "greaterOrEquals"},
@@ -866,7 +475,7 @@ static const std::map<std::string, std::string> inverse_relations = {
 };
 
 
-bool isLogicalOperator(const String & func_name)
+static bool isLogicalOperator(const String & func_name)
 {
     return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
 }
@@ -1079,10 +688,6 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
 
     return res;
 }
-
-
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
 /** Calculate expressions, that depend only on constants.
@@ -1348,17 +953,17 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
   * CREATE TABLE (x String) ORDER BY toDate(x)
   * SELECT ... WHERE x LIKE 'Hello%'
   * we want to apply the function to the constant for index analysis,
-  * but should modify it to pass on unparsable values.
+  * but should modify it to pass on un-parsable values.
   */
 static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
     "toDateTime",
     "toDateTime64",
-    "ParseDateTimeBestEffort",
-    "ParseDateTimeBestEffortUS",
-    "ParseDateTime32BestEffort",
-    "ParseDateTime64BestEffort",
+    "parseDateTimeBestEffort",
+    "parseDateTimeBestEffortUS",
+    "parseDateTime32BestEffort",
+    "parseDateTime64BestEffort",
     "parseDateTime",
     "parseDateTimeInJodaSyntax",
 };
@@ -1883,7 +1488,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       */
     const auto & sample_block = key_expr->getSampleBlock();
 
-    // Key columns should use canonical names for index analysis
+    /// Key columns should use canonical names for the index analysis.
     String name = node.getColumnName();
 
     if (array_joined_column_names.contains(name))
@@ -1980,7 +1585,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
-            /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+            /// We don't look for inverted key transformations when strict is true, which is required for trivial count().
             /// Consider the following test case:
             ///
             /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
@@ -2086,7 +1691,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
                     func_name = "greaterOrEquals";
                 else if (func_name == "in" || func_name == "notIn" ||
                          func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notIlike" ||
+                         func_name == "ilike" || func_name == "notILike" ||
                          func_name == "startsWith" || func_name == "match")
                 {
                     /// "const IN data_column" doesn't make sense (unlike "data_column IN const")
@@ -2483,7 +2088,7 @@ static BoolMask forAnyHyperrectangle(
     const FieldRef * right_keys,
     bool left_bounded,
     bool right_bounded,
-    std::vector<Range> & hyperrectangle,
+    Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
@@ -2586,7 +2191,7 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
-    std::vector<Range> key_ranges;
+    Hyperrectangle key_ranges;
 
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
@@ -2607,7 +2212,7 @@ BoolMask KeyCondition::checkInRange(
     // std::cerr << "]\n";
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
-        [&] (const std::vector<Range> & key_ranges_hyperrectangle)
+        [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
@@ -2909,7 +2514,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
-    const std::vector<Range> & hyperrectangle,
+    const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
