@@ -319,8 +319,6 @@ namespace
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
 
-            // TODO arthur fix fact tunnel is not being used
-
             HTTPSessionPool::Key key{host, port, https, proxy_config, wait_on_pool_size_limit};
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
