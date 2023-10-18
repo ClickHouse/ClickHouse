@@ -120,12 +120,12 @@ def test_and(started_cluster):
 
 def test_or(started_cluster):
     response = node.query(
-        """SELECT 
-                * 
-            FROM 
-                system.numbers 
-            WHERE 
-                (number > 1 and number < 3) or (number in (4, 6)) or (number > 7 and number < 9) 
+        """SELECT
+                *
+            FROM
+                system.numbers
+            WHERE
+                (number > 1 and number < 3) or (number in (4, 6)) or (number > 7 and number < 9)
             FORMAT Values""",
         query_id="test_simple_or",
     )
@@ -190,9 +190,9 @@ def test_limit(started_cluster):
 
 def test_subquery(started_cluster):
     response = node.query(
-        """SELECT 
-                * 
-            FROM 
+        """SELECT
+                *
+            FROM
                 (select * FROM system.numbers WHERE number < 2) AS n
             FORMAT Values""",
         query_id="test_subquery",
@@ -203,15 +203,15 @@ def test_subquery(started_cluster):
 
 def test_multi_streams(started_cluster):
     response = node.query(
-        """SELECT 
-                * 
-            FROM 
-                system.numbers_mt 
-            WHERE 
-                number > 1 and number < 7 
-            ORDER BY 
-                number 
-            FORMAT Values 
+        """SELECT
+                *
+            FROM
+                system.numbers_mt
+            WHERE
+                number > 1 and number < 7
+            ORDER BY
+                number
+            FORMAT Values
             settings max_block_size=2""",
         query_id="test_multi_streams",
     )
@@ -219,15 +219,15 @@ def test_multi_streams(started_cluster):
     check_read_rows("test_multi_streams", 5)
 
     response = node.query(
-        """SELECT 
-                * 
-            FROM 
+        """SELECT
+                *
+            FROM
                 system.numbers_mt
-            WHERE 
-                (number > 1 and number < 3) or (number in (4, 6)) or (number > 7 and number < 10) 
-            ORDER BY 
-                number 
-            FORMAT Values 
+            WHERE
+                (number > 1 and number < 3) or (number in (4, 6)) or (number > 7 and number < 10)
+            ORDER BY
+                number
+            FORMAT Values
             settings max_block_size=2""",
         query_id="test_multi_streams_with_multi_ranges",
     )
