@@ -426,14 +426,14 @@ void ORCBlockOutputFormat::writeColumn(
             const auto * timestamp_type = assert_cast<const DataTypeDateTime64 *>(type.get());
             UInt32 scale = timestamp_type->getScale();
             writeDateTimes<DataTypeDateTime64::ColumnType>(
-                    orc_column,
-                    column, null_bytemap,
-                    [scale](UInt64 value){ return value / std::pow(10, scale); },
-                    [scale](UInt64 value){ return (value % UInt64(std::pow(10, scale))) * std::pow(10, 9 - scale); });
+                orc_column,
+                column,
+                null_bytemap,
+                [scale](Int64 value) { return value / Int64(std::pow(10, scale)); },
+                [scale](Int64 value) { return (value % Int64(std::pow(10, scale))) * Int64(std::pow(10, 9 - scale)); });
             break;
         }
-        case TypeIndex::Decimal32:
-        {
+        case TypeIndex::Decimal32: {
             writeDecimals<Decimal32, orc::Decimal64VectorBatch>(
                     orc_column,
                     column,
