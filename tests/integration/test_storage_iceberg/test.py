@@ -41,7 +41,10 @@ def get_spark():
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
         .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config(
+            "spark.sql.extensions",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        )
         .master("local")
     )
     return builder.master("local").getOrCreate()
@@ -402,6 +405,7 @@ def test_evolved_schema(started_cluster, format_version):
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
 
+
 def test_row_based_deletes(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -412,7 +416,9 @@ def test_row_based_deletes(started_cluster):
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
     )
-    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)")
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)"
+    )
 
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
@@ -429,6 +435,7 @@ def test_row_based_deletes(started_cluster):
 
     error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 def test_schema_inference(started_cluster, format_version):
@@ -465,13 +472,16 @@ def test_schema_inference(started_cluster, format_version):
                 ["decimalC2", "Nullable(Decimal(20, 10))"],
                 ["decimalC3", "Nullable(Decimal(38, 30))"],
                 ["dateC", "Nullable(Date)"],
-                ["timestampC", "Nullable(DateTime64(6, \'UTC\'))"],
+                ["timestampC", "Nullable(DateTime64(6, 'UTC'))"],
                 ["stringC", "Nullable(String)"],
                 ["binaryC", "Nullable(String)"],
                 ["arrayC1", "Array(Nullable(Int32))"],
                 ["mapC1", "Map(String, Nullable(String))"],
                 ["structC1", "Tuple(field1 Nullable(Int32), field2 Nullable(String))"],
-                ["complexC", "Array(Tuple(field1 Map(String, Array(Map(String, Nullable(Int32)))), field2 Tuple(field3 Nullable(Int32), field4 Nullable(String))))"],
+                [
+                    "complexC",
+                    "Array(Tuple(field1 Map(String, Array(Map(String, Nullable(Int32)))), field2 Tuple(field3 Nullable(Int32), field4 Nullable(String))))",
+                ],
             ]
         )
 
@@ -494,7 +504,9 @@ def test_metadata_file_selection(started_cluster, format_version):
     )
 
     for i in range(50):
-        spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)")
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
+        )
 
     files = upload_directory(
         minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
