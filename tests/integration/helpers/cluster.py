@@ -2533,7 +2533,11 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"+self.env_variables["AZURITE_PORT"]+"/devstoreaccount1;"
+        connection_string = (
+            "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"
+            + self.env_variables["AZURITE_PORT"]
+            + "/devstoreaccount1;"
+        )
         time.sleep(1)
         start = time.time()
         while time.time() - start < timeout:
