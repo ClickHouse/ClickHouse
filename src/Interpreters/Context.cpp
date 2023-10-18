@@ -1231,7 +1231,7 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLock() must be unlocked while we're doing this.
+    /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
 
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
@@ -1344,7 +1344,7 @@ void Context::checkAccess(const AccessRightsElements & elements) const { return 
 
 std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
-    /// A helper function to collect parameters for calculating access rights, called with Context::getLock() acquired.
+    /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
     auto get_params = [this]()
     {
         /// If setUserID() was never called then this must be the global context with the full access.
@@ -1371,7 +1371,8 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     }
 
     /// Calculate new access rights according to the collected parameters.
-    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLock() must be unlocked while we're doing this.
+    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLocalLock()
+    ///       and Context::getGlobalLock() must be unlocked while we're doing this.
     auto res = getAccessControl().getContextAccess(*params);
 
     {
@@ -2686,7 +2687,7 @@ void Context::clearUncompressedCache() const
 
 void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
 {
-    auto lock = getLock();
+    auto lock = getGlobalLock();
 
     if (shared->page_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
@@ -2696,15 +2697,19 @@ void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t
 
 PageCachePtr Context::getPageCache() const
 {
-    auto lock = getLock();
+    auto lock = getGlobalSharedLock();
     return shared->page_cache;
 }
 
 void Context::dropPageCache() const
 {
-    auto lock = getLock();
-    if (shared->page_cache)
-        shared->page_cache->dropCache();
+    PageCachePtr cache;
+    {
+        auto lock = getGlobalSharedLock();
+        cache = shared->page_cache;
+    }
+    if (cache)
+        cache->dropCache();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -5123,8 +5128,9 @@ ReadSettings Context::getReadSettings() const
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.page_cache = getPageCache();
+    res.use_page_cache_for_disks_without_file_cache = settings.use_page_cache_for_disks_without_file_cache;
+    res.use_page_cache_for_disks_with_file_cache = settings.use_page_cache_for_disks_with_file_cache;
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
-    res.force_enable_page_cache = settings.force_enable_page_cache;
     res.page_cache_inject_eviction = settings.page_cache_inject_eviction;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;

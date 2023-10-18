@@ -2,7 +2,7 @@
 -- no-fasttest because we need an S3 storage policy
 -- no-parallel because we look at server-wide counters about page cache usage
 
-set force_enable_page_cache = 1;
+set use_page_cache_for_disks_without_file_cache = 1;
 set page_cache_inject_eviction = 0;
 set enable_filesystem_cache = 0;
 set use_uncompressed_cache = 0;

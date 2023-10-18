@@ -66,18 +66,13 @@ namespace DB
 /// Hash of FileChunkAddress.
 using PageCacheKey = UInt128;
 
-/// Identifies a chunk of a file.
-///
-/// Currently we assume that file contents never change, so no cache invalidation is required.
-/// This is normally the case because merge tree file paths contain the table UUID and the part name,
-/// and part data is immutable.
-/// But there's at least one case where this assumption doesn't hold: DatabaseOrdinary doesn't put
-/// UUID into the file path, so dropping and re-creating a table will cause filename collisions.
-/// We currently don't do anything about this - table reads may just return garbage in this case.
-/// This seems ok because DatabaseOrdinary is deprecated.
+/// Identifies a chunk of a file or object.
+/// We assume that contents of such file/object don't change (without file_version changing), so
+/// cache invalidation is needed.
 struct FileChunkAddress
 {
-    std::string disk_name;
+    /// Path, usually prefixed with storage system name and anything else needed to make it unique.
+    /// E.g. "s3:<bucket>/<path>"
     std::string path;
     /// Optional string with ETag, or file modification time, or anything else.
     std::string file_version;

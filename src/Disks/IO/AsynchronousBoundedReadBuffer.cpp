@@ -236,6 +236,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
     file_offset_of_buffer_end += bytes_to_ignore + available();
     bytes_to_ignore = 0;
+
     chassert(file_offset_of_buffer_end == impl->getFileOffsetOfBufferEnd());
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
 

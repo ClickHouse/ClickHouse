@@ -252,34 +252,46 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 {
     auto read_buffer_creator =
          [this, read_settings]
-         (const std::string & path_, size_t read_until_position) -> std::unique_ptr<ReadBufferFromFileBase>
+         (const std::string & path_) -> std::unique_ptr<ReadBufferFromFileBase>
      {
          return std::make_unique<ReadBufferFromWebServer>(
              fs::path(url) / path_,
              getContext(),
              read_settings,
-             /* use_external_buffer */true,
-             read_until_position);
+             /* use_external_buffer */true);
      };
 
     auto global_context = Context::getGlobalContextInstance();
 
-    std::unique_ptr<ReadBufferFromFileBase> impl = std::make_unique<ReadBufferFromRemoteFSGather>(
-        std::move(read_buffer_creator),
-        StoredObjects{object},
-        read_settings,
-        global_context->getFilesystemCacheLog());
-
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    switch (read_settings.remote_fs_method)
     {
-        auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        impl = std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(impl), reader, read_settings,
-            global_context->getAsyncReadCounters(),
-            global_context->getFilesystemReadPrefetchesLog());
-    }
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                StoredObjects{object},
+                "url:" + url + "/",
+                read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */false);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                StoredObjects{object},
+                "url:" + url + "/",
+                read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */true);
 
-    return impl;
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
+    }
 }
 
 void WebObjectStorage::throwNotAllowed()

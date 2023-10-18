@@ -11,6 +11,9 @@ class CachedInMemoryReadBufferFromFile : public ReadBufferFromFileBase
 public:
     /// `in_` must support using external buffer. I.e. we assign its internal_buffer before each next()
     /// call and expect the read data to be put into that buffer.
+    /// `in_` should be seekable and should be able to read the whole file from 0 to in_->getFileSize();
+    /// if you set `in_`'s read-until-position bypassing CachedInMemoryReadBufferFromFile then
+    /// CachedInMemoryReadBufferFromFile will break.
     CachedInMemoryReadBufferFromFile(FileChunkAddress cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_);
 
     String getFileName() const override;

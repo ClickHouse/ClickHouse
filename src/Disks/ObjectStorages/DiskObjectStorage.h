@@ -232,7 +232,6 @@ private:
     bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
-    std::atomic<bool> enable_page_cache {false};
 
     mutable std::mutex resource_mutex;
     String read_resource_name;

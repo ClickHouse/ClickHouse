@@ -775,8 +775,9 @@ class IColumn;
     M(Bool, throw_on_error_from_cache_on_write_operations, false, "Ignore error from cache when caching on write operations (INSERT, merges)", 0) \
     M(UInt64, filesystem_cache_segments_batch_size, 20, "Limit on size of a single batch of file segments that a read buffer can request from cache. Too low value will lead to excessive requests to cache, too large may slow down eviction from cache", 0) \
     \
+    M(Bool, use_page_cache_for_disks_without_file_cache, false, "Use userspace page cache for remote disks that don't have filesystem cache enabled.", 0) \
+    M(Bool, use_page_cache_for_disks_with_file_cache, false, "Use userspace page cache for remote disks that have filesystem cache enabled.", 0) \
     M(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, "Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.", 0) \
-    M(Bool, force_enable_page_cache, false, "Use userspace page cache even if it's not enabled in the disks config. Intended for testing.", 0) \
     M(Bool, page_cache_inject_eviction, false, "Userspace page cache will sometimes invalidate some pages at random. Intended for testing.", 0) \
     \
     M(Bool, load_marks_asynchronously, false, "Load MergeTree marks asynchronously", 0) \

@@ -1,6 +1,7 @@
 #include "CachedInMemoryReadBufferFromFile.h"
 #include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -17,7 +18,6 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_), settings(settings_), in(std::move(in_))
     , read_until_position(file_size.value())
 {
-    chassert(file_size.has_value());
     cache_key.offset = 0;
 }
 
@@ -136,6 +136,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                 char * piece_start = chunk->getChunk()->data + pos;
                 size_t piece_size = chunk_size - pos;
                 in->set(piece_start, piece_size);
+                LOG_INFO(&Poco::Logger::get("asdqwe"), "this {:x}, in {:x}, path {}, size {}, offset {:x}, pos {:x}", reinterpret_cast<uint64_t>(this), reinterpret_cast<uint64_t>(in.get()), cache_key.path, file_size.value(), cache_key.offset, pos);
                 if (pos == 0)
                     in->seek(cache_key.offset, SEEK_SET);
                 else
@@ -154,6 +155,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     memmove(piece_start, in->position(), n);
                 in->position() += n;
                 pos += n;
+                LOG_INFO(&Poco::Logger::get("asdqwe"), "this {:x}, got {:x} bytes", reinterpret_cast<uint64_t>(this), n);
             }
 
             chunk->markPrefixPopulated(chunk_size);
@@ -169,8 +171,8 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     if (!internal_buffer.empty())
     {
         /// We were given an external buffer to read into. Copy the data into it.
-        /// Would be nice to avoid this copy, somehow, maybe by making AsynchronousBoundedReadBuffer
-        /// explicitly aware of the page cache.
+        /// Would be nice to avoid this copy, somehow, maybe by making ReadBufferFromRemoteFSGather
+        /// and AsynchronousBoundedReadBuffer explicitly aware of the page cache.
         size_t n = std::min(available(), internal_buffer.size());
         memcpy(internal_buffer.begin(), pos, n);
         working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);

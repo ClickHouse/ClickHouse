@@ -661,8 +661,6 @@ void FileChunkState::reset() {}
 PageCacheKey FileChunkAddress::hash() const
 {
     SipHash hash(offset);
-    hash.update(disk_name.data(), disk_name.size());
-    hash.update("\0", 1);
     hash.update(path.data(), path.size());
     if (!file_version.empty())
     {
@@ -674,7 +672,7 @@ PageCacheKey FileChunkAddress::hash() const
 
 std::string FileChunkAddress::toString() const
 {
-    return fmt::format("{}:{}:{}{}{}", disk_name, path, offset, file_version.empty() ? "" : ":", file_version);
+    return fmt::format("{}:{}{}{}", path, offset, file_version.empty() ? "" : ":", file_version);
 }
 
 #pragma clang diagnostic pop
