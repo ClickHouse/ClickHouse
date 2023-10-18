@@ -85,6 +85,13 @@ def test_in(started_cluster):
     assert response == "(1),(2),(3)"
     check_read_rows("test_in_with_unordered_values", 3)
 
+    response = node.query(
+        "SELECT * FROM system.numbers WHERE number in (1, 2, 5) FORMAT Values",
+        query_id="test_in_multiple_ranges",
+    )
+    assert response == "(1),(2),(5)"
+    check_read_rows("test_in_multiple_ranges", 3)
+
 
 def test_not_in(started_cluster):
     response = node.query(
@@ -93,6 +100,13 @@ def test_not_in(started_cluster):
     )
     assert response == "(0),(1),(4)"
     check_read_rows("test_not_in", 3)
+
+    response = node.query(
+        "SELECT * FROM system.numbers WHERE number not in (2, 4, 5) limit 4 FORMAT Values",
+        query_id="test_not_in_multiple_ranges",
+    )
+    assert response == "(0),(1),(3),(6)"
+    check_read_rows("test_not_in_multiple_ranges", 4)
 
 
 def test_and(started_cluster):
