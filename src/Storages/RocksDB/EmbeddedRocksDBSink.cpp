@@ -32,7 +32,7 @@ EmbeddedRocksDBSink::EmbeddedRocksDBSink(
 void EmbeddedRocksDBSink::consume(Chunk chunk)
 {
     auto rows = chunk.getNumRows();
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    const auto & columns = chunk.getColumns();
 
     WriteBufferFromOwnString wb_key;
     WriteBufferFromOwnString wb_value;
@@ -44,12 +44,9 @@ void EmbeddedRocksDBSink::consume(Chunk chunk)
         wb_key.restart();
         wb_value.restart();
 
-        size_t idx = 0;
-        for (const auto & elem : block)
-        {
-            serializations[idx]->serializeBinary(*elem.column, i, idx == primary_key_pos ? wb_key : wb_value, {});
-            ++idx;
-        }
+        for (size_t idx = 0; idx < columns.size(); ++idx)
+            serializations[idx]->serializeBinary(*columns[idx], i, idx == primary_key_pos ? wb_key : wb_value, {});
+
         status = batch.Put(wb_key.str(), wb_value.str());
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
