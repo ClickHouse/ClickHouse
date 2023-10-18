@@ -609,10 +609,13 @@ static void buildORCSearchArgumentImpl(
                     literals.emplace_back(*literal);
                 }
 
-                if (!fail)
-                    builder.in(orc_type->getColumnId(), *predicate_type, literals);
-                else
+                /// set has zero element
+                if (literals.empty())
+                    builder.literal(orc::TruthValue::YES);
+                else if (fail)
                     builder.literal(orc::TruthValue::YES_NO_NULL);
+                else
+                    builder.in(orc_type->getColumnId(), *predicate_type, literals);
             }
 
             if (need_wrap_not)
