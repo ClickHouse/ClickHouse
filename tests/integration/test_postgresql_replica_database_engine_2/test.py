@@ -759,13 +759,16 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
         order_by="id",
     )
 
-@pytest.mark.skip(reason="flaky test, will fix soon")
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
     pg_manager_instance2.restart()
 
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
+    )
+
     for pm in [pg_manager, pg_manager_instance2]:
-        pm.create_and_fill_postgres_table(table)
         pm.create_materialized_db(
             ip=started_cluster.postgres_ip,
             port=started_cluster.postgres_port,
