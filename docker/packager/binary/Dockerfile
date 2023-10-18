@@ -50,6 +50,8 @@ ENV PATH="/rust/cargo/env:${PATH}"
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
+    rustup toolchain install 1.71.0 && \
+    rustup default 1.71.0 && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \
     rustup target add x86_64-unknown-freebsd && \
