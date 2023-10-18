@@ -1738,3 +1738,11 @@ def test_consumption_of_show_privileges():
         "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"),
     )
+
+
+def test_consumption_of_show_merges():
+    instance.query("SHOW MERGES")
+    assert re.match(
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
+        instance.query("SHOW QUOTA"),
+    )

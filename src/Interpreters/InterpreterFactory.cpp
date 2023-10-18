@@ -24,6 +24,7 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowMergesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -86,6 +87,7 @@
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 #include <Interpreters/InterpreterShowIndexesQuery.h>
+#include <Interpreters/InterpreterShowMergesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -200,6 +202,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowIndexesQuery>())
     {
         return std::make_unique<InterpreterShowIndexesQuery>(query, context);
+    }
+    else if (query->as<ASTShowMergesQuery>())
+    {
+        return std::make_unique<InterpreterShowMergesQuery>(query, context);
     }
     else if (query->as<ASTShowEnginesQuery>())
     {
