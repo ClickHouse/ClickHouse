@@ -126,6 +126,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -319,6 +320,7 @@ geoDistance
 geohashDecode
 geohashEncode
 geohashesInBox
+getHttpHeader
 getMacro
 getOSKernelVersion
 getServerPort
