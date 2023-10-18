@@ -31,7 +31,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override {
         std::string yaml_string = (*arguments[1].column)[0].get<std::string>();  // Same yaml config for all rows in the block
-        auto compiler = Compiler();
+        auto compiler = Compiler(yaml_string);
+        compiler.compile();
 
         const auto & data_col = assert_cast<const ColumnArray &>(*arguments[0].column);
         const auto & values_col = assert_cast<const ColumnString &>(data_col.getData());
@@ -39,10 +40,9 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i) {
             // TODO: cache the compiled plan, also need to clear the DAG.
-            // Compile the yaml config
-            auto plan = compiler.compile(yaml_string).value();  // Handle this
-            auto executor = Executor();
-            executor.init(std::move(plan));
+            // Initialize the executor with the physical plan
+            auto physical_plan = compiler.getPhysicalPlan();
+            auto executor = Executor(std::move(physical_plan));
 
             // Parse the array column. The offsets bound the range of elements in each row.
             std::vector<std::string> json_events;
