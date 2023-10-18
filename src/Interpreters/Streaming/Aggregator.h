@@ -44,8 +44,12 @@
 /// We choose a copy of the existing Aggregator for streaming processing for perf and regression concerns.
 namespace DB
 {
-class CompiledAggregateFunctionsHolder;
 class NativeWriter;
+
+namespace ErrorCodes
+{
+extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+}
 
 namespace Streaming
 {

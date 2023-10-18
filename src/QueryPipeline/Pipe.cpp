@@ -6,13 +6,10 @@
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/ExtremesTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
-#include <Common/logger_useful.h>
 
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/Streaming/ResizeProcessor.h>
@@ -23,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
