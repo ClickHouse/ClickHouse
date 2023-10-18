@@ -759,6 +759,7 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
         order_by="id",
     )
 
+
 @pytest.mark.skip(reason="flaky test, will fix soon")
 def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
