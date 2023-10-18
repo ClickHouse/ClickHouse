@@ -18,9 +18,4 @@
 
     <query short='numbers'>SELECT sum(n) FROM (SELECT number * 2 AS n FROM numbers_mt(10000000)) AS lhs JOIN (SELECT number * 3 AS n FROM numbers_mt(10000000)) AS rhs USING (n) SETTINGS {settings} FORMAT Null</query>
     <query short='numbers_hashed'>SELECT sum(n) FROM (SELECT intHash64(number * 2) AS n FROM numbers_mt(10000000)) AS lhs JOIN (SELECT intHash64(number * 3) AS n FROM numbers_mt(10000000)) AS rhs USING (n) SETTINGS {settings} FORMAT Null</query>
-    <query>
-        SELECT *
-        FROM (SELECT number % 20 AS k1, toString(number) as col3, toString(number + 1) AS col4 FROM system.numbers LIMIT 10000 ) js2 ALL
-        INNER JOIN (SELECT number % 20 AS k1, toString(number) AS col1, toString(number + 1) AS col2 FROM system.numbers LIMIT 10000) js1 ON js1.k1 = js2.k1 SETTINGS {settings} FORMAT Null
-    </query>
 </test>

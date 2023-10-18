@@ -1,3 +1,48 @@
 <test>
-    <query>SELECT left, right FROM (SELECT number % 4 AS k1, number % 3 AS k2, number AS left FROM system.numbers LIMIT 10000) js1 ALL LEFT JOIN (SELECT number % 2 AS k1, number % 6 AS k2, number AS right FROM system.numbers LIMIT 10000) js2 USING k1, k2 ORDER BY left, right format Null;</query>
+    <settings>
+        <max_threads>16</max_threads>
+        <max_memory_usage>10G</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>settings</name>
+            <values>
+                <value>join_algorithm='hash'</value>
+                <value>join_algorithm='parallel_hash'</value>
+                <value>join_algorithm='partial_merge'</value>
+                <value>join_algorithm='grace_hash'</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        create table test_left
+        (
+        k1 String,
+        v1 String
+        )
+        engine = Memory();
+    </create_query>
+    <create_query>
+        create table test_right
+        (
+        k1 String,
+        v1 String,
+        v2 String,
+        v3 String,
+        v4 String,
+        v5 String
+        )
+        engine = Memory();
+    </create_query>
+    <fill_query>insert into test_left SELECT toString(number % 20), toString(number) from system.numbers limit 10000;</fill_query>
+    <fill_query>insert into test_right SELECT toString(number % 20), toString(number),  toString(number + 1), toString(number + 2), toString(number + 3), toString(number + 4) from system.numbers limit 10000</fill_query>
+
+    <query>
+        select * from test_left all inner join test_right on test_left.k1 = test_right.k1  SETTINGS {settings} format Null
+    </query>
+
+    <drop_query>drop table if exists test_left</drop_query>
+    <drop_query>drop table if exists test_right</drop_query>
 </test>
