@@ -14,7 +14,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     const HTTPHeaderEntries & additional_headers,
     const ConnectionTimeouts & timeouts,
     size_t buffer_size_,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_configuration)
+    ProxyConfiguration proxy_configuration)
     : WriteBufferFromOStream(buffer_size_)
     , session{makeHTTPSession(uri, timeouts, proxy_configuration)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}

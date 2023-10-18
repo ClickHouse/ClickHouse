@@ -56,6 +56,19 @@ namespace
         session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
     }
 
+    Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const ProxyConfiguration & proxy_configuration)
+    {
+        Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
+
+        poco_proxy_config.host = proxy_configuration.host;
+        poco_proxy_config.port = proxy_configuration.port;
+        poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
+        poco_proxy_config.tunnel = proxy_configuration.use_connect_protocol;
+        poco_proxy_config.originalRequestProtocol = ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
+
+        return poco_proxy_config;
+    }
+
     template <typename Session>
     requires std::derived_from<Session, Poco::Net::HTTPClientSession>
     class HTTPSessionAdapter : public Session
@@ -143,11 +156,12 @@ namespace
         UInt16 port,
         bool https,
         bool keep_alive,
-        Poco::Net::HTTPClientSession::ProxyConfig proxy_config = {})
+        DB::ProxyConfiguration proxy_configuration = {})
     {
         HTTPSessionPtr session;
 
-        bool is_proxy_http_and_is_tunneling_off = proxy_config.protocol == "http" && !proxy_config.tunnel;
+        bool is_proxy_http_and_is_tunneling_off = DB::ProxyConfiguration::Protocol::HTTP == proxy_configuration.protocol
+            && !proxy_configuration.use_connect_protocol;
 
         if (https && is_proxy_http_and_is_tunneling_off)
         {
@@ -172,7 +186,7 @@ namespace
         /// doesn't work properly without patch
         session->setKeepAlive(keep_alive);
 
-        session->setProxyConfig(proxy_config);
+        session->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
 
         return session;
     }
@@ -183,7 +197,7 @@ namespace
         const std::string host;
         const UInt16 port;
         const bool https;
-        Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+        ProxyConfiguration proxy_config;
 
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
 
@@ -195,7 +209,7 @@ namespace
             auto session = makeHTTPSessionImpl(host, port, https, true);
             if (!proxy_config.host.empty())
             {
-                session->setProxyConfig(proxy_config);
+                session->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_config));
             }
             return session;
         }
@@ -205,7 +219,7 @@ namespace
             const std::string & host_,
             UInt16 port_,
             bool https_,
-            Poco::Net::HTTPClientSession::ProxyConfig proxy_config_,
+            ProxyConfiguration proxy_config_,
             size_t max_pool_size_,
             bool wait_on_pool_size_limit)
             : Base(
@@ -228,7 +242,7 @@ namespace
             String target_host;
             UInt16 target_port;
             bool is_target_https;
-            Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+            ProxyConfiguration proxy_config;
             bool wait_on_pool_size_limit;
 
             bool operator ==(const Key & rhs) const
@@ -240,8 +254,8 @@ namespace
                            proxy_config.host,
                            proxy_config.port,
                            proxy_config.protocol,
-                           proxy_config.tunnel,
-                           proxy_config.originalRequestProtocol,
+                           proxy_config.use_connect_protocol,
+                           proxy_config.original_request_protocol,
                            wait_on_pool_size_limit
                        )
                     == std::tie(
@@ -251,8 +265,8 @@ namespace
                            rhs.proxy_config.host,
                            rhs.proxy_config.port,
                            rhs.proxy_config.protocol,
-                           rhs.proxy_config.tunnel,
-                           rhs.proxy_config.originalRequestProtocol,
+                           rhs.proxy_config.use_connect_protocol,
+                           rhs.proxy_config.original_request_protocol,
                            rhs.wait_on_pool_size_limit
                        );
             }
@@ -273,8 +287,8 @@ namespace
                 s.update(k.proxy_config.host);
                 s.update(k.proxy_config.port);
                 s.update(k.proxy_config.protocol);
-                s.update(k.proxy_config.tunnel);
-                s.update(k.proxy_config.originalRequestProtocol);
+                s.update(k.proxy_config.use_connect_protocol);
+                s.update(k.proxy_config.original_request_protocol);
                 s.update(k.wait_on_pool_size_limit);
                 return s.get64();
             }
@@ -295,7 +309,7 @@ namespace
 
         Entry getSession(
             const Poco::URI & uri,
-            const Poco::Net::HTTPClientSession::ProxyConfig & proxy_config,
+            const ProxyConfiguration & proxy_config,
             const ConnectionTimeouts & timeouts,
             size_t max_connections_per_endpoint,
             bool wait_on_pool_size_limit)
@@ -349,14 +363,14 @@ void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_
 HTTPSessionPtr makeHTTPSession(
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_config
+    ProxyConfiguration proxy_configuration
 )
 {
     const std::string & host = uri.getHost();
     UInt16 port = uri.getPort();
     bool https = isHTTPS(uri);
 
-    auto session = makeHTTPSessionImpl(host, port, https, false, proxy_config);
+    auto session = makeHTTPSessionImpl(host, port, https, false, proxy_configuration);
     setTimeouts(*session, timeouts);
     return session;
 }
@@ -366,7 +380,7 @@ PooledHTTPSessionPtr makePooledHTTPSession(
     const ConnectionTimeouts & timeouts,
     size_t per_endpoint_pool_size,
     bool wait_on_pool_size_limit,
-    Poco::Net::HTTPClientSession::ProxyConfig proxy_config)
+    ProxyConfiguration proxy_config)
 {
     return HTTPSessionPool::instance().getSession(uri, proxy_config, timeouts, per_endpoint_pool_size, wait_on_pool_size_limit);
 }
@@ -435,19 +449,6 @@ void markSessionForReuse(HTTPSessionPtr session)
 void markSessionForReuse(PooledHTTPSessionPtr session)
 {
     markSessionForReuse(static_cast<Poco::Net::HTTPSession &>(*session));
-}
-
-Poco::Net::HTTPClientSession::ProxyConfig proxyConfigurationToPocoProxyConfig(const ProxyConfiguration & proxy_configuration)
-{
-    Poco::Net::HTTPClientSession::ProxyConfig poco_proxy_config;
-
-    poco_proxy_config.host = proxy_configuration.host;
-    poco_proxy_config.port = proxy_configuration.port;
-    poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
-    poco_proxy_config.tunnel = proxy_configuration.use_connect_protocol;
-    poco_proxy_config.originalRequestProtocol = ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
-
-    return poco_proxy_config;
 }
 
 }
