@@ -15,7 +15,10 @@ namespace DB
 
 void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (type.has_value() && type == Type::DEFINER)
+    if (!type.has_value())
+        return;
+
+    if (definer || is_definer_current_user)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
         settings.ostr << " = ";
@@ -26,22 +29,18 @@ void ASTSQLSecurity::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << " ";
     }
 
-    if (type.has_value())
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
+    switch (*type)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
-
-        switch (*type)
-        {
-            case Type::INVOKER:
-                settings.ostr << " INVOKER";
-                break;
-            case Type::DEFINER:
-                settings.ostr << " DEFINER";
-                break;
-            case Type::NONE:
-                settings.ostr << " NONE";
-                break;
-        }
+        case Type::INVOKER:
+            settings.ostr << " INVOKER";
+            break;
+        case Type::DEFINER:
+            settings.ostr << " DEFINER";
+            break;
+        case Type::NONE:
+            settings.ostr << " NONE";
+            break;
     }
 }
 
