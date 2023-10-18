@@ -18,7 +18,13 @@ def started_cluster(request):
 def check_read_rows(query_id, read_rows):
     node.query("SYSTEM FLUSH LOGS")
     real_read_rows = node.query(
-        f"SELECT read_rows FROM system.query_log WHERE type = 'QueryFinish' and query_id = '{query_id}'"
+        f"""SELECT read_rows
+            FROM system.query_log
+            WHERE
+                type = 'QueryFinish' and
+                query_id = '{query_id}'
+            ORDER BY initial_query_start_time_microseconds DESC
+            LIMIT 1"""
     )
     assert real_read_rows == str(read_rows) + "\n"
 
