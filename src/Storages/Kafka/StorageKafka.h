@@ -49,6 +49,8 @@ public:
 
     bool noPushingToViews() const override { return true; }
 
+    bool supportsStreamingQuery() const override { return true; }
+
     void startup() override;
     void shutdown(bool is_drop) override;
 

@@ -45,7 +45,7 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
-    virtual bool isStreaming() const = 0;
+    virtual bool isStreamingQuery() const = 0;
     virtual bool hasStreamingGlobalAggregation() const = 0;
 
     /// Returns whether the query uses the view source from the Context

@@ -13,7 +13,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -87,7 +86,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -347,26 +345,6 @@ bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
         if (tables_ignoring_quota.count(table_id.table_name))
             return true;
     }
-    return false;
-}
-
-bool supportStreamingQuery(const StoragePtr & storage, ContextPtr context)
-{
-    const auto & name = storage->getName();
-
-    if (name == "Kafka")
-        return true;
-
-    if (name == "View")
-    {
-        assert(storage->as<StorageView>());
-
-        auto select = storage->getInMemoryMetadataPtr()->getSelectQuery().inner_query;
-        auto ctx = Context::createCopy(context);
-
-        return InterpreterSelectWithUnionQuery(select, ctx, SelectQueryOptions().noModify().subquery().analyze()).isStreaming();
-    }
-
     return false;
 }
 
@@ -650,7 +628,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         TreeRewriterResult tree_rewriter_result(source_header.getNamesAndTypesList(), storage, storage_snapshot);
-        tree_rewriter_result.streaming = isStreaming();
+        tree_rewriter_result.streaming = isStreamingQuery();
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
@@ -1493,7 +1471,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     if (options.only_analyze)
     {
         /// Propagate streaming flag to NullSource
-        auto read_nothing = std::make_unique<ReadNothingStep>(source_header, isStreaming());
+        auto read_nothing = std::make_unique<ReadNothingStep>(source_header, isStreamingQuery());
         query_plan.addStep(std::move(read_nothing));
 
         if (expressions.filter_info)
@@ -2748,7 +2726,7 @@ static T getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & q
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
-    if (isStreaming())
+    if (isStreamingQuery())
     {
         executeStreamingAggregation(query_plan, expression, overflow_row, final);
         return;
@@ -3030,7 +3008,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
-    if (isStreaming())
+    if (isStreamingQuery())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Sorting in streaming query is not supported");
 
     auto & query = getSelectQuery();
@@ -3327,6 +3305,10 @@ void InterpreterSelectQuery::initSettings()
         context->setSetting("group_by_two_level_threshold_bytes", Field(0));
 
     }
+
+    if (query.emit())
+        /// Setup request query mode as streaming
+        context->setSetting("query_mode", Field("streaming"));
 }
 
 bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
@@ -3341,7 +3323,7 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
 void InterpreterSelectQuery::executeStreamingAggregation(
     QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final)
 {
-    assert(isStreaming());
+    assert(isStreamingQuery());
 
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
@@ -3390,22 +3372,27 @@ void InterpreterSelectQuery::executeStreamingAggregation(
         query_plan.getCurrentDataStream(), params, final, merge_threads, temporary_data_merge_threads));
 }
 
-bool InterpreterSelectQuery::isStreaming() const
+bool InterpreterSelectQuery::isStreamingQuery() const
 {
-    if (is_streaming.has_value())
-        return *is_streaming;
+    if (is_streaming_query.has_value())
+        return *is_streaming_query;
 
-    /// We can simply determine the query type (stream or not) by the type of storage or subquery.
-    /// Although `TreeRewriter` optimization may rewrite the subquery, it does not affect whether it is streaming
-    /// And for now, we only look at the left stream even in a join case since we don't support
-    /// `table join stream` case yet. When the left stream is streaming, then the whole query will be streaming.
     bool streaming = false;
-    if (storage && supportStreamingQuery(storage, context))
-        streaming = true;
+    if (storage)
+    {
+        if (auto * view = storage->as<StorageView>(); view)
+            streaming = view->isStreamingQuery(context);
+        else if (storage->supportsStreamingQuery())
+            streaming = context->getSettingsRef().query_mode.value == "streaming";
+    }
     else if (interpreter_subquery)
-        streaming = interpreter_subquery->isStreaming();
+    {
+        /// We already setup query mode in context settings before init `interpreter_subquery`,
+        /// so the query_mode will be propagated to subquery correctly.
+        streaming = interpreter_subquery->isStreamingQuery();
+    }
 
-    is_streaming = streaming;
+    is_streaming_query = streaming;
 
     return streaming;
 }
@@ -3414,7 +3401,7 @@ bool InterpreterSelectQuery::hasStreamingGlobalAggregation() const
 {
     /// For now, we only support global aggregation. Once we have window table function
     /// we will extend the check and support window aggregation.
-    return isStreaming() && hasAggregation();
+    return isStreamingQuery() && hasAggregation();
 }
 
 bool InterpreterSelectQuery::shouldKeepAggregationState() const
@@ -3437,14 +3424,14 @@ bool InterpreterSelectQuery::shouldKeepAggregationState() const
 
 void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const
 {
-    assert(isStreaming());
+    assert(isStreamingQuery());
     auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, query_info.syntax_analyzer_result);
     query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), log));
 }
 
 void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan)
 {
-    if (!isStreaming())
+    if (!isStreamingQuery())
         return;
 
     if (!hasStreamingGlobalAggregation())
@@ -3466,7 +3453,7 @@ void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPla
 void InterpreterSelectQuery::checkAggregateAndWindowFunctions()
 {
     /// Prepare streaming version of the functions
-    bool streaming = isStreaming();
+    bool streaming = isStreamingQuery();
     if (!streaming)
         return;
 

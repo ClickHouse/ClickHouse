@@ -346,6 +346,15 @@ Pipe StorageKafka::read(
     if (num_created_consumers == 0)
         return {};
 
+    /// We allow (ad-hoc) streaming query always
+    bool is_streaming_query = (local_context->getSettingsRef().query_mode.value == "streaming");
+    if (!is_streaming_query && !local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (!is_streaming_query && mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
+
     ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.

@@ -116,7 +116,7 @@ public:
 
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
-    bool isStreaming() const override;
+    bool isStreamingQuery() const override;
     bool hasStreamingGlobalAggregation() const override;
 
     static void addEmptySourceToQueryPlan(
@@ -248,7 +248,7 @@ private:
     /// Structure of query source (table, subquery, etc).
     Block source_header;
 
-    mutable std::optional<bool> is_streaming;
+    mutable std::optional<bool> is_streaming_query;
 
     /// Actions to calculate ALIAS if required.
     ActionsDAGPtr alias_actions;

@@ -275,6 +275,14 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     return subquery->children[0];
 }
 
+bool StorageView::isStreamingQuery(ContextPtr query_context) const
+{
+    auto select = getInMemoryMetadataPtr()->getSelectQuery().inner_query;
+    auto local_context = Context::createCopy(query_context);
+
+    return InterpreterSelectWithUnionQuery(select, local_context, SelectQueryOptions().noModify().subquery().analyze()).isStreamingQuery();
+}
+
 void registerStorageView(StorageFactory & factory)
 {
     factory.registerStorage("View", [](const StorageFactory::Arguments & args)
