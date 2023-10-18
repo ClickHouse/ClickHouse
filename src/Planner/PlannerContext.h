@@ -134,10 +134,7 @@ public:
     /// Create set key for set source node
     static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
-    PreparedSets & getPreparedSets() { return *prepared_sets; }
-
-    PreparedSetsPtr & getPreparedSetsPtr() { return prepared_sets; }
-
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 private:
     /// Query context
     ContextMutablePtr query_context;
@@ -152,7 +149,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
     /// Set key to set
-    PreparedSetsPtr prepared_sets;
+    PreparedSets prepared_sets;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

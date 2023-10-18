@@ -1304,7 +1304,6 @@ void Planner::buildPlanForQueryNode()
 
     checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
-    select_query_info.prepared_sets = planner_context->getPreparedSetsPtr();
     collectTableExpressionData(query_tree, planner_context);
 
     if (!select_query_options.only_analyze)
