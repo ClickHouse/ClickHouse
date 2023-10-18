@@ -241,8 +241,16 @@ Statistics DeriveStatistics::visit(MergingAggregatedStep & step)
         chassert(input_statistics.front().containsColumnStatistics(output_column));
 
     Statistics statistics = input_statistics.front().clone();
-    statistics.setOutputRowSize(statistics.getOutputRowSize() / node_count);
+    Float64 row_count;
 
+    if (step.getParams().keys_size == 0 || !step.isFinal())
+        /// Merging aggregate will run on 1 shard
+        row_count = statistics.getOutputRowSize();
+    else
+        /// Merging aggregate will run on all shards
+        row_count = statistics.getOutputRowSize() / node_count;
+
+    statistics.setOutputRowSize(row_count);
     return statistics;
 }
 

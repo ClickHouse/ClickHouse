@@ -45,7 +45,7 @@ Float64 ColumnStatistics::calculateForNaN(OP_TYPE op_type)
         case OP_TYPE::GREATER_OR_EQUAL:
         case OP_TYPE::LESS:
         case OP_TYPE::LESS_OR_EQUAL:
-            selectivity = 1.0;
+            selectivity = 0.5; /// TODO add to settings
             break;
     }
     return selectivity;
@@ -65,32 +65,28 @@ Float64 ColumnStatistics::calculateForNumber(OP_TYPE op_type, Float64 value)
         case OP_TYPE::EQUAL:
             if (value_in_range)
             {
-                min_value = 0.0;
-                max_value = 0.0;
+                min_value = value;
+                max_value = value;
                 selectivity = 1 / ndv;
             }
             else
             {
-                min_value = value;
-                max_value = value;
+                min_value = 0.0;
+                max_value = 0.0;
                 selectivity = 0;
             }
-            ndv = 1.0;
+            setNdv(1.0);
             break;
         case OP_TYPE::NOT_EQUAL:
             if (value_in_range)
             {
-                min_value = 0.0;
-                max_value = 0.0;
                 selectivity = (ndv - 1) / ndv;
+                setNdv(ndv -1);
             }
             else
             {
-                min_value = value;
-                max_value = value;
                 selectivity = 1.0;
             }
-            ndv = 1.0;
             break;
         case OP_TYPE::GREATER:
         case OP_TYPE::GREATER_OR_EQUAL:
@@ -105,14 +101,14 @@ Float64 ColumnStatistics::calculateForNumber(OP_TYPE op_type, Float64 value)
                 min_value = 0.0;
                 max_value = 0.0;
                 ndv = 1.0;
-                selectivity = 0;
+                selectivity = 0.0;
             }
             else
             {
                 /// select partial
                 selectivity = (max_value - value) / std::max(1.0, max_value - min_value);
                 min_value = value;
-                ndv = std::max(1.0, selectivity * ndv);
+                setNdv(selectivity * ndv);
             }
             break;
         case OP_TYPE::LESS:
@@ -134,7 +130,7 @@ Float64 ColumnStatistics::calculateForNumber(OP_TYPE op_type, Float64 value)
             {
                 selectivity = (value - min_value) / std::max(1.0, max_value - min_value);
                 max_value = value;
-                ndv = std::max(1.0, selectivity * ndv);
+                setNdv(selectivity * ndv);
             }
             break;
     }

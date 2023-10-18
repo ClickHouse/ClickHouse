@@ -32,7 +32,7 @@ public:
 
     Cost getUpperBoundCost() const;
 
-    void setUpperBoundCost(Cost upper_bound_cost_);
+    void setUpperBoundCost(const Cost & upper_bound_cost_);
 
     void pushTask(OptimizeTaskPtr task);
 

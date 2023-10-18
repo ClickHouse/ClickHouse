@@ -1,9 +1,15 @@
 #include "Cost.h"
 
 #include <fmt/format.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 Float64 Cost::get() const
 {
@@ -18,7 +24,8 @@ Cost Cost::infinite()
 void Cost::dividedBy(size_t n)
 {
     if (n == 0)
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "divided by 0");
+
     cpu_cost /= n;
     mem_cost /= n;
     net_cost /= n;

@@ -17,7 +17,7 @@ Statistics JoinStatsCalculator::calculateStatistics(JoinStep & step, const Stati
 }
 
 JoinStatsCalculator::Impl::Impl(JoinStep & step_, const Statistics & left_input_, const Statistics & right_input_)
-    : step(step_), left_input(left_input_), right_input(right_input_), log(&Poco::Logger::get("JoinStatsCalculator"))
+    : step(step_), left_input(left_input_), right_input(right_input_)
 {
     const auto & join = step.getJoin()->getTableJoin();
     auto & on_clauses = join.getClauses();
@@ -81,7 +81,7 @@ void JoinStatsCalculator::Impl::calculateAsofJoin(Statistics & statistics)
 {
     statistics.reset();
 
-    auto row_count = left_input.getOutputRowSize() * right_input.getOutputRowSize();
+    auto row_count = left_input.getOutputRowSize() * right_input.getOutputRowSize(); ///TODO coefficient
     statistics.setOutputRowSize(row_count);
 
     for (auto & column : output_columns)

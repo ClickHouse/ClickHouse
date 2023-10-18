@@ -37,7 +37,7 @@ public:
 
     /// non visit functions
     ActionNodeStatistics calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
-    ActionNodeStatistics calculateUnaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
+    [[ maybe_unused ]] ActionNodeStatistics calculateUnaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
 
 private:
     Poco::Logger * log;

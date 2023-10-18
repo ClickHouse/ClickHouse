@@ -108,7 +108,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitAnd(const ActionsDAG::Node * nod
     }
 
     /// For col > 1 and col < 8, selectivity = left_selectivity * right_selectivity.
-    /// For col > 1 and col > 2, selectivity may be slightly smaller than the real one.
+    /// TODO For col > 1 and col > 2, selectivity may be smaller than the real one, should calculate by range.
     node_stats.selectivity = left_stats.selectivity * right_stats.selectivity;
 
     return node_stats;
@@ -174,7 +174,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitNot(const ActionsDAG::Node * nod
     auto & child = node->children[0];
     auto child_stats = visit(child, context);
 
-    Float64 selectivity = 1 - child_stats.selectivity;
+    Float64 selectivity = 1.0 - child_stats.selectivity;
     node_stats.selectivity = std::min(1.0, selectivity);
 
     auto child_input_nodes = child_stats.getInputNodes();
@@ -182,8 +182,6 @@ ActionNodeStatistics PredicateNodeVisitor::visitNot(const ActionsDAG::Node * nod
     for (auto child_input_node : child_input_nodes)
     {
         auto child_input_node_stat = child_stats.get(child_input_node)->clone();
-        /// TODO min_value/max_value
-        child_input_node_stat->setNdv(child_input_node_stat->getNdv() / selectivity);
         node_stats.set(child_input_node, child_input_node_stat);
     }
 
@@ -273,7 +271,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
     }
 
     node_stats.set(left, uniq_left_stats);
-    node_stats.selectivity = num_value_in_column / uniq_left_stats->getNdv();
+    node_stats.selectivity = num_value_in_column / uniq_left_stats->getNdv() * 0.8; /// TODO add to settings
 
     return node_stats;
 }
@@ -399,7 +397,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Nod
     for (auto input_node : input_nodes)
     {
         auto cloned = context[input_node].get(input_node)->clone();
-        node_stats.set(input_node, cloned);
+        cloned->setDataType(node->result_type);
     }
     return node_stats;
 }

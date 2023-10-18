@@ -141,7 +141,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
     broadcast_join_properties.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
     res.emplace_back(broadcast_join_properties);
 
-    /// shaffle join
+    /// shuffle join
     JoinPtr join = step.getJoin();
     const TableJoin & table_join = join->getTableJoin();
     if (table_join.getClauses().size() == 1 && table_join.strictness() != JoinStrictness::Asof) /// broadcast join. Asof support != condition

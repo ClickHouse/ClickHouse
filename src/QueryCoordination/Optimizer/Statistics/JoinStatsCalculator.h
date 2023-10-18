@@ -144,8 +144,6 @@ private:
         /// Step output columns which the result statistics
         /// should contain and only contain.
         Names output_columns;
-
-        Poco::Logger * log;
     };
 };
 

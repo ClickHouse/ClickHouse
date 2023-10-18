@@ -21,6 +21,8 @@ public:
             alternative_child_prop = node->accept(visitor);
         }
 
+        /// New alternative sub problem, for example as to join,
+        /// there are 2 sub problem broadcast join and shuffle join.
         bool newAlternativeCalc() const
         {
             return pre_child_idx == -1 && child_idx == 0;

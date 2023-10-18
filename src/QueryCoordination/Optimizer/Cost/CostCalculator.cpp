@@ -9,6 +9,7 @@ Cost CostCalculator::visit(QueryPlanStepPtr step)
     return Base::visit(step);
 }
 
+/// Only concerns about cpu_cost
 Cost CostCalculator::visitDefault(IQueryPlanStep & step)
 {
     if (typeid_cast<ISourceStep *>(&step))
@@ -36,7 +37,6 @@ Cost CostCalculator::visit(AggregatingStep & step)
     if (!step.isPreliminaryAgg())
     {
         Cost cost(input.getDataSize(), statistics.getDataSize());
-        cost.dividedBy(node_count); /// calculated by all nodes
         return cost;
     }
     /// Single stage aggregating
@@ -52,7 +52,6 @@ Cost CostCalculator::visit(MergingAggregatedStep &)
 {
     auto & input = input_statistics.front();
     Cost cost(input.getDataSize(), statistics.getDataSize());
-    cost.dividedBy(node_count); /// calculated by all nodes
     return cost;
 }
 
@@ -73,8 +72,13 @@ Cost CostCalculator::visit(SortingStep & step)
     /// Two stage sorting, first stage
     if (step.getPhase() == SortingStep::Phase::Preliminary)
     {
+        /// cpu_cost: n * log2(n)
         auto cpu_coefficient = log2(input.getOutputRowSize());
-        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+        Cost cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+
+        /// sorting in all shards
+        cost.dividedBy(node_count);
+        return cost;
     }
     /// Two stage sorting, second stage
     else if (step.getPhase() == SortingStep::Phase::Final)
@@ -95,11 +99,86 @@ Cost CostCalculator::visit(LimitStep &)
     return Cost(input.getDataSize());
 }
 
-Cost CostCalculator::visit(JoinStep &)
+/// Now only hash join
+Cost CostCalculator::visit(JoinStep & step)
 {
-    /// Now only hash join, this is a very simple algo, but it works.
-    auto & input = input_statistics.front();
-    return Cost(input.getDataSize(), statistics.getDataSize());
+    auto & left_input = input_statistics[0];
+    auto & right_input = input_statistics[1];
+
+    const auto & join = step.getJoin()->getTableJoin();
+
+    /// build cost
+    Float64 build_cpu_cost;
+    Float64 build_mem_cost;
+
+    build_cpu_cost = right_input.getDataSize();
+
+    /// build table memory cost
+    bool build_table_need_keep_duplicated;
+    switch (join.getTableJoin().kind)
+    {
+        case JoinKind::Left:
+        case JoinKind::Right:
+        case JoinKind::Full:
+            switch (join.strictness())
+            {
+                case JoinStrictness::Any:
+                case JoinStrictness::Semi:
+                case JoinStrictness::Anti:
+                    build_table_need_keep_duplicated = false;
+                    break;
+                default:
+                    build_table_need_keep_duplicated = true;
+                    break;
+            }
+            break;
+        default:
+            build_table_need_keep_duplicated = true;
+            break;
+    }
+
+    if (build_table_need_keep_duplicated)
+    {
+        build_mem_cost = right_input.getDataSize();
+    }
+    else
+    {
+        /// calculate right(build) table ndv
+        Float64 right_table_ndv;
+
+        if (right_input.hasUnknownColumn())
+        {
+            right_table_ndv = std::log2(right_input.getOutputRowSize());
+        }
+        else
+        {
+            Names right_table_join_on_keys;
+            for (auto & on_clause : join.getClauses())
+            {
+                for (auto & right_key : on_clause.key_names_right)
+                    right_table_join_on_keys.push_back(right_key);
+            }
+            right_table_ndv = 1 * right_input.getColumnStatistics(right_table_join_on_keys[0])->getNdv();
+            for (size_t i = 1; i < right_table_join_on_keys.size(); i++)
+            {
+                right_table_ndv = right_table_ndv * 0.8 * right_input.getColumnStatistics(right_table_join_on_keys[i])->getNdv();
+            }
+        }
+        build_mem_cost = (right_table_ndv / right_input.getOutputRowSize()) * right_input.getDataSize();
+    }
+
+    /// probe cost
+    Float64 probe_cpu_cost = left_input.getDataSize();
+    Float64 probe_mem_cost = 0.0;
+
+    /// broad cast join
+    if (child_props[1].distribution.type == PhysicalProperties::DistributionType::Replicated)
+    {
+        build_cpu_cost *= node_count;
+        build_mem_cost *= node_count;
+    }
+
+    return Cost(build_cpu_cost + probe_cpu_cost, build_mem_cost + probe_mem_cost);
 }
 
 Cost CostCalculator::visit(UnionStep & step)
@@ -115,13 +194,9 @@ Cost CostCalculator::visit(ExchangeDataStep & step)
 
     Cost cost(input.getDataSize(), 0.0, input.getDataSize());
 
-    if (distribution_type == PhysicalProperties::DistributionType::Hashed)
-        cost.dividedBy(node_count);
-    else if (distribution_type == PhysicalProperties::DistributionType::Replicated)
+    if (distribution_type == PhysicalProperties::DistributionType::Replicated)
         cost.multiplyBy(node_count);
-    else if (distribution_type == PhysicalProperties::DistributionType::Singleton)
-    {
-    }
+
     return cost;
 }
 
@@ -158,8 +233,13 @@ Cost CostCalculator::visit(TopNStep & step)
     auto & input = input_statistics.front();
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
+        /// cpu_cost: n * log2(n)
         auto cpu_coefficient = log2(input.getOutputRowSize());
-        return Cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+        Cost cost(cpu_coefficient * input.getDataSize(), input.getDataSize());
+
+        /// sorting in all shards
+        cost.dividedBy(node_count);
+        return cost;
     }
     else if (step.getPhase() == TopNStep::Phase::Final)
     {

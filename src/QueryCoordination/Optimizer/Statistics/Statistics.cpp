@@ -141,7 +141,7 @@ void Statistics::addAllColumnsFrom(const Statistics & other)
     {
         if (columns_stats_map.contains(entry.first))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Already exists statistics for column {}", entry.first);
-        columns_stats_map.insert(entry);
+        columns_stats_map.insert(entry); /// TODO clone
     }
 }
 

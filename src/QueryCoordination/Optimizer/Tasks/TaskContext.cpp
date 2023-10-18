@@ -46,7 +46,7 @@ Cost TaskContext::getUpperBoundCost() const
     return upper_bound_cost;
 }
 
-void TaskContext::setUpperBoundCost(Cost upper_bound_cost_)
+void TaskContext::setUpperBoundCost(const Cost & upper_bound_cost_)
 {
     upper_bound_cost = upper_bound_cost_;
 }
