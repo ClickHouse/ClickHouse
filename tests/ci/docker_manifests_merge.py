@@ -209,7 +209,10 @@ def enrich_images(changed_images: Dict[str, str]) -> None:
         """
 
     batch_count = 0
-    ch_helper = ClickHouseHelper()
+    # We use always publicly available DB here intentionally
+    ch_helper = ClickHouseHelper(
+        "https://play.clickhouse.com", {"X-ClickHouse-User": "play"}
+    )
 
     while (
         batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
