@@ -32,8 +32,7 @@ String dumpQueryPipeline(QueryPlan & query_plan);
 Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
 
 /// Convert query node to ASTSelectQuery
-ASTPtr queryNodeToSelectQuery(
-    const QueryTreeNodePtr & query_node, const IQueryTreeNode::ConvertToASTOptions options = {.qualify_indentifiers_with_database = false});
+ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);

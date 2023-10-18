@@ -1185,11 +1185,7 @@ KeyCondition::KeyCondition(
     bool single_point_,
     bool strict_)
     : KeyCondition(
-        context->getSettingsRef().allow_experimental_analyzer && query_info.query_tree
-            /// The new analyzer will standardize column names of query_info.query in the format of table.column,
-            /// but the columns in key_column_names do not have a table prefix.
-            ? queryNodeToSelectQuery(query_info.query_tree, {.fully_qualified_identifiers = false})
-            : query_info.query,
+        query_info.query,
         query_info.filter_asts,
         KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context),
         query_info.prepared_sets,

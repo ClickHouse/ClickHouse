@@ -46,12 +46,13 @@ public:
 
     std::string getName() const override { return "SystemNumbers"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         size_t num_streams) override;
 
@@ -62,14 +63,14 @@ public:
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
-        const ASTPtr & left_in_operand,
-        ContextPtr /* query_context */,
-        const StorageMetadataPtr & /* metadata_snapshot */) const override
+        const ASTPtr & left_in_operand, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
         return left_in_operand->as<ASTIdentifier>() && left_in_operand->getColumnName() == "number";
     }
 
 private:
+    friend class ReadFromSystemNumbersStep;
+
     bool multithreaded;
     std::optional<UInt64> limit;
     UInt64 offset;
