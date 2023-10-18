@@ -35,8 +35,8 @@ struct AggregateFunctionMapCombinatorData
     using SearchType = KeyType;
     std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
 
-    static void writeKey(KeyType key, WriteBuffer & buf) { writeBinary(key, buf); }
-    static void readKey(KeyType & key, ReadBuffer & buf) { readBinary(key, buf); }
+    static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
+    static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
 };
 
 template <>
