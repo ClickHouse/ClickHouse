@@ -311,7 +311,6 @@ target_link_libraries (clickhouse_compression
             string_utils
             pcg_random
             clickhouse_parsers
-            clickhouse_grpc_protos
         PRIVATE
             ch_contrib::lz4
             ch_contrib::roaring
@@ -471,6 +470,7 @@ endif ()
 
 if (TARGET clickhouse_grpc_protos)
     dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
+    target_link_libraries (clickhouse_compression PUBLIC clickhouse_grpc_protos)
 endif()
 
 if (TARGET ch_contrib::hdfs)
