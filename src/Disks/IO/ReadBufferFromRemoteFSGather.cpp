@@ -101,7 +101,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
             object.bytes_size,
             /* allow_seeks */false,
             /* use_external_buffer */true,
-            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt,
+            /* read_until_position */std::nullopt,
             cache_log);
     }
 #endif
