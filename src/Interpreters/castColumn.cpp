@@ -61,7 +61,9 @@ FunctionBasePtr InternalCastFunctionCache::getOrSet(CastType cast_type, const St
     std::lock_guard lock{mutex};
     auto key = std::make_tuple(cast_type, from, to);
     auto it = impl.find(key);
-    return it != impl.end() ? it->second : impl.emplace(std::forward_as_tuple(cast_type, from, to), getter()).first->second;
+    if (it == impl.end())
+        it = impl.emplace(key, getter()).first;
+    return it->second;
 }
 
 }
