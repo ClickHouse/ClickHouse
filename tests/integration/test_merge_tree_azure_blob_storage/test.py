@@ -17,6 +17,7 @@ AZURE_BLOB_STORAGE_DISK = "blob_storage_disk"
 LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
+
 def generate_cluster_def(port):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
@@ -24,12 +25,15 @@ def generate_cluster_def(port):
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        f.write("""<clickhouse>
+        f.write(
+            """<clickhouse>
     <storage_configuration>
         <disks>
             <blob_storage_disk>
                 <type>azure_blob_storage</type>
-                <storage_account_url>http://azurite1:"""+str(port)+"""/devstoreaccount1</storage_account_url>
+                <storage_account_url>http://azurite1:"""
+            + str(port)
+            + """/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
                 <skip_access_check>false</skip_access_check>
                 <account_name>devstoreaccount1</account_name>
@@ -57,8 +61,10 @@ def generate_cluster_def(port):
         </policies>
     </storage_configuration>
 </clickhouse>
-""")
+"""
+        )
     return path
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -534,9 +540,7 @@ def test_apply_new_settings(cluster):
     create_table(node, TABLE_NAME)
     config_path = os.path.join(
         SCRIPT_DIR,
-        "./_gen/disk_storage_conf.xml".format(
-            cluster.instances_dir_name
-        ),
+        "./_gen/disk_storage_conf.xml".format(cluster.instances_dir_name),
     )
 
     azure_query(

@@ -51,7 +51,11 @@ def cluster():
 
 def get_azure_file_content(filename, port):
     container_name = "cont"
-    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"+port+"/devstoreaccount1;"
+    connection_string = (
+        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"
+        + port
+        + "/devstoreaccount1;"
+    )
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container_client = blob_service_client.get_container_client(container_name)
     blob_client = container_client.get_blob_client(filename)
@@ -65,7 +69,9 @@ def test_select_all(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1', "
+        "'http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
         "'auto', 'key UInt64, data String') VALUES (1, 'a'), (2, 'b')",
     )
@@ -75,7 +81,9 @@ def test_select_all(cluster):
         node,
         """
     SELECT * from azureBlobStorage(
-        'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
+        'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto')""",
     )
@@ -84,7 +92,9 @@ def test_select_all(cluster):
         node,
         """
     SELECT * from azureBlobStorageCluster(
-        'simple_cluster', 'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
+        'simple_cluster', 'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto')""",
     )
@@ -98,7 +108,9 @@ def test_count(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1', "
+        "'http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
         "'auto', 'key UInt64') VALUES (1), (2)",
     )
@@ -108,7 +120,9 @@ def test_count(cluster):
         node,
         """
     SELECT count(*) from azureBlobStorage(
-        'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
+        'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')""",
     )
@@ -117,7 +131,9 @@ def test_count(cluster):
         node,
         """
     SELECT count(*) from azureBlobStorageCluster(
-        'simple_cluster', 'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
+        'simple_cluster', 'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_cluster_count.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
         'auto', 'key UInt64')""",
     )
@@ -131,7 +147,9 @@ def test_union_all(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', "
+        "'http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', "
         "'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')",
     )
@@ -142,12 +160,16 @@ def test_union_all(cluster):
     SELECT * FROM
     (
         SELECT * from azureBlobStorage(
-            'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
             'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
         UNION ALL
         SELECT * from azureBlobStorage(
-            'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
             'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
     )
@@ -161,13 +183,17 @@ def test_union_all(cluster):
     (
         SELECT * from azureBlobStorageCluster(
             'simple_cluster',
-            'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
             'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
         UNION ALL
         SELECT * from azureBlobStorageCluster(
             'simple_cluster',
-            'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
+            'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_parquet_union_all', 'devstoreaccount1',
             'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet',
             'auto', 'a Int32, b String')
     )
@@ -184,7 +210,9 @@ def test_skip_unavailable_shards(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1', "
+        "'http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
@@ -193,7 +221,9 @@ def test_skip_unavailable_shards(cluster):
         """
     SELECT count(*) from azureBlobStorageCluster(
         'cluster_non_existent_port',
-        'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
+        'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
     SETTINGS skip_unavailable_shards = 1
     """,
@@ -209,7 +239,9 @@ def test_unset_skip_unavailable_shards(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_unset_skip_unavailable.csv', 'devstoreaccount1', "
+        "'http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_unset_skip_unavailable.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
@@ -218,7 +250,9 @@ def test_unset_skip_unavailable_shards(cluster):
         """
     SELECT count(*) from azureBlobStorageCluster(
         'cluster_non_existent_port',
-        'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
+        'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
     """,
     )
@@ -232,7 +266,9 @@ def test_cluster_with_named_collection(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
-        "'http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1', "
+        "'http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1', "
         "'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         "'auto', 'a UInt64') VALUES (1), (2)",
     )
@@ -241,7 +277,9 @@ def test_cluster_with_named_collection(cluster):
         node,
         """
     SELECT * from azureBlobStorage(
-        'http://azurite1:"""+port+"""/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',
+        'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',
         'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
     """,
     )
@@ -250,7 +288,9 @@ def test_cluster_with_named_collection(cluster):
         node,
         """
     SELECT * from azureBlobStorageCluster(
-        'simple_cluster', azure_conf2, storage_account_url = 'http://azurite1:"""+port+"""/devstoreaccount1', container='cont', blob_path='test_cluster_with_named_collection.csv')
+        'simple_cluster', azure_conf2, storage_account_url = 'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', container='cont', blob_path='test_cluster_with_named_collection.csv')
     """,
     )
 
@@ -279,7 +319,9 @@ def test_partition_parallel_readig_withcluster(cluster):
         """
     SELECT count(*) from azureBlobStorageCluster(
         'simple_cluster',
-        azure_conf2, storage_account_url = 'http://azurite1:"""+port+"""/devstoreaccount1', container='cont', blob_path='test_tf_*.csv', format='CSV', compression='auto', structure='column1 UInt32, column2 UInt32, column3 UInt32')
+        azure_conf2, storage_account_url = 'http://azurite1:"""
+        + port
+        + """/devstoreaccount1', container='cont', blob_path='test_tf_*.csv', format='CSV', compression='auto', structure='column1 UInt32, column2 UInt32, column3 UInt32')
     """,
     )
 

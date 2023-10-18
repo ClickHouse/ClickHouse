@@ -73,7 +73,11 @@ def azure_query(
 
 def get_azure_file_content(filename, port):
     container_name = "cont"
-    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"+port+"/devstoreaccount1;"
+    connection_string = (
+        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"
+        + port
+        + "/devstoreaccount1;"
+    )
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container_client = blob_service_client.get_container_client(container_name)
     blob_client = container_client.get_blob_client(filename)
@@ -83,7 +87,11 @@ def get_azure_file_content(filename, port):
 
 def put_azure_file_content(filename, port, data):
     container_name = "cont"
-    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"+port+"/devstoreaccount1;"
+    connection_string = (
+        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:"
+        + port
+        + "/devstoreaccount1;"
+    )
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     try:
         container_client = blob_service_client.create_container(container_name)
@@ -99,7 +107,9 @@ def test_create_table_connection_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+cluster.env_variables["AZURITE_PORT"]+"/devstoreaccount1/;', 'cont', 'test_create_connection_string', 'CSV')",
+        "CREATE TABLE test_create_table_conn_string (key UInt64, data String) Engine = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + cluster.env_variables["AZURITE_PORT"]
+        + "/devstoreaccount1/;', 'cont', 'test_create_connection_string', 'CSV')",
     )
 
 
@@ -107,7 +117,9 @@ def test_create_table_account_string(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        "CREATE TABLE test_create_table_account_url (key UInt64, data String) Engine = AzureBlobStorage('http://azurite1:"+cluster.env_variables["AZURITE_PORT"]+"/devstoreaccount1',  'cont', 'test_create_connection_string', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+        "CREATE TABLE test_create_table_account_url (key UInt64, data String) Engine = AzureBlobStorage('http://azurite1:"
+        + cluster.env_variables["AZURITE_PORT"]
+        + "/devstoreaccount1',  'cont', 'test_create_connection_string', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
     )
 
 
@@ -116,7 +128,9 @@ def test_simple_write_account_string(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_write (key UInt64, data String) Engine = AzureBlobStorage('http://azurite1:"+cluster.env_variables["AZURITE_PORT"]+"/devstoreaccount1', 'cont', 'test_simple_write.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
+        "CREATE TABLE test_simple_write (key UInt64, data String) Engine = AzureBlobStorage('http://azurite1:"
+        + cluster.env_variables["AZURITE_PORT"]
+        + "/devstoreaccount1', 'cont', 'test_simple_write.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')",
     )
     azure_query(node, "INSERT INTO test_simple_write VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write.csv", port))
@@ -128,7 +142,9 @@ def test_simple_write_connection_string(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;', 'cont', 'test_simple_write_c.csv', 'CSV')",
+        "CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;', 'cont', 'test_simple_write_c.csv', 'CSV')",
     )
     azure_query(node, "INSERT INTO test_simple_write_connection_string VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_c.csv", port))
@@ -141,7 +157,9 @@ def test_simple_write_named_collection_1(cluster):
     azure_query(
         node,
         "CREATE TABLE test_simple_write_named_collection_1 (key UInt64, data String) Engine = AzureBlobStorage(azure_conf1, "
-        "connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;')",
+        "connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;')",
     )
     azure_query(
         node, "INSERT INTO test_simple_write_named_collection_1 VALUES (1, 'a')"
@@ -157,7 +175,7 @@ def test_simple_write_named_collection_2(cluster):
     azure_query(
         node,
         "CREATE TABLE test_simple_write_named_collection_2 (key UInt64, data String) Engine = AzureBlobStorage(azure_conf2, "
-        "storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', "
+        "storage_account_url = 'http://azurite1:" + port + "/devstoreaccount1', "
         "container='cont', blob_path='test_simple_write_named_2.csv', format='CSV')",
     )
     azure_query(
@@ -226,7 +244,9 @@ def test_truncate(cluster):
     azure_query(
         node,
         "CREATE TABLE test_truncate (key UInt64, data String) Engine = AzureBlobStorage(azure_conf2, "
-        "storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', container='cont', blob_path='test_truncate.csv', format='CSV')",
+        "storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1', container='cont', blob_path='test_truncate.csv', format='CSV')",
     )
     azure_query(node, "INSERT INTO test_truncate VALUES (1, 'a')")
     assert get_azure_file_content("test_truncate.csv", port) == '1,"a"\n'
@@ -241,7 +261,9 @@ def test_simple_read_write(cluster):
     azure_query(
         node,
         "CREATE TABLE test_simple_read_write (key UInt64, data String) Engine = AzureBlobStorage(azure_conf2, "
-        "storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', container='cont', blob_path='test_simple_read_write.csv', format='CSV')",
+        "storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1', container='cont', blob_path='test_simple_read_write.csv', format='CSV')",
     )
 
     azure_query(node, "INSERT INTO test_simple_read_write VALUES (1, 'a')")
@@ -256,7 +278,9 @@ def test_create_new_files_on_insert(cluster):
     azure_query(
         node,
         f"create table test_multiple_inserts(a Int32, b String) ENGINE = AzureBlobStorage(azure_conf2, "
-        f"storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', container='cont', blob_path='test_parquet', format='Parquet')",
+        f"storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1', container='cont', blob_path='test_parquet', format='Parquet')",
     )
     azure_query(node, "truncate table test_multiple_inserts")
     azure_query(
@@ -284,7 +308,9 @@ def test_overwrite(cluster):
     azure_query(
         node,
         f"create table test_overwrite(a Int32, b String) ENGINE = AzureBlobStorage(azure_conf2, "
-        f"storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', container='cont', blob_path='test_parquet_overwrite', format='Parquet')",
+        f"storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1', container='cont', blob_path='test_parquet_overwrite', format='Parquet')",
     )
     azure_query(node, "truncate table test_overwrite")
 
@@ -310,7 +336,9 @@ def test_insert_with_path_with_globs(cluster):
     azure_query(
         node,
         f"create table test_insert_globs(a Int32, b String) ENGINE = AzureBlobStorage(azure_conf2, "
-        f"storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1',  container='cont', blob_path='test_insert_with_globs*', format='Parquet')",
+        f"storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1',  container='cont', blob_path='test_insert_with_globs*', format='Parquet')",
     )
     node.query_and_get_error(
         f"insert into table function test_insert_globs SELECT number, randomString(100) FROM numbers(500)"
@@ -515,7 +543,9 @@ def test_simple_write_account_string_table_function(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_simple_write_tf.csv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_tf.csv", port))
     assert get_azure_file_content("test_simple_write_tf.csv", port) == '1,"a"\n'
@@ -526,10 +556,14 @@ def test_simple_write_connection_string_table_function(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;', 'cont', 'test_simple_write_connection_tf.csv', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;', 'cont', 'test_simple_write_connection_tf.csv', 'CSV', 'auto', 'key UInt64, data String') VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_connection_tf.csv", port))
-    assert get_azure_file_content("test_simple_write_connection_tf.csv", port) == '1,"a"\n'
+    assert (
+        get_azure_file_content("test_simple_write_connection_tf.csv", port) == '1,"a"\n'
+    )
 
 
 def test_simple_write_named_collection_1_table_function(cluster):
@@ -538,7 +572,9 @@ def test_simple_write_named_collection_1_table_function(cluster):
     azure_query(
         node,
         "INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf1, "
-        "connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;') VALUES (1, 'a')",
+        "connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;') VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_named.csv", port))
     assert get_azure_file_content("test_simple_write_named.csv", port) == '1,"a"\n'
@@ -546,7 +582,9 @@ def test_simple_write_named_collection_1_table_function(cluster):
     azure_query(
         node,
         "CREATE TABLE drop_table (key UInt64, data String) Engine = AzureBlobStorage(azure_conf1, "
-        "connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;')",
+        "connection_string = 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;')",
     )
 
     azure_query(
@@ -560,7 +598,9 @@ def test_simple_write_named_collection_2_table_function(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', container='cont', blob_path='test_simple_write_named_2_tf.csv', format='CSV', structure='key UInt64, data String') VALUES (1, 'a')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1', container='cont', blob_path='test_simple_write_named_2_tf.csv', format='CSV', structure='key UInt64, data String') VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_named_2_tf.csv", port))
     assert get_azure_file_content("test_simple_write_named_2_tf.csv", port) == '1,"a"\n'
@@ -601,7 +641,11 @@ def test_schema_inference_no_globs_tf(cluster):
     query = f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = 'http://azurite1:{port}/devstoreaccount1', container='cont', blob_path='test_schema_inference_no_globs_tf.csv', format='CSVWithNames', structure='{table_format}') SELECT number, toString(number), number * number FROM numbers(1000)"
     azure_query(node, query)
 
-    query = "select sum(column1), sum(length(column2)), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, storage_account_url = 'http://azurite1:"+port+"/devstoreaccount1', container='cont', blob_path='test_schema_inference_no_globs_tf.csv')"
+    query = (
+        "select sum(column1), sum(length(column2)), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, storage_account_url = 'http://azurite1:"
+        + port
+        + "/devstoreaccount1', container='cont', blob_path='test_schema_inference_no_globs_tf.csv')"
+    )
     assert azure_query(node, query).splitlines() == [
         "499500\t2890\t332833500\ttest_schema_inference_no_globs_tf.csv\tcont/test_schema_inference_no_globs_tf.csv"
     ]
@@ -674,12 +718,16 @@ def test_read_subcolumns(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_subcolumns.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_subcolumns.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
     )
 
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_subcolumns.jsonl', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_subcolumns.jsonl', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'a Tuple(b Tuple(c UInt32, d UInt32), e UInt32)') select ((1, 2), 3)",
     )
 
     res = node.query(
@@ -718,8 +766,12 @@ def test_read_from_not_existing_container(cluster):
 def test_function_signatures(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
-    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;"
-    storage_account_url = "http://azurite1:"+port+"/devstoreaccount1"
+    connection_string = (
+        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;"
+    )
+    storage_account_url = "http://azurite1:" + port + "/devstoreaccount1"
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     azure_query(
@@ -833,8 +885,12 @@ def check_cache(instance, expected_files):
 def test_schema_inference_cache(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
-    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"+port+"/devstoreaccount1;"
-    storage_account_url = "http://azurite1:"+port+"/devstoreaccount1"
+    connection_string = (
+        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:"
+        + port
+        + "/devstoreaccount1;"
+    )
+    storage_account_url = "http://azurite1:" + port + "/devstoreaccount1"
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
@@ -1039,21 +1095,29 @@ def test_filtering_by_file_or_path(cluster):
     port = cluster.env_variables["AZURITE_PORT"]
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_filter1.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_filter1.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 1",
     )
 
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_filter2.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 2",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_filter2.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 2",
     )
 
     azure_query(
         node,
-        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_filter3.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 3",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_filter3.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') select 3",
     )
 
     node.query(
-        f"select count() from azureBlobStorage('http://azurite1:"+port+"/devstoreaccount1', 'cont', 'test_filter*.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') where _file = 'test_filter1.tsv'"
+        f"select count() from azureBlobStorage('http://azurite1:"
+        + port
+        + "/devstoreaccount1', 'cont', 'test_filter*.tsv', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', 'auto', 'x UInt64') where _file = 'test_filter1.tsv'"
     )
 
     node.query("SYSTEM FLUSH LOGS")
