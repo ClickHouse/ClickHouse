@@ -126,8 +126,8 @@ private:
         AlreadyProcessed,
         AlreadyFailed,
     };
-    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
-    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
+    ProcessingNodeHolderPtr trySetFileAsProcessingForOrderedMode(const std::string & path, FileStatus & file_status);
+    ProcessingNodeHolderPtr trySetFileAsProcessingForUnorderedMode(const std::string & path, FileStatus & file_status);
 
     std::tuple<SetFileProcessingResult, ProcessingNodeHolderPtr, bool> trySetFileAsProcessingForOrderedMode(const std::deque<std::string> & paths);
 
