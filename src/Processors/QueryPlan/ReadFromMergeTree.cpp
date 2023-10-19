@@ -268,7 +268,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , data(data_)
     , query_info(query_info_)
     , prewhere_info(getPrewhereInfoFromQueryInfo(query_info))
-    , lazily_read_info()
     , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , storage_snapshot(std::move(storage_snapshot_))
     , metadata_for_reading(storage_snapshot->getMetadataForQuery())

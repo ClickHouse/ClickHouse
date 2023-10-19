@@ -421,7 +421,7 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     {
         ColumnPtr row_num_column =  block.getByName("_part_offset").column;
         ColumnPtr part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
-        for (auto & column_name : lazily_read_columns)
+        for (const auto & column_name : lazily_read_columns)
         {
             ColumnPtr lazy_column = ColumnLazy::create(part_num_column, row_num_column);
             auto column_with_type_and_name = lazily_read_block.getByName(column_name);
@@ -431,7 +431,7 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     }
     else
     {
-        for (auto & column_name : lazily_read_columns)
+        for (const auto & column_name : lazily_read_columns)
         {
             auto column_with_type_and_name = lazily_read_block.getByName(column_name);
             column_with_type_and_name.column = ColumnLazy::create();

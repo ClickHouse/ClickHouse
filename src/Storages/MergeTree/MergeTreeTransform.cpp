@@ -33,10 +33,8 @@ MergeTreeTransform::MergeTreeTransform(
     , storage_snapshot(storage_snapshot_)
     , use_uncompressed_cache(context_->getSettings().use_uncompressed_cache)
     , data_parts_info(std::move(lazily_read_info_->data_parts_info))
-    , names_and_types_list()
-    , alias_column_names()
 {
-    for (auto & it : header_)
+    for (const auto & it : header_)
     {
         if (isColumnLazy(*(it.column)))
         {
@@ -55,7 +53,7 @@ void MergeTreeTransform::transform(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     Block block = getInputPort().getHeader().cloneWithColumns(columns);
-    auto * column_lazy = typeid_cast<const ColumnLazy *>(block.getByName(alias_column_names[0]).column.get());
+    const auto * column_lazy = typeid_cast<const ColumnLazy *>(block.getByName(alias_column_names[0]).column.get());
     const ColumnUInt64 * part_num_column = typeid_cast<const ColumnUInt64 *>(&column_lazy->getPartNumsColumn());
     const ColumnUInt64 * row_num_column = typeid_cast<const ColumnUInt64 *>(&column_lazy->getRowNumsColumn());
 

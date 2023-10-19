@@ -10,7 +10,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-constexpr size_t MAX_LIMIT_FOR_LAZY_MATERIALIZATION = 128;
+constexpr size_t MAX_LIMIT_FOR_LAZY_MATERIALIZATION = 10;
 using StepStack = std::vector<IQueryPlanStep *>;
 
 static bool canUseLazyProjectionForReadingStep(ReadFromMergeTree * reading)
@@ -66,7 +66,7 @@ static void removeUsedColumnNames(
             stack.push(node);
             while (!stack.empty())
             {
-                auto * current_node = stack.top();
+                const auto * current_node = stack.top();
                 stack.pop();
 
                 if (current_node->type == ActionsDAG::ActionType::INPUT)
@@ -120,7 +120,7 @@ static void collectLazilyReadColumnNames(
     const Names & real_column_names = read_from_merge_tree->getRealColumnNames();
     NameSet lazily_read_column_name_set(real_column_names.begin(), real_column_names.end());
 
-    for (auto & column_name : real_column_names)
+    for (const auto & column_name : real_column_names)
         alias_index->emplace(column_name, column_name);
 
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
@@ -153,8 +153,8 @@ static void collectLazilyReadColumnNames(
 
         if (auto * sorting_step = typeid_cast<SortingStep *>(step))
         {
-            auto & sort_description = sorting_step->getSortDescription();
-            for (auto & sort_column_description : sort_description)
+            const auto & sort_description = sorting_step->getSortDescription();
+            for (const auto & sort_column_description : sort_description)
             {
                 const auto it = alias_index->find(sort_column_description.column_name);
                 if (it == alias_index->end())
