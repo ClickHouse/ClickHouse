@@ -55,7 +55,11 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
             ],
-            user_configs=["configs/access.xml", "configs/users.xml"],
+            user_configs=[
+                "configs/access.xml",
+                "configs/users.xml",
+                "configs/s3_retry.xml",
+            ],
         )
         cluster.add_instance(
             "dummy_without_named_collections",
@@ -71,7 +75,7 @@ def started_cluster():
             "s3_max_redirects",
             with_minio=True,
             main_configs=["configs/defaultS3.xml"],
-            user_configs=["configs/s3_max_redirects.xml"],
+            user_configs=["configs/s3_max_redirects.xml", "configs/s3_retry.xml"],
         )
         cluster.add_instance(
             "s3_non_default",
