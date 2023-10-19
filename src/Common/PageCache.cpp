@@ -417,6 +417,7 @@ static void logUnexpectedSyscallError(std::string name)
 
 void PageCache::sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
 {
+#ifdef MADV_FREE // if we're not on a very old version of Linux
     chassert(chunk->size == bytes_per_page * pages_per_chunk);
     size_t populated_pages = 0;
     size_t populated_big_pages = 0;
@@ -444,9 +445,10 @@ void PageCache::sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex>
 
     ProfileEvents::increment(ProfileEvents::PageCacheBytesUnpinnedRoundedToPages, bytes_per_page * populated_pages);
     ProfileEvents::increment(ProfileEvents::PageCacheBytesUnpinnedRoundedToHugePages, bytes_per_page * pages_per_big_page * populated_big_pages);
+#endif
 }
 
-std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) noexcept
+std::pair<size_t, size_t> PageCache::restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
 {
     static_assert(sizeof(std::atomic<char>) == 1, "char is not atomic?");
     // Make sure our strategic memory reads/writes are not reordered or optimized out.

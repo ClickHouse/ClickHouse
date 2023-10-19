@@ -291,7 +291,7 @@ private:
     /// These may run in parallel with getFreeChunk(), so be very careful about which fields of the PageChunk we touch here.
     void sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept;
     /// Returns {pages_restored, pages_evicted}.
-    std::pair<size_t, size_t> restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) noexcept;
+    std::pair<size_t, size_t> restoreChunkFromLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept;
 };
 
 using PageCachePtr = std::shared_ptr<PageCache>;
