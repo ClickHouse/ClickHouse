@@ -5,39 +5,22 @@
     </settings>
 
     <create_query>
-        create table test_orc_with_fpd
+        create table test_orc_fpd
         (
             a Nullable(Int64),
             b Nullable(String)
         ) Engine=File(ORC)
-        settings input_format_orc_filter_push_down = 1
-    </create_query>
-
-    <create_query>
-        create table test_orc_without_fpd
-        (
-            a Nullable(Int64),
-            b Nullable(String)
-        ) Engine=File(ORC)
-        settings input_format_orc_filter_push_down = 0
     </create_query>
 
     <fill_query>
-        insert into test_orc_with_fpd select number as a, cast(number as String) as b from numbers(10000000)
+        insert into test_orc_fpd select number as a, cast(number as String) as b from numbers(10000000)
     </fill_query>
+   
+    <drop_query>DROP TABLE IF EXISTS test_orc_fpd</drop_query>
 
-    <fill_query>
-        insert into test_orc_without_fpd select number as a, cast(number as String) as b from numbers(10000000)
-    </fill_query>
+    <!-- Test range filter push down to ORC -->
+    <query>select a % 10, length(b) % 10, count(1) from test_orc_fpd where a > 9000000 group by a % 10, length(b) % 10 </query>
 
-    <drop_query>DROP TABLE IF EXISTS test_orc_with_fpd</drop_query>
-    <drop_query>DROP TABLE IF EXISTS test_orc_without_fpd</drop_query>
-
-    <!-- Test range filter with/without orc filter push down -->
-    <query>select a % 10, length(b) % 10, count(1) from test_orc_with_fpd where a > 9000000 group by a % 10, length(b) % 10 </query>
-    <query>select a % 10, length(b) % 10, count(1) from test_orc_without_fpd where a > 9000000 group by a % 10, length(b) % 10 </query>
-
-    <!-- Test in set filter with/without orc filter push down -->
-    <query>select a % 10, length(b) % 10, count(1) from test_orc_with_fpd where a in (9000000, 1000) group by a % 10, length(b) % 10 </query>
-    <query>select a % 10, length(b) % 10, count(1) from test_orc_without_fpd where a in (9000000, 1000) group by a % 10, length(b) % 10 </query>
+    <!-- Test in set filter push down to ORC -->
+    <query>select a % 10, length(b) % 10, count(1) from test_orc_fpd where a in (9000000, 1000) group by a % 10, length(b) % 10 </query>
 </test>
