@@ -414,8 +414,18 @@ Chain buildPushingToViewsChain(
                 running_group, result_chain, views_data, thread_status_holder,
                 async_insert, storage_header);
 
-            if (out)
-                chains.emplace_back(std::move(*out));
+            if (!out.has_value())
+                continue;
+
+            chains.emplace_back(std::move(*out));
+
+            /// Add the view to the query access info so it can appear in system.query_log
+            /// hasQueryContext - for materialized tables with background replication process query context is not added
+            if (!no_destination && context->hasQueryContext())
+            {
+                context->getQueryContext()->addQueryAccessInfo(
+                    backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
+            }
         }
         catch (const Exception & e)
         {
@@ -424,14 +434,6 @@ Chain buildPushingToViewsChain(
                 throw;
 
             continue;
-        }
-
-        /// Add the view to the query access info so it can appear in system.query_log
-        /// hasQueryContext - for materialized tables with background replication process query context is not added
-        if (!no_destination && context->hasQueryContext())
-        {
-            context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
         }
     }
 
