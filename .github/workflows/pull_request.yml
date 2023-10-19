@@ -20,6 +20,7 @@ on:  # yamllint disable-line rule:truthy
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
       - 'tests/ci/docs_check.py'
+      - '.github/workflows/docs_check.yml'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
@@ -96,6 +97,7 @@ jobs:
         with:
           clear-repository: true
           fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
+          filter: tree:0
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:
@@ -268,6 +270,7 @@ jobs:
         with:
           clear-repository: true
           fetch-depth: 0  # for performance artifact
+          filter: tree:0
           submodules: true
       - name: Build
         run: |
@@ -352,6 +355,7 @@ jobs:
           clear-repository: true
           submodules: true
           fetch-depth: 0  # for performance artifact
+          filter: tree:0
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -1023,6 +1027,7 @@ jobs:
         with:
           clear-repository: true
           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
+          filter: tree:0
       - name: Check docker clickhouse/clickhouse-server building
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
