@@ -45,10 +45,10 @@ struct ProxyConfiguration
     }
 
     std::string host;
-    Protocol protocol;
-    uint16_t port;
-    bool use_connect_protocol;
-    Protocol original_request_protocol;
+    Protocol protocol = Protocol::HTTP;
+    uint16_t port = 80u;
+    bool use_connect_protocol = true;
+    Protocol original_request_protocol = Protocol::HTTP;
 };
 
 }
