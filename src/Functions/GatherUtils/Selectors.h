@@ -17,6 +17,7 @@ namespace ErrorCodes
 
 namespace GatherUtils
 {
+#pragma GCC visibility push(hidden)
 
 /// Base classes which selects template function implementation with concrete ArraySource or ArraySink
 /// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector,
@@ -164,6 +165,7 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
     }
 };
 
+#pragma GCC visibility pop
 }
 
 }

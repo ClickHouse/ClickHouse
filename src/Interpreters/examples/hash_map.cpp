@@ -15,7 +15,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/PackedHashMap.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>

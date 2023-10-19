@@ -153,7 +153,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 
 ### Report Details
 
-- **Compiler**: `clang-17`, optionally with the name of a target platform
+- **Compiler**: `clang-15`, optionally with the name of a target platform
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
 - **Status**: `success` or `fail`
@@ -197,10 +197,6 @@ Runs [stateful functional tests](tests.md#functional-tests). Treat them in the s
 
 ## Integration Tests
 Runs [integration tests](tests.md#integration-tests).
-
-
-## Bugfix validate check
-Checks that either a new test (functional or integration) or there some changed tests that fail with the binary built on master branch. This check is triggered when pull request has "pr-bugfix" label.
 
 
 ## Stress Test

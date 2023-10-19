@@ -138,7 +138,7 @@ struct TimeWindowImpl<TUMBLE>
         if (result_type_is_date)
             data_type = std::make_shared<DataTypeDate>();
         else
-            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
 
         return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
@@ -322,7 +322,7 @@ struct TimeWindowImpl<HOP>
         if (result_type_is_date)
             data_type = std::make_shared<DataTypeDate>();
         else
-            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false));
+            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0));
         return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
 

@@ -13,7 +13,7 @@ You can install pre-built ClickHouse as described in [Quick Start](https://click
 The build works on x86_64 (Intel) and arm64 (Apple Silicon) based on macOS 10.15 (Catalina) or higher with Homebrew's vanilla Clang.
 
 :::note
-It is also possible to compile with Apple's XCode `apple-clang`, but it's strongly discouraged.
+It is also possible to compile with Apple's XCode `apple-clang` or Homebrew's `gcc`, but it's strongly discouraged.
 :::
 
 ## Install Homebrew {#install-homebrew}
@@ -73,6 +73,20 @@ XCODE_IDE=1 ALLOW_APPLECLANG=1 cmake -G Xcode -DCMAKE_BUILD_TYPE=Debug -DENABLE_
 cmake --open .
 # ...then, in XCode IDE select ALL_BUILD scheme and start the building process.
 # The resulting binary will be created at: ./programs/Debug/clickhouse
+```
+
+To build using Homebrew's vanilla GCC compiler (this option is only for development experiments, and is **absolutely not recommended** unless you really know what you are doing):
+
+``` bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix binutils)/bin:$PATH
+export PATH=$(brew --prefix gcc)/bin:$PATH
+export CC=$(brew --prefix gcc)/bin/gcc-11
+export CXX=$(brew --prefix gcc)/bin/g++-11
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
+cmake --build build
+# The resulting binary will be created at: build/programs/clickhouse
 ```
 
 ## Caveats {#caveats}

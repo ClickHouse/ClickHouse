@@ -245,6 +245,12 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
+    /// Reorder the output nodes using given position mapping.
+    void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
+
+    /// Add aggregate columns to output nodes from projection
+    void addAggregatesViaProjection(const Block & aggregates);
+
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
@@ -378,16 +384,6 @@ public:
         const ContextPtr & context,
         bool single_output_condition_node = true);
 
-    /// Check if `predicate` is a combination of AND functions.
-    /// Returns a list of nodes representing atomic predicates.
-    static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
-
-    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
-    /// Returns only those nodes from the list which can be computed.
-    static NodeRawConstPtrs filterNodesByAllowedInputs(
-        NodeRawConstPtrs nodes,
-        const std::unordered_set<const Node *> & allowed_inputs);
-
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -406,32 +402,6 @@ private:
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
-};
-
-class FindOriginalNodeForOutputName
-{
-    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
-
-public:
-    explicit FindOriginalNodeForOutputName(const ActionsDAGPtr & actions);
-    const ActionsDAG::Node * find(const String & output_name);
-
-private:
-    ActionsDAGPtr actions;
-    NameToNodeIndex index;
-};
-
-class FindAliasForInputName
-{
-    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
-
-public:
-    explicit FindAliasForInputName(const ActionsDAGPtr & actions);
-    const ActionsDAG::Node * find(const String & name);
-
-private:
-    ActionsDAGPtr actions;
-    NameToNodeIndex index;
 };
 
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.

@@ -2,8 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
-#include <Parsers/ASTLiteral.h>
+#include "Core/ProtocolDefines.h"
 
 namespace DB
 {
@@ -24,15 +23,8 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
-void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
+void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
 {
-    std::string partition_id;
-    if (auto * literal = partition_id_ast->as<ASTLiteral>(); literal != nullptr && literal->value.getType() == Field::Types::String)
-        partition_id = literal->value.safeGet<String>();
-
-    else
-        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id must be string literal");
-
     if (partition_id.empty())
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 
@@ -156,7 +148,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
     }
 
-    const auto & date_lut = DateLUT::serverTimezoneInstance();
+    const auto & date_lut = DateLUT::instance();
 
     min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
     max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
@@ -227,7 +219,7 @@ String MergeTreePartInfo::getPartNameV1() const
 
 String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) const
 {
-    const auto & date_lut = DateLUT::serverTimezoneInstance();
+    const auto & date_lut = DateLUT::instance();
 
     /// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
 

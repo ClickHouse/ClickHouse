@@ -5,9 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -84,10 +81,9 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
         std::conditional_t<std::is_same_v<ArrayElement, Decimal64>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal128>, Decimal128,
         std::conditional_t<std::is_same_v<ArrayElement, Decimal256>, Decimal256,
-        std::conditional_t<std::is_same_v<ArrayElement, DateTime64>, Decimal128,
         std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
         std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
-            UInt64>>>>>>>>>>>;
+            UInt64>>>>>>>>>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -96,6 +92,9 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -109,53 +108,26 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (!IsDataTypeDateOrDateTime<DataType>)
+            if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
             {
-                if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
-                {
-                    result = std::make_shared<DataTypeFloat64>();
+                result = std::make_shared<DataTypeFloat64>();
 
-                    return true;
-                }
-                else if constexpr (IsDataTypeNumber<DataType>)
-                {
-                    using NumberReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
-                    result = std::make_shared<DataTypeNumber<NumberReturnType>>();
-
-                    return true;
-                }
-                else if constexpr (IsDataTypeDecimal<DataType>)
-                {
-                    using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
-                    UInt32 scale = getDecimalScale(*expression_return);
-                    result = std::make_shared<DataTypeDecimal<DecimalReturnType>>(DecimalUtils::max_precision<DecimalReturnType>, scale);
-
-                    return true;
-                }
+                return true;
             }
-            else if constexpr (aggregate_operation == AggregateOperation::max || aggregate_operation == AggregateOperation::min)
+            else if constexpr (IsDataTypeNumber<DataType>)
             {
-                if constexpr (IsDataTypeDate<DataType>)
-                {
-                    result = std::make_shared<DataType>();
+                using NumberReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
+                result = std::make_shared<DataTypeNumber<NumberReturnType>>();
 
-                    return true;
-                }
-                else if constexpr (!IsDataTypeDecimal<DataType>)
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    result = std::make_shared<DataTypeDateTime>(timezone);
+                return true;
+            }
+            else if constexpr (IsDataTypeDecimal<DataType> && !IsDataTypeDateOrDateTime<DataType>)
+            {
+                using DecimalReturnType = ArrayAggregateResult<typename DataType::FieldType, aggregate_operation>;
+                UInt32 scale = getDecimalScale(*expression_return);
+                result = std::make_shared<DataTypeDecimal<DecimalReturnType>>(DecimalUtils::max_precision<DecimalReturnType>, scale);
 
-                    return true;
-                }
-                else
-                {
-                    std::string timezone = getDateTimeTimezone(*expression_return);
-                    UInt32 scale = getDecimalScale(*expression_return);
-                    result = std::make_shared<DataTypeDateTime64>(scale, timezone);
-
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -251,8 +223,7 @@ struct ArrayAggregateImpl
 
                         auto result_scale = column_typed->getScale() * array_size;
                         if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                                            result_scale, DecimalUtils::max_precision<AggregationType>);
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
                         res[i] = DecimalUtils::convertTo<ResultType>(product, static_cast<UInt32>(result_scale));
                     }
@@ -361,8 +332,7 @@ struct ArrayAggregateImpl
                 auto result_scale = column->getScale() * count;
 
                 if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds (max scale: {})",
-                                    result_scale, DecimalUtils::max_precision<AggregationType>);
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
                 res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, static_cast<UInt32>(result_scale));
             }
@@ -398,8 +368,7 @@ struct ArrayAggregateImpl
             executeType<Decimal32>(mapped, offsets, res) ||
             executeType<Decimal64>(mapped, offsets, res) ||
             executeType<Decimal128>(mapped, offsets, res) ||
-            executeType<Decimal256>(mapped, offsets, res) ||
-            executeType<DateTime64>(mapped, offsets, res))
+            executeType<Decimal256>(mapped, offsets, res))
         {
             return res;
         }

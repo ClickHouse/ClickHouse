@@ -1,15 +1,12 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Storages/SetSettings.h>
 
 
 namespace DB
 {
-
-class IDisk;
-using DiskPtr = std::shared_ptr<IDisk>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -24,7 +21,7 @@ class StorageSetOrJoinBase : public IStorage
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
@@ -79,7 +76,7 @@ public:
     String getName() const override { return "Set"; }
 
     /// Access the insides.
-    SetPtr getSet() const;
+    SetPtr & getSet() { return set; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -87,9 +84,7 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
-    /// Allows to concurrently truncate the set and work (read/fill) the existing set.
-    mutable std::mutex mutex;
-    SetPtr set TSA_GUARDED_BY(mutex);
+    SetPtr set;
 
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;

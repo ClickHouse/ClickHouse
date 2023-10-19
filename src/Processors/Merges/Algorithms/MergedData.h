@@ -19,8 +19,8 @@ namespace ErrorCodes
 class MergedData
 {
 public:
-    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_)
-        : columns(std::move(columns_)), max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_)
+        : columns(std::move(columns_)), max_block_size(max_block_size_), use_average_block_size(use_average_block_size_)
     {
     }
 
@@ -117,16 +117,6 @@ public:
         if (merged_rows >= max_block_size)
             return true;
 
-        /// Never return more than max_block_size_bytes
-        if (max_block_size_bytes)
-        {
-            size_t merged_bytes = 0;
-            for (const auto & column : columns)
-                merged_bytes += column->allocatedBytes();
-            if (merged_bytes >= max_block_size_bytes)
-                return true;
-        }
-
         if (!use_average_block_size)
             return false;
 
@@ -153,9 +143,8 @@ protected:
     UInt64 total_chunks = 0;
     UInt64 total_allocated_bytes = 0;
 
-    const UInt64 max_block_size = 0;
-    const UInt64 max_block_size_bytes = 0;
-    const bool use_average_block_size = false;
+    const UInt64 max_block_size;
+    const bool use_average_block_size;
 
     bool need_flush = false;
 };

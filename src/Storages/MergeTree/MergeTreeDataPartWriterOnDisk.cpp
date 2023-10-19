@@ -13,22 +13,17 @@ namespace ErrorCodes
 
 void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
-    /// Here the main goal is to do preFinalize calls for plain_file and marks_file
-    /// Before that all hashing and compression buffers have to be finalized
-    /// Otherwise some data might stuck in the buffers above plain_file and marks_file
-    /// Also the order is important
-
-    compressed_hashing.finalize();
-    compressor.finalize();
-    plain_hashing.finalize();
+    compressed_hashing.next();
+    compressor.next();
+    plain_hashing.next();
 
     if (compress_marks)
     {
-        marks_compressed_hashing.finalize();
-        marks_compressor.finalize();
+        marks_compressed_hashing.next();
+        marks_compressor.next();
     }
 
-    marks_hashing.finalize();
+    marks_hashing.next();
 
     plain_file->preFinalize();
     marks_file->preFinalize();
@@ -232,7 +227,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
         }
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store, settings));
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregatorForPart(store));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -308,18 +303,18 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store, settings);
+                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store);
 
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
 
-                writeBinaryLittleEndian(stream.plain_hashing.count(), marks_out);
-                writeBinaryLittleEndian(stream.compressed_hashing.offset(), marks_out);
+                writeIntBinary(stream.plain_hashing.count(), marks_out);
+                writeIntBinary(stream.compressed_hashing.offset(), marks_out);
 
                 /// Actually this numbers is redundant, but we have to store them
                 /// to be compatible with the normal .mrk2 file format
                 if (settings.can_use_adaptive_granularity)
-                    writeBinaryLittleEndian(1UL, marks_out);
+                    writeIntBinary(1UL, marks_out);
             }
 
             size_t pos = granule.start_row;
@@ -352,12 +347,9 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         }
 
         if (compress_primary_key)
-        {
-            index_source_hashing_stream->finalize();
-            index_compressor_stream->finalize();
-        }
+            index_source_hashing_stream->next();
 
-        index_file_hashing_stream->finalize();
+        index_file_hashing_stream->next();
 
         String index_name = "primary" + getIndexExtension(compress_primary_key);
         if (compress_primary_key)

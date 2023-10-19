@@ -12,8 +12,7 @@ CREATE TABLE t_1
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(p_time)
-ORDER BY order_0
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+ORDER BY order_0;
 
 CREATE TABLE t_random_1
 (

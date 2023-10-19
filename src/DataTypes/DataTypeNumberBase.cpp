@@ -11,6 +11,7 @@ Field DataTypeNumberBase<T>::getDefault() const
 {
     return NearestFieldType<FieldType>();
 }
+
 template <typename T>
 MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 {
@@ -28,6 +29,7 @@ bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
     return is_integer<T> && is_unsigned_v<T>;
 }
+
 
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class DataTypeNumberBase<UInt8>;

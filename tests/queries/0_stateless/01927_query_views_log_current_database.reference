@@ -1,15 +1,15 @@
 Row 1:
 ──────
 stage:                Query log rows
-read_rows:            300
+read_rows:            400
 written_rows:         201
 databases:            ['_table_function','default']
-tables:               ['_table_function.numbers','default.table_a','default.table_b','default.table_c']
-views:                ['default.matview_a_to_b','default.matview_b_to_c']
+tables:               ['_table_function.numbers','default.table_a','default.table_b','default.table_b_live_view','default.table_c']
+views:                ['default.matview_a_to_b','default.matview_b_to_c','default.table_b_live_view']
 sleep_calls:          200
 sleep_us:             298
-profile_select_rows:  300
-profile_select_bytes: 3600
+profile_select_rows:  400
+profile_select_bytes: 5200
 profile_insert_rows:  201
 profile_insert_bytes: 2808
 Row 1:
@@ -45,6 +45,23 @@ profile_select_rows:  100
 profile_select_bytes: 800
 profile_insert_rows:  1
 profile_insert_bytes: 8
+
+Row 3:
+──────
+stage:                Depending views
+view_name:            default.table_b_live_view
+view_type:            Live
+status:               QueryFinish
+view_target:          default.table_b_live_view
+view_query:           SELECT sum(a + b) FROM default.table_b
+read_rows:            100
+written_rows:         0
+sleep_calls:          0
+sleep_us:             0
+profile_select_rows:  100
+profile_select_bytes: 1600
+profile_insert_rows:  0
+profile_insert_bytes: 0
 Row 1:
 ──────
 stage:                Query log rows 2

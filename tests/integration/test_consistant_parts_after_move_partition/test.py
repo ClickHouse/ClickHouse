@@ -14,13 +14,11 @@ def initialize_database(nodes, shard):
             CREATE TABLE `{database}`.src (p UInt64, d UInt64)
             ENGINE = ReplicatedMergeTree('/clickhouse/{database}/tables/test_consistent_shard1{shard}/replicated', '{replica}')
             ORDER BY d PARTITION BY p
-            SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5,
-            cleanup_delay_period=0, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;
+            SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0;
             CREATE TABLE `{database}`.dest (p UInt64, d UInt64)
             ENGINE = ReplicatedMergeTree('/clickhouse/{database}/tables/test_consistent_shard2{shard}/replicated', '{replica}')
             ORDER BY d PARTITION BY p
-            SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5,
-            cleanup_delay_period=0, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0, temporary_directories_lifetime=1;
+            SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0, temporary_directories_lifetime=1;
         """.format(
                 shard=shard, replica=node.name, database=CLICKHOUSE_DATABASE
             )

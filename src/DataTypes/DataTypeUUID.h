@@ -18,7 +18,6 @@ public:
     static constexpr auto type_id = TypeIndex::UUID;
 
     const char * getFamilyName() const override { return "UUID"; }
-
     TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override;
