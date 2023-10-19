@@ -6,11 +6,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-
 
 namespace DB
 {
@@ -20,6 +22,32 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+
+class PipelineExecutorImpl
+{
+public:
+    PipelineExecutorImpl(QueryPipeline & pipeline_, bool async)
+        : async_executor(async ? std::make_unique<PullingAsyncPipelineExecutor>(pipeline_) : nullptr)
+        , executor(async ? nullptr : std::make_unique<PullingPipelineExecutor>(pipeline_))
+    {}
+
+    bool pull(Block & block)
+    {
+        if (async_executor)
+            return async_executor->pull(block);
+        else
+            return executor->pull(block);
+    }
+
+private:
+    std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
+    std::unique_ptr<PullingPipelineExecutor> executor;
+};
+
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -409,7 +437,7 @@ void HashedArrayDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        PullingPipelineExecutor executor(pipeline);
+        PipelineExecutorImpl executor(pipeline, configuration.use_async_executor);
         update_field_loaded_block.reset();
         Block block;
 
@@ -533,12 +561,12 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void HashedArrayDictionary<dictionary_key_type>::resize(size_t added_rows)
+void HashedArrayDictionary<dictionary_key_type>::resize(size_t total_rows)
 {
-    if (unlikely(!added_rows))
+    if (unlikely(!total_rows))
         return;
 
-    key_attribute.container.reserve(added_rows);
+    key_attribute.container.reserve(total_rows);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -727,14 +755,37 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
     {
         QueryPipeline pipeline;
         pipeline = QueryPipeline(source_ptr->loadAll());
+        PipelineExecutorImpl executor(pipeline, configuration.use_async_executor);
 
-        PullingPipelineExecutor executor(pipeline);
+        UInt64 pull_time_microseconds = 0;
+        UInt64 process_time_microseconds = 0;
+
+        size_t total_rows = 0;
+        size_t total_blocks = 0;
+
         Block block;
-        while (executor.pull(block))
+        while (true)
         {
-            resize(block.rows());
+            Stopwatch watch_pull;
+            bool has_data = executor.pull(block);
+            pull_time_microseconds += watch_pull.elapsedMicroseconds();
+
+            if (!has_data)
+                break;
+
+            ++total_blocks;
+            total_rows += block.rows();
+
+            Stopwatch watch_process;
+            resize(total_rows);
             blockToAttributes(block);
+            process_time_microseconds += watch_process.elapsedMicroseconds();
         }
+
+        LOG_DEBUG(&Poco::Logger::get("HashedArrayDictionary"),
+            "Finished {}reading {} blocks with {} rows from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+            configuration.use_async_executor ? "asynchronous " : "",
+            total_blocks, total_rows, pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
     }
     else
     {
@@ -843,6 +894,7 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
+                             ContextPtr global_context,
                              DictionarySourcePtr source_ptr,
                              DictionaryKeyType dictionary_key_type) -> DictionaryPtr
     {
@@ -863,6 +915,12 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
 
         HashedArrayDictionaryStorageConfiguration configuration{require_nonempty, dict_lifetime};
 
+        ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto & settings = context->getSettingsRef();
+
+        bool is_clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        configuration.use_async_executor = is_clickhouse_source && settings.dictionary_use_async_executor;
+
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         else
@@ -872,9 +930,15 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
     using namespace std::placeholders;
 
     factory.registerLayout("hashed_array",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
+        {
+            return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
+        }, false);
     factory.registerLayout("complex_key_hashed_array",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
+        {
+            return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Complex);
+        }, true);
 }
 
 }
