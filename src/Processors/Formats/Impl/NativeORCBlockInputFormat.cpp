@@ -766,10 +766,6 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     }
 
     stripe_reader = file_reader->createRowReader(row_reader_options);
-
-    if (!batch)
-        batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
-
     return true;
 }
 
@@ -801,6 +797,7 @@ Chunk NativeORCBlockInputFormat::generate()
     if (is_stopped)
         return {};
 
+    auto batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
     while (true)
     {
         bool ok = stripe_reader->next(*batch);
@@ -828,7 +825,6 @@ void NativeORCBlockInputFormat::resetParser()
     file_reader.reset();
     stripe_reader.reset();
     include_indices.clear();
-    batch.reset();
     sarg.reset();
     block_missing_values.clear();
 }
