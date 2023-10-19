@@ -82,6 +82,7 @@ void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory &);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
+void registerAggregateFunctionConvivaAggTSA(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -176,6 +177,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionAnalysisOfVariance(factory);
         registerAggregateFunctionFlameGraph(factory);
         registerAggregateFunctionKolmogorovSmirnovTest(factory);
+        registerAggregateFunctionConvivaAggTSA(factory);
 
         registerWindowFunctions(factory);
     }
