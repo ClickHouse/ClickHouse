@@ -1400,6 +1400,7 @@ dmesg
 domainWithoutWWW
 dont
 dotProduct
+downsampling
 dplyr
 dragonbox
 dropoff
@@ -1708,6 +1709,7 @@ kurtsamp
 laion
 lang
 laravel
+largestTriangleThreeBuckets
 latencies
 ldap
 leftPad
@@ -1757,6 +1759,7 @@ london
 lowcardinality
 lowerUTF
 lowercased
+lttb
 lzma
 macOS
 mailrugo
