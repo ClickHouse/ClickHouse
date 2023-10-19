@@ -57,6 +57,7 @@ instance2 = cluster.add_instance(
 
 pg_manager = PostgresManager()
 pg_manager2 = PostgresManager()
+pg_manager_instance2 = PostgresManager()
 
 
 @pytest.fixture(scope="module")
@@ -69,9 +70,17 @@ def started_cluster():
             cluster.postgres_port,
             default_database="postgres_database",
         )
+        pg_manager_instance2.init(
+            instance2,
+            cluster.postgres_ip,
+            cluster.postgres_port,
+            default_database="postgres_database",
+            postgres_db_exists=True,
+        )
         pg_manager2.init(
             instance2, cluster.postgres_ip, cluster.postgres_port, "postgres_database2"
         )
+
         yield cluster
 
     finally:
@@ -717,6 +726,88 @@ def test_too_many_parts(started_cluster):
 
     # assert "200" == instance.query("SELECT count FROM test_database.test_table").strip()
     pg_manager2.drop_materialized_db()
+
+
+def test_toast(started_cluster):
+    table = "test_toast"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, txt text, other text)""",
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    pg_manager.execute(
+        f"""\
+INSERT INTO {table} (id, txt)\
+VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25)) :: integer) FROM generate_series(1,30000) as t(i)), '')))
+    """
+    )
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+
+def test_replica_consumer(started_cluster):
+    table = "test_replica_consumer"
+    pg_manager_instance2.restart()
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
+    )
+
+    for pm in [pg_manager, pg_manager_instance2]:
+        pm.create_materialized_db(
+            ip=started_cluster.postgres_ip,
+            port=started_cluster.postgres_port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{table}'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+                "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+            ],
+        )
+
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance2, table, postgres_database=pg_manager_instance2.get_default_database()
+    )
+
+    assert 50 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
+    assert 50 == int(instance2.query(f"SELECT count() FROM test_database.{table}"))
+
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(1000, 1000)"
+    )
+
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_manager.get_default_database()
+    )
+    check_tables_are_synchronized(
+        instance2, table, postgres_database=pg_manager_instance2.get_default_database()
+    )
+
+    assert 1050 == int(instance.query(f"SELECT count() FROM test_database.{table}"))
+    assert 1050 == int(instance2.query(f"SELECT count() FROM test_database.{table}"))
+
+    for pm in [pg_manager, pg_manager_instance2]:
+        pm.drop_materialized_db()
+    pg_manager_instance2.clear()
 
 
 if __name__ == "__main__":
