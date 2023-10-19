@@ -12,7 +12,6 @@
                 <max_size>1Gi</max_size>
                 <path>cached_s3/</path>
                 <disk>s3</disk>
-                <filesystem_cache_getorset_batch_size>10</filesystem_cache_getorset_batch_size>
             </cached_s3>
         </disks>
         <policies>
