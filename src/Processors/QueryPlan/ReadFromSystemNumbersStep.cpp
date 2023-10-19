@@ -65,11 +65,10 @@ UInt128 sizeOfRange(const Range & r)
 
     if (!r.left_included)
         size--;
-    assert(size > 0);
 
     if (!r.right_included)
         size--;
-    assert(size > 0);
+    assert(size >= 0);
     return size;
 };
 
@@ -314,7 +313,6 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , limit(query_info.limit)
 {
-
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
     chassert(storage->as<StorageSystemNumbers>() != nullptr);
@@ -340,7 +338,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
     if (!numbers_storage.multithreaded)
         num_streams = 1;
-
 
     /// Build rpn of query filters
     KeyCondition condition(buildFilterDAG(), context, column_names, key_expression, NameSet{});
