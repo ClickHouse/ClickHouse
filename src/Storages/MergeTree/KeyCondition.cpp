@@ -2762,7 +2762,7 @@ String KeyCondition::RPNElement::toString() const
         return toString(fmt::format("column {}", key_column), false);
 }
 
-String KeyCondition::RPNElement::toString(String column_name, bool print_constants) const
+String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
 {
     auto print_wrapped_column = [this, column_name, print_constants](WriteBuffer & buf)
     {

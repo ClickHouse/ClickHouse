@@ -198,7 +198,7 @@ private:
             : function(function_), range(range_), key_column(key_column_) {}
 
         String toString() const;
-        String toString(String column_name, bool print_constants) const;
+        String toString(std::string_view column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
 
