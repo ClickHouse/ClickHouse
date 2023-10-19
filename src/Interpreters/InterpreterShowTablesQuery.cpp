@@ -116,6 +116,30 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         return rewritten_query.str();
     }
 
+    /// SHOW MERGES
+    if (query.merges)
+    {
+        WriteBufferFromOwnString rewritten_query;
+        rewritten_query << "SELECT table, database, elapsed, merge_type FROM system.merges";
+
+        if (!query.like.empty())
+        {
+            rewritten_query
+                << " WHERE table "
+                << (query.not_like ? "NOT " : "")
+                << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+                << DB::quote << query.like;
+        }
+
+        /// (*)
+        rewritten_query << " ORDER BY elapsed desc, database, table";
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length;
+
+        return rewritten_query.str();
+    }
+
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
