@@ -182,13 +182,15 @@ void addDefaultHandlersFactory(
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
         {
-            return (startsWith(request.getURI(), "/?")
-                    && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-                        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
-                || ((startsWith(request.getURI(), "/?")
-                    || request.getURI() == "/")
-                    && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
-                        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST));
+            bool pathMatchesGetOrHead = startsWith(request.getURI(), "/?") || startsWith(request.getURI(), "/query?");
+            bool isGetOrHeadRequest = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+
+            bool pathMatchesPostOrOptions = pathMatchesGetOrHead || request.getURI() == "/";
+            bool isPostOrOptionsRequest = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            return (pathMatchesGetOrHead && isGetOrHeadRequest) || (pathMatchesPostOrOptions && isPostOrOptionsRequest);
         }
     );
     factory.addHandler(query_handler);
