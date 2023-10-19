@@ -329,6 +329,10 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
         pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
+    /// Add to processors to get processor info through explain pipeline statement.
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
     pipeline.init(std::move(pipe));
 }
 
