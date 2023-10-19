@@ -816,7 +816,10 @@ KeyCondition::KeyCondition(
         std::move(block_with_constants),
         std::move(prepared_sets),
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+
     rpn = std::move(builder).extractRPN();
+
+    findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 }
 
 KeyCondition::KeyCondition(
