@@ -119,7 +119,7 @@ class GitHub(github.Github):
             )
         return prs
 
-    def sleep_on_rate_limit(self):
+    def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():
             if data["remaining"] == 0:
                 sleep_time = data["reset"] - int(datetime.now().timestamp()) + 1
@@ -191,13 +191,13 @@ class GitHub(github.Github):
         # We don't want the cache_updated being always old,
         # for example in cases when the user is not updated for ages
         cache_updated = max(
-            datetime.fromtimestamp(cache_file.stat().st_mtime), cached_obj.updated_at
+            cache_file.stat().st_mtime, cached_obj.updated_at.timestamp()
         )
         if obj_updated_at is None:
             # When we don't know about the object is updated or not,
             # we update it once per hour
             obj_updated_at = datetime.now() - timedelta(hours=1)
-        if obj_updated_at <= cache_updated:
+        if obj_updated_at.timestamp() <= cache_updated:
             return True, cached_obj
         return False, cached_obj
 
