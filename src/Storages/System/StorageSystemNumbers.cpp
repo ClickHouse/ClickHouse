@@ -34,7 +34,7 @@ void StorageSystemNumbers::read(
     size_t num_streams)
 {
     query_plan.addStep(std::make_unique<ReadFromSystemNumbersStep>(
-        column_names, shared_from_this(), storage_snapshot, query_info, std::move(context), num_streams, max_block_size));
+        column_names, shared_from_this(), storage_snapshot, query_info, std::move(context), max_block_size, num_streams));
 }
 
 }
