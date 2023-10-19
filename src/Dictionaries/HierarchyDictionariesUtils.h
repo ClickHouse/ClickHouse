@@ -26,7 +26,10 @@ public:
         UInt32 end_index;
     };
 
-    explicit DictionaryHierarchicalParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
+    using Array = PODArray<UInt64, 8 * sizeof(UInt64), Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+    using ParentToChildIndex = HashMap<UInt64, Array>;
+
+    explicit DictionaryHierarchicalParentToChildIndex(const ParentToChildIndex & parent_to_children_map_)
     {
         size_t parent_to_children_map_size = parent_to_children_map_.size();
 

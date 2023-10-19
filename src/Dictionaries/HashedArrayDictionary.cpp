@@ -328,7 +328,7 @@ DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key
         for (auto & [key, value] : key_attribute_container)
             index_to_key[value] = key;
 
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child.reserve(index_to_key.size());
 
         size_t parent_keys_container_size = parent_keys_container.size();
