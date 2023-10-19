@@ -65,7 +65,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
 
     // No https configuration since it's not set
     ASSERT_EQ(https_proxy_configuration.host, "");
-    ASSERT_EQ(https_proxy_configuration.port, 0);
+    ASSERT_EQ(https_proxy_configuration.port, 80);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
@@ -80,7 +80,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
     auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, *config)->resolve();
 
     ASSERT_EQ(http_proxy_configuration.host, "");
-    ASSERT_EQ(http_proxy_configuration.port, 0);
+    ASSERT_EQ(http_proxy_configuration.port, 80);
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 

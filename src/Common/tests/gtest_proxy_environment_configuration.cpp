@@ -58,7 +58,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPNoEnv)
 
     ASSERT_EQ(configuration.host, "");
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(configuration.port, 0u);
+    ASSERT_EQ(configuration.port, 80u);
 }
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPs)
@@ -106,7 +106,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPsNoEnv)
 
     ASSERT_EQ(configuration.host, "");
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(configuration.port, 0u);
+    ASSERT_EQ(configuration.port, 80u);
 }
 
 }
