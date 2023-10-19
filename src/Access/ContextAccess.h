@@ -183,6 +183,7 @@ private:
     const AccessControl * access_control = nullptr;
     const Params params;
 
+    mutable std::atomic<bool> initialized = false; // can be removed after Bug 5504 is resolved
     mutable std::atomic<bool> user_was_dropped = false;
     mutable std::atomic<Poco::Logger *> trace_log = nullptr;
 
