@@ -18,6 +18,7 @@ on:  # yamllint disable-line rule:truthy
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
       - 'tests/ci/docs_check.py'
+      - '.github/workflows/docs_check.yml'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
@@ -73,6 +74,7 @@ jobs:
         with:
           clear-repository: true
           fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
+          filter: tree:0
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:

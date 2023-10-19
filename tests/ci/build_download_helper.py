@@ -51,9 +51,9 @@ def get_gh_api(
     sleep: int = 3,
     **kwargs: Any,
 ) -> requests.Response:
-    """It's a wrapper around get_with_retries that requests GH api w/o auth by
-    default, and falls back to the get_best_robot_token in case of receiving
-    "403 rate limit exceeded" error
+    """
+    Request GH api w/o auth by default, and failover to the get_best_robot_token in case of receiving
+    "403 rate limit exceeded" or "404 not found" error
     It sets auth automatically when ROBOT_TOKEN is already set by get_best_robot_token
     """
 
@@ -71,27 +71,39 @@ def get_gh_api(
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
 
-    need_retry = False
-    for _ in range(retries):
+    token_is_set = "Authorization" in kwargs.get("headers", {})
+    exc = Exception("A placeholder to satisfy typing and avoid nesting")
+    try_cnt = 0
+    while try_cnt < retries:
+        try_cnt += 1
         try:
-            response = get_with_retries(url, 1, sleep, **kwargs)
+            response = requests.get(url, **kwargs)
             response.raise_for_status()
             return response
-        except requests.HTTPError as exc:
-            if (
-                exc.response.status_code == 403
+        except requests.HTTPError as e:
+            exc = e
+            ratelimit_exceeded = (
+                e.response.status_code == 403
                 and b"rate limit exceeded"
-                in exc.response._content  # pylint:disable=protected-access
-            ):
+                in e.response._content  # pylint:disable=protected-access
+            )
+            try_auth = e.response.status_code == 404
+            if (ratelimit_exceeded or try_auth) and not token_is_set:
                 logging.warning(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
-                need_retry = True
-                break
+                token_is_set = True
+                try_cnt = 0
+                continue
+        except Exception as e:
+            exc = e
 
-    if need_retry:
-        return get_with_retries(url, retries, sleep, **kwargs)
+        if try_cnt < retries:
+            logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
+            time.sleep(sleep)
+
+    raise exc
 
 
 def get_build_name_for_check(check_name: str) -> str:

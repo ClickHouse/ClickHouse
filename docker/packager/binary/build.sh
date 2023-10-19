@@ -172,10 +172,15 @@ then
     # This is why we add this repository snapshot from CI to the performance test
     # package.
     mkdir "$PERF_OUTPUT"/ch
-    git -C "$PERF_OUTPUT"/ch init --bare
-    git -C "$PERF_OUTPUT"/ch remote add origin /build
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin HEAD:pr
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin master:master
+    # Copy .git only, but skip modules, using tar
+    tar c -C /build/ --exclude='.git/modules/**' .git | tar x -C "$PERF_OUTPUT"/ch
+    # Create branch pr and origin/master to have them for the following performance comparison
+    git -C "$PERF_OUTPUT"/ch branch pr
+    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin master:origin/master
+    # Clean remote, to not have it stale
+    git -C "$PERF_OUTPUT"/ch remote | xargs -n1 git -C "$PERF_OUTPUT"/ch remote remove
+    # And clean all tags
+    git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
     (
