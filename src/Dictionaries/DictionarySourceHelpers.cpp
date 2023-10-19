@@ -9,6 +9,9 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
 
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+
 namespace DB
 {
 
@@ -130,4 +133,20 @@ String TransformWithAdditionalColumns::getName() const
 {
     return "TransformWithAdditionalColumns";
 }
+
+DictionaryPipelineExecutor::DictionaryPipelineExecutor(QueryPipeline & pipeline_, bool async)
+    : async_executor(async ? std::make_unique<PullingAsyncPipelineExecutor>(pipeline_) : nullptr)
+    , executor(async ? nullptr : std::make_unique<PullingPipelineExecutor>(pipeline_))
+{}
+
+bool DictionaryPipelineExecutor::pull(Block & block)
+{
+    if (async_executor)
+        return async_executor->pull(block);
+    else
+        return executor->pull(block);
+}
+
+DictionaryPipelineExecutor::~DictionaryPipelineExecutor() = default;
+
 }

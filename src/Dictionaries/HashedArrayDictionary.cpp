@@ -6,7 +6,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
@@ -22,32 +21,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
-}
-
-namespace
-{
-
-class PipelineExecutorImpl
-{
-public:
-    PipelineExecutorImpl(QueryPipeline & pipeline_, bool async)
-        : async_executor(async ? std::make_unique<PullingAsyncPipelineExecutor>(pipeline_) : nullptr)
-        , executor(async ? nullptr : std::make_unique<PullingPipelineExecutor>(pipeline_))
-    {}
-
-    bool pull(Block & block)
-    {
-        if (async_executor)
-            return async_executor->pull(block);
-        else
-            return executor->pull(block);
-    }
-
-private:
-    std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
-    std::unique_ptr<PullingPipelineExecutor> executor;
-};
-
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -437,7 +410,7 @@ void HashedArrayDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        PipelineExecutorImpl executor(pipeline, configuration.use_async_executor);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         update_field_loaded_block.reset();
         Block block;
 
@@ -755,7 +728,7 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
     {
         QueryPipeline pipeline;
         pipeline = QueryPipeline(source_ptr->loadAll());
-        PipelineExecutorImpl executor(pipeline, configuration.use_async_executor);
+        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
 
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
@@ -918,8 +891,8 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto & settings = context->getSettingsRef();
 
-        bool is_clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        configuration.use_async_executor = is_clickhouse_source && settings.dictionary_use_async_executor;
+        const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple>>(dict_id, dict_struct, std::move(source_ptr), configuration);
