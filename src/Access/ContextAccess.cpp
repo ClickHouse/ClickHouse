@@ -270,6 +270,8 @@ void ContextAccess::initialize()
 
     if (!user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041, b)");
+
+    initialized = true;
 }
 
 
@@ -383,7 +385,7 @@ UserPtr ContextAccess::tryGetUser() const
 String ContextAccess::getUserName() const
 {
     std::lock_guard lock{mutex};
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     return user_name;
 }
@@ -391,7 +393,7 @@ String ContextAccess::getUserName() const
 std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 {
     std::lock_guard lock{mutex};
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (roles_info)
         return roles_info;
@@ -403,7 +405,7 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
 {
     std::lock_guard lock{mutex};
 
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
 
     RowPolicyFilterPtr filter;
@@ -426,7 +428,7 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
 
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
 
     if (!enabled_quota)
@@ -460,7 +462,7 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (enabled_settings)
     {
@@ -474,7 +476,7 @@ SettingsChanges ContextAccess::getDefaultSettings() const
 std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
 {
     std::lock_guard lock{mutex};
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (enabled_settings)
         return enabled_settings->getInfo();
@@ -486,7 +488,7 @@ std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 {
     std::lock_guard lock{mutex};
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (access)
         return access;
@@ -498,7 +500,7 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRights() const
 std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit() const
 {
     std::lock_guard lock{mutex};
-    if (!user && !user_was_dropped)
+    if (initialized && !user && !user_was_dropped)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ContextAccess is inconsistent (bug 55041)");
     if (access_with_implicit)
         return access_with_implicit;
