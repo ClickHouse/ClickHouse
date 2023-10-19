@@ -657,7 +657,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …) {#sort}
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -716,7 +716,7 @@ SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 └─────────┘
 ```
 
-For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#reverse-sort) in a sorting.
+For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#array_functions-reverse-sort) in a sorting.
 
 The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
@@ -762,7 +762,7 @@ To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.
 
 Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
-## arrayReverseSort(\[func,\] arr, …) {#reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -1121,32 +1121,6 @@ Result:
 ┌─res─────────────────────────┐
 │ [1234500,234000,34560,4567] │
 └─────────────────────────────┘
-```
-
-## arrayFold
-
-Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
-
-**Syntax**
-
-``` sql
-arrayFold(lambda_function, arr1, arr2, ..., accumulator)
-```
-
-**Example**
-
-Query:
-
-``` sql
-SELECT arrayFold( x,acc -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
-```
-
-Result:
-
-``` text
-┌─arrayFold(lambda(tuple(x, acc), plus(acc, multiply(x, 2))), [1, 2, 3, 4], toInt64(3))─┐
-│                                                                                     3 │
-└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## arrayReverse(arr)
@@ -2142,80 +2116,6 @@ Result:
 ┌─res─────────────────┐
 │ [4242,4242,1,2,3,4] │
 └─────────────────────┘
-```
-
-
-## arrayRandomSample
-
-Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array. In this case, all elements of the input array are returned, but the order is not guaranteed. The function can handle both flat arrays and nested arrays.
-
-**Syntax**
-
-```sql
-arrayRandomSample(arr, samples)
-```
-
-**Arguments**
-
-- `arr` — The input array from which to sample elements. This may be flat or nested arrays.
-- `samples` — An unsigned integer specifying the number of elements to include in the random sample.
-
-**Returned Value**
-
-- An array containing a random sample of elements from the input array.
-
-**Examples**
-
-Query:
-
-```sql
-SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
-```
-
-Result:
-```
-┌─res────────────────┐
-│ ['banana','apple'] │
-└────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
-```
-
-Result:
-```
-┌─res───────────┐
-│ [[3,4],[5,6]] │
-└───────────────┘
-```
-
-Query:
-
-```sql
-SELECT arrayRandomSample([1, 2, 3, 4, 5], 0) as res;
-```
-
-Result:
-```
-┌─res─┐
-│ []  │
-└─────┘
-```
-
-Query:
-
-```sql
-SELECT arrayRandomSample([1, 2, 3], 5) as res;
-```
-
-Result:
-```
-┌─res─────┐
-│ [3,1,2] │
-└─────────┘
 ```
 
 ## Distance functions

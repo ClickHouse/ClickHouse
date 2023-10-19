@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 
 namespace DB
 {
@@ -492,10 +493,7 @@ void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, co
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextQuotedImpl(nested_column, istr, settings, nested);
-            else
-                nested->deserializeTextQuoted(nested_column, istr, settings);
+            nested->deserializeTextQuoted(nested_column, istr, settings);
         }, false);
 
     if (whole && !istr.eof())
@@ -606,10 +604,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                if (settings.null_as_default)
-                    SerializationNullable::deserializeTextCSVImpl(nested_column, rb, settings, nested);
-                else
-                    nested->deserializeTextCSV(nested_column, rb, settings);
+                nested->deserializeTextCSV(nested_column, rb, settings);
             }, true);
     }
     else
@@ -617,10 +612,7 @@ void SerializationArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
         deserializeTextImpl(column, rb,
             [&](IColumn & nested_column)
             {
-                if (settings.null_as_default)
-                    SerializationNullable::deserializeTextQuotedImpl(nested_column, rb, settings, nested);
-                else
-                    nested->deserializeTextQuoted(nested_column, rb, settings);
+                nested->deserializeTextQuoted(nested_column, rb, settings);
             }, true);
     }
 }

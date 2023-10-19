@@ -124,7 +124,7 @@ void SelectStreamFactory::createForShard(
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)

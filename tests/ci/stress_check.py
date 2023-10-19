@@ -15,31 +15,16 @@ from clickhouse_helper import (
     ClickHouseHelper,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import (
-    RerunHelper,
-    get_commit,
-    post_commit_status,
-    format_description,
-)
+from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from docker_pull_helper import DockerImage, get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult, TestResults, read_test_results
+from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
-
-
-def get_additional_envs() -> List[str]:
-    result = []
-    # some cloud-specific features require feature flags enabled
-    # so we need this ENV to be able to disable the randomization
-    # of feature flags
-    result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
-
-    return result
 
 
 def get_run_command(
@@ -47,13 +32,9 @@ def get_run_command(
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
-    additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
 ) -> str:
-    envs = [f"-e {e}" for e in additional_envs]
-    env_str = " ".join(envs)
-
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
@@ -64,7 +45,7 @@ def get_run_command(
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {image} "
     )
 
     return cmd
@@ -162,27 +143,19 @@ def run_stress_test(docker_image_name: str) -> None:
         pr_info, stopwatch.start_time_str, check_name
     )
 
-    additional_envs = get_additional_envs()
-
     run_command = get_run_command(
         packages_path,
         result_path,
         repo_tests_path,
         server_log_path,
-        additional_envs,
         ci_logs_args,
         docker_image,
     )
     logging.info("Going to run stress test: %s", run_command)
 
-    timeout_expired = False
-    timeout = 60 * 150
-    with TeePopen(run_command, run_log_path, timeout=timeout) as process:
+    with TeePopen(run_command, run_log_path, timeout=60 * 150) as process:
         retcode = process.wait()
-        if process.timeout_exceeded:
-            logging.info("Timeout expired for command: %s", run_command)
-            timeout_expired = True
-        elif retcode == 0:
+        if retcode == 0:
             logging.info("Run successfully")
         else:
             logging.info("Run failed")
@@ -194,12 +167,6 @@ def run_stress_test(docker_image_name: str) -> None:
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
-
-    if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(timeout))
-        state = "failure"
-        description = format_description(test_results[-1].name)
-
     ch_helper = ClickHouseHelper()
 
     report_url = upload_results(

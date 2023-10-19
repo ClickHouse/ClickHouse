@@ -1,17 +1,12 @@
-if (APPLE OR SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "memory")
-    # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
-    set (ENABLE_DWARF_PARSER_DEFAULT OFF)
+if (APPLE OR SANITIZE STREQUAL "undefined")
+   set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
 else()
-    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ${ENABLE_LIBRARIES})
-    set (ENABLE_DWARF_PARSER_DEFAULT ${ENABLE_LIBRARIES})
+   set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
 endif()
 
-option (ENABLE_EMBEDDED_COMPILER "Enable support for JIT compilation during query execution (uses LLVM library)" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
+option (ENABLE_EMBEDDED_COMPILER "Enable support for JIT compilation during query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
-option (ENABLE_DWARF_PARSER "Enable support for DWARF input format (uses LLVM library)" ${ENABLE_DWARF_PARSER_DEFAULT})
-
-if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER)
+if (NOT ENABLE_EMBEDDED_COMPILER)
     message(STATUS "Not using LLVM")
     return()
 endif()

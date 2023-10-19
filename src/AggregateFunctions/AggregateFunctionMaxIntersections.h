@@ -129,10 +129,7 @@ public:
         {
             writePODBinary(value[i].first, buf);
             writePODBinary(zero_padding, buf);
-            if constexpr (std::endian::native == std::endian::little)
-                writePODBinary(value[i].second, buf);
-            else
-                writePODBinary(std::byteswap(value[i].second), buf);
+            writePODBinary(value[i].second, buf);
         }
     }
 
