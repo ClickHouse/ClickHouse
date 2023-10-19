@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from distutils.version import StrictVersion
 from pathlib import Path
 from typing import List, Tuple
 import argparse
@@ -9,6 +8,7 @@ import subprocess
 import sys
 
 from github import Github
+from packaging.version import Version
 
 from build_download_helper import download_builds_filter
 from clickhouse_helper import (
@@ -39,7 +39,7 @@ def process_os_check(log_path: Path) -> TestResult:
         return TestResult(name, "OK")
 
 
-def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
+def process_glibc_check(log_path: Path, max_glibc_version: Version) -> TestResults:
     test_results = []  # type: TestResults
     with open(log_path, "r") as log:
         for line in log:
@@ -49,7 +49,7 @@ def process_glibc_check(log_path: Path, max_glibc_version: str) -> TestResults:
                 _, version = symbol_with_glibc.split("@GLIBC_")
                 if version == "PRIVATE":
                     test_results.append(TestResult(symbol_with_glibc, "FAIL"))
-                elif StrictVersion(version) > max_glibc_version:
+                elif Version(version) > max_glibc_version:
                     test_results.append(TestResult(symbol_with_glibc, "FAIL"))
     if not test_results:
         test_results.append(TestResult("glibc check", "OK"))
@@ -61,7 +61,7 @@ def process_result(
     server_log_directory: Path,
     check_glibc: bool,
     check_distributions: bool,
-    max_glibc_version: str,
+    max_glibc_version: Version,
 ) -> Tuple[str, str, TestResults, List[Path]]:
     glibc_log_path = result_directory / "glibc.log"
     test_results = process_glibc_check(glibc_log_path, max_glibc_version)
@@ -211,11 +211,11 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
-    max_glibc_version = ""
+    max_glibc_version = Version("0")
     if "amd64" in args.check_name:
-        max_glibc_version = "2.4"
+        max_glibc_version = Version("2.4")
     elif "aarch64" in args.check_name:
-        max_glibc_version = "2.18"  # because of build with newer sysroot?
+        max_glibc_version = Version("2.18")  # because of build with newer sysroot?
     else:
         raise Exception("Can't determine max glibc version")
 
