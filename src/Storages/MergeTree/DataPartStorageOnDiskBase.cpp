@@ -260,13 +260,52 @@ ReservationPtr DataPartStorageOnDiskBase::tryReserve(UInt64 bytes) const
 }
 
 IDataPartStorage::ReplicatedFilesDescription
-DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_names) const
+DataPartStorageOnDiskBase::getReplicatedFilesDescription(
+    const NameSet & file_names, bool try_use_zerocopy) const
 {
     ReplicatedFilesDescription description;
     auto relative_path = fs::path(root_path) / part_dir;
+    auto actual_file_names = getActualFileNamesOnDisk(file_names);
     auto disk = volume->getDisk();
 
-    auto actual_file_names = getActualFileNamesOnDisk(file_names);
+    if (try_use_zerocopy || disk->isObjectStorageVFS())
+    {
+        if (try_use_zerocopy && !disk->supportZeroCopyReplication())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Disk {} doesn't support zero-copy replication", disk->getName());
+
+        if (try_use_zerocopy)
+            description.unique_id = getUniqueId();
+
+        Names paths;
+        for (const auto & name : actual_file_names)
+        {
+            /// Just some additional checks
+            auto metadata_full_file_path = fs::path(getFullPath()) / name;
+            if (!fs::exists(metadata_full_file_path))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not exists", name);
+            if (!fs::is_regular_file(metadata_full_file_path))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not a file", name);
+
+            paths.emplace_back(relative_path / name);
+        }
+
+        auto serialized_metadata = disk->getSerializedMetadata(paths);
+        for (const auto & name : actual_file_names)
+        {
+            auto & file_desc = description.files[name];
+            const auto & metadata_str = serialized_metadata.at(relative_path / name);
+
+            file_desc.file_size = metadata_str.size();
+            file_desc.input_buffer_getter = [metadata_str]
+            {
+                return std::make_unique<ReadBufferFromString>(metadata_str);
+            };
+        }
+
+        return description;
+    }
+
     for (const auto & name : actual_file_names)
     {
         auto path = relative_path / name;
@@ -278,49 +317,6 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         file_desc.input_buffer_getter = [disk, path, file_size]
         {
             return disk->readFile(path, ReadSettings{}.adjustBufferSize(file_size), file_size, file_size);
-        };
-    }
-
-    return description;
-}
-
-IDataPartStorage::ReplicatedFilesDescription
-DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const
-{
-    ReplicatedFilesDescription description;
-    auto relative_path = fs::path(root_path) / part_dir;
-
-    auto disk = volume->getDisk();
-    if (!disk->supportZeroCopyReplication())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
-
-    description.unique_id = getUniqueId();
-
-    Names paths;
-    auto actual_file_names = getActualFileNamesOnDisk(file_names);
-
-    for (const auto & name : actual_file_names)
-    {
-        /// Just some additional checks
-        auto metadata_full_file_path = fs::path(getFullPath()) / name;
-        if (!fs::exists(metadata_full_file_path))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not exists", name);
-        if (!fs::is_regular_file(metadata_full_file_path))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not a file", name);
-
-        paths.emplace_back(relative_path / name);
-    }
-
-    auto serialized_metadata = disk->getSerializedMetadata(paths);
-    for (const auto & name : actual_file_names)
-    {
-        auto & file_desc = description.files[name];
-        const auto & metadata_str = serialized_metadata.at(relative_path / name);
-
-        file_desc.file_size = metadata_str.size();
-        file_desc.input_buffer_getter = [metadata_str]
-        {
-            return std::make_unique<ReadBufferFromString>(metadata_str);
         };
     }
 

@@ -1,3 +1,4 @@
+#include "Disks/ObjectStorages/DiskObjectStorageVFS.h"
 #include "config.h"
 
 #include <Common/logger_useful.h>
@@ -169,6 +170,10 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         chassert(type == "s3" || type == "s3_plain");
 
         auto [object_key_compatibility_prefix, object_key_generator] = getPrefixAndKeyGenerator(type, uri, config, config_prefix);
+        // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
+        constexpr auto key = "merge_tree.allow_object_storage_vfs";
+        const bool s3_enable_disk_vfs = config.getBool(key, false);
+        if (s3_enable_disk_vfs) chassert(type == "s3");
 
         MetadataStoragePtr metadata_storage;
         auto settings = getSettings(config, config_prefix, context);
@@ -215,6 +220,27 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
                 );
                 s3_storage->setCapabilitiesSupportBatchDelete(false);
             }
+        }
+
+        /// TODO myrrc this disables zero-copy replication for all disks, not sure whether
+        /// we can preserve any compatibility. One option is to specify vfs option per disk,
+        /// so zero-copy could be enabled globally but for selected disks if would be off due to
+        /// vfs option. Other option is to make a special s3_vfs disk like CH inc did with
+        /// SharedMergeTree (i.e. s3withkeeper) but I believe this could break way more things that it should
+        if (s3_enable_disk_vfs)
+        {
+            auto disk = std::make_shared<DiskObjectStorageVFS>(
+                name,
+                uri.key,
+                "DiskS3",
+                std::move(metadata_storage),
+                std::move(s3_storage),
+                config,
+                config_prefix,
+                context->getZooKeeper());
+
+            disk->startup(context, skip_access_check);
+            return disk;
         }
 
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(

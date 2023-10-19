@@ -47,8 +47,8 @@ public:
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;
 
-    ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
-    ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
+    ReplicatedFilesDescription getReplicatedFilesDescription(
+        const NameSet & file_names, bool try_use_zerocopy) const override;
 
     void backup(
         const MergeTreeDataPartChecksums & checksums,

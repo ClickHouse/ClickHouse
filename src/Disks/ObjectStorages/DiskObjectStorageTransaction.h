@@ -63,17 +63,28 @@ protected:
 
     DiskObjectStorageOperations operations_to_execute;
 
-    DiskObjectStorageTransaction(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-        MetadataTransactionPtr metadata_transaction_);
+    void writeFileUsingBlobWritingFunctionOps(
+        const String & path,
+        WriteMode mode,
+        WriteBlobFunction && write_blob_function,
+        StoredObject& object);
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFileOps( /// NOLINT
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings,
+        bool autocommit,
+        StoredObject& object);
+
+    virtual std::shared_ptr<DiskObjectStorageTransaction> shared() { return shared_from_this(); }
 
 public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+        MetadataTransactionPtr metadata_transaction_);
 
     void commit() override;
     void undo() override;

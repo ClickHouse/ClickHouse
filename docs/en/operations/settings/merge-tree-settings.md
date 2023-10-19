@@ -299,6 +299,14 @@ Possible values:
 
 Default value: 10800
 
+### allow_object_storage_vfs
+
+An alternate reference counting mechanism for object storages. Mutually exclusive with
+`allow_remote_fs_zero_copy_replication`.
+
+Possible values: 0, 1
+Default value: 0
+
 ## try_fetch_recompressed_part_timeout
 
 Recompression works slow in most cases, so we don't start merge with recompression until this timeout and trying to fetch recompressed part from replica which assigned this merge with recompression.

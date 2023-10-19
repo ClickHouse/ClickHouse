@@ -362,6 +362,8 @@ public:
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
 
+    virtual bool isObjectStorageVFS() const { return false; }
+
     /// Whether this disk support parallel write
     /// Overrode in remote fs disks.
     virtual bool supportParallelWrite() const { return false; }

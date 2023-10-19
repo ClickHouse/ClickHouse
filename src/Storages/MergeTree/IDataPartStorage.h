@@ -208,8 +208,11 @@ public:
         String unique_id;
     };
 
-    virtual ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const = 0;
-    virtual ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const = 0;
+    // This is kind of a leaked abstraction, as currently a zerocopy-aware disk may be asked to
+    // send list of data instead of metadata (see Service::sendPartFromDisk).
+    virtual ReplicatedFilesDescription getReplicatedFilesDescription(
+        const NameSet & file_names,
+        bool try_use_zerocopy) const = 0;
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.

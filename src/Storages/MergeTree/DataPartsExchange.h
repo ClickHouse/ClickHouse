@@ -49,8 +49,9 @@ private:
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool from_remote_disk,
-        bool send_projections);
+        bool from_disk_with_zero_copy,
+        bool send_projections,
+        bool verify_checksums);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -106,7 +107,7 @@ private:
         bool to_detached,
         const String & tmp_prefix_,
         DiskPtr disk,
-        bool to_remote_disk,
+        bool zero_copy,
         PooledReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
