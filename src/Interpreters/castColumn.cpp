@@ -12,8 +12,8 @@ static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
         return arg.column;
 
-    const auto & from_name = arg.type->getName();
-    const auto & to_name = type->getName();
+    const auto from_name = arg.type->getName();
+    const auto to_name = type->getName();
     ColumnsWithTypeAndName arguments
     {
         arg,
@@ -23,7 +23,7 @@ static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr
             ""
         }
     };
-    auto get_cast_func = [&]
+    auto get_cast_func = [&arguments]
     {
         FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<cast_type>::createImpl();
         return func_builder_cast->build(arguments);
