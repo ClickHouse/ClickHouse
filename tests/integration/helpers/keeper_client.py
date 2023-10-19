@@ -1,6 +1,7 @@
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster
 from kazoo.exceptions import NodeExistsError
+import logging
 
 
 def quote_string(s):
@@ -38,12 +39,11 @@ class KeeperClient:
             raise Exception("Cluster has no ZooKeeper")
 
         command = CommandRequest(args, stdin="")
-        ans = command.get_answer()
-        if ans.startswith("Err: "):
-            ans = ans[5:]
-            if ans.startswith("Node exists"):
+        ans, err = command.get_answer_and_error()
+        if err:
+            if err.startswith("Node exists"):
                 raise NodeExistsError()
-            raise Exception(ans)
+            raise Exception(err)
         return ans
 
     def command(self, cmd):
@@ -51,14 +51,12 @@ class KeeperClient:
 
     def exists(self, path):
         stat_resp = self.query(f"exists {path}")
-        if not stat_resp:
-            return None
-        return stat_resp
+        return stat_resp.strip() == "1"
 
     def sync(self, path):
         return self.query(f"sync {path}")
 
-    def create(self, path, value="", makepath=False):
+    def create(self, path, value="default", makepath=False):
         opt_parent = "PARENT" if makepath else ""
         return self.query(f"create {path} {quote_string(value)} {opt_parent}")
 

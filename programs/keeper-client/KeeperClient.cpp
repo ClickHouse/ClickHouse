@@ -329,7 +329,7 @@ bool KeeperClient::processQueryText(const String & text)
     }
     catch (Coordination::Exception & err)
     {
-        std::cout << "Err: " << err.message() << "\n";
+        std::cerr << err.message() << "\n";
     }
     return true;
 }
