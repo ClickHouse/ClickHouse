@@ -242,4 +242,13 @@ DECLARE_SETTING_ENUM(S3QueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
+enum class DateTimeOverflowMode
+{
+    THROW,
+    IGNORE,
+    SATURATE,
+};
+
+DECLARE_SETTING_ENUM(DateTimeOverflowMode)
+
 }
