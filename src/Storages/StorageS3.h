@@ -43,22 +43,24 @@ public:
     struct KeyWithInfo
     {
         KeyWithInfo() = default;
-        KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_)
-            : key(std::move(key_)), info(std::move(info_))
-        {
-        }
+
+        explicit KeyWithInfo(String key_, std::optional<S3::ObjectInfo> info_ = std::nullopt)
+            : key(std::move(key_)), info(std::move(info_)) {}
+
+        virtual ~KeyWithInfo() = default;
 
         String key;
         std::optional<S3::ObjectInfo> info;
     };
+    using KeyWithInfoPtr = std::shared_ptr<KeyWithInfo>;
 
-    using KeysWithInfo = std::vector<KeyWithInfo>;
+    using KeysWithInfo = std::vector<KeyWithInfoPtr>;
 
     class IIterator
     {
     public:
         virtual ~IIterator() = default;
-        virtual KeyWithInfo next() = 0;
+        virtual KeyWithInfoPtr next() = 0;
 
         /// Estimates how many streams we need to process all files.
         /// If keys count >= max_threads_count, the returned number may not represent the actual number of the keys.
@@ -66,7 +68,7 @@ public:
         /// fixme: May underestimate if the glob has a strong filter, so there are few matches among the first 1000 ListObjects results.
         virtual size_t estimatedKeysCount() = 0;
 
-        KeyWithInfo operator ()() { return next(); }
+        KeyWithInfoPtr operator ()() { return next(); }
     };
 
     class DisclosedGlobIterator : public IIterator
@@ -82,7 +84,7 @@ public:
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -106,7 +108,7 @@ public:
             KeysWithInfo * read_keys = nullptr,
             std::function<void(FileProgress)> progress_callback_ = {});
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -120,7 +122,7 @@ public:
     public:
         explicit ReadTaskIterator(const ReadTaskCallback & callback_, const size_t max_threads_count);
 
-        KeyWithInfo next() override;
+        KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
     private:
@@ -186,13 +188,13 @@ private:
     {
     public:
         ReaderHolder(
-            KeyWithInfo key_with_info_,
+            KeyWithInfoPtr key_with_info_,
             String bucket_,
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : key_with_info(std::move(key_with_info_))
+            : key_with_info(key_with_info_)
             , bucket(std::move(bucket_))
             , read_buf(std::move(read_buf_))
             , source(std::move(source_))
@@ -226,14 +228,14 @@ private:
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        String getPath() const { return fs::path(bucket) / key_with_info.key; }
-        const String & getFile() const { return key_with_info.key; }
-        const KeyWithInfo & getKeyWithInfo() const { return key_with_info; }
+        String getPath() const { return fs::path(bucket) / key_with_info->key; }
+        const String & getFile() const { return key_with_info->key; }
+        const KeyWithInfo & getKeyWithInfo() const { return *key_with_info; }
 
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
-        KeyWithInfo key_with_info;
+        KeyWithInfoPtr key_with_info;
         String bucket;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;

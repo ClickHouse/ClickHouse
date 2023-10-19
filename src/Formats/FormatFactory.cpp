@@ -412,7 +412,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
 {
-    auto element_id = context->getProcessListElement();
+    auto element_id = context->getProcessListElementSafe();
     if (element_id)
     {
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
