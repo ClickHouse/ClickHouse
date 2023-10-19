@@ -4771,3 +4771,15 @@ LIFETIME(MIN 0 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
+## date_time_overflow_mode {#date_time_overflow_mode}
+
+Defines behavior on overflow when converting [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+Possible values:
+
+- `ignore` — Silently ignore overflow. The result may or may not be saturated to fit the resulting data type values range. The behavior is different for different data types.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result to fit the result type values range. 
+
+Default value: `ignore`.
+

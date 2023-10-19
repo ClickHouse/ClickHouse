@@ -23,12 +23,15 @@ namespace DB
 static constexpr auto microsecond_multiplier = 1000000;
 static constexpr auto millisecond_multiplier = 1000;
 
+static constexpr DateTimeOverflowMode default_date_time_overflow_mode = DateTimeOverflowMode::IGNORE;
+
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int DATE_TIME_OVERFLOW;
 }
 
 /** Transformations.
@@ -57,25 +60,51 @@ struct ZeroTransform
     static UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
 
+template <DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode>
 struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
     static UInt16 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toDayNum(t.whole));
+        return execute(t.whole, time_zone);
     }
+
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return UInt16(time_zone.toDayNum(t));
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::SATURATE)
+        {
+            if (t < 0)
+                t = 0;
+            else if (t > 5662310399)    // 2149-06-06 23:59:59 UTC
+                t = 5662310399;
+        }
+        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        {
+            if (unlikely(t < 0 || t > 5662310399))
+                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type Date", t);
+        }
+        return static_cast<UInt16>(time_zone.toDayNum(t));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return UInt16(time_zone.toDayNum(t));
+        return UInt16(time_zone.toDayNum(t));  /// never causes overflow by design
     }
-    static UInt16 execute(Int32, const DateLUTImpl &)
+    static UInt16 execute(Int32 t, const DateLUTImpl &)
     {
-        throwDateIsNotSupported(name);
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::SATURATE)
+        {
+            if (t < 0)
+                t = 0;
+            else if (t > DATE_LUT_MAX_DAY_NUM)
+                t = DATE_LUT_MAX_DAY_NUM;
+        }
+        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        {
+            if (unlikely(t < 0 || t > DATE_LUT_MAX_DAY_NUM))
+                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type Date", t);
+        }
+        return static_cast<UInt16>(t);
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -89,6 +118,7 @@ struct ToDateImpl
     using FactorTransform = ZeroTransform;
 };
 
+template <DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode>
 struct ToDate32Impl
 {
     static constexpr auto name = "toDate32";
@@ -750,7 +780,7 @@ struct ToTimeImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl;
+    using FactorTransform = ToDateImpl<>;
 };
 
 struct ToStartOfMinuteImpl
@@ -1401,7 +1431,7 @@ struct ToHourImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl;
+    using FactorTransform = ToDateImpl<>;
 };
 
 struct TimezoneOffsetImpl

@@ -32,6 +32,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
+#include <Interpreters/Context.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <arrow/builder.h>
@@ -252,6 +253,17 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
     DataTypePtr internal_type;
     bool check_date_range = false;
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
+
+    DateTimeOverflowMode date_time_overflow_mode = DateTimeOverflowMode::THROW;
+
+    if (DB::CurrentThread::isInitialized())
+    {
+        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+
+        if (query_context)
+            date_time_overflow_mode = query_context->getSettingsRef().date_time_overflow_mode;
+    }
+
     if (!type_hint || (type_hint && isDate32(*type_hint)))
     {
         internal_type = std::make_shared<DataTypeDate32>();
@@ -277,8 +289,16 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
                 if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
-                    throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                            "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]", days_num, column_name, DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                {
+                    if (likely(date_time_overflow_mode == DateTimeOverflowMode::SATURATE))
+                        days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                    else
+                    {
+                        throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                        "Input value {} of a column \"{}\" is out of allowed Date32 range, which is [{}, {}]",
+                                        days_num,column_name, -DAYNUM_OFFSET_EPOCH, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                    }
+                }
 
                 column_data.emplace_back(days_num);
             }
