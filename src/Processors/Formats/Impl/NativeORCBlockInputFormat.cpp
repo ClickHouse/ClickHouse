@@ -797,6 +797,8 @@ Chunk NativeORCBlockInputFormat::generate()
     if (is_stopped)
         return {};
 
+    /// TODO: figure out why reuse batch would cause asan fatals in https://s3.amazonaws.com/clickhouse-test-reports/55330/be39d23af2d7e27f5ec7f168947cf75aeaabf674/stateless_tests__asan__[4_4].html
+    /// Reusing batch will speed up reading ORC by 1.15x.
     auto batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
     while (true)
     {
