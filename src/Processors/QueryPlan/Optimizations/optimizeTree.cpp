@@ -172,7 +172,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (optimization_settings.optimize_lazy_materialization)
         {
-            optimizeLazyProjection(stack, nodes);
+            optimizeLazyMaterialization(stack, nodes);
         }
 
         enableMemoryBoundMerging(*stack.back().node, nodes);

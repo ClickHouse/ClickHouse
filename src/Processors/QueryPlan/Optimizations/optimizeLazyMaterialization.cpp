@@ -208,7 +208,7 @@ static void updateStepsDataStreams(StepStack & steps_to_update)
     }
 }
 
-void optimizeLazyProjection(Stack & stack, QueryPlan::Nodes & nodes)
+void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes)
 {
     const auto & frame = stack.back();
 

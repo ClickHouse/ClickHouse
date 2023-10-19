@@ -150,13 +150,17 @@ void ColumnLazy::updateHashFast(SipHash &) const
 void ColumnLazy::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnLazy & src_column_lazy = assert_cast<const ColumnLazy &>(src);
+
     part_nums->insertRangeFrom(src_column_lazy.getPartNumsColumn(), start, length);
     row_nums->insertRangeFrom(src_column_lazy.getRowNumsColumn(), start, length);
 }
 
-ColumnPtr ColumnLazy::filter(const Filter &, ssize_t) const
+ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method filter is not supported for {}", getName());
+    ColumnPtr part_nums_ = part_nums->filter(filt, result_size_hint);
+    ColumnPtr row_nums_ = row_nums->filter(filt, result_size_hint);
+
+    return ColumnLazy::create(part_nums_, row_nums_);
 }
 
 void ColumnLazy::expand(const Filter &, bool)
@@ -172,9 +176,12 @@ ColumnPtr ColumnLazy::permute(const Permutation & perm, size_t limit) const
     return ColumnLazy::create(part_nums_, row_nums_);
 }
 
-ColumnPtr ColumnLazy::index(const IColumn &, size_t) const
+ColumnPtr ColumnLazy::index(const IColumn & indexes, size_t limit) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method index is not supported for {}", getName());
+    ColumnPtr part_nums_ = part_nums->index(indexes, limit);
+    ColumnPtr row_nums_ = row_nums->index(indexes, limit);
+
+    return ColumnLazy::create(part_nums_, row_nums_);
 }
 
 ColumnPtr ColumnLazy::replicate(const Offsets &) const
