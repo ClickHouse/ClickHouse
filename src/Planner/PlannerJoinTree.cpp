@@ -53,7 +53,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
@@ -703,7 +702,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     UInt64 rows_to_read = storage_merge_tree->estimateNumberOfRowsToRead(
                         query_context, storage_snapshot, table_expression_query_info, filter_nodes);
 
-                    if (max_block_size_limited && max_block_size_limited < rows_to_read)
+                    if (max_block_size_limited && (max_block_size_limited < rows_to_read))
                         rows_to_read = max_block_size_limited;
 
                     size_t number_of_replicas_to_use = rows_to_read / settings.parallel_replicas_min_number_of_rows_per_replica;
