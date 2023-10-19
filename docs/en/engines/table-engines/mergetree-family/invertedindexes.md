@@ -58,6 +58,12 @@ where `N` specifies the tokenizer:
 - `inverted(0)` (or shorter: `inverted()`) set the tokenizer to "tokens", i.e. split strings along spaces,
 - `inverted(N)` with `N` between 2 and 8 sets the tokenizer to "ngrams(N)"
 
+The maximum rows per postings list can be specified as the second parameter. This parameter can be used to control postings list sizes to avoid generating huge postings list files. The following variants exist:
+
+- `inverted(ngrams, max_rows_per_postings_list)`: Use given max_rows_per_postings_list (assuming it is not 0)
+- `inverted(ngrams, 0)`: No limitation of maximum rows per postings list
+- `inverted(ngrams)`: Use a default maximum rows which is 64K.
+
 Being a type of skipping index, inverted indexes can be dropped or added to a column after table creation:
 
 ``` sql
