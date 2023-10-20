@@ -163,6 +163,9 @@ namespace
         bool is_proxy_http_and_is_tunneling_off = DB::ProxyConfiguration::Protocol::HTTP == proxy_configuration.protocol
             && !proxy_configuration.use_connect_protocol;
 
+        // If it is an HTTPS request, proxy server is HTTP and user opted for tunneling off, we must not create an HTTPS request.
+        // The desired flow is: HTTP request to the proxy server, then proxy server will initiate an HTTPS request to the target server.
+        // There is a weak link in the security, but that's what the user opted for.
         if (https && is_proxy_http_and_is_tunneling_off)
         {
             https = false;
