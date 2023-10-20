@@ -146,7 +146,7 @@ if (COMPILER_CLANG)
 
     no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 endif ()
-
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden -fno-omit-frame-pointer")
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
