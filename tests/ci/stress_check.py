@@ -32,14 +32,28 @@ from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 
+def get_additional_envs() -> List[str]:
+    result = []
+    # some cloud-specific features require feature flags enabled
+    # so we need this ENV to be able to disable the randomization
+    # of feature flags
+    result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
+
+    return result
+
+
 def get_run_command(
     build_path: Path,
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
+    additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
 ) -> str:
+    envs = [f"-e {e}" for e in additional_envs]
+    env_str = " ".join(envs)
+
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
@@ -50,7 +64,7 @@ def get_run_command(
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {image} "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} "
     )
 
     return cmd
@@ -148,11 +162,14 @@ def run_stress_test(docker_image_name: str) -> None:
         pr_info, stopwatch.start_time_str, check_name
     )
 
+    additional_envs = get_additional_envs()
+
     run_command = get_run_command(
         packages_path,
         result_path,
         repo_tests_path,
         server_log_path,
+        additional_envs,
         ci_logs_args,
         docker_image,
     )
