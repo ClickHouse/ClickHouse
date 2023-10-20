@@ -455,6 +455,7 @@ def test_defaults_http_handlers():
             ).status_code
         )
 
+
 def test_defaults_http_handlers_config_order():
     def check_predefined_query_handler():
         assert (
@@ -474,22 +475,28 @@ def test_defaults_http_handlers_config_order():
         )
         assert b"max_threads\t1\n" == response.content
         assert (
-            "text/tab-separated-values; charset=UTF-8" == response.headers["content-type"]
+            "text/tab-separated-values; charset=UTF-8"
+            == response.headers["content-type"]
         )
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "defaults_handlers_config_order_first", "test_defaults_handlers_config_order/defaults_first"
+            ClickHouseCluster(__file__),
+            "defaults_handlers_config_order_first",
+            "test_defaults_handlers_config_order/defaults_first",
         )
     ) as cluster:
         check_predefined_query_handler()
 
     with contextlib.closing(
         SimpleCluster(
-            ClickHouseCluster(__file__), "defaults_handlers_config_order_first", "test_defaults_handlers_config_order/defaults_last"
+            ClickHouseCluster(__file__),
+            "defaults_handlers_config_order_first",
+            "test_defaults_handlers_config_order/defaults_last",
         )
     ) as cluster:
         check_predefined_query_handler()
+
 
 def test_prometheus_handler():
     with contextlib.closing(
