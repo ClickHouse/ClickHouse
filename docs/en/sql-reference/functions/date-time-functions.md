@@ -1910,6 +1910,7 @@ Result:
 ```
 
 **See Also**
+
 - [subDate](#subDate)
 
 ## timestamp\_add
@@ -2053,6 +2054,7 @@ Result:
 Alias: `ADDDATE`
 
 **See Also**
+
 - [date_add](#date_add)
 
 ## subDate
@@ -2095,6 +2097,7 @@ Result:
 Alias: `SUBDATE`
 
 **See Also**
+
 - [date_sub](#date_sub)
 
 ## now {#now}
@@ -2388,9 +2391,11 @@ Like function `YYYYMMDDhhmmssToDate()` but produces a [DateTime64](../../sql-ref
 
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 
-## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
+## addYears, addQuarters, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addMilliseconds, addMicroseconds, addNanoseconds
 
-Function adds a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+These functions add units of the interval specified by the function name to a date or a date with time. A date or date with time is returned.
+
+Example:
 
 ``` sql
 WITH
@@ -2407,9 +2412,11 @@ SELECT
 └─────────────────────┴──────────────────────────┘
 ```
 
-## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters
+## subtractYears, subtractQuarters, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractMilliseconds, subtractMicroseconds, subtractNanoseconds
 
-Function subtract a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+These functions subtract units of the interval specified by the function name from a date or a date with time. A date or date with time is returned.
+
+Example:
 
 ``` sql
 WITH
