@@ -656,6 +656,17 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     Aws::S3::Model::HeadBucketRequest req;
     req.SetBucket(bucket);
 
+    if (!client_configuration.extra_headers.empty())
+    {
+        for (const auto & [name, value] : client_configuration.extra_headers)
+        {
+            if (name.starts_with("x-amz-"))
+            {
+                req.SetAdditionalCustomHeaderValue(name, value);
+            }
+        }
+    }
+
     std::string region;
     auto outcome = HeadBucket(req);
     if (outcome.IsSuccess())
