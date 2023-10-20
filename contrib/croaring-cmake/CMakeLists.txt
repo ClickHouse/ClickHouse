@@ -3,6 +3,9 @@ set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/croaring")
 set(SRCS
     "${LIBRARY_DIR}/src/array_util.c"
     "${LIBRARY_DIR}/src/bitset_util.c"
+    "${LIBRARY_DIR}/src/bitset.c"
+    "${LIBRARY_DIR}/src/isadetection.c"
+    "${LIBRARY_DIR}/src/memory.c"
     "${LIBRARY_DIR}/src/containers/array.c"
     "${LIBRARY_DIR}/src/containers/bitset.c"
     "${LIBRARY_DIR}/src/containers/containers.c"
