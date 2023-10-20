@@ -148,11 +148,11 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
-    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes.
     static constexpr int MAX_LENGTH = 316;
+    ReadBufferFromMemory * buf_from_memory = dynamic_cast<ReadBufferFromMemory *>(&buf);
 
-    if (likely(!buf.eof() && buf.position() + MAX_LENGTH <= buf.buffer().end()))
+    /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes or buf is ReadBufferFromMemory
+    if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
     {
         auto * initial_position = buf.position();
         auto res = fast_float::from_chars(initial_position, buf.buffer().end(), x);
