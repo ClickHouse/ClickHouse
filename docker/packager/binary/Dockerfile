@@ -79,6 +79,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         yasm \
         zstd \
         zip \
+        sudo \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists
 
@@ -92,6 +93,15 @@ RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/
     && cp -r /tmp/mold/mold*/* /usr \
     && rm -rf /tmp/mold \
     && rm /tmp/mold.tar.gz
+
+# Download and install mono for fdbkeeper build
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF \
+    && echo "deb https://download.mono-project.com/repo/ubuntu stable-focal main" | sudo tee /etc/apt/sources.list.d/mono-official-stable.list \
+    && apt update \
+    && apt install mono-complete --yes \
+    && apt clean \
+    && rm -rfv /var/lib/apt/lists/*
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
