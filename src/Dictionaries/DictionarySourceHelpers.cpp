@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -142,9 +143,19 @@ DictionaryPipelineExecutor::DictionaryPipelineExecutor(QueryPipeline & pipeline_
 bool DictionaryPipelineExecutor::pull(Block & block)
 {
     if (async_executor)
-        return async_executor->pull(block);
-    else
+    {
+        while (true)
+        {
+            bool has_data = async_executor->pull(block);
+            if (has_data && !block)
+                continue;
+            return has_data;
+        }
+    }
+    else if (executor)
         return executor->pull(block);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryPipelineExecutor is not initialized");
 }
 
 DictionaryPipelineExecutor::~DictionaryPipelineExecutor() = default;
