@@ -316,8 +316,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
-    : args(args_), connected_callback(std::move(connected_callback_))
+    std::shared_ptr<ZooKeeperLog> zk_log_)
+    : args(args_)
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -472,9 +472,8 @@ void ZooKeeper::connect(
                                                                                    CompressionCodecFactory::instance().get(
                                                                                            "ZSTD", {}));
                 }
-
-                if (connected_callback.has_value())
-                    (*connected_callback)(i, node);
+                
+                original_index = static_cast<Int8>(node.original_index);
 
                 if (i != 0)
                 {
@@ -961,6 +960,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
+
+    /// Reset the original index.
+    original_index = -1;
 
     auto expire_session_if_not_expired = [&]
     {

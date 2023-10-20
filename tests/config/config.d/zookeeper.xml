@@ -4,7 +4,7 @@
         <zookeeper_load_balancing>random</zookeeper_load_balancing>
         <compressed_protocol>true</compressed_protocol>
         <node index="1">
-            <host>localhost</host>
+            <host>127.0.0.1</host>
             <port>9181</port>
         </node>
     </zookeeper>
