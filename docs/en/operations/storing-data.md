@@ -198,6 +198,8 @@ These settings should be defined in the disk configuration section.
 
 - `max_elements` - a limit for a number of cache files. Default: `10000000`.
 
+- `load_metadata_threads` - number of threads being used to load cache metadata on starting time. Default: `1`.
+
 File Cache **query/profile settings**:
 
 Some of these settings will disable cache features per query/profile that are enabled by default or in disk configuration settings. For example, you can enable cache in disk configuration and disable it per query/profile setting `enable_filesystem_cache` to `false`. Also setting `cache_on_write_operations` to `true` in disk configuration means that "write-though" cache is enabled. But if you need to disable this general setting per specific queries then setting `enable_filesystem_cache_on_write_operations` to `false` means that write operations cache will be disabled for a specific query/profile.
