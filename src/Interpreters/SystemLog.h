@@ -50,6 +50,7 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
 class BackupLog;
+class S3QueueLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -70,6 +71,7 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
+    std::shared_ptr<S3QueueLog> s3_queue_log;
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.

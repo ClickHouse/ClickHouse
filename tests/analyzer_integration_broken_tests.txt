@@ -4,7 +4,6 @@ test_concurrent_backups_s3/test.py::test_concurrent_backups
 test_dictionaries_update_and_reload/test.py::test_reload_after_fail_in_cache_dictionary
 test_distributed_backward_compatability/test.py::test_distributed_in_tuple
 test_distributed_type_object/test.py::test_distributed_type_object
-test_drop_is_lock_free/test.py::test_query_is_lock_free[detach table]
 test_executable_table_function/test.py::test_executable_function_input_python
 test_mask_sensitive_info/test.py::test_encryption_functions
 test_merge_table_over_distributed/test.py::test_global_in
@@ -40,8 +39,6 @@ test_settings_profile/test.py::test_show_profiles
 test_shard_level_const_function/test.py::test_remote
 test_sql_user_defined_functions_on_cluster/test.py::test_sql_user_defined_functions_on_cluster
 test_storage_rabbitmq/test.py::test_rabbitmq_materialized_view
-test_system_merges/test.py::test_mutation_simple[]
-test_system_merges/test.py::test_mutation_simple[replicated]
 test_user_defined_object_persistence/test.py::test_persistence
 test_wrong_db_or_table_name/test.py::test_wrong_table_name
 test_zookeeper_config/test.py::test_chroot_with_same_root
