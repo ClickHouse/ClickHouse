@@ -161,7 +161,7 @@ public:
         /// We don't have to list bucket, because there is no asterisks.
         if (key_prefix.size() == globbed_uri.key.size())
         {
-            buffer.emplace_back(globbed_uri.key, std::nullopt);
+            buffer.emplace_back(std::make_shared<KeyWithInfo>(globbed_uri.key, std::nullopt));
             buffer_iter = buffer.begin();
             is_finished = true;
             return;
@@ -182,7 +182,7 @@ public:
         fillInternalBufferAssumeLocked();
     }
 
-    KeyWithInfo next()
+    KeyWithInfoPtr next()
     {
         std::lock_guard lock(mutex);
         return nextAssumeLocked();
@@ -201,7 +201,7 @@ public:
 private:
     using ListObjectsOutcome = Aws::S3::Model::ListObjectsV2Outcome;
 
-    KeyWithInfo nextAssumeLocked()
+    KeyWithInfoPtr nextAssumeLocked()
     {
         if (buffer_iter != buffer.end())
         {
@@ -210,11 +210,11 @@ private:
 
             /// If url doesn't contain globs, we didn't list s3 bucket and didn't get object info for the key.
             /// So we get object info lazily here on 'next()' request.
-            if (!answer.info)
+            if (!answer->info)
             {
-                answer.info = S3::getObjectInfo(*client, globbed_uri.bucket, answer.key, globbed_uri.version_id, request_settings);
+                answer->info = S3::getObjectInfo(*client, globbed_uri.bucket, answer->key, globbed_uri.version_id, request_settings);
                 if (file_progress_callback)
-                    file_progress_callback(FileProgress(0, answer.info->size));
+                    file_progress_callback(FileProgress(0, answer->info->size));
             }
 
             return answer;
@@ -287,7 +287,7 @@ private:
                     .last_modification_time = row.GetLastModified().Millis() / 1000,
                 };
 
-                temp_buffer.emplace_back(std::move(key), std::move(info));
+                temp_buffer.emplace_back(std::make_shared<KeyWithInfo>(std::move(key), std::move(info)));
             }
         }
 
@@ -299,7 +299,7 @@ private:
 
         if (!is_initialized)
         {
-            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(globbed_uri.bucket) / temp_buffer.front().key, getContext());
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(globbed_uri.bucket) / temp_buffer.front()->key, getContext());
             is_initialized = true;
         }
 
@@ -308,7 +308,7 @@ private:
             std::vector<String> paths;
             paths.reserve(temp_buffer.size());
             for (const auto & key_with_info : temp_buffer)
-                paths.push_back(fs::path(globbed_uri.bucket) / key_with_info.key);
+                paths.push_back(fs::path(globbed_uri.bucket) / key_with_info->key);
 
             VirtualColumnUtils::filterByPathOrFile(temp_buffer, paths, query, virtual_columns, getContext(), filter_ast);
         }
@@ -317,8 +317,8 @@ private:
 
         if (file_progress_callback)
         {
-            for (const auto & [_, info] : buffer)
-                file_progress_callback(FileProgress(0, info->size));
+            for (const auto & key_with_info : buffer)
+                file_progress_callback(FileProgress(0, key_with_info->info->size));
         }
 
         /// Set iterator only after the whole batch is processed
@@ -381,7 +381,7 @@ StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
 {
 }
 
-StorageS3Source::KeyWithInfo StorageS3Source::DisclosedGlobIterator::next()
+StorageS3Source::KeyWithInfoPtr StorageS3Source::DisclosedGlobIterator::next()
 {
     return pimpl->next();
 }
@@ -432,11 +432,11 @@ public:
         if (read_keys_)
         {
             for (const auto & key : keys)
-                read_keys_->push_back({key, {}});
+                read_keys_->push_back(std::make_shared<KeyWithInfo>(key));
         }
     }
 
-    KeyWithInfo next()
+    KeyWithInfoPtr next()
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
@@ -449,7 +449,7 @@ public:
             file_progress_callback(FileProgress(0, info->size));
         }
 
-        return {key, info};
+        return std::make_shared<KeyWithInfo>(key, info);
     }
 
     size_t objectsCount()
@@ -486,7 +486,7 @@ StorageS3Source::KeysIterator::KeysIterator(
 {
 }
 
-StorageS3Source::KeyWithInfo StorageS3Source::KeysIterator::next()
+StorageS3Source::KeyWithInfoPtr StorageS3Source::KeysIterator::next()
 {
     return pimpl->next();
 }
@@ -512,14 +512,14 @@ StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     pool.wait();
     buffer.reserve(max_threads_count);
     for (auto & key_future : keys)
-        buffer.emplace_back(key_future.get(), std::nullopt);
+        buffer.emplace_back(std::make_shared<KeyWithInfo>(key_future.get(), std::nullopt));
 }
 
-StorageS3Source::KeyWithInfo StorageS3Source::ReadTaskIterator::next()
+StorageS3Source::KeyWithInfoPtr StorageS3Source::ReadTaskIterator::next()
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
-        return {callback(), {}};
+        return std::make_shared<KeyWithInfo>(callback());
 
     return buffer[current_index];
 }
@@ -576,22 +576,22 @@ StorageS3Source::StorageS3Source(
 
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
 {
-    KeyWithInfo key_with_info;
+    KeyWithInfoPtr key_with_info;
     do
     {
         key_with_info = (*file_iterator)();
-        if (key_with_info.key.empty())
+        if (!key_with_info || key_with_info->key.empty())
             return {};
 
-        if (!key_with_info.info)
-            key_with_info.info = S3::getObjectInfo(*client, bucket, key_with_info.key, version_id, request_settings);
+        if (!key_with_info->info)
+            key_with_info->info = S3::getObjectInfo(*client, bucket, key_with_info->key, version_id, request_settings);
     }
-    while (getContext()->getSettingsRef().s3_skip_empty_files && key_with_info.info->size == 0);
+    while (getContext()->getSettingsRef().s3_skip_empty_files && key_with_info->info->size == 0);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(key_with_info) : std::nullopt;
+    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(*key_with_info) : std::nullopt;
     if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
@@ -604,8 +604,8 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     }
     else
     {
-        auto compression_method = chooseCompressionMethod(key_with_info.key, compression_hint);
-        read_buf = createS3ReadBuffer(key_with_info.key, key_with_info.info->size);
+        auto compression_method = chooseCompressionMethod(key_with_info->key, compression_hint);
+        read_buf = createS3ReadBuffer(key_with_info->key, key_with_info->info->size);
 
         auto input_format = FormatFactory::instance().getInput(
             format,
@@ -1512,7 +1512,7 @@ namespace
             {
                 current_key_with_info = (*file_iterator)();
 
-                if (current_key_with_info.key.empty())
+                if (!current_key_with_info || current_key_with_info->key.empty())
                 {
                     if (first)
                         throw Exception(
@@ -1533,13 +1533,13 @@ namespace
                         return {nullptr, columns_from_cache};
                 }
 
-                if (getContext()->getSettingsRef().s3_skip_empty_files && current_key_with_info.info && current_key_with_info.info->size == 0)
+                if (getContext()->getSettingsRef().s3_skip_empty_files && current_key_with_info->info && current_key_with_info->info->size == 0)
                     continue;
 
                 /// In union mode, check cached columns only for current key.
                 if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
                 {
-                    StorageS3::KeysWithInfo keys = {current_key_with_info};
+                    StorageS3::KeysWithInfo keys = {*current_key_with_info};
                     if (auto columns_from_cache = tryGetColumnsFromCache(keys.begin(), keys.end()))
                     {
                         first = false;
@@ -1548,11 +1548,11 @@ namespace
                 }
 
                 int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-                auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, current_key_with_info.key, configuration.url.version_id, configuration.request_settings, getContext()->getReadSettings());
+                auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, current_key_with_info->key, configuration.url.version_id, configuration.request_settings, getContext()->getReadSettings());
                 if (!getContext()->getSettingsRef().s3_skip_empty_files || !impl->eof())
                 {
                     first = false;
-                    return {wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(current_key_with_info.key, configuration.compression_method), zstd_window_log_max), std::nullopt};
+                    return {wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(current_key_with_info->key, configuration.compression_method), zstd_window_log_max), std::nullopt};
                 }
             }
         }
@@ -1562,7 +1562,7 @@ namespace
             if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
                 return;
 
-            String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket / current_key_with_info.key;
+            String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket / current_key_with_info->key;
             auto key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
             StorageS3::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
@@ -1573,7 +1573,7 @@ namespace
                 || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
                 return;
 
-            String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket / current_key_with_info.key;
+            String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket / current_key_with_info->key;
             auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
             StorageS3::getSchemaCache(getContext()).addColumns(cache_key, columns);
         }
@@ -1592,7 +1592,7 @@ namespace
             StorageS3::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
-        String getLastFileName() const override { return current_key_with_info.key; }
+        String getLastFileName() const override { return current_key_with_info->key; }
 
     private:
         std::optional<ColumnsDescription> tryGetColumnsFromCache(
@@ -1646,7 +1646,7 @@ namespace
         const StorageS3Source::KeysWithInfo & read_keys;
         const StorageS3::Configuration & configuration;
         const std::optional<FormatSettings> & format_settings;
-        StorageS3Source::KeyWithInfo current_key_with_info;
+        StorageS3Source::KeyWithInfoPtr current_key_with_info;
         size_t prev_read_keys_size;
         bool first = true;
     };

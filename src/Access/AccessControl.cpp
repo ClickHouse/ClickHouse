@@ -567,7 +567,7 @@ AccessChangesNotifier & AccessControl::getChangesNotifier()
 }
 
 
-UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+AuthResult AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
     try
     {

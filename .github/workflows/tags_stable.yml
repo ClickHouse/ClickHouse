@@ -38,6 +38,7 @@ jobs:
       with:
         ref: master
         fetch-depth: 0
+        filter: tree:0
     - name: Update versions, docker version, changelog, security
       env:
         GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
