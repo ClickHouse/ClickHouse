@@ -3167,16 +3167,23 @@ void InterpreterSelectQuery::initSettings()
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
 
     const auto & client_info = context->getClientInfo();
-    auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
-    auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+    static constexpr auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+    static constexpr auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        /// Disable two-level aggregation due to version incompatibility.
-        context->setSetting("group_by_two_level_threshold", Field(0));
-        context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+        /// We can try to send invalid data type to the initiator when sending partial results
+        /// There can be other additional problems related to sending partial results to the initiator node
+        /// and there is no other useful usage of the partial results that is not on the client side
+        /// so we are always disabling it for secondary queries
+        context->setSetting("partial_result_update_duration_ms", Field(0));
 
+        if (std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
+        {
+            /// Disable two-level aggregation due to version incompatibility.
+            context->setSetting("group_by_two_level_threshold", Field(0));
+            context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+        }
     }
 }
 

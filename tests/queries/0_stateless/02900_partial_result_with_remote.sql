@@ -1,0 +1,1 @@
+SELECT count() FROM remote('127.0.0.{2,3}', numbers(1000000)) SETTINGS max_block_size = 100, allow_experimental_partial_result = true, partial_result_update_duration_ms = 1
