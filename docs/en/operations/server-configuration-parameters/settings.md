@@ -569,7 +569,6 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
                 <max_size_rows>10M</max_size_rows>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </tiny_local_cache>
             <!-- highlight-end -->
         </disks>
