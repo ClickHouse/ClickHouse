@@ -34,7 +34,7 @@ namespace
     const size_t MAX_DECIMAL256_PRECISION = 76;
     const size_t MAX_DEPTH = 16;
 
-    constexpr std::array<TypeIndex, 28> simple_types
+    constexpr std::array<TypeIndex, 29> simple_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
@@ -64,7 +64,7 @@ namespace
         TypeIndex::Enum16,
         TypeIndex::IPv4,
         TypeIndex::IPv6,
-//        TypeIndex::UUID,
+        TypeIndex::UUID,
     };
 
     constexpr std::array<TypeIndex, 5> complex_types
@@ -76,7 +76,7 @@ namespace
         TypeIndex::Map,
     };
 
-    constexpr std::array<TypeIndex, 21> map_key_types
+    constexpr std::array<TypeIndex, 22> map_key_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
@@ -98,11 +98,11 @@ namespace
         TypeIndex::IPv4,
         TypeIndex::Enum8,
         TypeIndex::Enum16,
-//        TypeIndex::UUID,
+        TypeIndex::UUID,
         TypeIndex::LowCardinality,
     };
 
-    constexpr std::array<TypeIndex, 21> suspicious_lc_types
+    constexpr std::array<TypeIndex, 22> suspicious_lc_types
     {
         TypeIndex::Int8,
         TypeIndex::UInt8,
@@ -125,7 +125,7 @@ namespace
         TypeIndex::FixedString,
         TypeIndex::IPv4,
         TypeIndex::IPv6,
-//        TypeIndex::UUID,
+        TypeIndex::UUID,
     };
 
     template <bool allow_complex_types>

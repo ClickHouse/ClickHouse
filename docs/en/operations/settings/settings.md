@@ -4346,6 +4346,12 @@ Possible values:
 
 Default value: 2.
 
+### schema_inference_mode {schema_inference_mode}
+
+The mode of schema inference. Possible values: `default` and `union`.
+
+Default value: `default`.
+
 ## compatibility {#compatibility}
 
 The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
