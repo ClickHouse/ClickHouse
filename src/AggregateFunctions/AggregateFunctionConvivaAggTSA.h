@@ -19,7 +19,9 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <type_traits>
+// Conviva timeline library
+#include "compiler.h"
+#include "executor.h"
 
 #define AGGREGATE_FUNCTION_CONVIVA_AGG_TSA_MAX_ARRAY_SIZE 0xFFFFFF
 
@@ -33,72 +35,9 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-enum class Sampler
-{
-    NONE,
-    RNG,
-};
-
-template <bool Thas_limit, bool Tlast, Sampler Tsampler>
-struct ConvivaAggTSATrait
-{
-    static constexpr bool has_limit = Thas_limit;
-    static constexpr bool last = Tlast;
-    static constexpr Sampler sampler = Tsampler;
-};
-
-template <typename Trait>
-static constexpr const char * getNameByTrait()
-{
-    if (Trait::last)
-        return "convivaAggTSALast";
-    if (Trait::sampler == Sampler::NONE)
-        return "convivaAggTSA";
-    else if (Trait::sampler == Sampler::RNG)
-        return "convivaAggTSASample";
-
-    UNREACHABLE();
-}
-
-template <typename T>
-struct ConvivaAggTSASamplerData
-{
-    /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
-
-    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
-    using Array = PODArray<T, 32, Allocator>;
-
-    Array value;
-    size_t total_values = 0;
-    pcg32_fast rng;
-
-    UInt64 genRandom(size_t lim)
-    {
-        /// With a large number of values, we will generate random numbers several times slower.
-        if (lim <= static_cast<UInt64>(rng.max()))
-            return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
-        else
-            return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
-    }
-
-    void randomShuffle()
-    {
-        for (size_t i = 1; i < value.size(); ++i)
-        {
-            size_t j = genRandom(i + 1);
-            std::swap(value[i], value[j]);
-        }
-    }
-};
-
 /// A particular case is an implementation for numeric types.
-template <typename T, bool has_sampler>
-struct ConvivaAggTSANumericData;
-
 template <typename T>
-struct ConvivaAggTSANumericData<T, false>
+struct ConvivaAggTSANumericData
 {
     /// For easy serialization.
     static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
@@ -106,88 +45,53 @@ struct ConvivaAggTSANumericData<T, false>
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
-
-    // For groupArrayLast()
-    size_t total_values = 0;
     Array value;
 };
 
 template <typename T>
-struct ConvivaAggTSANumericData<T, true> : public ConvivaAggTSASamplerData<T>
-{
-};
-
-template <typename T, typename Trait>
 class ConvivaAggTSANumericImpl final
-    : public IAggregateFunctionDataHelper<ConvivaAggTSANumericData<T, Trait::sampler != Sampler::NONE>, ConvivaAggTSANumericImpl<T, Trait>>
+    : public IAggregateFunctionDataHelper<ConvivaAggTSANumericData<T>, ConvivaAggTSANumericImpl<T>>
 {
-    using Data = ConvivaAggTSANumericData<T, Trait::sampler != Sampler::NONE>;
-    static constexpr bool limit_num_elems = Trait::has_limit;
+    using Data = ConvivaAggTSANumericData<T>;
+    std::string yaml_config;
+    Executor executor;
     UInt64 max_elems;
-    UInt64 seed;
 
 public:
     explicit ConvivaAggTSANumericImpl(
-        const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
-        : IAggregateFunctionDataHelper<ConvivaAggTSANumericData<T, Trait::sampler != Sampler::NONE>, ConvivaAggTSANumericImpl<T, Trait>>(
+        const DataTypePtr & data_type_, const Array & parameters_, const std::string & yaml_config_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<ConvivaAggTSANumericData<T>, ConvivaAggTSANumericImpl<T>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
+        , yaml_config(yaml_config_)
+        , executor([&]() -> Executor {
+                       Compiler compiler(yaml_config);
+                       compiler.compile();
+                       return Executor(compiler.getPhysicalPlan());
+                   }())
         , max_elems(max_elems_)
-        , seed(seed_)
     {
     }
 
-    String getName() const override { return getNameByTrait<Trait>(); }
-
-    void insertWithSampler(Data & a, const T & v, Arena * arena) const
-    {
-        ++a.total_values;
-        if (a.value.size() < max_elems)
-            a.value.push_back(v, arena);
-        else
-        {
-            UInt64 rnd = a.genRandom(a.total_values);
-            if (rnd < max_elems)
-                a.value[rnd] = v;
-        }
-    }
+    String getName() const override { return "convivaAggTSA"; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         [[maybe_unused]] auto a = new (place) Data;
-        if constexpr (Trait::sampler == Sampler::RNG)
-            a->rng.seed(seed);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & row_value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
-        auto & cur_elems = this->data(place);  // reinterpret cast of the aggregation data, which is of type GroupArrayNumericData
+        auto & cur_elems = this->data(place);  // reinterpret cast of the aggregation data, which is of type ConvivaAggTSANumericData
 
-        ++cur_elems.total_values;
-
-        if constexpr (Trait::sampler == Sampler::NONE)
+        if (cur_elems.value.size() >= max_elems)
         {
-            if (limit_num_elems && cur_elems.value.size() >= max_elems)
-            {
-                if constexpr (Trait::last)
-                    cur_elems.value[(cur_elems.total_values - 1) % max_elems] = row_value;
-                return;
-            }
-
-            cur_elems.value.push_back(row_value, arena);
+            return;
         }
 
-        if constexpr (Trait::sampler == Sampler::RNG)
-        {
-            if (cur_elems.value.size() < max_elems)
-                cur_elems.value.push_back(row_value, arena);
-            else
-            {
-                UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
-                if (rnd < max_elems)
-                    cur_elems.value[rnd] = row_value;
-            }
-        }
+        cur_elems.value.push_back(row_value, arena);
+
+        // TODO: add TSA logic here
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -198,69 +102,9 @@ public:
         if (rhs_elems.value.empty())
             return;
 
-        if constexpr (Trait::last)
-            mergeNoSamplerLast(cur_elems, rhs_elems, arena);
-        else if constexpr (Trait::sampler == Sampler::NONE)
-            mergeNoSampler(cur_elems, rhs_elems, arena);
-        else if constexpr (Trait::sampler == Sampler::RNG)
-            mergeWithRNGSampler(cur_elems, rhs_elems, arena);
-    }
-
-    void mergeNoSamplerLast(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
-    {
-        UInt64 new_elements = std::min(static_cast<size_t>(max_elems), cur_elems.value.size() + rhs_elems.value.size());
-        cur_elems.value.resize_exact(new_elements, arena);
-        for (auto & value : rhs_elems.value)
-        {
-            cur_elems.value[cur_elems.total_values % max_elems] = value;
-            ++cur_elems.total_values;
-        }
-        assert(rhs_elems.total_values >= rhs_elems.value.size());
-        cur_elems.total_values += rhs_elems.total_values - rhs_elems.value.size();
-    }
-
-    void mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
-    {
-        if (!limit_num_elems)
-        {
-            if (rhs_elems.value.size())
-                cur_elems.value.insertByOffsets(rhs_elems.value, 0, rhs_elems.value.size(), arena);
-        }
-        else
-        {
-            UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
-            if (elems_to_insert)
-                cur_elems.value.insertByOffsets(rhs_elems.value, 0, elems_to_insert, arena);
-        }
-    }
-
-    void mergeWithRNGSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
-    {
-        if (rhs_elems.total_values <= max_elems)
-        {
-            for (size_t i = 0; i < rhs_elems.value.size(); ++i)
-                insertWithSampler(cur_elems, rhs_elems.value[i], arena);
-        }
-        else if (cur_elems.total_values <= max_elems)
-        {
-            decltype(cur_elems.value) from;
-            from.swap(cur_elems.value, arena);
-            cur_elems.value.assign(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
-            cur_elems.total_values = rhs_elems.total_values;
-            for (size_t i = 0; i < from.size(); ++i)
-                insertWithSampler(cur_elems, from[i], arena);
-        }
-        else
-        {
-            cur_elems.randomShuffle();
-            cur_elems.total_values += rhs_elems.total_values;
-            for (size_t i = 0; i < max_elems; ++i)
-            {
-                UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
-                if (rnd < rhs_elems.total_values)
-                    cur_elems.value[i] = rhs_elems.value[i];
-            }
-        }
+        UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
+        if (elems_to_insert)
+            cur_elems.value.insertByOffsets(rhs_elems.value, 0, elems_to_insert, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -271,16 +115,7 @@ public:
         for (const auto & element : value)
             writeBinaryLittleEndian(element, buf);
 
-        if constexpr (Trait::last)
-            writeBinaryLittleEndian(this->data(place).total_values, buf);
-
-        if constexpr (Trait::sampler == Sampler::RNG)
-        {
-            writeBinaryLittleEndian(this->data(place).total_values, buf);
-            WriteBufferFromOwnString rng_buf;
-            rng_buf << this->data(place).rng;
-            writeStringBinary(rng_buf.str(), buf);
-        }
+        // TODO: handle DAG state
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -292,7 +127,7 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_CONVIVA_AGG_TSA_MAX_ARRAY_SIZE);
 
-        if (limit_num_elems && unlikely(size > max_elems))
+        if (unlikely(size > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
         auto & value = this->data(place).value;
@@ -300,22 +135,11 @@ public:
         value.resize_exact(size, arena);
         for (auto & element : value)
             readBinaryLittleEndian(element, buf);
-
-        if constexpr (Trait::last)
-            readBinaryLittleEndian(this->data(place).total_values, buf);
-
-        if constexpr (Trait::sampler == Sampler::RNG)
-        {
-            readBinaryLittleEndian(this->data(place).total_values, buf);
-            std::string rng_string;
-            readStringBinary(rng_string, buf);
-            ReadBufferFromString rng_buf(rng_string);
-            rng_buf >> this->data(place).rng;
-        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        // This part is not touched, so far only events of the string type are handled
         const auto & value = this->data(place).value;
         size_t size = value.size();
 
@@ -337,9 +161,7 @@ public:
 
 /// General case
 
-
-/// Nodes used to implement a linked list for storage of groupArray states
-
+/// Nodes used to implement a linked list for storage of convivaAggTSA states
 template <typename Node>
 struct ConvivaAggTSANodeBase
 {
@@ -400,6 +222,11 @@ struct ConvivaAggTSANodeString : public ConvivaAggTSANodeBase<ConvivaAggTSANodeS
     {
         assert_cast<ColumnString &>(column).insertData(data(), size);
     }
+
+    std::string toString() const
+    {
+        return std::string(data(), size);
+    }
 };
 
 struct ConvivaAggTSANodeGeneral : public ConvivaAggTSANodeBase<ConvivaAggTSANodeGeneral>
@@ -418,107 +245,69 @@ struct ConvivaAggTSANodeGeneral : public ConvivaAggTSANodeBase<ConvivaAggTSANode
     }
 
     void insertInto(IColumn & column) { column.deserializeAndInsertFromArena(data()); }
+
+    std::string toString() const
+    {
+        return std::string(data(), size);
+    }
 };
 
-template <typename Node, bool has_sampler>
-struct ConvivaAggTSAGeneralData;
-
 template <typename Node>
-struct ConvivaAggTSAGeneralData<Node, false>
+struct ConvivaAggTSAGeneralData
 {
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(Node *), 4096>;
     using Array = PODArray<Node *, 32, Allocator>;
-
-    // For groupArrayLast()
-    size_t total_values = 0;
     Array value;
 };
 
+/// Implementation of convivaAggTSA for String or any ComplexObject via Array
 template <typename Node>
-struct ConvivaAggTSAGeneralData<Node, true> : public ConvivaAggTSASamplerData<Node *>
-{
-};
-
-/// Implementation of groupArray for String or any ComplexObject via Array
-template <typename Node, typename Trait>
 class ConvivaAggTSAGeneralImpl final
-    : public IAggregateFunctionDataHelper<ConvivaAggTSAGeneralData<Node, Trait::sampler != Sampler::NONE>, ConvivaAggTSAGeneralImpl<Node, Trait>>
+    : public IAggregateFunctionDataHelper<ConvivaAggTSAGeneralData<Node>, ConvivaAggTSAGeneralImpl<Node>>
 {
-    static constexpr bool limit_num_elems = Trait::has_limit;
-    using Data = ConvivaAggTSAGeneralData<Node, Trait::sampler != Sampler::NONE>;
+    using Data = ConvivaAggTSAGeneralData<Node>;
     static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
+    std::string yaml_config;
+    Executor executor;
     UInt64 max_elems;
-    UInt64 seed;
 
 public:
-    ConvivaAggTSAGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max(), UInt64 seed_ = 123456)
-        : IAggregateFunctionDataHelper<ConvivaAggTSAGeneralData<Node, Trait::sampler != Sampler::NONE>, ConvivaAggTSAGeneralImpl<Node, Trait>>(
+    ConvivaAggTSAGeneralImpl(const DataTypePtr & data_type_, const Array & parameters_, const std::string & yaml_config_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<ConvivaAggTSAGeneralData<Node>, ConvivaAggTSAGeneralImpl<Node>>(
             {data_type_}, parameters_, std::make_shared<DataTypeArray>(data_type_))
         , data_type(this->argument_types[0])
+        , yaml_config(yaml_config_)
+        , executor([&]() -> Executor {
+                       Compiler compiler(yaml_config);
+                       compiler.compile();
+                       return Executor(compiler.getPhysicalPlan());
+                   }())
         , max_elems(max_elems_)
-        , seed(seed_)
     {
     }
 
-    String getName() const override { return getNameByTrait<Trait>(); }
-
-    void insertWithSampler(Data & a, const Node * v, Arena * arena) const
-    {
-        ++a.total_values;
-        if (a.value.size() < max_elems)
-            a.value.push_back(v->clone(arena), arena);
-        else
-        {
-            UInt64 rnd = a.genRandom(a.total_values);
-            if (rnd < max_elems)
-                a.value[rnd] = v->clone(arena);
-        }
-    }
+    String getName() const override { return "convivaAggTSA"; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         [[maybe_unused]] auto a = new (place) Data;
-        if constexpr (Trait::sampler == Sampler::RNG)
-            a->rng.seed(seed);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & cur_elems = data(place);
 
-        ++cur_elems.total_values;
-
-        if constexpr (Trait::sampler == Sampler::NONE)
+        if (cur_elems.value.size() >= max_elems)
         {
-            if (limit_num_elems && cur_elems.value.size() >= max_elems)
-            {
-                if (Trait::last)
-                {
-                    Node * node = Node::allocate(*columns[0], row_num, arena);
-                    cur_elems.value[(cur_elems.total_values - 1) % max_elems] = node;
-                }
-                return;
-            }
-
-            Node * node = Node::allocate(*columns[0], row_num, arena);
-            cur_elems.value.push_back(node, arena);
+            return;
         }
 
-        if constexpr (Trait::sampler == Sampler::RNG)
-        {
-            if (cur_elems.value.size() < max_elems)
-                cur_elems.value.push_back(Node::allocate(*columns[0], row_num, arena), arena);
-            else
-            {
-                UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
-                if (rnd < max_elems)
-                    cur_elems.value[rnd] = Node::allocate(*columns[0], row_num, arena);
-            }
-        }
+        Node * node = Node::allocate(*columns[0], row_num, arena);
+        cur_elems.value.push_back(node, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -529,71 +318,12 @@ public:
         if (rhs_elems.value.empty())
             return;
 
-        if constexpr (Trait::last)
-            mergeNoSamplerLast(cur_elems, rhs_elems, arena);
-        else if constexpr (Trait::sampler == Sampler::NONE)
-            mergeNoSampler(cur_elems, rhs_elems, arena);
-        else if constexpr (Trait::sampler == Sampler::RNG)
-            mergeWithRNGSampler(cur_elems, rhs_elems, arena);
-    }
-
-    void ALWAYS_INLINE mergeNoSamplerLast(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
-    {
-        UInt64 new_elements = std::min(static_cast<size_t>(max_elems), cur_elems.value.size() + rhs_elems.value.size());
-        cur_elems.value.resize_exact(new_elements, arena);
-        for (auto & value : rhs_elems.value)
-        {
-            cur_elems.value[cur_elems.total_values % max_elems] = value->clone(arena);
-            ++cur_elems.total_values;
-        }
-        assert(rhs_elems.total_values >= rhs_elems.value.size());
-        cur_elems.total_values += rhs_elems.total_values - rhs_elems.value.size();
-    }
-
-    void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
-    {
         UInt64 new_elems;
-        if (limit_num_elems)
-        {
-            if (cur_elems.value.size() >= max_elems)
-                return;
-            new_elems = std::min(rhs_elems.value.size(), static_cast<size_t>(max_elems) - cur_elems.value.size());
-        }
-        else
-            new_elems = rhs_elems.value.size();
-
+        if (cur_elems.value.size() >= max_elems)
+            return;
+        new_elems = std::min(rhs_elems.value.size(), static_cast<size_t>(max_elems) - cur_elems.value.size());
         for (UInt64 i = 0; i < new_elems; ++i)
             cur_elems.value.push_back(rhs_elems.value[i]->clone(arena), arena);
-    }
-
-    void ALWAYS_INLINE mergeWithRNGSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
-    {
-        if (rhs_elems.total_values <= max_elems)
-        {
-            for (size_t i = 0; i < rhs_elems.value.size(); ++i)
-                insertWithSampler(cur_elems, rhs_elems.value[i], arena);
-        }
-        else if (cur_elems.total_values <= max_elems)
-        {
-            decltype(cur_elems.value) from;
-            from.swap(cur_elems.value, arena);
-            for (auto & node : rhs_elems.value)
-                cur_elems.value.push_back(node->clone(arena), arena);
-            cur_elems.total_values = rhs_elems.total_values;
-            for (size_t i = 0; i < from.size(); ++i)
-                insertWithSampler(cur_elems, from[i], arena);
-        }
-        else
-        {
-            cur_elems.randomShuffle();
-            cur_elems.total_values += rhs_elems.total_values;
-            for (size_t i = 0; i < max_elems; ++i)
-            {
-                UInt64 rnd = cur_elems.genRandom(cur_elems.total_values);
-                if (rnd < rhs_elems.total_values)
-                    cur_elems.value[i] = rhs_elems.value[i]->clone(arena);
-            }
-        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -604,16 +334,7 @@ public:
         for (auto & node : value)
             node->write(buf);
 
-        if constexpr (Trait::last)
-            writeBinaryLittleEndian(data(place).total_values, buf);
-
-        if constexpr (Trait::sampler == Sampler::RNG)
-        {
-            writeBinaryLittleEndian(data(place).total_values, buf);
-            WriteBufferFromOwnString rng_buf;
-            rng_buf << data(place).rng;
-            writeStringBinary(rng_buf.str(), buf);
-        }
+        // TODO: handle DAG state
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -628,7 +349,7 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_CONVIVA_AGG_TSA_MAX_ARRAY_SIZE);
 
-        if (limit_num_elems && unlikely(elems > max_elems))
+        if (unlikely(elems > max_elems))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
         auto & value = data(place).value;
@@ -636,38 +357,50 @@ public:
         value.resize_exact(elems, arena);
         for (UInt64 i = 0; i < elems; ++i)
             value[i] = Node::read(buf, arena);
-
-        if constexpr (Trait::last)
-            readBinaryLittleEndian(data(place).total_values, buf);
-
-        if constexpr (Trait::sampler == Sampler::RNG)
-        {
-            readBinaryLittleEndian(data(place).total_values, buf);
-            std::string rng_string;
-            readStringBinary(rng_string, buf);
-            ReadBufferFromString rng_buf(rng_string);
-            rng_buf >> data(place).rng;
-        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
-
-        auto & offsets = column_array.getOffsets();
-        offsets.push_back(offsets.back() + data(place).value.size());
-
         auto & column_data = column_array.getData();
 
+        // So far only events of the string type are supported.
         if (std::is_same_v<Node, ConvivaAggTSANodeString>)
         {
-            auto & string_offsets = assert_cast<ColumnString &>(column_data).getOffsets();
-            string_offsets.reserve(string_offsets.size() + data(place).value.size());
-        }
+            std::vector<std::string> json_events;
+            // TODO: sort the input array
 
-        auto & value = data(place).value;
-        for (auto & node : value)
-            node->insertInto(column_data);
+            auto & value = data(place).value;
+            for (auto & node : value)
+            {
+                json_events.push_back(node->toString());
+            }
+
+            auto executor_ptr = const_cast<Executor*>(&executor);  // Hack because insertResultInto() is marked as const function
+            executor_ptr->ingestStringEvents(json_events, "timestamp");
+            auto result = executor_ptr->execute();
+
+            // Clear the previous state of the merged column_array, because the events are moved into the executor.
+            // Next round all parts' array of events start with empty state.
+            auto * column_str = typeid_cast<ColumnString *>(&column_data);
+            column_str->getChars().clear();
+            column_str->getOffsets().clear();
+            column_array.getOffsets().resize(0);
+
+            // Insert the new result
+            auto & offsets = column_array.getOffsets();
+            offsets.push_back(1);  // Single element, so offset is 1
+            column_data.insert(result[0]);
+        }
+        else
+        {
+            auto & offsets = column_array.getOffsets();
+            offsets.push_back(offsets.back() + data(place).value.size());
+
+            auto & value = data(place).value;
+            for (auto & node : value)
+                node->insertInto(column_data);
+        }
     }
 
     bool allocatesMemoryInArena() const override { return true; }
