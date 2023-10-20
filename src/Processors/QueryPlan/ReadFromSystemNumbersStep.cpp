@@ -464,7 +464,7 @@ ActionsDAGPtr ReadFromSystemNumbersStep::buildFilterDAG()
 
 void ReadFromSystemNumbersStep::checkLimits(size_t rows)
 {
-    auto & settings = context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     SizeLimits limits;
     if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
