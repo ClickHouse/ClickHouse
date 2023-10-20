@@ -462,6 +462,11 @@ std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
+void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
+}
+
 void registerInputFormatMySQLDump(FormatFactory & factory)
 {
     factory.registerInputFormat("MySQLDump", [](

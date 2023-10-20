@@ -90,7 +90,6 @@ private:
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
-
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;
     PeekableReadBuffer buf;

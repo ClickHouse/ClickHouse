@@ -13,11 +13,23 @@ struct IReadBufferIterator
 
     virtual void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> /* buffer */) {}
 
-    virtual std::unique_ptr<ReadBuffer> next() = 0;
-
-    virtual std::optional<ColumnsDescription> getCachedColumns() { return std::nullopt; }
+    /// Return read buffer of the next file or cached schema.
+    /// In DEFAULT schema inference mode cached schema can be from any file.
+    /// In UNION mode cached schema can be only from current file.
+    /// When there is no files to process, return pair (nullptr, nullopt)
+    virtual std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() = 0;
 
     virtual void setNumRowsToLastFile(size_t /*num_rows*/) {}
+
+    /// Set schema inferred from last file. Used for UNION mode to cache schema
+    /// per file.
+    virtual void setSchemaToLastFile(const ColumnsDescription & /*columns*/) {}
+    /// Set resulting inferred schema. Used for DEFAULT mode to cache schema
+    /// for all files.
+    virtual void setResultingSchema(const ColumnsDescription & /*columns*/) {}
+
+    /// Get last processed file name for better exception messages.
+    virtual String getLastFileName() const { return ""; }
 };
 
 struct SingleReadBufferIterator : public IReadBufferIterator
@@ -27,12 +39,12 @@ public:
     {
     }
 
-    std::unique_ptr<ReadBuffer> next() override
+    std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
     {
         if (done)
-            return nullptr;
+            return {nullptr, {}};
         done = true;
-        return std::move(buf);
+        return {std::move(buf), {}};
     }
 
 private:
