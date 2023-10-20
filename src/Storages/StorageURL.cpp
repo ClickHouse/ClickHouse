@@ -34,7 +34,6 @@
 #include <Common/ProfileEvents.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <IO/HTTPCommon.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
