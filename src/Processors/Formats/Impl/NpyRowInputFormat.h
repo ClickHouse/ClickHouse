@@ -37,7 +37,7 @@ private:
 
     void readRows(MutableColumns & columns);
 
-    void readValueAndinsertIntoColumn(IColumn& column);
+    void readValueAndinsertIntoColumn(MutableColumnPtr column);
 
     std::unordered_map<String, String> header;
     std::vector<int> shape;
