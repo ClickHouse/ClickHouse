@@ -1156,7 +1156,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 
     /** Read characters, that could represent unix timestamp.
       * Only unix timestamp of at least 5 characters is supported by default, exception is thrown for a shorter one
-      * unless `treat_ambiguous_as_timestamp` == true: e.g when parsing a string like '123.23' there is no ambiguity.
+      * (unless parsing a string like '1.23' or '-12': there is no ambiguity, it is a DT64 timestamp).
       * Then look at 5th character. If it is a number - treat whole as unix timestamp.
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
       */
