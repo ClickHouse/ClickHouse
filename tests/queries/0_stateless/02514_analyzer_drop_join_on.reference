@@ -147,5 +147,5 @@ Header: bx String
                       c2 String
         Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: d1_4 UInt64
-          ReadFromStorage (SystemNumbers)
+          ReadFromSystemNumbers
           Header: number UInt64
