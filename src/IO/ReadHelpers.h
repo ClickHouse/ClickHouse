@@ -922,7 +922,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     if constexpr (!dt64_mode)
     {
-        if (!isNumericASCII(*buf.position()))
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
         {
             if constexpr (throw_exception)
                 throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
@@ -996,9 +996,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         catch (const DB::ParsingException & exception)
         {
-            if (is_empty)
-                datetime64 = 0;
-            else if (buf.eof() || *buf.position() != '.')
+            if (buf.eof() || *buf.position() != '.')
                 throw exception;
         }
     }
