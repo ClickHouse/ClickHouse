@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int TYPE_MISMATCH;
 }
 
 static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndTypesList & columns_list, const Names & columns_order_hint)

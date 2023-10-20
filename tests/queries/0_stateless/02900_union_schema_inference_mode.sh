@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 mkdir -p $CLICKHOUSE_TEST_UNIQUE_NAME
-rm -rf $CLICKHOUSE_TEST_UNIQUE_NAME/*
+rm -rf ${CLICKHOUSE_TEST_UNIQUE_NAME}/*
 
 echo '{"a" : 1, "obj" : {"f1" : 1, "f2" : "2020-01-01"}}' > $CLICKHOUSE_TEST_UNIQUE_NAME/data1.jsonl
 echo '{"b" : 2, "obj" : {"f3" : 2, "f2" : "Some string"}}' > $CLICKHOUSE_TEST_UNIQUE_NAME/data2.jsonl
@@ -54,4 +54,5 @@ echo 42, 43 > $CLICKHOUSE_TEST_UNIQUE_NAME/data2.csv
 
 $CLICKHOUSE_LOCAL -q "desc file('$CLICKHOUSE_TEST_UNIQUE_NAME/data*.csv') settings schema_inference_mode='union'" 2>&1 | grep -c -F "BAD_ARGUMENTS";
 
-rm -rf $CLICKHOUSE_TEST_UNIQUE_NAME
+rm -rf ${CLICKHOUSE_TEST_UNIQUE_NAME}
+
