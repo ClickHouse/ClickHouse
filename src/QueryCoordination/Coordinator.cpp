@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryCoordination/Coordinator.h>
 #include <Storages/IStorage.h>
-#include <QueryCoordination/FragmentMgr.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Interpreters/InternalTextLogsQueue.h>

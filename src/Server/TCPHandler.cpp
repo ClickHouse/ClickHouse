@@ -42,7 +42,6 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
-#include <QueryCoordination/FragmentMgr.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>

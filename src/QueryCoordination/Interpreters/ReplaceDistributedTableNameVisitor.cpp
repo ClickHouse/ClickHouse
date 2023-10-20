@@ -1,4 +1,6 @@
 #include "ReplaceDistributedTableNameVisitor.h"
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionRemote.h>
 
 namespace ErrorCodes
 {
@@ -98,7 +100,20 @@ void ReplaceDistributedTableNameVisitor::enter(ASTSelectQuery & select_query, Sc
                 if (table_ele->table_expression)
                 {
                     auto table_expr = table_ele->table_expression->as<ASTTableExpression>();
-                    enter(*table_expr->database_and_table_name->as<ASTTableIdentifier>(), scope);
+
+                    if (table_expr->database_and_table_name)
+                    {
+                        enter(*table_expr->database_and_table_name->as<ASTTableIdentifier>(), scope);
+                    }
+                    else if (table_expr->table_function)
+                    {
+                        auto local_table_ident = enter(*table_expr->table_function->as<ASTFunction>(), table_expr->table_function, scope);
+                        if (local_table_ident)
+                        {
+                            table_expr->database_and_table_name = local_table_ident;
+                            table_expr->table_function.reset();
+                        }
+                    }
                 }
             }
         }
@@ -109,6 +124,43 @@ void ReplaceDistributedTableNameVisitor::leave(ASTSelectQuery &, ScopePtr & scop
 {
     /// Finish select query, reset scope.
     scope = scope->parent_scope;
+}
+
+std::shared_ptr<ASTTableIdentifier> ReplaceDistributedTableNameVisitor::enter(ASTFunction & table_function, ASTPtr & table_function_ast, ScopePtr & /*scope*/)
+{
+    has_table_function = true;
+
+    if (table_function.name != "remote") /// TODO cluster
+        return {};
+
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function_ast, context);
+    StoragePtr storage = table_function_ptr->execute(table_function_ast, context, table_function_ptr->getName());
+
+    auto * storage_distributed = typeid_cast<StorageDistributed *>(storage.get());
+
+    auto database_name = storage_distributed->getRemoteDatabaseName();
+    auto table_name = storage_distributed->getRemoteTableName();
+    auto local_table_ident = std::make_shared<ASTTableIdentifier>(database_name, table_name);
+    auto local_table = local_table_ident->getTableId();
+
+    storages.emplace_back(local_table);
+    clusters.emplace_back(storage_distributed->getCluster());
+
+    if (auto sharding_key = storage_distributed->getShardingKey())
+    {
+        WriteBufferFromOwnString write_buffer;
+        IAST::FormatSettings settings(write_buffer, true, false, true);
+        sharding_key->format(settings);
+        sharding_keys.emplace_back(write_buffer.str());
+    }
+    else
+    {
+        sharding_keys.emplace_back();
+    }
+
+    has_distributed_table = true;
+
+    return local_table_ident;
 }
 
 void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident, ScopePtr & scope)
@@ -132,7 +184,8 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
         scope->tables_map.emplace(table_ident.getTableId(), local_table_ident->getTableId());
 
         /// 2. Replace distributed table to local table.
-        auto local_table = DatabaseCatalog::instance().getTable(local_table_ident->getTableId(), context);
+        auto local_table = local_table_ident->getTableId();
+        DatabaseCatalog::instance().getTable(local_table, context); /// local must has local_table
 
         table_ident.resetTable(database_name, table_name);
 

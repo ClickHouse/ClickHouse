@@ -72,7 +72,7 @@ public:
     };
 
     /// Storage list for query
-    std::vector<StoragePtr> storages;
+    std::vector<StorageID> storages;
     /// Cluster list for storages
     std::vector<ClusterPtr> clusters;
     /// Sharding key columns for storages
@@ -80,6 +80,7 @@ public:
 
     bool has_distributed_table = false;
     bool has_local_table = false;
+    bool has_table_function = false;
 
     explicit ReplaceDistributedTableNameVisitor(ContextPtr context_) : context(context_) { }
 
@@ -110,6 +111,7 @@ private:
     void leave(ASTSelectQuery & select_query, ScopePtr & scope);
 
     void enter(ASTTableIdentifier & table_ident, ScopePtr & scope);
+    std::shared_ptr<ASTTableIdentifier> enter(ASTFunction & table_function, ASTPtr & table_function_ast, ScopePtr & scope);
     void enter(ASTIdentifier & ident, ScopePtr & scope);
 
     ContextPtr context;

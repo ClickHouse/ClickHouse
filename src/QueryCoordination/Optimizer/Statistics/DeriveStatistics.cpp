@@ -164,12 +164,14 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     const auto & input = input_statistics.front();
 
     /// 1. initialize statistics
-    chassert(input_names.size() == output_names.size());
+    if (step.isGroupingSets())
+        statistics.addColumnStatistics(output_names[0], ColumnStatistics::unknown());
+
     for (size_t i = 0; i < input_names.size(); i++)
     {
         /// The input name and output name are one-to-one correspondences.
         auto column_stats = input.getColumnStatistics(input_names[i]);
-        statistics.addColumnStatistics(output_names[i], column_stats->clone());
+        statistics.addColumnStatistics(output_names[step.isGroupingSets() ? i + 1 : i], column_stats->clone());
     }
 
     /// 2. calculate selectivity

@@ -31,6 +31,9 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
         ReplaceDistributedTableNameVisitor visitor(context);
         visitor.visit(query_ptr);
 
+        if (visitor.has_table_function)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support table function query");
+
         if (visitor.has_local_table && visitor.has_distributed_table)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support distributed table and local table mix query");
 
@@ -38,21 +41,20 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
         if (visitor.has_distributed_table)
         {
             cluster_name = visitor.clusters[0]->getName();
-            for (const auto & cluster : visitor.clusters)
+            /// remote() cluster_name is empty
+            if (cluster_name.empty())
             {
-                if (cluster_name != cluster->getName())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support remote function query");
+            }
+            for (size_t i = 1; i < visitor.clusters.size(); ++i)
+            {
+                if (cluster_name != visitor.clusters[i]->getName())
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query");
                 }
             }
 
-            std::vector<StorageID> storages;
-            for (const auto & visitor_storage : visitor.storages)
-            {
-                storages.emplace_back(visitor_storage->getStorageID());
-            }
-
-            if (context->addQueryCoordinationMetaInfo(cluster_name, storages, visitor.sharding_keys))
+            if (context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys))
                 context->setDistributedForQueryCoord(true);
             else
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support cross cluster query"); /// maybe union query
