@@ -23,7 +23,7 @@ namespace ProfileEvents
     extern const Event ThreadpoolReaderTaskMicroseconds;
     extern const Event ThreadpoolReaderReadBytes;
     extern const Event ThreadpoolReaderSubmit;
-    extern const Event ThreadpoolReaderIgnoredBytes;
+    extern const Event AsynchronousReaderIgnoredBytes;
 }
 
 namespace CurrentMetrics
@@ -100,7 +100,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
     reader.seek(request.offset, SEEK_SET);
     if (request.ignore)
     {
-        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderIgnoredBytes, request.ignore);
+        ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
         reader.ignore(request.ignore);
     }
 

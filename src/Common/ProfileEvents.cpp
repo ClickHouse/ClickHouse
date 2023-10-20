@@ -441,6 +441,7 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadpoolReaderIgnoredBytes, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
     M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
+    M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
