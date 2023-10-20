@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int TOO_MANY_ROWS;
+}
+
 namespace
 {
 
@@ -312,6 +317,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery&>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
     , limit(query_info.limit)
+    , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
     chassert(column_names.size() == 1);
@@ -328,6 +334,10 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
         assert(output_stream != std::nullopt);
         pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
+
+    /// Add storage limits.
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(storage_limits);
 
     /// Add to processors to get processor info through explain pipeline statement.
     for (const auto & processor : pipe.getProcessors())
@@ -372,8 +382,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             pipe.addSource(std::make_shared<NullSource>(NumbersSource::createHeader()));
             return pipe;
         }
-        const auto &limit_length = limit_length_and_offset.first;
-        const auto& limit_offset = limit_length_and_offset.second;
+        const auto & limit_length = limit_length_and_offset.first;
+        const auto & limit_offset = limit_length_and_offset.second;
 
         /// If intersected ranges is limited or we can pushdown limit.
         if (!intersected_ranges.rbegin()->right.isPositiveInfinity() || should_pushdown_limit)
@@ -389,6 +399,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
                 shrinkRanges(intersected_ranges, total_size);
             }
+
+            checkLimits(size_t(total_size));
 
             if (total_size / max_block_size < num_streams)
                 num_streams = static_cast<size_t>(total_size / max_block_size);
@@ -447,9 +459,26 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 ActionsDAGPtr ReadFromSystemNumbersStep::buildFilterDAG()
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
-    // for (const auto& [name, type]: storage->getInMemoryMetadata().columns.getAll())
-    //     node_name_to_input_node_column.emplace(name, ColumnWithTypeAndName{type, name});
-
     return ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, node_name_to_input_node_column, context);
 }
+
+void ReadFromSystemNumbersStep::checkLimits(size_t rows)
+{
+    auto & settings = context->getSettingsRef();
+
+    SizeLimits limits;
+    if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
+        limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
+
+    SizeLimits leaf_limits;
+    if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
+        leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
+
+    if (limits.max_rows || leaf_limits.max_rows)
+    {
+        limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
+        leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
+    }
+}
+
 }

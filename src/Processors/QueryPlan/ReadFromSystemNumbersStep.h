@@ -28,8 +28,10 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    Pipe makePipe();
+    /// Fail fast if estimated number of rows to read exceeds the limit
+    void checkLimits(size_t rows);
 
+    Pipe makePipe();
     ActionsDAGPtr buildFilterDAG();
 
     const Names column_names;
@@ -42,5 +44,6 @@ private:
     std::pair<UInt64, UInt64> limit_length_and_offset;
     bool should_pushdown_limit;
     UInt64 limit;
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 }
