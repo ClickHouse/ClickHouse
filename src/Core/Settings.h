@@ -514,6 +514,8 @@ class IColumn;
     M(Bool, allow_execute_multiif_columnar, true, "Allow execute multiIf function columnar", 0) \
     M(Bool, formatdatetime_f_prints_single_zero, false, "Formatter '%f' in function 'formatDateTime()' produces a single zero instead of six zeros if the formatted value has no fractional seconds.", 0) \
     M(Bool, formatdatetime_parsedatetime_m_is_month_name, true, "Formatter '%M' in functions 'formatDateTime()' and 'parseDateTime()' produces the month name instead of minutes.", 0) \
+    M(Bool, parsedatetime_enable_format_without_leading_zeros, true, "Formatters '%l'/'%k'/'%c' in functions 'parseDateTime()' parses format without leading zeros.", 0) \
+    M(Bool, formatdatetime_enable_format_without_leading_zeros, false, "Formatters '%l'/'%k'/'%c' in functions 'formatDateTime()' produces format without leading zeros.", 0) \
     \
     M(UInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.", 0) \
     M(Bool, throw_on_max_partitions_per_insert_block, true, "Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.", 0) \

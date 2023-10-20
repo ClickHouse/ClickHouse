@@ -2539,7 +2539,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 |----------|---------------------------------------------------------|------------|
 | %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
 | %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as an integer number (01-12)                      | 01         |
+| %c       | month as an integer number (01-12) (see Note3 below)    | 1          |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
@@ -2553,8 +2553,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %i       | minute (00-59)                                          | 33         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
-| %k       | hour in 24h format (00-23)                              | 22         |
-| %l       | hour in 12h format (01-12)                              | 09         |
+| %k       | hour in 24h format (0-23) (see Note3 below)             | 2          |
+| %l       | hour in 12h format (1-12) (see Note3 below)             | 9          |
 | %m       | month as an integer number (01-12)                      | 01         |
 | %M       | full month name (January-December), see 'Note 2' below  | January    |
 | %n       | new-line character (‘’)                                 |            |
@@ -2578,6 +2578,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 Note 1: In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
 
 Note 2: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
+
+Note 3: In ClickHouse versions earlier than v23.11, `%l`/`%k`/`%c` parses format with leading zeros required, after leading zeros are optional. The previous behaviour can be restored setting `parsedatetime_enable_format_without_leading_zeros = 0`. Though `formatDateTime` still prints those with leading zeros, this behaviour can be changed with `formatdatetime_enable_format_without_leading_zeros = 1`.
 
 **Example**
 
