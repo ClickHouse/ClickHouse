@@ -30,14 +30,10 @@ def started_cluster():
 
 def http_works(port=8123):
     try:
-        response = requests.post(f"http://{main_node.ip_address}:{port}/ping")
-        if response.status_code == 400:
-            return True
-    except:
-        pass
-
-    return False
-
+        response = requests.get(f"http://{main_node.ip_address}:{port}/ping")
+        return response.status_code == 200
+    except requests.exceptions.ConnectionError:
+        return False
 
 def assert_everything_works():
     custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
