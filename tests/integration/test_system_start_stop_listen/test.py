@@ -35,6 +35,7 @@ def http_works(port=8123):
     except requests.exceptions.ConnectionError:
         return False
 
+
 def assert_everything_works():
     custom_client = Client(main_node.ip_address, 9001, command=cluster.client_bin_path)
     main_node.query(QUERY)
