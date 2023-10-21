@@ -83,6 +83,7 @@ Columns:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` ([String](../../sql-reference/data-types/string.md)) — Operating system username who runs [clickhouse-client](../../interfaces/cli.md).
+- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
@@ -167,6 +168,7 @@ initial_query_start_time:              2021-11-03 16:13:54
 initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
 interface:                             1
 os_user:                               sevirov
+hostname:                              clickhouse.ru-central1.internal
 client_hostname:                       clickhouse.ru-central1.internal
 client_name:                           ClickHouse
 client_revision:                       54449
