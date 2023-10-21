@@ -30,12 +30,6 @@ private:
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
 
-    /// Timer that stops optimization of running local tasks instead of queuing them.
-    /// It provides local progress for each IProcessor task, allowing the partial result of the request to be always sended to the user.
-    Stopwatch watch;
-    /// Time period that limits the maximum allowed duration for optimizing the scheduling of local tasks within the executor
-    const UInt64 partial_result_duration_ms;
-
 public:
 #ifndef NDEBUG
     /// Time for different processing stages.
@@ -68,13 +62,8 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    bool needWatchRestartForPartialResultProgress() { return partial_result_duration_ms != 0 && partial_result_duration_ms < watch.elapsedMilliseconds(); }
-    void restartWatch() { watch.restart(); }
-
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback, UInt64 partial_result_duration_ms_)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
-        , watch(CLOCK_MONOTONIC)
-        , partial_result_duration_ms(partial_result_duration_ms_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)
