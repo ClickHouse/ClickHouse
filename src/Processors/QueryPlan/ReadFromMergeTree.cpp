@@ -2263,4 +2263,14 @@ size_t MergeTreeDataSelectAnalysisResult::marks() const
     return index_stats.back().num_granules_after;
 }
 
+UInt64 MergeTreeDataSelectAnalysisResult::rows() const
+{
+    if (std::holds_alternative<std::exception_ptr>(result))
+        std::rethrow_exception(std::get<std::exception_ptr>(result));
+
+    const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
+    if (index_stats.empty())
+        return 0;
+    return std::get<ReadFromMergeTree::AnalysisResult>(result).selected_rows;
+}
 }
