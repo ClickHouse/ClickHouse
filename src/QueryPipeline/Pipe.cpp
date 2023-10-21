@@ -315,18 +315,6 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow
 
     for (auto & pipe : pipes)
     {
-        if (res.isPartialResultActive() && pipe.isPartialResultActive())
-        {
-            res.partial_result_ports.insert(res.partial_result_ports.end(), pipe.partial_result_ports.begin(), pipe.partial_result_ports.end());
-        }
-        else
-        {
-            if (pipe.isPartialResultActive())
-                pipe.dropPartialResult();
-            if (res.isPartialResultActive())
-                res.dropPartialResult();
-        }
-
         if (!allow_empty_header || pipe.header)
             assertCompatibleHeader(pipe.header, res.header, "Pipe::unitePipes");
 
