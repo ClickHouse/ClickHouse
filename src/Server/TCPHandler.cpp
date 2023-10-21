@@ -10,8 +10,6 @@
 #include <vector>
 #include <string_view>
 #include <cstring>
-#include <base/types.h>
-#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -106,7 +104,6 @@ namespace DB::ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace
