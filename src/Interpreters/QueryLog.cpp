@@ -56,6 +56,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
 
     return
     {
+        {"hostname", low_cardinality_string},
         {"type", std::move(query_status_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -101,7 +102,6 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"interface", std::make_shared<DataTypeUInt8>()},
         {"is_secure", std::make_shared<DataTypeUInt8>()},
         {"os_user", low_cardinality_string},
-        {"hostname", low_cardinality_string},
         {"client_hostname", low_cardinality_string},
         {"client_name", low_cardinality_string},
         {"client_revision", std::make_shared<DataTypeUInt32>()},
@@ -162,6 +162,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
@@ -321,7 +322,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(static_cast<UInt64>(client_info.is_secure));
 
     columns[i++]->insert(client_info.os_user);
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(client_info.client_hostname);
     columns[i++]->insert(client_info.client_name);
     columns[i++]->insert(client_info.client_tcp_protocol_version);

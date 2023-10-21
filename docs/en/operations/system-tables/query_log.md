@@ -34,6 +34,7 @@ You can use the [log_formatted_queries](../../operations/settings/settings.md#se
 
 Columns:
 
+- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
     - `'QueryStart' = 1` — Successful start of query execution.
     - `'QueryFinish' = 2` — Successful end of query execution.
@@ -83,7 +84,6 @@ Columns:
     - 1 — TCP.
     - 2 — HTTP.
 - `os_user` ([String](../../sql-reference/data-types/string.md)) — Operating system username who runs [clickhouse-client](../../interfaces/cli.md).
-- `hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
@@ -128,6 +128,7 @@ SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_t
 ``` text
 Row 1:
 ──────
+hostname:                              clickhouse.ru-central1.internal
 type:                                  QueryFinish
 event_date:                            2021-11-03
 event_time:                            2021-11-03 16:13:54
@@ -168,7 +169,6 @@ initial_query_start_time:              2021-11-03 16:13:54
 initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
 interface:                             1
 os_user:                               sevirov
-hostname:                              clickhouse.ru-central1.internal
 client_hostname:                       clickhouse.ru-central1.internal
 client_name:                           ClickHouse
 client_revision:                       54449
