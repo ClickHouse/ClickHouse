@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int FUNCTION_NOT_ALLOWED;
-}
-
 BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr from)
 {
     BuildQueryPipelineSettings settings;
