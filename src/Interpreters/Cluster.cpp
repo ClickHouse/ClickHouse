@@ -240,10 +240,16 @@ Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
         {
             address.shard_index = parse<UInt32>(full_string.substr(0, underscore_pos).substr(strlen("shard")));
 
-            if (!full_string.substr(underscore_pos + 1).starts_with("replica"))
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', should be in a form of `shardN` or `shardN_replicaM`", full_string);
-
-            address.replica_index = parse<UInt32>(full_string.substr(underscore_pos + 1 + strlen("replica")));
+            if (full_string.substr(underscore_pos + 1).starts_with("replica"))
+            {
+                address.replica_index = parse<UInt32>(full_string.substr(underscore_pos + 1 + strlen("replica")));
+            }
+            else if (full_string.substr(underscore_pos + 1).starts_with("all_replicas"))
+            {
+                address.replica_index = 0;
+            }
+            else
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', should be in a form of `shardN_all_replicas` or `shardN_replicaM`", full_string);
         }
         else
         {
