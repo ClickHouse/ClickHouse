@@ -1,14 +1,14 @@
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 
 #include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
-#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
+#include <Common/DateLUT.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -143,12 +143,29 @@ void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & 
     char maybe_quote = *istr.position();
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
+    {
         ++istr.position();
-
-    readText(x, scale, istr, settings, time_zone, utc_time_zone);
-
-    if (maybe_quote == '\'' || maybe_quote == '\"')
+        readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar(maybe_quote, istr);
+    }
+    else
+    {
+        if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
+        {
+            readText(x, scale, istr, settings, time_zone, utc_time_zone);
+        }
+        /// Best effort parsing supports datetime in format like "01.01.2000, 00:00:00"
+        /// and can mistakenly read comma as a part of datetime.
+        /// For example data "...,01.01.2000,some string,..." cannot be parsed correctly.
+        /// To fix this problem we first read CSV string and then try to parse it as datetime.
+        else
+        {
+            String datetime_str;
+            readCSVString(datetime_str, istr, settings.csv);
+            ReadBufferFromString buf(datetime_str);
+            readText(x, scale, buf, settings, time_zone, utc_time_zone);
+        }
+    }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }

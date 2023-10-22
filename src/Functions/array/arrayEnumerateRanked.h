@@ -133,18 +133,14 @@ private:
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & indices, const ColumnRawPtrs & key_columns)
 {
-    UInt128 key;
     SipHash hash;
-
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
         // Debug: const auto & field = (*key_columns[j])[indices[j]]; DUMP(j, indices[j], field);
         key_columns[j]->updateHashWithValue(indices[j], hash);
     }
 
-    hash.get128(key);
-
-    return key;
+    return hash.get128();
 }
 
 

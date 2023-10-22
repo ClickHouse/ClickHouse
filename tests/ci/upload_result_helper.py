@@ -15,7 +15,7 @@ from s3_helper import S3Helper
 
 def process_logs(
     s3_client: S3Helper,
-    additional_logs: List[str],
+    additional_logs: List[Path],
     s3_path_prefix: str,
     test_results: TestResults,
 ) -> List[str]:
@@ -34,14 +34,14 @@ def process_logs(
                 test_result.log_urls.append(processed_logs[path])
             elif path:
                 url = s3_client.upload_test_report_to_s3(
-                    path.as_posix(), s3_path_prefix + "/" + path.name
+                    path, s3_path_prefix + "/" + path.name
                 )
                 test_result.log_urls.append(url)
                 processed_logs[path] = url
 
     additional_urls = []
     for log_path in additional_logs:
-        if log_path:
+        if log_path.is_file():
             additional_urls.append(
                 s3_client.upload_test_report_to_s3(
                     log_path, s3_path_prefix + "/" + os.path.basename(log_path)
@@ -56,7 +56,7 @@ def upload_results(
     pr_number: int,
     commit_sha: str,
     test_results: TestResults,
-    additional_files: List[str],
+    additional_files: List[Path],
     check_name: str,
     additional_urls: Optional[List[str]] = None,
 ) -> str:
@@ -100,9 +100,9 @@ def upload_results(
         additional_urls,
         statuscolors=statuscolors,
     )
-    with open("report.html", "w", encoding="utf-8") as f:
-        f.write(html_report)
+    report_path = Path("report.html")
+    report_path.write_text(html_report, encoding="utf-8")
 
-    url = s3_client.upload_test_report_to_s3("report.html", s3_path_prefix + ".html")
+    url = s3_client.upload_test_report_to_s3(report_path, s3_path_prefix + ".html")
     logging.info("Search result in url %s", url)
     return url

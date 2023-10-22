@@ -1262,7 +1262,7 @@ def test_recover_digest_mismatch(started_cluster):
         "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
         "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
         "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
-        # f"rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/", # Directory already exists
+        "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
         "rm -rf /var/lib/clickhouse/store",
     ]
 

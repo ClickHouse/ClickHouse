@@ -48,7 +48,7 @@ struct MergeTreeIndexAggregatorInverted final : IMergeTreeIndexAggregator
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    void addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter, UInt64 limit);
+    void addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter);
 
     GinIndexStorePtr store;
     Names index_columns;
@@ -167,8 +167,8 @@ public:
     ~MergeTreeIndexInverted() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;

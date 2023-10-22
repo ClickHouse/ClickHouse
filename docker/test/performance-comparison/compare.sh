@@ -90,7 +90,7 @@ function configure
     set +m
 
     wait_for_server $LEFT_SERVER_PORT $left_pid
-    echo Server for setup started
+    echo "Server for setup started"
 
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
@@ -156,9 +156,9 @@ function restart
     wait_for_server $RIGHT_SERVER_PORT $right_pid
     echo right ok
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
 
     # Check again that both servers we started are running -- this is important
@@ -352,14 +352,12 @@ function get_profiles
     wait
 
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
@@ -396,7 +394,7 @@ do
 done
 
 # for each query run, prepare array of metrics from query log
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
@@ -553,7 +551,7 @@ numactl --cpunodebind=all --membind=all numactl --show
 #   If the available memory falls below 2 * size, GNU parallel will suspend some of the running jobs.
 numactl --cpunodebind=all --membind=all parallel -v --joblog analyze/parallel-log.txt --memsuspend 15G --null < analyze/commands.txt 2>> analyze/errors.log
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
 -- a denormalized table of them -- statistics for all metrics for all queries.
 -- The WITH, ARRAY JOIN and CROSS JOIN do not like each other:
@@ -646,12 +644,12 @@ function report
 rm -r report ||:
 mkdir report report/tmp ||:
 
-rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
+rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv all-queries.tsv run-errors.tsv ||:
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
         'test text, query_index int, query_display_name text')
@@ -812,12 +810,6 @@ create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
         'test text, query_index int, client float, server float');
 
-create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
-    as select client, server, round(client/server, 3) p,
-        test, query_display_name
-    from total_client_time_per_query left join query_display_names using (test, query_index)
-    where p > round(1.02, 3) order by p desc;
-
 create table wall_clock_time_per_test engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
 
@@ -958,7 +950,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
 for version in {right,left}
 do
     rm -rf data
-    clickhouse-local --query "
+    clickhouse-local --multiquery --query "
 create view query_profiles as
     with 0 as left, 1 as right
     select * from file('analyze/query-profiles.tsv', TSV,
@@ -1128,7 +1120,7 @@ function report_metrics
 rm -rf metrics ||:
 mkdir metrics
 
-clickhouse-local --query "
+clickhouse-local --multiquery --query "
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
@@ -1188,7 +1180,7 @@ function upload_results
     # Prepare info for the CI checks table.
     rm -f ci-checks.tsv
 
-    clickhouse-local --query "
+    clickhouse-local --multiquery --query "
 create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')

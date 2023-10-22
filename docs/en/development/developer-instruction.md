@@ -152,7 +152,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-16 CXX=clang++-16`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-17 CXX=clang++-17`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -276,15 +276,13 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
-You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
-
 You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
 
 Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
--DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+-DENABLE_LIBRARIES=0
 ```
 
 In case of problems with any of the development options, you are on your own!

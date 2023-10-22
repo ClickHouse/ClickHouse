@@ -169,6 +169,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
     }
 
+    /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
+    /// then destroy states (on which src places points to).
+    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, Arena * arena) const = 0;
+
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
@@ -504,6 +508,15 @@ public:
         for (size_t i = row_begin; i < row_end; ++i)
             if (places[i])
                 static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+    }
+
+    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, Arena * arena) const override
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+        }
     }
 
     void addBatchSinglePlace( /// NOLINT

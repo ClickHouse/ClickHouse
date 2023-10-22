@@ -49,6 +49,8 @@ else()
     add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
+set(dbms_headers)
+set(dbms_sources)
 
 add_subdirectory (Access)
 add_subdirectory (Backups)
@@ -78,12 +80,9 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
-
-set(dbms_headers)
-set(dbms_sources)
-
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
+add_headers_and_sources(clickhouse_common_io Common/SSH)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Resource)
@@ -105,7 +104,6 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
-add_headers_and_sources(dbms Storages/MeiliSearch)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -151,47 +149,7 @@ else()
     message(STATUS "StorageFileLog is only supported on Linux")
 endif ()
 
-list (APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)
-
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp Functions/indexHint.cpp)
-list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h Functions/indexHint.h)
-
-list (APPEND dbms_sources
-    AggregateFunctions/IAggregateFunction.cpp
-    AggregateFunctions/AggregateFunctionFactory.cpp
-    AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
-    AggregateFunctions/AggregateFunctionState.cpp
-    AggregateFunctions/AggregateFunctionCount.cpp
-    AggregateFunctions/parseAggregateFunctionParameters.cpp)
-list (APPEND dbms_headers
-    AggregateFunctions/IAggregateFunction.h
-    AggregateFunctions/IAggregateFunctionCombinator.h
-    AggregateFunctions/AggregateFunctionFactory.h
-    AggregateFunctions/AggregateFunctionCombinatorFactory.h
-    AggregateFunctions/AggregateFunctionState.h
-    AggregateFunctions/AggregateFunctionCount.cpp
-    AggregateFunctions/FactoryHelpers.h
-    AggregateFunctions/parseAggregateFunctionParameters.h)
-
-list (APPEND dbms_sources
-    TableFunctions/ITableFunction.cpp
-    TableFunctions/TableFunctionView.cpp
-    TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers
-    TableFunctions/ITableFunction.h
-    TableFunctions/TableFunctionView.h
-    TableFunctions/TableFunctionFactory.h)
-
-list (APPEND dbms_sources
-    Dictionaries/DictionaryFactory.cpp
-    Dictionaries/DictionarySourceFactory.cpp
-    Dictionaries/DictionaryStructure.cpp
-    Dictionaries/getDictionaryConfigurationFromAST.cpp)
-list (APPEND dbms_headers
-    Dictionaries/DictionaryFactory.h
-    Dictionaries/DictionarySourceFactory.h
-    Dictionaries/DictionaryStructure.h
-    Dictionaries/getDictionaryConfigurationFromAST.h)
+list(APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)
 
 if (NOT ENABLE_SSL)
     list (REMOVE_ITEM clickhouse_common_io_sources Common/OpenSSLHelpers.cpp)
@@ -209,6 +167,10 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
+endif()
+
+if (TARGET ch_contrib::azure_sdk)
+    target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
@@ -354,7 +316,6 @@ target_link_libraries(clickhouse_common_io
             boost::context
             ch_contrib::cityhash
             ch_contrib::re2
-            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
@@ -376,6 +337,10 @@ if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
  endif()
 
+if (TARGET ch_contrib::ssh)
+ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
+endif()
+
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
@@ -384,7 +349,7 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tabl
 dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
 
 if (TARGET ch_contrib::rdkafka)
-    dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
+    dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
 if (TARGET ch_contrib::nats_io)
@@ -599,6 +564,10 @@ if (TARGET ch_contrib::annoy)
     dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
 endif()
 
+if (TARGET ch_contrib::usearch)
+    dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
+endif()
+
 if (TARGET ch_rust::skim)
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
@@ -622,8 +591,8 @@ if (ENABLE_TESTS)
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
-        ch_contrib::gtest_all
         ch_contrib::gmock_all
+        ch_contrib::gtest
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers

@@ -235,6 +235,15 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 
+----------------------------------------------------
+SELECT 'AST Fuzzer crash, issue #54541';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (row_id UInt32, str String, INDEX idx str TYPE inverted) ENGINE = MergeTree ORDER BY row_id;
+INSERT INTO tab VALUES (0, 'a');
+SELECT * FROM tab WHERE str == 'b' AND 1.0;
+
+
 -- Tests with parameter max_digestion_size_per_segment are flaky in CI, not clear why --> comment out for the time being:
 
 -- ----------------------------------------------------
@@ -268,74 +277,26 @@ SELECT read_rows==2 from system.query_log
 --             AND result_rows==1
 --         LIMIT 1;
 --
--- ----------------------------------------------------
--- SELECT 'Test density==1';
---
--- DROP TABLE IF EXISTS tab;
---
--- CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(0, 1.0))
---                      Engine=MergeTree
---                      ORDER BY (k)
---                      SETTINGS max_digestion_size_per_segment = 1, index_granularity = 512
---                      AS
---                           SELECT number, if(number%2, format('happy {}', hex(number)), format('birthday {}', hex(number)))
---                           FROM numbers(1024);
---
--- -- check inverted index was created
--- SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
---
--- -- search inverted index, no row has 'happy birthday'
--- SELECT count() == 0 FROM tab WHERE s =='happy birthday';
---
--- -- check the query only skip all granules (0 row total; each granule has 512 rows)
--- SYSTEM FLUSH LOGS;
--- SELECT read_rows==0 from system.query_log 
---         WHERE query_kind ='Select'
---             AND current_database = currentDatabase()
---             AND endsWith(trimRight(query), 'SELECT count() == 0 FROM tab WHERE s ==\'happy birthday\';')
---             AND type='QueryFinish' 
---             AND result_rows==1
---         LIMIT 1;
---
--- ----------------------------------------------------
--- SELECT 'Test density==0.1';
---
--- DROP TABLE IF EXISTS tab;
---
--- CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(0, 0.1))
---                     Engine=MergeTree
---                     ORDER BY (k)
---                     SETTINGS max_digestion_size_per_segment = 1, index_granularity = 512
---                     AS
---                         SELECT number, if(number==1023, 'happy new year', if(number%2, format('happy {}', hex(number)), format('birthday {}', hex(number))))
---                         FROM numbers(1024);
---
--- -- check inverted index was created
---
--- SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
---
--- -- search inverted index, no row has 'happy birthday'
--- SELECT count() == 0 FROM tab WHERE s == 'happy birthday';
---
--- -- check the query does not skip any of the 2 granules(1024 rows total; each granule has 512 rows)
--- SYSTEM FLUSH LOGS;
--- SELECT read_rows==1024 from system.query_log 
---         WHERE query_kind ='Select'
---             AND current_database = currentDatabase()
---             AND endsWith(trimRight(query), 'SELECT count() == 0 FROM tab WHERE s == \'happy birthday\';')
---             AND type='QueryFinish' 
---             AND result_rows==1
---         LIMIT 1;
---
--- -- search inverted index, no row has 'happy new year'
--- SELECT count() == 1 FROM tab WHERE s == 'happy new year';
---
--- -- check the query only read 1 granule because of density (1024 rows total; each granule has 512 rows)
--- SYSTEM FLUSH LOGS;
--- SELECT read_rows==512 from system.query_log 
---         WHERE query_kind ='Select'
---             AND current_database = currentDatabase()
---             AND endsWith(trimRight(query), 'SELECT count() == 1 FROM tab WHERE s == \'happy new year\';')
---             AND type='QueryFinish' 
---             AND result_rows==1
---         LIMIT 1;
+SELECT 'Test max_rows_per_postings_list';
+DROP TABLE IF EXISTS tab;
+-- create table 'tab' with inverted index parameter (ngrams, max_rows_per_most_list) which is (0, 10240)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(0, 12040))
+                     Engine=MergeTree
+                     ORDER BY (k)
+                     AS
+                         SELECT
+                         number,
+                         format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
+                         FROM numbers(1024);
+SELECT count(s) FROM tab WHERE hasToken(s, '4C4B4B4B4B4B5040');
+DROP TABLE IF EXISTS tab;
+-- create table 'tab' with inverted index parameter (ngrams, max_rows_per_most_list) which is (0, 123)
+-- it should throw exception since max_rows_per_most_list(123) is less than its minimum value(8196)
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(3, 123))
+                     Engine=MergeTree
+                     ORDER BY (k)
+                     AS
+                         SELECT
+                         number,
+                         format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
+                         FROM numbers(1024);  -- { serverError 80 }

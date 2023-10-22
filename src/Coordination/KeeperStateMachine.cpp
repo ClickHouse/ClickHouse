@@ -166,8 +166,13 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
+    request_for_session->log_idx = log_idx;
+
     preprocess(*request_for_session);
-    return nullptr;
+    auto result = nuraft::buffer::alloc(sizeof(log_idx));
+    nuraft::buffer_serializer ss(result);
+    ss.put_u64(log_idx);
+    return result;
 }
 
 std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
@@ -281,7 +286,8 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
             request_for_session.time,
             request_for_session.zxid,
             true /* check_acl */,
-            request_for_session.digest);
+            request_for_session.digest,
+            request_for_session.log_idx);
     }
     catch (...)
     {
@@ -381,6 +387,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
+    request_for_session->log_idx = log_idx;
+
     auto try_push = [this](const KeeperStorage::ResponseForSession& response)
     {
         if (!responses_queue.push(response))
@@ -433,7 +441,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     last_committed_idx = log_idx;
 
     if (commit_callback)
-        commit_callback(*request_for_session);
+        commit_callback(log_idx, *request_for_session);
     return nullptr;
 }
 
@@ -473,7 +481,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
         /// maybe some logs were preprocessed with log idx larger than the snapshot idx
         /// we have to apply them to the new storage
-        storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.storage->getZXID());
+        storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;

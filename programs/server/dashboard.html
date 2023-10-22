@@ -11,6 +11,7 @@
             --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
+            --moving-shadow-color: rgba(0, 0, 0, 0.5);
             --input-shadow-color: rgba(0, 255, 0, 1);
             --error-color: red;
             --auth-error-color: white;
@@ -34,6 +35,7 @@
             --background: #151C2C;
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
+            --moving-shadow-color: rgba(255, 255, 255, 0.25);
             --input-shadow-color: rgba(255, 128, 0, 0.25);
             --error-color: #F66;
             --legend-background: rgba(255, 255, 255, 0.25);
@@ -89,6 +91,21 @@
             box-shadow: 0 0 1rem var(--shadow-color);
             overflow: hidden;
             position: relative;
+        }
+
+        .chart-maximized {
+            flex: 1 100%;
+            height: 75vh
+        }
+
+        .chart-moving {
+            z-index: 11;
+            box-shadow: 0 0 2rem var(--moving-shadow-color);
+        }
+
+        .chart-displaced {
+            opacity: 75%;
+            filter: blur(1px);
         }
 
         .chart div { position: absolute; }
@@ -230,8 +247,8 @@
             filter: contrast(125%);
         }
 
-        #add, #reload {
-            padding: .25rem 0.5rem;
+        #add, #reload, #edit {
+            padding: 0.25rem 0.5rem;
             text-align: center;
             font-weight: bold;
             user-select: none;
@@ -244,13 +261,10 @@
             margin-right: 1rem !important;
             margin-left: 0rem;
             margin-bottom: 1rem;
+            height: 3ex;
         }
 
-        /* .unconnected #reload {
-            margin-left: 3px;
-        } */
-
-        #add:hover, #reload:hover {
+        #add:hover, #reload:hover, #edit:hover {
             background: var(--button-background-color);
         }
 
@@ -306,6 +320,7 @@
         }
         .chart-buttons a {
             margin-right: 0.25rem;
+            user-select: none;
         }
         .chart-buttons a:hover {
             color: var(--chart-button-hover-color);
@@ -333,18 +348,21 @@
             padding: 2rem;
         }
 
-        .query-editor textarea {
-            grid-row: 1;
-            grid-column: 1 / span 2;
-            z-index: 11;
+        textarea {
             padding: 0.5rem;
             outline: none;
             border: none;
             font-size: 12pt;
-            border-bottom: 1px solid var(--edit-title-border);
             background: var(--chart-background);
             color: var(--text-color);
             resize: none;
+        }
+
+        .query-editor textarea {
+            grid-row: 1;
+            grid-column: 1 / span 2;
+            z-index: 11;
+            border-bottom: 1px solid var(--edit-title-border);
             margin: 0;
         }
 
@@ -367,8 +385,43 @@
             filter: contrast(125%);
         }
 
+        .edit-cancel {
+            cursor: pointer;
+            background: var(--new-chart-background-color);
+        }
+        .edit-cancel:hover {
+            filter: contrast(125%);
+        }
+
         .nowrap {
             white-space: pre;
+        }
+
+        #mass-editor {
+            display: none;
+            grid-template-columns: auto fit-content(10%) fit-content(10%);
+            grid-template-rows: auto fit-content(10%);
+            row-gap: 1rem;
+            column-gap: 1rem;
+        }
+
+        #mass-editor-textarea {
+            width: 100%;
+            height: 100%;
+            grid-row: 1;
+            grid-column: 1 / span 3;
+        }
+
+        #mass-editor input {
+            padding: 0.5rem;
+        }
+
+        #mass-editor-message {
+            color: var(--auth-error-color);
+        }
+
+        #charts > div:only-child .display-only-if-more-than-one-chart {
+            display: none;
         }
 
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
@@ -389,6 +442,7 @@
         </div>
         <div id="button-options">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+            <input id="edit" type="button" value="✎" style="display: none;">
             <input id="add" type="button" value="Add chart" style="display: none;">
             <input id="reload" type="button" value="Reload">
             <div id="chart-params"></div>
@@ -397,6 +451,12 @@
     <div id="auth-error"></div>
 </div>
 <div id="charts"></div>
+<div id="mass-editor">
+    <textarea id="mass-editor-textarea" spellcheck="false" data-gramm="false"></textarea>
+    <span id="mass-editor-message">&nbsp;</span>
+    <input type="submit" id="mass-editor-cancel" class="edit-cancel" value="Cancel">
+    <input type="submit" id="mass-editor-confirm" class="edit-confirm" value="Apply">
+</div>
 <script>
 
 /** Implementation note: it might be more natural to use some reactive framework.
@@ -405,9 +465,7 @@
   *
   * TODO:
   * - zoom on the graphs should work on touch devices;
-  * - add mass edit capability (edit the JSON config as a whole);
   * - compress the state for URL's #hash;
-  * - save/load JSON configuration;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
   * - multiple lines on chart;
@@ -418,11 +476,13 @@
 let host = 'https://play.clickhouse.com/';
 let user = 'explorer';
 let password = '';
+let add_http_cors_header = true;
 
 /// If it is hosted on server, assume that it is the address of ClickHouse.
 if (location.protocol != 'file:') {
     host = location.origin;
     user = 'default';
+    add_http_cors_header = false;
 }
 
 const errorCodeMessageMap = {
@@ -702,6 +762,7 @@ function insertChart(i) {
     query_editor_textarea.spellcheck = false;
     query_editor_textarea.value = q.query;
     query_editor_textarea.placeholder = 'Query';
+    query_editor_textarea.setAttribute('data-gramm', false);
     query_editor.appendChild(query_editor_textarea);
 
     let query_editor_title = document.createElement('input');
@@ -756,6 +817,100 @@ function insertChart(i) {
     let edit_buttons = document.createElement('div');
     edit_buttons.className = 'chart-buttons';
 
+    let move = document.createElement('a');
+    let move_text = document.createTextNode('✥');
+    move.appendChild(move_text);
+
+    let drag_state = {
+        is_dragging: false,
+        idx: null,
+        offset_x: null,
+        offset_y: null,
+        displace_idx: null,
+        displace_chart: null
+    };
+
+    function dragStop(e) {
+        drag_state.is_dragging = false;
+        chart.className = 'chart';
+        chart.style.left = null;
+        chart.style.top = null;
+
+        if (drag_state.displace_idx !== null) {
+            const elem = queries[drag_state.idx];
+            queries.splice(drag_state.idx, 1);
+            queries.splice(drag_state.displace_idx, 0, elem);
+
+            drag_state.displace_chart.className = 'chart';
+            drawAll();
+        }
+    }
+
+    function dragMove(e) {
+        if (!drag_state.is_dragging) return;
+
+        let x = e.clientX - drag_state.offset_x;
+        let y = e.clientY - drag_state.offset_y;
+
+        chart.style.left = `${x}px`;
+        chart.style.top = `${y}px`;
+
+        drag_state.displace_idx = null;
+        drag_state.displace_chart = null;
+        let current_idx = -1;
+        for (const elem of charts.querySelectorAll('.chart')) {
+            ++current_idx;
+            if (current_idx == drag_state.idx) {
+                continue;
+            }
+
+            const this_rect = chart.getBoundingClientRect();
+            const this_center_x = this_rect.left + this_rect.width / 2;
+            const this_center_y = this_rect.top + this_rect.height / 2;
+
+            const elem_rect = elem.getBoundingClientRect();
+
+            if (this_center_x >= elem_rect.left && this_center_x <= elem_rect.right
+                && this_center_y >= elem_rect.top && this_center_y <= elem_rect.bottom) {
+
+                elem.className = 'chart chart-displaced';
+                drag_state.displace_idx = current_idx;
+                drag_state.displace_chart = elem;
+            } else {
+                elem.className = 'chart';
+            }
+        }
+    }
+
+    function dragStart(e) {
+        if (e.button !== 0) return; /// left button only
+        move.setPointerCapture(e.pointerId);
+
+        drag_state.is_dragging = true;
+        drag_state.idx = getCurrentIndex();
+        chart.className = 'chart chart-moving';
+
+        drag_state.offset_x = e.clientX;
+        drag_state.offset_y = e.clientY;
+    }
+
+    /// Read https://www.redblobgames.com/making-of/draggable/
+    move.addEventListener('pointerdown', dragStart);
+    move.addEventListener('pointermove', dragMove);
+    move.addEventListener('pointerup', dragStop);
+    move.addEventListener('pointerancel', dragStop);
+    move.addEventListener('touchstart', (e) => e.preventDefault());
+
+    let maximize = document.createElement('a');
+    let maximize_text = document.createTextNode('🗖');
+    maximize.appendChild(maximize_text);
+
+    maximize.addEventListener('click', e => {
+        const idx = getCurrentIndex();
+        chart.className = (chart.className == 'chart' ? 'chart chart-maximized' : 'chart');
+        resize();
+    });
+
     let edit = document.createElement('a');
     let edit_text = document.createTextNode('✎');
     edit.appendChild(edit_text);
@@ -788,6 +943,11 @@ function insertChart(i) {
         saveState();
     });
 
+    move.classList.add('display-only-if-more-than-one-chart');
+    maximize.classList.add('display-only-if-more-than-one-chart');
+
+    edit_buttons.appendChild(move);
+    edit_buttons.appendChild(maximize);
     edit_buttons.appendChild(edit);
     edit_buttons.appendChild(trash);
 
@@ -814,6 +974,66 @@ document.getElementById('add').addEventListener('click', e => {
 document.getElementById('reload').addEventListener('click', e => {
     reloadAll();
 });
+
+
+let mass_editor_active = false;
+
+function showMassEditor() {
+    document.getElementById('charts').style.display = 'none';
+
+    let editor_div = document.getElementById('mass-editor');
+    editor_div.style.display = 'grid';
+
+    let editor = document.getElementById('mass-editor-textarea');
+    editor.value = JSON.stringify({params: params, queries: queries}, null, 2);
+
+    mass_editor_active = true;
+}
+
+function hideMassEditor() {
+    document.getElementById('mass-editor').style.display = 'none';
+    document.getElementById('charts').style.display = 'flex';
+
+    mass_editor_active = false;
+}
+
+function massEditorApplyChanges() {
+    let editor = document.getElementById('mass-editor-textarea');
+    ({params, queries} = JSON.parse(editor.value));
+    hideMassEditor();
+    regenerate();
+    drawAll();
+    saveState();
+}
+
+document.getElementById('edit').addEventListener('click', e => {
+    if (mass_editor_active) {
+        massEditorApplyChanges();
+        hideMassEditor();
+    } else {
+        showMassEditor();
+    }
+});
+
+document.getElementById('mass-editor-confirm').addEventListener('click', e => {
+    massEditorApplyChanges();
+    hideMassEditor();
+});
+
+document.getElementById('mass-editor-cancel').addEventListener('click', e => {
+    hideMassEditor();
+});
+
+document.getElementById('mass-editor-textarea').addEventListener('input', e => {
+    let message = document.getElementById('mass-editor-message').firstChild;
+    message.data = '';
+    if (e.target.value != '') {
+        try { JSON.parse(e.target.value) } catch (e) {
+            message.data = e.toString();
+        }
+    }
+});
+
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
@@ -865,8 +1085,6 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
-let add_http_cors_header = false;
-
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {
         plots[idx].destroy();
@@ -877,7 +1095,7 @@ async function draw(idx, chart, url_params, query) {
     user = document.getElementById('user').value;
     password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONCompactColumns`
+    let url = `${host}?default_format=JSONCompactColumns&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from a browser console
@@ -906,12 +1124,14 @@ async function draw(idx, chart, url_params, query) {
     }
 
     if (error) {
-        const errorMatch = errorMessages.find(({ regex }) => error.match(regex))
-        const match = error.match(errorMatch.regex)
-        const message = errorMatch.messageFunc(match)
+        const errorMatch = errorMessages.find(({ regex }) => error.match(regex));
+        if (!errorMatch) {
+            throw new Error(error);
+        }
+        const match = error.match(errorMatch.regex);
+        const message = errorMatch.messageFunc(match);
         if (message) {
-            const authError = new Error(message)
-            throw authError
+            throw new Error(message);
         }
     }
 
@@ -978,23 +1198,23 @@ async function draw(idx, chart, url_params, query) {
 }
 
 function showAuthError(message) {
-    const charts = document.querySelector('#charts');
+    const charts = document.getElementById('charts');
     charts.style.height = '0px';
     charts.style.opacity = '0';
-    const add = document.querySelector('#add');
-    add.style.display = 'none';
+    document.getElementById('add').style.display = 'none';
+    document.getElementById('edit').style.display = 'none';
 
-    const authError = document.querySelector('#auth-error');
+    const authError = document.getElementById('auth-error');
     authError.textContent = message;
     authError.style.display = 'flex';
 }
 
 function hideAuthError() {
-    const charts = document.querySelector('#charts');
+    const charts = document.getElementById('charts');
     charts.style.height = 'auto';
     charts.style.opacity = '1';
 
-    const authError = document.querySelector('#auth-error');
+    const authError = document.getElementById('auth-error');
     authError.textContent = '';
     authError.style.display = 'none';
 }
@@ -1025,11 +1245,11 @@ async function drawAll() {
         if (results.includes(true)) {
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
-            const add = document.querySelector('#add');
-            add.style.display = 'block';
+            document.getElementById('add').style.display = 'inline-block';
+            document.getElementById('edit').style.display = 'inline-block';
         } 
         else {
-            const charts = document.querySelector('#charts')
+            const charts = document.getElementById('charts')
             charts.style.height = '0px';
         }
     })
@@ -1048,14 +1268,14 @@ new ResizeObserver(resize).observe(document.body);
 
 function disableReloadButton() {
     const reloadButton = document.getElementById('reload')
-    reloadButton.value = 'Reloading...'
+    reloadButton.value = 'Reloading…'
     reloadButton.disabled = true
     reloadButton.classList.add('disabled')
 }
 
 function disableRunButton() {
     const runButton = document.getElementById('run')
-    runButton.value = 'Reloading...'
+    runButton.value = 'Reloading…'
     runButton.disabled = true
     runButton.classList.add('disabled')
 }

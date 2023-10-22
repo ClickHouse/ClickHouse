@@ -103,11 +103,11 @@ public:
     struct Node
     {
         Poco::Net::SocketAddress address;
+        UInt8 original_index;
         bool secure;
     };
 
     using Nodes = std::vector<Node>;
-    using ConnectedCallback = std::function<void(size_t, const Node&)>;
 
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -116,14 +116,17 @@ public:
     ZooKeeper(
         const Nodes & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_,
-        std::optional<ConnectedCallback> && connected_callback_ = {});
+        std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
+
+    Int8 getConnectedNodeIdx() const override { return original_index; }
+    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
+    int32_t getConnectionXid() const override { return next_xid.load(); }
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
@@ -154,12 +157,12 @@ public:
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void set(
         const String & path,
@@ -171,7 +174,7 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtr watch) override;
 
     void check(
         const String & path,
@@ -219,7 +222,7 @@ private:
     ACLs default_acls;
 
     zkutil::ZooKeeperArgs args;
-    std::optional<ConnectedCallback> connected_callback = {};
+    Int8 original_index = -1;
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -252,7 +255,7 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 
@@ -267,7 +270,7 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);

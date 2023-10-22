@@ -1,17 +1,20 @@
-if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
-   set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+if (APPLE OR SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "memory")
+    # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+    set (ENABLE_DWARF_PARSER_DEFAULT OFF)
 else()
-   set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ${ENABLE_LIBRARIES})
+    set (ENABLE_DWARF_PARSER_DEFAULT ${ENABLE_LIBRARIES})
 endif()
 
-option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
+option (ENABLE_EMBEDDED_COMPILER "Enable support for JIT compilation during query execution (uses LLVM library)" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
-if (NOT ENABLE_EMBEDDED_COMPILER)
+option (ENABLE_DWARF_PARSER "Enable support for DWARF input format (uses LLVM library)" ${ENABLE_DWARF_PARSER_DEFAULT})
+
+if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER)
     message(STATUS "Not using LLVM")
     return()
 endif()
-
-# TODO: Enable compilation on AArch64
 
 set (LLVM_VERSION "15.0.0bundled")
 set (LLVM_INCLUDE_DIRS
@@ -58,18 +61,30 @@ set (REQUIRED_LLVM_LIBRARIES
     LLVMDemangle
 )
 
-# if (ARCH_AMD64)
+if (ARCH_AMD64)
+    set (LLVM_TARGETS_TO_BUILD "X86" CACHE INTERNAL "")
     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMX86Info LLVMX86Desc LLVMX86CodeGen)
-# elseif (ARCH_AARCH64)
-#     list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
-# endif ()
+elseif (ARCH_AARCH64)
+    set (LLVM_TARGETS_TO_BUILD "AArch64" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMAArch64Info LLVMAArch64Desc LLVMAArch64CodeGen)
+elseif (ARCH_PPC64LE)
+    set (LLVM_TARGETS_TO_BUILD "PowerPC" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMPowerPCInfo LLVMPowerPCDesc LLVMPowerPCCodeGen)
+elseif (ARCH_S390X)
+    set (LLVM_TARGETS_TO_BUILD "SystemZ" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen)
+elseif (ARCH_RISCV64)
+    set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
+    list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen)
+endif ()
+
+message (STATUS "LLVM TARGETS TO BUILD ${LLVM_TARGETS_TO_BUILD}")
 
 set (CMAKE_INSTALL_RPATH "ON") # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "") # Skip internal compiler selection
 set (LLVM_ENABLE_EH 1 CACHE INTERNAL "") # With exception handling
 set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
 set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
-set (LLVM_TARGETS_TO_BUILD "X86" CACHE STRING "") # for x86 + ARM: "X86;AArch64"
 
 # Omit unnecessary stuff (just the options which are ON by default)
 set(LLVM_ENABLE_BACKTRACES 0 CACHE INTERNAL "")
@@ -99,15 +114,12 @@ set(LLVM_ENABLE_BINDINGS 0 CACHE INTERNAL "")
 set (LLVM_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm")
 set (LLVM_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
 
-# Since we always use toolchain files to generate hermatic builds, cmake will
-# think it's a cross compilation, and LLVM will try to configure NATIVE LLVM
-# targets with all tests enabled, which will slow down cmake configuration and
-# compilation (You'll see Building native llvm-tblgen...). Let's disable the
-# cross compiling indicator for now.
-#
-# TODO We should let cmake know whether it's indeed a cross compilation in the
-# first place.
-set (CMAKE_CROSSCOMPILING 0)
+message (STATUS "LLVM CMAKE CROSS COMPILING ${CMAKE_CROSSCOMPILING}")
+if (CMAKE_CROSSCOMPILING)
+    set (LLVM_HOST_TRIPLE "${CMAKE_C_COMPILER_TARGET}" CACHE INTERNAL "")
+    message (STATUS "CROSS COMPILING SET LLVM HOST TRIPLE ${LLVM_HOST_TRIPLE}")
+endif()
+
 add_subdirectory ("${LLVM_SOURCE_DIR}" "${LLVM_BINARY_DIR}")
 
 set_directory_properties (PROPERTIES

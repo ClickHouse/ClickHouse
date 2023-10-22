@@ -1,4 +1,9 @@
+#include "Interpreters/AsynchronousInsertQueue.h"
+#include "Interpreters/Context_fwd.h"
+#include "Interpreters/SquashingTransform.h"
+#include "Parsers/ASTInsertQuery.h"
 #include <algorithm>
+#include <exception>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -35,6 +40,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
+#include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -83,6 +89,26 @@ namespace ProfileEvents
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int POCO_EXCEPTION;
+    extern const int SOCKET_TIMEOUT;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int UNKNOWN_PROTOCOL;
+    extern const int AUTHENTICATION_FAILED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int CLIENT_INFO_DOES_NOT_MATCH;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int FUNCTION_NOT_ALLOWED;
+}
+
 namespace
 {
 NameToNameMap convertToQueryParameters(const Settings & passed_params)
@@ -98,25 +124,69 @@ NameToNameMap convertToQueryParameters(const Settings & passed_params)
     return query_parameters;
 }
 
+// This function corrects the wrong client_name from the old client.
+// Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
+// "ClickHouse client" was sent with the hello message.
+// "ClickHouse" or "ClickHouse " was sent with the query message.
+void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo & client_info)
+{
+    if (client_info.getVersionNumber() <= VersionNumber(23, 8, 1) &&
+        session_client_info.client_name == "ClickHouse client" &&
+        (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
+    {
+        client_info.client_name = "ClickHouse client";
+    }
+}
+
+void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo & client_info)
+{
+    // Secondary query may contain different client_info.
+    // In the case of select from distributed table or 'select * from remote' from non-tcp handler. Server sends the initial client_info data.
+    //
+    // Example 1: curl -q -s --max-time 60 -sS "http://127.0.0.1:8123/?" -d "SELECT 1 FROM remote('127.0.0.1', system.one)"
+    // HTTP handler initiates TCP connection with remote 127.0.0.1 (session on remote 127.0.0.1 use TCP interface)
+    // HTTP handler sends client_info with HTTP interface and HTTP data by TCP protocol in Protocol::Client::Query message.
+    //
+    // Example 2: select * from <distributed_table>  --host shard_1 // distributed table has 2 shards: shard_1, shard_2
+    // shard_1 receives a message with 'ClickHouse client' client_name
+    // shard_1 initiates TCP connection with shard_2 with 'ClickHouse server' client_name.
+    // shard_1 sends 'ClickHouse client' client_name in Protocol::Client::Query message to shard_2.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return;
+
+    if (session_client_info.interface != client_info.interface)
+    {
+        throw Exception(
+            DB::ErrorCodes::CLIENT_INFO_DOES_NOT_MATCH,
+            "Client info's interface does not match: {} not equal to {}",
+            toString(session_client_info.interface),
+            toString(client_info.interface));
+    }
+
+    if (session_client_info.interface == ClientInfo::Interface::TCP)
+    {
+        if (session_client_info.client_name != client_info.client_name)
+            throw Exception(
+                DB::ErrorCodes::CLIENT_INFO_DOES_NOT_MATCH,
+                "Client info's client_name does not match: {} not equal to {}",
+                session_client_info.client_name,
+                client_info.client_name);
+
+        // TCP handler got patch version 0 always for backward compatibility.
+        if (!session_client_info.clientVersionEquals(client_info, false))
+            throw Exception(
+                DB::ErrorCodes::CLIENT_INFO_DOES_NOT_MATCH,
+                "Client info's version does not match: {} not equal to {}",
+                session_client_info.getVersionStr(),
+                client_info.getVersionStr());
+
+        // os_user, quota_key, client_trace_context can be different.
+    }
+}
 }
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int UNKNOWN_PACKET_FROM_CLIENT;
-    extern const int POCO_EXCEPTION;
-    extern const int SOCKET_TIMEOUT;
-    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
-    extern const int UNKNOWN_PROTOCOL;
-    extern const int AUTHENTICATION_FAILED;
-    extern const int QUERY_WAS_CANCELLED;
-}
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -223,7 +293,7 @@ void TCPHandler::runImpl()
             /// We try to send error information to the client.
             sendException(e, send_exception_with_stack_trace);
         }
-        catch (...) {}
+        catch (...) {} // NOLINT(bugprone-empty-catch)
 
         throw;
     }
@@ -263,6 +333,17 @@ void TCPHandler::runImpl()
         std::unique_ptr<DB::Exception> exception;
         bool network_error = false;
         bool query_duration_already_logged = false;
+        auto log_query_duration = [this, &query_duration_already_logged]()
+        {
+            if (query_duration_already_logged)
+                return;
+            query_duration_already_logged = true;
+            auto elapsed_sec = state.watch.elapsedSeconds();
+            /// We already logged more detailed info if we read some rows
+            if (elapsed_sec < 1.0 && state.progress.read_rows)
+                return;
+            LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
+        };
 
         try
         {
@@ -399,7 +480,7 @@ void TCPHandler::runImpl()
                 if (state.cancellation_status == CancellationStatus::FULLY_CANCELLED)
                     return;
 
-                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
+                sendMergeTreeAllRangesAnnouncementAssumeLocked(announcement);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                 ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
             });
@@ -421,7 +502,7 @@ void TCPHandler::runImpl()
             });
 
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, false, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -492,9 +573,7 @@ void TCPHandler::runImpl()
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
-
-            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
-            query_duration_already_logged = true;
+            log_query_duration();
 
             if (state.is_connection_closed)
                 break;
@@ -616,10 +695,7 @@ void TCPHandler::runImpl()
             LOG_WARNING(log, "Can't skip data packets after query failure.");
         }
 
-        if (!query_duration_already_logged)
-        {
-            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
-        }
+        log_query_duration();
 
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
@@ -739,35 +815,66 @@ void TCPHandler::skipData()
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
+void TCPHandler::startInsertQuery()
+{
+    /// Send ColumnsDescription for insertion table
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    {
+        const auto & table_id = query_context->getInsertionTable();
+        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        {
+            if (!table_id.empty())
+            {
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
+            }
+        }
+    }
+
+    /// Send block to the client - table structure.
+    sendData(state.io.pipeline.getHeader());
+    sendLogs();
+}
+
+AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue)
+{
+    using PushResult = AsynchronousInsertQueue::PushResult;
+
+    startInsertQuery();
+    SquashingTransform squashing(0, query_context->getSettingsRef().async_insert_max_data_size);
+
+    while (readDataNext())
+    {
+        auto result = squashing.add(std::move(state.block_for_insert));
+        if (result)
+        {
+            return PushResult
+            {
+                .status = PushResult::TOO_MUCH_DATA,
+                .insert_block = std::move(result),
+            };
+        }
+    }
+
+    auto result = squashing.add({});
+    return insert_queue.pushQueryWithBlock(state.parsed_query, std::move(result), query_context);
+}
 
 void TCPHandler::processInsertQuery()
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
-    auto run_executor = [&](auto & executor)
+    auto run_executor = [&](auto & executor, Block processed_data)
     {
         /// Made above the rest of the lines,
-        /// so that in case of `writePrefix` function throws an exception,
+        /// so that in case of `start` function throws an exception,
         /// client receive exception before sending data.
         executor.start();
 
-        /// Send ColumnsDescription for insertion table
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
-        {
-            const auto & table_id = query_context->getInsertionTable();
-            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-            {
-                if (!table_id.empty())
-                {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
-                }
-            }
-        }
-
-        /// Send block to the client - table structure.
-        sendData(executor.getHeader());
-        sendLogs();
+        if (processed_data)
+            executor.push(std::move(processed_data));
+        else
+            startInsertQuery();
 
         while (readDataNext())
             executor.push(std::move(state.block_for_insert));
@@ -778,15 +885,55 @@ void TCPHandler::processInsertQuery()
             executor.finish();
     };
 
+    Block processed_block;
+    const auto & settings = query_context->getSettingsRef();
+
+    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
+
+    bool async_insert_enabled = settings.async_insert;
+    if (insert_query.table_id)
+        if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, query_context))
+            async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+
+    if (insert_queue && async_insert_enabled && !insert_query.select)
+    {
+        auto result = processAsyncInsertQuery(*insert_queue);
+        if (result.status == AsynchronousInsertQueue::PushResult::OK)
+        {
+            if (settings.wait_for_async_insert)
+            {
+                size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
+                auto wait_status = result.future.wait_for(std::chrono::milliseconds(timeout_ms));
+
+                if (wait_status == std::future_status::deferred)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: got future in deferred state");
+
+                if (wait_status == std::future_status::timeout)
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
+
+                result.future.get();
+            }
+
+            sendInsertProfileEvents();
+            return;
+        }
+        else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
+        {
+            LOG_DEBUG(log, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
+            processed_block = std::move(result.insert_block);
+        }
+    }
+
     if (num_threads > 1)
     {
         PushingAsyncPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor);
+        run_executor(executor, std::move(processed_block));
     }
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor);
+        run_executor(executor, processed_block);
     }
 
     sendInsertProfileEvents();
@@ -818,7 +965,14 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
     {
-        PullingAsyncPipelineExecutor executor(pipeline);
+        const auto & settings = query_context->getSettingsRef();
+        bool has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
+        if (has_partial_result_setting && !settings.allow_experimental_partial_result)
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
+                "Partial results are not allowed by default, it's an experimental feature. "
+                "Setting 'allow_experimental_partial_result' must be enabled to use 'partial_result_update_duration_ms'");
+
+        PullingAsyncPipelineExecutor executor(pipeline, has_partial_result_setting);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;
@@ -977,9 +1131,9 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
+void TCPHandler::sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement)
 {
-    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
     announcement.serialize(*out);
     out->next();
 }
@@ -1172,6 +1326,17 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
+[[ maybe_unused ]] String createChallenge()
+{
+#if USE_SSL
+    pcg64_fast rng(randomSeed());
+    UInt64 rand = rng();
+    return encodeSHA256(&rand, sizeof(rand));
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
+#endif
+}
+
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1189,6 +1354,16 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     return res;
 }
 
+String TCPHandler::prepareStringForSshValidation(String username, String challenge)
+{
+    String output;
+    output.append(std::to_string(client_tcp_protocol_version));
+    output.append(default_database);
+    output.append(username);
+    output.append(challenge);
+    return output;
+}
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -1198,6 +1373,7 @@ void TCPHandler::receiveHello()
     String default_db;
 
     readVarUInt(packet_type, *in);
+
     if (packet_type != Protocol::Client::Hello)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
@@ -1235,7 +1411,7 @@ void TCPHandler::receiveHello()
         (!user.empty() ? ", user: " + user : "")
     );
 
-    is_interserver_mode = (user == USER_INTERSERVER_MARKER) && password.empty();
+    is_interserver_mode = (user == EncodedUserInfo::USER_INTERSERVER_MARKER) && password.empty();
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
@@ -1243,6 +1419,12 @@ void TCPHandler::receiveHello()
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         receiveClusterNameAndSalt();
         return;
+    }
+
+    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    if (is_ssh_based_auth)
+    {
+        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
     }
 
     session = makeSession();
@@ -1267,6 +1449,35 @@ void TCPHandler::receiveHello()
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
+    }
+
+    /// Perform handshake for SSH authentication
+    if (is_ssh_based_auth)
+    {
+        if (session->getAuthenticationTypeOrLogInFailure(user) != AuthenticationType::SSH_KEY)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
+
+        if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeRequest)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
+
+        auto challenge = createChallenge();
+        writeVarUInt(Protocol::Server::SSHChallenge, *out);
+        writeStringBinary(challenge, *out);
+        out->next();
+
+        String signature;
+        readVarUInt(packet_type, *in);
+        if (packet_type != Protocol::Client::SSHChallengeResponse)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
+        readStringBinary(signature, *in);
+
+        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
+        session->authenticate(cred, getClientAddress(client_info));
+        return;
     }
 #endif
 
@@ -1478,7 +1689,14 @@ void TCPHandler::receiveQuery()
     /// Read client info.
     ClientInfo client_info = session->getClientInfo();
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+    {
         client_info.read(*in, client_tcp_protocol_version);
+
+        correctQueryClientInfo(session->getClientInfo(), client_info);
+        const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
+        if (config_ref.validate_tcp_client_information)
+            validateClientInfo(session->getClientInfo(), client_info);
+    }
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
