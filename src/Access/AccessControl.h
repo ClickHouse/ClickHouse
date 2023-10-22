@@ -118,7 +118,7 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
 
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer) override;

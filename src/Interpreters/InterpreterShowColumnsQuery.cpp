@@ -162,7 +162,7 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), getContext(), true).second;
 }
 
 
