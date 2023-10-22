@@ -33,7 +33,7 @@ private:
 
     /// Number of references (hardlinks) to this metadata file.
     ///
-    /// FIXME: Why we are tracking it explicetly, without
+    /// FIXME: Why we are tracking it explicitly, without
     /// info from filesystem????
     uint32_t ref_count = 0;
 

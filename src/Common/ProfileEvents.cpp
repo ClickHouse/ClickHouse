@@ -530,6 +530,13 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
     \
+    M(S3QueueSetFileProcessingMicroseconds, "Time spent to set file as processing")\
+    M(S3QueueSetFileProcessedMicroseconds, "Time spent to set file as processed")\
+    M(S3QueueSetFileFailedMicroseconds, "Time spent to set file as failed")\
+    M(S3QueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed")\
+    M(S3QueuePullMicroseconds, "Time spent to read file data")\
+    M(S3QueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses")\
+    \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
     M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
@@ -589,9 +596,14 @@ Timer::Timer(Counters & counters_, Event timer_event_, Event counter_event, Reso
     counters.increment(counter_event);
 }
 
+UInt64 Timer::get()
+{
+    return watch.elapsedNanoseconds() / static_cast<UInt64>(resolution);
+}
+
 void Timer::end()
 {
-    counters.increment(timer_event, watch.elapsedNanoseconds() / static_cast<UInt64>(resolution));
+    counters.increment(timer_event, get());
     watch.reset();
 }
 

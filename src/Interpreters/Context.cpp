@@ -2,6 +2,7 @@
 #include <set>
 #include <optional>
 #include <memory>
+#include <Poco/Net/NameValueCollection.h>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/Macros.h>
@@ -3587,6 +3588,15 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
+std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
+{
+    auto lock = getGlobalSharedLock();
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->s3_queue_log;
+}
+
 std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
 {
     auto lock = getGlobalSharedLock();
@@ -3867,6 +3877,10 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
     shared->max_table_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
+size_t Context::getMaxTableSizeToDrop() const
+{
+    return shared->max_table_size_to_drop.load(std::memory_order_relaxed);
+}
 
 void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
@@ -3882,6 +3896,10 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
     shared->max_partition_size_to_drop.store(max_size, std::memory_order_relaxed);
 }
 
+size_t Context::getMaxPartitionSizeToDrop() const
+{
+    return shared->max_partition_size_to_drop.load(std::memory_order_relaxed);
+}
 
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
@@ -4192,12 +4210,15 @@ void Context::setClientConnectionId(uint32_t connection_id_)
     client_info.connection_id = connection_id_;
 }
 
-void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer)
+void Context::setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer, const Poco::Net::NameValueCollection & http_headers)
 {
     client_info.http_method = http_method;
     client_info.http_user_agent = http_user_agent;
     client_info.http_referer = http_referer;
     need_recalculate_access = true;
+
+    if (!http_headers.empty())
+        client_info.headers = http_headers;
 }
 
 void Context::setForwardedFor(const String & forwarded_for)

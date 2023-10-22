@@ -15,7 +15,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
@@ -73,6 +72,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <iostream>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <memory>
 #include <unordered_map>
@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -561,11 +562,19 @@ try
         }
 
         WriteBuffer * out_buf = nullptr;
-        String pager = config().getString("pager", "");
         if (!pager.empty())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
-                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+                throwFromErrno("Cannot set signal handler for SIGPIPE.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+            /// We need to reset signals that had been installed in the
+            /// setupSignalHandler() since terminal will send signals to both
+            /// processes and so signals will be delivered to the
+            /// clickhouse-client/local as well, which will be terminated when
+            /// signal will be delivered second time.
+            if (SIG_ERR == signal(SIGINT, SIG_IGN))
+                throwFromErrno("Cannot set signal handler for SIGINT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+            if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
+                throwFromErrno("Cannot set signal handler for SIGQUIT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -709,6 +718,30 @@ void ClientBase::initLogsOutputStream()
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
     }
+}
+
+void ClientBase::adjustSettings()
+{
+    Settings settings = global_context->getSettings();
+
+    /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
+
+    /// In case of multi-query we allow data after semicolon since it will be
+    /// parsed by the client and interpreted as new query
+    if (is_multiquery && !global_context->getSettingsRef().input_format_values_allow_data_after_semicolon.changed)
+    {
+        settings.input_format_values_allow_data_after_semicolon = true;
+        settings.input_format_values_allow_data_after_semicolon.changed = false;
+    }
+
+    /// If pager is specified then output_format_pretty_max_rows is ignored, this should be handled by pager.
+    if (!pager.empty() && !global_context->getSettingsRef().output_format_pretty_max_rows.changed)
+    {
+        settings.output_format_pretty_max_rows = std::numeric_limits<UInt64>::max();
+        settings.output_format_pretty_max_rows.changed = false;
+    }
+
+    global_context->setSettings(settings);
 }
 
 void ClientBase::initTtyBuffer(ProgressOption progress)
@@ -1301,6 +1334,15 @@ void ClientBase::resetOutput()
     {
         pager_cmd->in.close();
         pager_cmd->wait();
+
+        if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
+            throwFromErrno("Cannot set signal handler for SIIGPIEP.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        if (SIG_ERR == signal(SIGINT, SIG_DFL))
+            throwFromErrno("Cannot set signal handler for SIGINT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
+            throwFromErrno("Cannot set signal handler for SIGQUIT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+
+        setupSignalHandler();
     }
     pager_cmd = nullptr;
 
@@ -1391,7 +1433,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     }
 
     /// Process the query that requires transferring data blocks to the server.
-    const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+    const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
     {
         const auto & settings = global_context->getSettingsRef();
@@ -1837,10 +1879,20 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert_with_inlined_data = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+
+        if (is_async_insert_with_inlined_data)
+        {
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+            bool have_external_data = have_data_in_stdin || insert->infile;
+
+            if (have_external_data)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
+        }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
+        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert_with_inlined_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -2020,9 +2072,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
@@ -2030,6 +2079,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
+    /// Test tags are started with "--" so they are interpreted as comments anyway.
+    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
+    /// because we don't want test tags to be echoed.
     size_t test_tags_length = getTestTagsLength(all_queries_text);
 
     /// Several queries separated by ';'.
