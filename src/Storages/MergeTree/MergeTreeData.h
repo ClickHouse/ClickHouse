@@ -48,6 +48,7 @@ namespace DB
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
 class AlterCommands;
+class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
@@ -415,7 +416,7 @@ public:
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
@@ -723,7 +724,11 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr local_context) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
@@ -1069,6 +1074,18 @@ public:
 
     /// TODO: make enabled by default in the next release if no problems found.
     bool allowRemoveStaleMovingParts() const;
+
+    /// Generate DAG filters based on query info (for PK analysis)
+    static struct ActionDAGNodes getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select);
+
+    /// Estimate the number of rows to read based on primary key analysis (which could be very rough)
+    /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
+    /// many to replicas to use
+    UInt64 estimateNumberOfRowsToRead(
+        ContextPtr query_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        const ActionDAGNodes & added_filter_nodes) const;
 
 protected:
     friend class IMergeTreeDataPart;

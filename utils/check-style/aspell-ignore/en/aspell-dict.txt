@@ -432,6 +432,7 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
+Levenshtein
 LGPL
 LLDB
 LLVM's
@@ -1178,12 +1179,14 @@ buildId
 buildable
 builtins
 byteSize
+byteSwap
 bytebase
 bytesToCutForIPv
 editDistance
 byteHammingDistance
 jaccardIndex
 levenshteinDistance
+clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1397,6 +1400,7 @@ dmesg
 domainWithoutWWW
 dont
 dotProduct
+downsampling
 dplyr
 dragonbox
 dropoff
@@ -1420,6 +1424,7 @@ encodeXMLComponent
 encodings
 encryptions
 endian
+endianness
 endsWith
 endsWithUTF
 enum
@@ -1510,6 +1515,7 @@ geohashesInBox
 geoip
 geospatial
 getMacro
+getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1627,6 +1633,8 @@ injective
 innogames
 inodes
 instantiation
+instantiations
+DIEs
 intDiv
 intDivOrZero
 intExp
@@ -1701,6 +1709,7 @@ kurtsamp
 laion
 lang
 laravel
+largestTriangleThreeBuckets
 latencies
 ldap
 leftPad
@@ -1710,6 +1719,7 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+levenshtein
 lexicographically
 lgamma
 libFuzzer
@@ -1749,6 +1759,7 @@ london
 lowcardinality
 lowerUTF
 lowercased
+lttb
 lzma
 macOS
 mailrugo
@@ -2136,6 +2147,7 @@ repo
 representable
 requestor
 requireTLSv
+resolvers
 resharding
 reshards
 resultset

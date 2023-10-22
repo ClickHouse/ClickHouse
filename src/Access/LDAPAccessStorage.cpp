@@ -450,7 +450,7 @@ std::optional<std::pair<String, AccessEntityType>> LDAPAccessStorage::readNameWi
 }
 
 
-std::optional<UUID> LDAPAccessStorage::authenticateImpl(
+std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -503,7 +503,9 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
 
-    return id;
+    if (id)
+        return AuthResult{ .user_id = *id };
+    return std::nullopt;
 }
 
 }
