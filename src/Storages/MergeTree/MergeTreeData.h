@@ -48,6 +48,7 @@ namespace DB
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 1000;
 
 class AlterCommands;
+class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
@@ -412,20 +413,17 @@ public:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
-    std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const;
-
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
-    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, String & out_reason);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -689,11 +687,6 @@ public:
     /// Try to clear parts from filesystem. Throw exception in case of errors.
     void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
 
-    /// Delete WAL files containing parts, that all already stored on disk.
-    size_t clearOldWriteAheadLogs();
-
-    size_t clearOldBrokenPartsFromDetachedDirectory();
-
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
@@ -731,7 +724,11 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
     /// Checks that partition name in all commands is valid
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr local_context) const override;
 
     /// Change MergeTreeSettings
     void changeSettings(
@@ -947,9 +944,6 @@ public:
     /// Method is cheap and doesn't require any locks.
     size_t getTotalMergesWithTTLInMergeList() const;
 
-    using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
-    WriteAheadLogPtr getWriteAheadLog();
-
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
@@ -1080,6 +1074,18 @@ public:
 
     /// TODO: make enabled by default in the next release if no problems found.
     bool allowRemoveStaleMovingParts() const;
+
+    /// Generate DAG filters based on query info (for PK analysis)
+    static struct ActionDAGNodes getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select);
+
+    /// Estimate the number of rows to read based on primary key analysis (which could be very rough)
+    /// It is used to make a decision whether to enable parallel replicas (distributed processing) or not and how
+    /// many to replicas to use
+    UInt64 estimateNumberOfRowsToRead(
+        ContextPtr query_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        const ActionDAGNodes & added_filter_nodes) const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1514,9 +1520,6 @@ private:
     CurrentlyMovingPartsTaggerPtr checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const;
-
-    std::mutex write_ahead_log_mutex;
-    WriteAheadLogPtr write_ahead_log;
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 
