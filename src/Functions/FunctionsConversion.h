@@ -1695,8 +1695,8 @@ struct ConvertImplGenericFromString
                     {
                         auto & col_nullmap = nullable_column->getNullMapData();
                         if (col_nullmap.size() != nullable_column->size())
-                            col_nullmap.push_back(0);
-                        if (nullable_column->size() == column_from.size())
+                            col_nullmap.resize_fill(nullable_column->size());
+                        if (nullable_column->size() == (i + 1))
                             nullable_column->popBack(1);
                         nullable_column->insertDefault();
                         continue;
