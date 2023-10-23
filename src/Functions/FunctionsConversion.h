@@ -134,7 +134,8 @@ struct ConvertReturnZeroOnErrorTag {};
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
 template <typename FromDataType, typename ToDataType, typename Name,
-    typename SpecialTag = ConvertDefaultBehaviorTag, DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode>
+    typename SpecialTag = ConvertDefaultBehaviorTag,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ConvertImpl
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -389,50 +390,50 @@ struct ConvertImpl
 
 /** Conversion of DateTime to Date: throw off time component.
   */
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl<date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, ToDateImpl<date_time_overflow_behavior>, false> {};
 
 /** Conversion of DateTime to Date32: throw off time component.
   */
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDateTime, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate32, ToDate32Impl<date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDateTime, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDate32, ToDate32Impl, false> {};
 
 /** Conversion of Date to DateTime: adding 00:00:00 time component.
   */
-template <DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode>
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateTimeImpl
 {
     static constexpr auto name = "toDateTime";
 
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (d > MAX_DT_DAY_NUM)
+            if (d > MAX_DATETIME_DAY_NUM)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Day number {} is out of bounds of type DateTime", d);
         }
-        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (d > MAX_DT_DAY_NUM)
-                d = MAX_DT_DAY_NUM;
+            if (d > MAX_DATETIME_DAY_NUM)
+                d = MAX_DATETIME_DAY_NUM;
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
 
     static UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
             if (d < 0)
                 return 0;
-            else if (d > MAX_DT_DAY_NUM)
-                d = MAX_DT_DAY_NUM;
+            else if (d > MAX_DATETIME_DAY_NUM)
+                d = MAX_DATETIME_DAY_NUM;
         }
-        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (d < 0 || d > MAX_DT_DAY_NUM)
+            if (d < 0 || d > MAX_DATETIME_DAY_NUM)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", d);
         }
         return static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(d)));
@@ -445,13 +446,13 @@ struct ToDateTimeImpl
 
     static UInt32 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Ignore)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
             return static_cast<UInt32>(dt64);
         else
         {
-            if (dt64 < 0 || dt64 >= MAX_DT_TIMESTAMP)
+            if (dt64 < 0 || dt64 >= MAX_DATETIME_TIMESTAMP)
             {
-                if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
                     return dt64 < 0 ? 0 : std::numeric_limits<UInt32>::max();
                 else
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", dt64);
@@ -462,26 +463,26 @@ struct ToDateTimeImpl
     }
 };
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, ToDateTimeImpl<date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime, ToDateTimeImpl<date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDate32, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime, ToDateTimeImpl<date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDate32, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime, ToDateTimeImpl<date_time_overflow_behavior>, false> {};
 
 /// Implementation of toDate function.
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_DT_TIMESTAMP)
+            if (from > MAX_DATETIME_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
         }
         /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
@@ -489,17 +490,17 @@ struct ToDateTransform32Or64
         if (from <= DATE_LUT_MAX_DAY_NUM)
             return from;
         else
-            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DT_TIMESTAMP)));
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
 
 /** Conversion of Date32 to Date.
   */
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDate32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDate32, DataTypeDate, ToDateImpl<date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDate32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDate32, DataTypeDate, ToDateImpl<date_time_overflow_behavior>, false> {};
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTransform32Or64Signed
 {
     static constexpr auto name = "toDate";
@@ -507,7 +508,7 @@ struct ToDateTransform32Or64Signed
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // TODO: decide narrow or extended range based on FromType
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from < 0 || from > MAX_DATE_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
@@ -523,7 +524,7 @@ struct ToDateTransform32Or64Signed
     }
 };
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTransform8Or16Signed
 {
     static constexpr auto name = "toDate";
@@ -532,7 +533,7 @@ struct ToDateTransform8Or16Signed
     {
         if (from < 0)
         {
-            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
             else
                 return 0;
@@ -541,13 +542,13 @@ struct ToDateTransform8Or16Signed
     }
 };
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDateTime64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-        : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl<date_time_overflow_mode>>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDateTime64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+        : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>, false> {};
 
 /// Implementation of toDate32 function.
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDate32Transform32Or64
 {
     static constexpr auto name = "toDate32";
@@ -558,17 +559,17 @@ struct ToDate32Transform32Or64
             return static_cast<ToType>(from);
         else
         {
-            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from > MAX_DT64_TIMESTAMP)
+                if (from > MAX_DATETIME64_TIMESTAMP)
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
             }
-            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DT64_TIMESTAMP)));
+            return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME64_TIMESTAMP)));
         }
     }
 };
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDate32Transform32Or64Signed
 {
     static constexpr auto name = "toDate32";
@@ -577,9 +578,9 @@ struct ToDate32Transform32Or64Signed
     {
         static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
 
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < daynum_min_offset || from > MAX_DT64_TIMESTAMP)
+            if (from < daynum_min_offset || from > MAX_DATETIME64_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
         }
 
@@ -588,7 +589,7 @@ struct ToDate32Transform32Or64Signed
 
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
             ? static_cast<ToType>(from)
-            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DT64_TIMESTAMP)));
+            : time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
     }
 };
 
@@ -612,89 +613,89 @@ struct ToDate32Transform8Or16Signed
   *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
   *  (otherwise such usage would be frequent mistake).
   */
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16, default_date_time_overflow_behavior>, false> {};
 
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate32, ToDate32Transform32Or64<UInt64, Int32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate32, ToDate32Transform32Or64<UInt64, Int32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate32, ToDate32Transform8Or16Signed<Int8, Int32>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate32, ToDate32Transform8Or16Signed<Int16, Int32>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate32, ToDate32Transform32Or64Signed<Int32, Int32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDate32, ToDate32Transform32Or64Signed<Int32, Int32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate32, ToDate32Transform32Or64Signed<Int64, Int32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDate32, ToDate32Transform32Or64Signed<Int64, Int32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate32, ToDate32Transform32Or64Signed<Float64, Int32, default_date_time_overflow_behavior>, false> {};
 
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTimeTransform64
 {
     static constexpr auto name = "toDateTime";
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_DT_TIMESTAMP)
+            if (from > MAX_DATETIME_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DT_TIMESTAMP)));
+        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTimeTransformSigned
 {
     static constexpr auto name = "toDateTime";
@@ -703,7 +704,7 @@ struct ToDateTimeTransformSigned
     {
         if (from < 0)
         {
-            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
             else
                 return 0;
@@ -712,58 +713,58 @@ struct ToDateTimeTransformSigned
     }
 };
 
-template <typename FromType, typename ToType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, typename ToType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < 0 || from > MAX_DT_TIMESTAMP)
+            if (from < 0 || from > MAX_DATETIME_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
         if (from < 0)
             return 0;
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DT_TIMESTAMP)));
+        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
 
 /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt8, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime, ToDateTimeTransformSigned<Int8, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt8, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime, ToDateTimeTransformSigned<Int8, UInt32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt16, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime, ToDateTimeTransformSigned<Int16, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt16, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime, ToDateTimeTransformSigned<Int16, UInt32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt32, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime, ToDateTimeTransformSigned<Int32, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt32, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime, ToDateTimeTransformSigned<Int32, UInt32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime, ToDateTimeTransform64Signed<Int64, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime, ToDateTimeTransform64Signed<Int64, UInt32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeUInt64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime, ToDateTimeTransform64<UInt64, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeUInt64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime, ToDateTimeTransform64<UInt64, UInt32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime, ToDateTimeTransform64Signed<Float32, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime, ToDateTimeTransform64Signed<Float32, UInt32, default_date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32, default_date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32, default_date_time_overflow_behavior>, false> {};
 
 /** Conversion of numeric to DateTime64
   */
 
-template <typename FromType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64TransformUnsigned
 {
     static constexpr auto name = "toDateTime64";
@@ -776,18 +777,18 @@ struct ToDateTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_DT64_TIMESTAMP)
+            if (from > MAX_DATETIME64_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, MAX_DT64_TIMESTAMP), 0, scale_multiplier);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
     }
 };
-template <typename FromType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64TransformSigned
 {
     static constexpr auto name = "toDateTime64";
@@ -800,18 +801,18 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DT64_TIMESTAMP || from > MAX_DT64_TIMESTAMP)
+            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        from = static_cast<FromType>(std::max<time_t>(from, MIN_DT64_TIMESTAMP));
-        from = static_cast<FromType>(std::min<time_t>(from, MAX_DT64_TIMESTAMP));
+        from = static_cast<FromType>(std::max<time_t>(from, MIN_DATETIME64_TIMESTAMP));
+        from = static_cast<FromType>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP));
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
-template <typename FromDataType, typename FromType, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromDataType, typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64TransformFloat
 {
     static constexpr auto name = "toDateTime64";
@@ -824,45 +825,45 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DT64_TIMESTAMP || from > MAX_DT64_TIMESTAMP)
+            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        from = std::max(from, static_cast<FromType>(MIN_DT64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DT64_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8, date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime64, ToDateTime64TransformSigned<Int16, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt16, DataTypeDateTime64, ToDateTime64TransformSigned<Int16, date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime64, ToDateTime64TransformSigned<Int32, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt32, DataTypeDateTime64, ToDateTime64TransformSigned<Int32, date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeInt64, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime64, ToDateTime64TransformSigned<Int64, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeInt64, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeInt64, DataTypeDateTime64, ToDateTime64TransformSigned<Int64, date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeUInt64, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeUInt64, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeUInt64, DataTypeDateTime64, ToDateTime64TransformUnsigned<UInt64, date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat32, Float32, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat32, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat32, Float32, date_time_overflow_behavior>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat64, Float64, date_time_overflow_mode>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat64, Float64, date_time_overflow_behavior>, false> {};
 
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
@@ -887,13 +888,13 @@ struct FromDateTime64Transform
 
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
  */
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, TransformDateTime64<ToDateImpl<date_time_overflow_mode>>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, TransformDateTime64<ToDateImpl<date_time_overflow_behavior>>, false> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, TransformDateTime64<ToDateTimeImpl<date_time_overflow_mode>>, false> {};
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, TransformDateTime64<ToDateTimeImpl<date_time_overflow_behavior>>, false> {};
 
 struct ToDateTime64Transform
 {
@@ -925,16 +926,16 @@ struct ToDateTime64Transform
 
 /** Conversion of Date or DateTime to DateTime64: add zero sub-second part.
   */
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDate32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDate32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime64, ToDateTime64Transform> {};
 
-template <typename Name, DateTimeOverflowMode date_time_overflow_mode>
-struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+template <typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
 
@@ -1290,8 +1291,8 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 {
     if (unlikely(time < 0))
         x = 0;
-    else if (unlikely(time > MAX_DT_TIMESTAMP))
-        x = MAX_DT_TIMESTAMP;
+    else if (unlikely(time > MAX_DATETIME_TIMESTAMP))
+        x = MAX_DATETIME_TIMESTAMP;
     else
         x = static_cast<UInt32>(time);
 }
@@ -1789,29 +1790,29 @@ struct ConvertThroughParsing
 };
 
 
-template <typename ToDataType, typename Name, DateTimeOverflowMode date_time_overflow_mode>
+template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 requires (!std::is_same_v<ToDataType, DataTypeString>)
-struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
-template <typename ToDataType, typename Name, DateTimeOverflowMode date_time_overflow_mode>
+template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
-struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertDefaultBehaviorTag, date_time_overflow_mode>
+struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertDefaultBehaviorTag, date_time_overflow_behavior>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
-template <typename ToDataType, typename Name, DateTimeOverflowMode date_time_overflow_mode>
+template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 requires (!std::is_same_v<ToDataType, DataTypeString>)
-struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertReturnNullOnErrorTag, date_time_overflow_mode>
+struct ConvertImpl<DataTypeString, ToDataType, Name, ConvertReturnNullOnErrorTag, date_time_overflow_behavior>
     : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
-template <typename ToDataType, typename Name, DateTimeOverflowMode date_time_overflow_mode>
+template <typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 requires (!std::is_same_v<ToDataType, DataTypeFixedString>)
-struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErrorTag, date_time_overflow_mode>
+struct ConvertImpl<DataTypeFixedString, ToDataType, Name, ConvertReturnNullOnErrorTag, date_time_overflow_behavior>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
-template <typename FromDataType, typename ToDataType, typename Name, DateTimeOverflowMode date_time_overflow_mode>
+template <typename FromDataType, typename ToDataType, typename Name, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 requires (is_any_of<FromDataType, DataTypeString, DataTypeFixedString> && is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
-struct ConvertImpl<FromDataType, ToDataType, Name, ConvertReturnZeroOnErrorTag, date_time_overflow_mode>
+struct ConvertImpl<FromDataType, ToDataType, Name, ConvertReturnZeroOnErrorTag, date_time_overflow_behavior>
     : ConvertThroughParsing<FromDataType, ToDataType, Name, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
@@ -2268,10 +2269,10 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        [[maybe_unused]] DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode;
+        [[maybe_unused]] FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
 
         if (context)
-            date_time_overflow_mode = context->getSettingsRef().date_time_overflow_mode.value;
+            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior.value;
 
         auto call = [&](const auto & types, const auto & tag) -> bool
         {
@@ -2296,16 +2297,16 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                switch (date_time_overflow_mode)
+                switch (date_time_overflow_behavior)
                 {
-                    case DateTimeOverflowMode::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Throw>::execute(arguments, result_type, input_rows_count, scale);
+                    case FormatSettings::DateTimeOverflowBehavior::Throw:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, scale);
                         break;
-                    case DateTimeOverflowMode::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Ignore>::execute(arguments, result_type, input_rows_count, scale);
+                    case FormatSettings::DateTimeOverflowBehavior::Ignore:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, scale);
                         break;
-                    case DateTimeOverflowMode::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Saturate>::execute(arguments, result_type, input_rows_count, scale);
+                    case FormatSettings::DateTimeOverflowBehavior::Saturate:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, scale);
                         break;
                 }
 
@@ -2313,22 +2314,22 @@ private:
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                switch (date_time_overflow_mode)
+                switch (date_time_overflow_behavior)
                 {
-                    case DateTimeOverflowMode::Throw:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Throw>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                    case FormatSettings::DateTimeOverflowBehavior::Throw:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, dt64->getScale());
                         break;
-                    case DateTimeOverflowMode::Ignore:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Ignore>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                    case FormatSettings::DateTimeOverflowBehavior::Ignore:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(arguments, result_type, input_rows_count, dt64->getScale());
                         break;
-                    case DateTimeOverflowMode::Saturate:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Saturate>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                    case FormatSettings::DateTimeOverflowBehavior::Saturate:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(arguments, result_type, input_rows_count, dt64->getScale());
                         break;
                 }
             }
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
-            case DateTimeOverflowMode::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::OVERFLOW_MODE>::execute( \
+            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+                result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
                 arguments, result_type, input_rows_count); \
                 break;
 
@@ -2350,7 +2351,7 @@ private:
                 }
                 else
                 {
-                    switch (date_time_overflow_mode)
+                    switch (date_time_overflow_behavior)
                     {
                         GENERATE_OVERFLOW_MODE_CASE(Throw)
                         GENERATE_OVERFLOW_MODE_CASE(Ignore)
@@ -2361,7 +2362,7 @@ private:
             else if constexpr ((IsDataTypeNumber<LeftDataType> || IsDataTypeDateOrDateTime<LeftDataType>)
                                && IsDataTypeDateOrDateTime<RightDataType>)
             {
-                switch (date_time_overflow_mode)
+                switch (date_time_overflow_behavior)
                 {
                     GENERATE_OVERFLOW_MODE_CASE(Throw)
                     GENERATE_OVERFLOW_MODE_CASE(Ignore)
@@ -2920,7 +2921,7 @@ using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDe
 using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
 using FunctionToDecimal256 = FunctionConvert<DataTypeDecimal<Decimal256>, NameToDecimal256, UnknownMonotonicity>;
 
-template <typename DataType, DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode> struct FunctionTo;
+template <typename DataType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior> struct FunctionTo;
 
 template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
 template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
@@ -2937,17 +2938,17 @@ template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; }
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
-template <DateTimeOverflowMode date_time_overflow_mode>
-struct FunctionTo<DataTypeDate, date_time_overflow_mode> { using Type = FunctionToDate; };
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct FunctionTo<DataTypeDate, date_time_overflow_behavior> { using Type = FunctionToDate; };
 
-template <DateTimeOverflowMode date_time_overflow_mode>
-struct FunctionTo<DataTypeDate32, date_time_overflow_mode> { using Type = FunctionToDate32; };
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct FunctionTo<DataTypeDate32, date_time_overflow_behavior> { using Type = FunctionToDate32; };
 
-template <DateTimeOverflowMode date_time_overflow_mode>
-struct FunctionTo<DataTypeDateTime, date_time_overflow_mode> { using Type = FunctionToDateTime; };
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct FunctionTo<DataTypeDateTime, date_time_overflow_behavior> { using Type = FunctionToDateTime; };
 
-template <DateTimeOverflowMode date_time_overflow_mode>
-struct FunctionTo<DataTypeDateTime64, date_time_overflow_mode> { using Type = FunctionToDateTime64; };
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
+struct FunctionTo<DataTypeDateTime64, date_time_overflow_behavior> { using Type = FunctionToDateTime64; };
 
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
@@ -3283,9 +3284,9 @@ private:
         bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
             && (which.isInt() || which.isUInt() || which.isFloat());
 
-        DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
         if (context)
-            date_time_overflow_mode = context->getSettingsRef().date_time_overflow_mode;
+            date_time_overflow_behavior = context->getSettingsRef().date_time_overflow_behavior;
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
         {
@@ -3303,7 +3304,7 @@ private:
 
         auto wrapper_cast_type = cast_type;
 
-        return [wrapper_cast_type, from_type_index, to_type, date_time_overflow_mode]
+        return [wrapper_cast_type, from_type_index, to_type, date_time_overflow_behavior]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *column_nullable, size_t input_rows_count)
         {
             ColumnPtr result_column;
@@ -3317,13 +3318,13 @@ private:
                     if constexpr (IsDataTypeNumber<RightDataType>)
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-            case DateTimeOverflowMode::OVERFLOW_MODE: \
-                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertDefaultBehaviorTag, DateTimeOverflowMode::OVERFLOW_MODE>::execute( \
+            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
                 arguments, result_type, input_rows_count, ADDITIONS()); \
                 break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
-                            switch (date_time_overflow_mode)
+                            switch (date_time_overflow_behavior)
                             {
                                 GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateConvertStrategyAdditions)
                                 GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateConvertStrategyAdditions)
@@ -3332,7 +3333,7 @@ private:
                         }
                         else
                         {
-                            switch (date_time_overflow_mode)
+                            switch (date_time_overflow_behavior)
                             {
                                 GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateOrNullConvertStrategyAdditions)
                                 GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateOrNullConvertStrategyAdditions)
@@ -3347,13 +3348,13 @@ private:
                     if constexpr (std::is_same_v<RightDataType, DataTypeDate> || std::is_same_v<RightDataType, DataTypeDateTime>)
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
-            case DateTimeOverflowMode::OVERFLOW_MODE: \
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertDefaultBehaviorTag, DateTimeOverflowMode::OVERFLOW_MODE>::template execute<ADDITIONS>( \
+            case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertDefaultBehaviorTag, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::template execute<ADDITIONS>( \
 arguments, result_type, input_rows_count); \
                 break;
                         if (wrapper_cast_type == CastType::accurate)
                         {
-                            switch (date_time_overflow_mode)
+                            switch (date_time_overflow_behavior)
                             {
                                 GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateConvertStrategyAdditions)
                                 GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateConvertStrategyAdditions)
@@ -3362,7 +3363,7 @@ arguments, result_type, input_rows_count); \
                         }
                         else
                         {
-                            switch (date_time_overflow_mode)
+                            switch (date_time_overflow_behavior)
                             {
                                 GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
                                 GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)

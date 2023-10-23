@@ -3838,7 +3838,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
-## date_time_overflow_mode {#date_time_overflow_mode}
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Задаёт поведение при преобразовании [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), а также численных типов данных к Date, Date32, DateTime, DateTime64 в случае, если результат выходит за пределы диапазона значений необходимого типа.
 
