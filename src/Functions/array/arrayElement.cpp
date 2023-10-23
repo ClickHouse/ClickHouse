@@ -837,7 +837,7 @@ void FunctionArrayElement::executeMatchKeyToIndex(
     }
 
     /// In practice, map keys are usually in the same order, it is worth a try to
-    /// predicate the next key position as previous. So it can save a lot of comparisons.
+    /// predicate the next key position. So it can save a lot of comparisons.
     size_t i = 1;
     for (; i < rows; ++i)
     {
