@@ -19,11 +19,12 @@ Consider the potential impact on performance and resource utilization before exe
 The basic syntax of the query is as follows:
 
 ```sql
-CHECK TABLE table_name [PARTITION partition_expression] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]  ]
+CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
 ```
 
 - `table_name`: Specifies the name of the table that you want to check.
 - `partition_expression`: (Optional) If you want to check a specific partition of the table, you can use this expression to specify the partition.
+- `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
 - `FORMAT format`: (Optional) Allows you to specify the output format of the result.
 - `SETTINGS`: (Optional) Allows additional settings.
 	- **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
@@ -80,6 +81,32 @@ Output:
 │ 201003_7_7_0 │         1 │         │
 │ 201003_3_3_0 │         1 │         │
 └──────────────┴───────────┴─────────┘
+```
+
+Similarly, you can check a specific part of the table by using the `PART` keyword.
+
+```sql
+CHECK TABLE t0 PART '201003_7_7_0'
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+Output:
+
+```text
+┌─part_path────┬─is_passed─┬─message─┐
+│ 201003_7_7_0 │         1 │         │
+└──────────────┴───────────┴─────────┘
+```
+
+Note that when part does not exist, the query returns an error:
+
+```sql
+CHECK TABLE t0 PART '201003_111_222_0'
+```
+
+```text
+DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t0'. (NO_SUCH_DATA_PART)
 ```
 
 ### Receiving a 'Corrupted' Result
