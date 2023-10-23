@@ -2393,7 +2393,7 @@ Accepts an additional, optional `precision` parameter after the `timezone` param
 
 ## addYears, addQuarters, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addMilliseconds, addMicroseconds, addNanoseconds
 
-These functions add units of the interval specified by the function name to a date, a date with time or a date or date with time encoded as string. A date or date with time is returned.
+These functions add units of the interval specified by the function name to a date, a date with time or a string-encoded date / date with time. A date or date with time is returned.
 
 Example:
 
@@ -2416,7 +2416,7 @@ SELECT
 
 ## subtractYears, subtractQuarters, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractMilliseconds, subtractMicroseconds, subtractNanoseconds
 
-These functions subtract units of the interval specified by the function name from a date, a date with time or a date or date with time encoded as string. A date or date with time is returned.
+These functions subtract units of the interval specified by the function name from a date, a date with time or a string-encoded date / date with time. A date or date with time is returned.
 
 Example:
 

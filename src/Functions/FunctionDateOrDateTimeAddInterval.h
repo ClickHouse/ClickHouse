@@ -528,26 +528,13 @@ private:
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
-        if constexpr (std::is_same_v<FromType, String>)
-        {
-            auto & vec_to = col_to.getData();
+        auto & vec_to = col_to.getData();
 
-            size_t size = delta.size();
-            vec_to.resize(size);
+        size_t size = delta.size();
+        vec_to.resize(size);
 
-            for (size_t i = 0; i < size; ++i)
-                vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
-        }
-        else
-        {
-            auto & vec_to = col_to.getData();
-
-            size_t size = delta.size();
-            vec_to.resize(size);
-
-            for (size_t i = 0; i < size; ++i)
-                vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
-        }
+        for (size_t i = 0; i < size; ++i)
+            vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
     }
 };
 
