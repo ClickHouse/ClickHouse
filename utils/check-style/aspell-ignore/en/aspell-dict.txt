@@ -1455,6 +1455,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fibonacci
 fifo
 filesystem
 filesystemAvailable

@@ -122,6 +122,8 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             return std::make_shared<DataTypeDate32>();
         case orc::TypeKind::TIMESTAMP:
             return std::make_shared<DataTypeDateTime64>(9);
+        case orc::TypeKind::TIMESTAMP_INSTANT:
+            return std::make_shared<DataTypeDateTime64>(9, "UTC");
         case orc::TypeKind::VARCHAR:
         case orc::TypeKind::BINARY:
         case orc::TypeKind::STRING:
@@ -795,7 +797,8 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, orc_type, column_name);
         case orc::DATE:
             return readColumnWithDateData(orc_column, orc_type, column_name, type_hint);
-        case orc::TIMESTAMP:
+        case orc::TIMESTAMP: [[fallthrough]];
+        case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {
             auto interal_type = parseORCType(orc_type, false, skipped);
