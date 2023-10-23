@@ -1,7 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 
 #include <Common/thread_local_rng.h>
-#include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
@@ -22,14 +21,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
-
-
-#define MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION \
-    mutex_last_locked_by.store((getThreadId() << 32) | __LINE__); \
-    memcpy(mutex_memory_dump.data(), &cancel_mutex, mutex_memory_dump.size()); \
-    mutex_locked += 1; \
-    SCOPE_EXIT({ mutex_locked -= 1; });
-/// When you remove this macro, please also remove the clang-tidy suppressions at the beginning + end of this file.
 
 
 MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
@@ -86,7 +77,6 @@ MultiplexedConnections::MultiplexedConnections(
 void MultiplexedConnections::sendScalarsData(Scalars & data)
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
 
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
@@ -102,7 +92,6 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
 
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send external tables data: query not yet sent.");
@@ -131,7 +120,6 @@ void MultiplexedConnections::sendQuery(
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
 
     if (sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
@@ -189,7 +177,6 @@ void MultiplexedConnections::sendQuery(
 void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
 
     if (sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
@@ -206,7 +193,6 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 void MultiplexedConnections::sendReadTaskResponse(const String & response)
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
     if (cancelled)
         return;
     current_connection->sendReadTaskResponse(response);
@@ -216,7 +202,6 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
 void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
     if (cancelled)
         return;
     current_connection->sendMergeTreeReadTaskResponse(response);
@@ -226,29 +211,13 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
     Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
 void MultiplexedConnections::disconnect()
 {
-    /// We've seen this lock mysteriously get stuck forever, without any other thread seeming to
-    /// hold the mutex. This is temporary code to print some extra information next time it happens.
-    /// std::lock_guard lock(cancel_mutex);
-    if (!cancel_mutex.try_lock_for(std::chrono::hours(1)))
-    {
-        UInt64 last_locked = mutex_last_locked_by.load();
-        std::array<UInt8, sizeof(std::timed_mutex)> new_memory_dump;
-        memcpy(new_memory_dump.data(), &cancel_mutex, new_memory_dump.size());
-        LOG_ERROR(&Poco::Logger::get("MultiplexedConnections"), "Deadlock in MultiplexedConnections::disconnect()! Mutex was last (instrumentedly) locked by thread {} on line {}, lock balance: {}, mutex memory when last locked: {}, mutex memory now: {}", last_locked >> 32, last_locked & 0xffffffff, mutex_locked.load(), hexString(mutex_memory_dump.data(), mutex_memory_dump.size()), hexString(new_memory_dump.data(), new_memory_dump.size()));
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in MultiplexedConnections::disconnect()");
-    }
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wthread-safety-analysis"
-    std::lock_guard lock(cancel_mutex, std::adopt_lock);
-#pragma clang diagnostic pop
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
+    std::lock_guard lock(cancel_mutex);
 
     for (ReplicaState & state : replica_states)
     {
@@ -264,7 +233,6 @@ void MultiplexedConnections::disconnect()
 void MultiplexedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
 
     if (!sent_query || cancelled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel. Either no query sent or already cancelled.");
@@ -282,7 +250,6 @@ void MultiplexedConnections::sendCancel()
 Packet MultiplexedConnections::drain()
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
 
     if (!cancelled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot drain connections: cancel first.");
@@ -323,7 +290,6 @@ Packet MultiplexedConnections::drain()
 std::string MultiplexedConnections::dumpAddresses() const
 {
     std::lock_guard lock(cancel_mutex);
-    MUTEX_LOCK_TEMPORARY_DEBUG_INSTRUMENTATION
     return dumpAddressesUnlocked();
 }
 
