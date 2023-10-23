@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, no-random-merge-tree-settings
+# Tags: no-s3-storage, no-random-detach, no-random-merge-tree-settings
 # Tag no-s3-storage: s3 does not have fsync
+# Tag no-random-detach: extra FileOpen while attach.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

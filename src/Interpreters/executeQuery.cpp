@@ -36,6 +36,9 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/wipePasswordFromQuery.h>
+#include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -59,6 +62,8 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Common/ProfileEvents.h>
 
 #include <IO/CompressionMethod.h>
@@ -641,6 +646,139 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
+static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
+{
+    const ASTs & children = select_with_union.list_of_selects->children;
+    if (children.empty())
+        return;
+
+    // We might have an arbitrarily complex UNION tree, so just give
+    // up if the last first-order child is not a plain SELECT.
+    // It is flattened later, when we process UNION ALL/DISTINCT.
+    const auto * last_select = children.back()->as<ASTSelectQuery>();
+    if (last_select && last_select->settings())
+    {
+        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
+    }
+}
+
+namespace
+{
+
+class CollectTablesInQueryMatcher
+{
+public:
+    struct Data
+    {
+        explicit Data(ContextPtr context_) : context(std::move(context_)) {}
+
+        const ContextPtr context;
+        std::vector<StorageID> tables;
+
+        void addTableIfNotEmpty(const String & database, const String & table)
+        {
+            if (table.empty())
+                return;
+
+            if (database.empty())
+                tables.emplace_back(context->getCurrentDatabase(), table);
+            else
+                tables.emplace_back(database, table);
+        }
+    };
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (const auto * select = ast->as<ASTSelectQuery>())
+            visit(*select, data);
+        else if (const auto * insert = ast->as<ASTInsertQuery>())
+            visit(*insert, data);
+        else if (const auto * backup = ast->as<ASTBackupQuery>())
+            visit(*backup, data);
+        else if (const auto * query_with_output = dynamic_cast<ASTQueryWithTableAndOutput *>(ast.get()))
+            visit(*query_with_output, data);
+    }
+
+    static void visit(const ASTSelectQuery & select, Data & data)
+    {
+        for (const auto & table : getDatabaseAndTables(select, data.context->getCurrentDatabase()))
+            data.addTableIfNotEmpty(table.database, table.table);
+    }
+
+    static void visit(const ASTInsertQuery & insert, Data & data)
+    {
+        data.addTableIfNotEmpty(insert.getDatabase(), insert.getTable());
+    }
+
+    static void visit(const ASTBackupQuery & backup, Data & data)
+    {
+        for (const auto & element : backup.elements)
+            data.addTableIfNotEmpty(element.database_name, element.table_name);
+    }
+
+    static void visit(const ASTQueryWithTableAndOutput & query, Data & data)
+    {
+        data.addTableIfNotEmpty(query.getDatabase(), query.getTable());
+    }
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+};
+
+using CollectTablesInQueryVisitor = ConstInDepthNodeVisitor<CollectTablesInQueryMatcher, true>;
+
+}
+
+static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
+{
+    CollectTablesInQueryVisitor::Data data(context);
+    CollectTablesInQueryVisitor(data).visit(query);
+
+    /// Keep old settings, because they may be changed
+    /// during execution of ATTACH/DETACH queries.
+    auto old_settings = context->getSettings();
+
+    for (const auto & table_id : data.tables)
+    {
+        if (table_id.getDatabaseName() == "system")
+            continue;
+
+        if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
+            continue;
+
+        auto loading_dependencies = DatabaseCatalog::instance().getLoadingDependenciesInfo(table_id);
+        if (!loading_dependencies.dependencies.empty() || !loading_dependencies.dependent_database_objects.empty())
+            continue;
+
+        /// If table doesn't store data on disk, the data will be lost after detach.
+        /// If table has lock for any action, it will be removed after detach.
+        /// Since it will affect future queries do not detach in those cases.
+        auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
+        if (!database
+            || !database->supportsDetachingTables()
+            || !table
+            || !table->storesDataOnDisk()
+            || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        auto uuid = table->getStorageID().uuid;
+        table.reset();
+
+        auto full_name = table_id.getFullTableName();
+        auto detach_query = fmt::format("DETACH TABLE {}", full_name);
+        auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
+
+        auto detach = executeQuery(detach_query, context, true);
+        executeTrivialBlockIO(detach, context);
+
+        database->waitDetachedTableNotInUse(uuid);
+
+        auto attach = executeQuery(attach_query, context, true);
+        executeTrivialBlockIO(attach, context);
+    }
+
+    context->setSettings(old_settings);
+}
+
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -838,6 +976,26 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         logQuery(query_for_logging, context, internal, stage);
+
+        bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+        bool has_transaction = context->getCurrentTransaction() || settings.implicit_transaction;
+        if (!internal && is_initial_query && !has_transaction)
+        {
+            bool need_reattach_tables = settings.reattach_tables_before_query_execution;
+            auto reattach_probability = settings.reattach_tables_before_query_execution_probability;
+
+            if (!need_reattach_tables && reattach_probability > 0.0)
+            {
+                auto distribution = std::bernoulli_distribution(reattach_probability);
+                need_reattach_tables |= distribution(thread_local_rng);
+            }
+
+            if (need_reattach_tables)
+            {
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Will DETACH and ATTACH back tables used in query");
+                reattachTablesUsedInQuery(ast, context);
+            }
+        }
 
         /// Propagate WITH statement to children ASTSelect.
         if (settings.enable_global_with_statement)

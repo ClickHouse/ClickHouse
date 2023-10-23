@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
+<<<<<<< HEAD
 # Tags: zookeeper, no-replicated-database
+=======
+# Tags: zookeeper, no-replicated-database, no-parallel, no-random-detach
+>>>>>>> origin/randomize-detach-attach
 # Tag no-replicated-database: Old syntax is not allowed
+# Tag no-random-detach: parallel queries
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

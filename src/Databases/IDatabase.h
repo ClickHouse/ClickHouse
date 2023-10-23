@@ -203,6 +203,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
     }
 
+    virtual bool supportsDetachingTables() const = 0;
+
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.

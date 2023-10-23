@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-parallel
+# Tags: replica, no-replicated-database, no-randon-detach
 # Tag no-replicated-database: Fails due to additional replicas or shards
+# Tag no-random-detach: it's a bug, will be fixed in https://github.com/ClickHouse/ClickHouse/pull/42509
 
 set -e
 
