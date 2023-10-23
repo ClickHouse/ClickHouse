@@ -926,12 +926,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
-            else if (!insert_query->hasInlinedData())
-                reason = "insert query doesn't have inlined data";
-            else
+            else if (insert_query->hasInlinedData())
                 async_insert = true;
 
-            if (!async_insert)
+            if (!reason.empty())
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
@@ -954,7 +952,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            auto result = queue->push(ast, context);
+            auto result = queue->pushQueryWithInlinedData(ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
@@ -1228,19 +1226,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, std::move(res));
+    return std::make_tuple(std::move(ast), std::move(res));
 }
 
 
-BlockIO executeQuery(
+std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
-    BlockIO streams;
-    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
+    BlockIO res;
+
+    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1249,25 +1248,11 @@ BlockIO executeQuery(
                 : context->getDefaultFormat();
 
         if (format_name == "Null")
-            streams.null_format = true;
+            res.null_format = true;
     }
 
-    return streams;
+    return std::make_pair(std::move(ast), std::move(res));
 }
-
-BlockIO executeQuery(
-    bool allow_processors,
-    const String & query,
-    ContextMutablePtr context,
-    bool internal,
-    QueryProcessingStage::Enum stage)
-{
-    if (!allow_processors)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Flag allow_processors is deprecated for executeQuery");
-
-    return executeQuery(query, context, internal, stage);
-}
-
 
 void executeQuery(
     ReadBuffer & istr,
