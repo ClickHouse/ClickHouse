@@ -18,9 +18,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
     EnvironmentProxySetter setter(http_proxy_server, {});
 
     EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTP,
-        ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT
-    );
+        ProxyConfiguration::Protocol::HTTP, ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT);
 
     auto configuration = resolver.resolve();
 
@@ -30,29 +28,10 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
     ASSERT_EQ(configuration.use_connect_protocol, false);
 }
 
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPConnectProtocolOn)
-{
-    EnvironmentProxySetter setter(http_proxy_server, {});
-
-    EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTP,
-        ProxyConfigurationResolver::ConnectProtocolPolicy::FORCE_ON
-    );
-
-    auto configuration = resolver.resolve();
-
-    ASSERT_EQ(configuration.host, http_proxy_server.getHost());
-    ASSERT_EQ(configuration.port, http_proxy_server.getPort());
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.use_connect_protocol, true);
-}
-
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPNoEnv)
 {
     EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTP,
-        ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT
-    );
+        ProxyConfiguration::Protocol::HTTP, ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT);
 
     auto configuration = resolver.resolve();
 
@@ -66,9 +45,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPs)
     EnvironmentProxySetter setter({}, https_proxy_server);
 
     EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTPS,
-        ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT
-    );
+        ProxyConfiguration::Protocol::HTTPS, ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT);
 
     auto configuration = resolver.resolve();
 
@@ -77,15 +54,40 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPs)
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(https_proxy_server.getScheme()));
 }
 
+TEST(EnvironmentProxyConfigurationResolver, TestHTTPsNoEnv)
+{
+    EnvironmentProxyConfigurationResolver resolver(
+        ProxyConfiguration::Protocol::HTTPS, ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT);
+
+    auto configuration = resolver.resolve();
+
+    ASSERT_EQ(configuration.host, "");
+    ASSERT_EQ(configuration.protocol, ProxyConfiguration::Protocol::HTTP);
+    ASSERT_EQ(configuration.port, 80u);
+}
+
+TEST(EnvironmentProxyConfigurationResolver, TestHTTPConnectProtocolOn)
+{
+    EnvironmentProxySetter setter(http_proxy_server, {});
+
+    EnvironmentProxyConfigurationResolver resolver(
+        ProxyConfiguration::Protocol::HTTP, ProxyConfigurationResolver::ConnectProtocolPolicy::FORCE_ON);
+
+    auto configuration = resolver.resolve();
+
+    ASSERT_EQ(configuration.host, http_proxy_server.getHost());
+    ASSERT_EQ(configuration.port, http_proxy_server.getPort());
+    ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
+    ASSERT_EQ(configuration.use_connect_protocol, true);
+}
+
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPsConnectProtocolOff)
 {
     // use http proxy for https, this would use connect protocol by default
     EnvironmentProxySetter setter({}, http_proxy_server);
 
     EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTPS,
-        ProxyConfigurationResolver::ConnectProtocolPolicy::FORCE_OFF
-    );
+        ProxyConfiguration::Protocol::HTTPS, ProxyConfigurationResolver::ConnectProtocolPolicy::FORCE_OFF);
 
     auto configuration = resolver.resolve();
 
@@ -93,20 +95,6 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPsConnectProtocolOff)
     ASSERT_EQ(configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
     ASSERT_EQ(configuration.use_connect_protocol, false);
-}
-
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPsNoEnv)
-{
-    EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTPS,
-        ProxyConfigurationResolver::ConnectProtocolPolicy::DEFAULT
-    );
-
-    auto configuration = resolver.resolve();
-
-    ASSERT_EQ(configuration.host, "");
-    ASSERT_EQ(configuration.protocol, ProxyConfiguration::Protocol::HTTP);
-    ASSERT_EQ(configuration.port, 80u);
 }
 
 }

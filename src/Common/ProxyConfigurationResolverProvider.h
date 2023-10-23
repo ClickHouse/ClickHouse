@@ -33,7 +33,7 @@ public:
     );
 
 private:
-    template <bool flexible_protocol = true>
+    template <bool is_new_syntax = true>
     static std::shared_ptr<ProxyConfigurationResolver> getFromSettings(
         Protocol protocol,
         const String & config_prefix,

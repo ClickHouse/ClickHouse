@@ -3310,6 +3310,28 @@ Possible values:
 
 Default value: `0`.
 
+## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
+
+When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
+## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
+
+When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.

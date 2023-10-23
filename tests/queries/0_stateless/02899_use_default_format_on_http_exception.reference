@@ -1,0 +1,25 @@
+INSERT WITH default_format=JSON
+Content-Type:application/json;charset=UTF-8
+"exception":"Code:62.
+
+INSERT WITH default_format=XML
+Content-Type:application/xml;charset=UTF-8
+<exception>Code:62.DB::Ex---tion:
+
+INSERT WITH default_format=BADFORMAT
+Content-Type:text/plain;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:62
+Code:62.DB::Ex---tion:
+
+INSERT WITH X-ClickHouse-Format: JSON
+Content-Type:application/json;charset=UTF-8
+"exception":"Code:62.
+
+INSERT WITH X-ClickHouse-Format: XML
+Content-Type:application/xml;charset=UTF-8
+<exception>Code:62.DB::Ex---tion:
+
+INSERT WITH X-ClickHouse-Format: BADFORMAT
+Content-Type:text/plain;charset=UTF-8
+X-ClickHouse-Ex---tion-Code:62
+Code:62.DB::Ex---tion:
