@@ -566,6 +566,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
 void MaterializedPostgreSQLConsumer::syncTables()
 {
+    size_t synced_tables = 0;
     while (!tables_to_sync.empty())
     {
         auto table_name = *tables_to_sync.begin();
@@ -596,6 +597,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
                 CompletedPipelineExecutor executor(io.pipeline);
                 executor.execute();
+                ++synced_tables;
             }
         }
         catch (...)
@@ -608,7 +610,8 @@ void MaterializedPostgreSQLConsumer::syncTables()
         tables_to_sync.erase(tables_to_sync.begin());
     }
 
-    LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})", tables_to_sync.size(), current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
+    LOG_DEBUG(log, "Table sync end for {} tables, last lsn: {} = {}, (attempted lsn {})",
+              synced_tables, current_lsn, getLSNValue(current_lsn), getLSNValue(final_lsn));
 
     updateLsn();
 }

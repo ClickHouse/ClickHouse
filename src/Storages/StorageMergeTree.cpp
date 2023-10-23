@@ -208,9 +208,7 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (!query_info.parallel_replicas_disabled &&
-        local_context->canUseParallelReplicasOnInitiator() &&
-        local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
         auto table_id = getStorageID();
 
@@ -246,10 +244,7 @@ void StorageMergeTree::read(
     }
     else
     {
-        const bool enable_parallel_reading =
-            !query_info.parallel_replicas_disabled &&
-            local_context->canUseParallelReplicasOnFollower() &&
-            local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
 
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
