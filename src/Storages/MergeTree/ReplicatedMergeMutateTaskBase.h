@@ -37,6 +37,8 @@ public:
     String getQueryId() const override { return getStorageID().getShortName() + "::" + selected_entry->log_entry->new_part_name; }
     bool executeStep() override;
 
+    bool printExecutionException() const override { return print_exception; }
+
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
 
@@ -91,6 +93,7 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
+    bool print_exception = true;
 };
 
 }
