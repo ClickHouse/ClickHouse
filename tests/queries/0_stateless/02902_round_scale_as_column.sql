@@ -50,11 +50,11 @@ CREATE TABLE tround (
 ) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tround SELECT number    ,  0, number, number, number, number, number, number, number, number, number, number, FROM system.numbers LIMIT 20;
-INSERT INTO tround SELECT number+20 ,  0, number+10, number+10, number+10, number+10, number-10, number-10, number-10, number-10, number-10, number-10, FROM system.numbers LIMIT 20;
+INSERT INTO tround SELECT number+20 ,  0, number+10, number+10, number+10, number+10, number-10, number-10, number-10, number-10, (toFloat32(number)-10)/10, (toFloat64(number)-10)/10, FROM system.numbers LIMIT 20;
 INSERT INTO tround SELECT number+40 , -1, number, number, number, number, number, number, number, number, number, number, FROM system.numbers LIMIT 20;
-INSERT INTO tround SELECT number+60 , -1, number+10, number+10, number+10, number+10, number-10, number-10, number-10, number-10, number-10, number-10, FROM system.numbers LIMIT 20;
+INSERT INTO tround SELECT number+60 , -1, number+10, number+10, number+10, number+10, number-10, number-10, number-10, number-10, (toFloat32(number)-10)/10, (toFloat64(number)-10)/10, FROM system.numbers LIMIT 20;
 INSERT INTO tround SELECT number+80 , -2, number, number, number, number, number, number, number, number, number, number, FROM system.numbers LIMIT 20;
-INSERT INTO tround SELECT number+100, -2, number+10, number+10, number+10, number+10, number-10, number-10, number-10, number-10, number-10, number-10, FROM system.numbers LIMIT 20;
+INSERT INTO tround SELECT number+100, -2, number+10, number+10, number+10, number+10, number-10, number-10, number-10, number-10, (toFloat32(number)-10)/10, (toFloat64(number)-10)/10, FROM system.numbers LIMIT 20;
 
 INSERT INTO tround SELECT number+200, -number, 0, 0, 0, 0, 0, 0, 0, 0, 12345.6789, 12345.6789, FROM system.numbers LIMIT 10;
 INSERT INTO tround SELECT number+210, -number, 0, 0, 0, 0, 0, 0, 0, 0, 12345.6789, 12345.6789, FROM system.numbers LIMIT 10;
@@ -66,25 +66,25 @@ INSERT INTO tround VALUES (303, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5.0, 5.0);
 INSERT INTO tround VALUES (304, 4, 50, 50, 50, 50, 50, 50, 50, 50, 50.0, 50.0);
 INSERT INTO tround VALUES (305, 4, 500, 500, 500, 500, 500, 500, 500, 500, 500.0, 500.0);
 
-SELECT toString('u8');
+SELECT toString('id u8 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, u8   AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('u16');
+SELECT toString('id u16 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, u16  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('u32');
+SELECT toString('id u32 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, u32  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('u64');
+SELECT toString('id u64 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, u64  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('i8');
+SELECT toString('id i8 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, i8   AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('i16');
+SELECT toString('id i16 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, i16  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('i32');
+SELECT toString('id i32 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, i32  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('i64');
+SELECT toString('id i64 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, i64  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('f32');
+SELECT toString('id f32 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, f32  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
-SELECT toString('f64');
+SELECT toString('id f64 scale round(u8, scale) roundBankers(x, scale) floor(x, scale) ceil(x, scale) trunc(x, scale)');
 SELECT id, f64  AS x, scale, round(x, scale), roundBankers(x, scale), floor(x, scale), ceil(x, scale), trunc(x, scale) FROM tround ORDER BY id;
 
 DROP TABLE IF EXISTS tround;
