@@ -578,7 +578,6 @@ ColumnPtr FunctionArrayElement::executeString(
         return nullptr;
 
     auto col_res = ColumnString::create();
-
     ArrayElementStringImpl::vector<IndexType>(
         col_nested->getChars(),
         col_array->getOffsets(),
@@ -767,7 +766,7 @@ struct MatcherString
     const DataColumn & data;
     const IndexColumn & index;
 
-    bool match(size_t row_data, size_t row_index) const
+    inline bool match(size_t row_data, size_t row_index) const
     {
         auto data_ref = data.getDataAt(row_data);
         auto index_ref = index.getDataAt(row_index);
@@ -781,7 +780,7 @@ struct MatcherStringConst
     const DataColumn & data;
     const String & index;
 
-    bool match(size_t row_data, size_t /* row_index */) const
+    inline bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
         return index.size() == data_ref.size && memcmp(index.data(), data_ref.data, data_ref.size) == 0;
@@ -794,7 +793,7 @@ struct MatcherNumber
     const PaddedPODArray<DataType> & data;
     const PaddedPODArray<IndexType> & index;
 
-    bool match(size_t row_data, size_t row_index) const
+    inline bool match(size_t row_data, size_t row_index) const
     {
         return data[row_data] == static_cast<DataType>(index[row_index]);
     }
@@ -819,11 +818,40 @@ void FunctionArrayElement::executeMatchKeyToIndex(
     const Offsets & offsets, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher)
 {
     size_t rows = offsets.size();
-    for (size_t i = 0; i < rows; ++i)
+    size_t matched_pos = 0;
+    bool matched = false;
+    for (size_t j = 0, end = offsets[0]; j < end; ++j)
     {
-        bool matched = false;
-        size_t begin = offsets[i - 1];
-        size_t end = offsets[i];
+        if (matcher.match(j, 0))
+        {
+            matched_idxs.push_back(j + 1);
+            matched = true;
+            matched_pos = end + j;
+            break;
+        }
+    }
+    if (!matched)
+        matched_idxs.push_back(0);
+    /// In pratice, map keys are usually in the same order, it is worth a trying to
+    /// predicate the next key position as previous. So it can save a lot of comparisions.
+    size_t i = 1;
+    for (; i < rows; ++i)
+    {
+        const auto & begin = offsets[i - 1];
+        const auto & end = offsets[i];
+        if (matched_pos < end && matcher.match(matched_pos, i))
+        {
+            matched_idxs.push_back(matched_pos - begin + 1);
+            matched_pos = end + matched_pos - begin;
+        }
+        else
+            break;
+    }
+    for (; i < rows; ++i)
+    {
+        matched = false;
+        auto begin = offsets[i - 1];
+        auto end = offsets[i];
         for (size_t j = begin; j < end; ++j)
         {
             if (matcher.match(j, i))
@@ -833,7 +861,6 @@ void FunctionArrayElement::executeMatchKeyToIndex(
                 break;
             }
         }
-
         if (!matched)
             matched_idxs.push_back(0);
     }
