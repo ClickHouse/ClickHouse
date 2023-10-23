@@ -219,17 +219,12 @@ def test_quoted_argument_parsing(client: KeeperClient):
 
 def get_direct_children_number(client: KeeperClient):
     client.touch("/get_direct_children_number")
-    client.touch("/get_direct_children_number/a")
-    client.touch("/get_direct_children_number/a/1")
-    client.touch("/get_direct_children_number/a/2")
-    client.touch("/get_direct_children_number/a/3")
-    client.touch("/get_direct_children_number/a/4")
-    client.touch("/get_direct_children_number/a/5")
-    client.touch("/get_direct_children_number/b")
-    client.touch("/get_direct_children_number/b/1")
-    client.touch("/get_direct_children_number/b/2")
-    client.touch("/get_direct_children_number/b/3")
-    client.touch("/get_direct_children_number/b/4")
+    client.touch("/get_direct_children_number/1")
+    client.touch("/get_direct_children_number/1/1")
+    client.touch("/get_direct_children_number/1/2")
+    client.touch("/get_direct_children_number/2")
+    client.touch("/get_direct_children_number/2/1")
+    client.touch("/get_direct_children_number/2/2")
 
     assert client.get_direct_children_number("/get_direct_children_number") == "2"
 
