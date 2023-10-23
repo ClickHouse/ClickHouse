@@ -26,3 +26,5 @@ select IPv6StringToNum(number % 2 ? '0000:0000:0000:0000:0000:0000:0000:0000' : 
 select 'fuzzer issue';
 SELECT CAST(if(number % 2, 'truetrue', NULL), 'Nullable(Bool)') FROM numbers(2);
 SELECT CAST(if(number % 2, 'falsefalse', NULL), 'Nullable(Bool)') FROM numbers(2);
+SELECT accurateCastOrNull(if(number % 2, NULL, 'truex'), 'Bool') FROM numbers(4);
+SELECT accurateCastOrNull(if(number % 2, 'truex', NULL), 'Bool') FROM numbers(4);
