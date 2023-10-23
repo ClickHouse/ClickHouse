@@ -89,7 +89,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
 
                 const Poco::Net::SocketAddress host_socket_addr{host_string};
                 LOG_TEST(log, "Adding ZooKeeper host {} ({})", host_string, host_socket_addr.toString());
-                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, secure});
+                nodes.emplace_back(Coordination::ZooKeeper::Node{host_socket_addr, host.original_index, secure});
             }
             catch (const Poco::Net::HostNotFoundException & e)
             {
@@ -113,12 +113,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
         }
 
-        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log, [this](size_t node_idx, const Coordination::ZooKeeper::Node & node)
-        {
-            connected_zk_host = node.address.host().toString();
-            connected_zk_port = node.address.port();
-            connected_zk_index = node_idx;
-        });
+        impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
 
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
@@ -179,6 +174,7 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
     {
         ShuffleHost shuffle_host;
         shuffle_host.host = args.hosts[i];
+        shuffle_host.original_index = static_cast<UInt8>(i);
         if (get_priority)
             shuffle_host.priority = get_priority(i);
         shuffle_host.randomize();
@@ -1312,6 +1308,20 @@ void ZooKeeper::setServerCompletelyStarted()
         zk->setServerCompletelyStarted();
 }
 
+Int8 ZooKeeper::getConnectedHostIdx() const
+{
+    return impl->getConnectedNodeIdx();
+}
+
+String ZooKeeper::getConnectedHostPort() const
+{
+    return impl->getConnectedHostPort();
+}
+
+int32_t ZooKeeper::getConnectionXid() const
+{
+    return impl->getConnectionXid();
+}
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
