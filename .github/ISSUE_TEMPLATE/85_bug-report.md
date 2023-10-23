@@ -7,6 +7,8 @@ assignees: ''
 
 ---
 
+> Please make sure that the version you're using is still supported. The rules described [here](https://clickhouse.com/docs/en/faq/operations/production#how-to-choose-between-clickhouse-releases).
+
 > You have to provide the following information whenever possible.
 
 **Describe what's wrong**
