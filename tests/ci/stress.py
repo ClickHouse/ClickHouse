@@ -109,9 +109,11 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 
 def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None:
+    logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
         if code != 0:
+            logging.info("Command returend %s, retrying", str(code))
             time.sleep(i)
         else:
             break
@@ -132,6 +134,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # However, it obstruct checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
+    call_with_retry("tail --pid=$(pidof gdb) -f /dev/null")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
         "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid)"
