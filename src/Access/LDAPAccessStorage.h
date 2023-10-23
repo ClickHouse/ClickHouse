@@ -61,7 +61,7 @@ private: // IAccessStorage implementations.
     bool areLDAPCredentialsValidNoLock(const User & user, const Credentials & credentials,
         const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const;
 
-    mutable std::recursive_mutex mutex;
+    mutable std::recursive_mutex mutex; // Note: Reentrace possible by internal role lookup via access_control
     AccessControl & access_control;
     String ldap_server_name;
     LDAPClient::RoleSearchParamsList role_search_params;
