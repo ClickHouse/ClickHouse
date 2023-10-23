@@ -679,7 +679,7 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
             f"SELECT column1, column2, column3 FROM {dst_table_name}_3"
         ).splitlines()
     ]
-    assert {tuple(v) for v in res1 + res2 + res3} == set(
+    assert sorted({tuple(v) for v in res1 + res2 + res3}) == sorted(
         [tuple(i) for i in total_values]
     )
 
