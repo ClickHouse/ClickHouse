@@ -29,7 +29,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node) const
+    void visitImpl(QueryTreeNodePtr & node) const
     {
         if (!getSettings().optimize_functions_to_subcolumns)
             return;

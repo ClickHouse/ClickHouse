@@ -224,7 +224,7 @@ public:
         emplace(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
-            res.first->setMapped(x);
+            insertSetMapped(res.first->getMapped(), x);
 
         return res;
     }

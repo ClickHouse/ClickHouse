@@ -63,18 +63,18 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
         max_value = ast.max_value;
         writability = ast.writability;
 
-        if (value)
-            value = Settings::castValueUtil(setting_name, *value);
-        if (min_value)
-            min_value = Settings::castValueUtil(setting_name, *min_value);
-        if (max_value)
-            max_value = Settings::castValueUtil(setting_name, *max_value);
+        if (!value.isNull())
+            value = Settings::castValueUtil(setting_name, value);
+        if (!min_value.isNull())
+            min_value = Settings::castValueUtil(setting_name, min_value);
+        if (!max_value.isNull())
+            max_value = Settings::castValueUtil(setting_name, max_value);
     }
 }
 
 bool SettingsProfileElement::isConstraint() const
 {
-    return this->writability || this->min_value || this->max_value;
+    return this->writability || !this->min_value.isNull() || !this->max_value.isNull();
 }
 
 std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
@@ -187,8 +187,8 @@ Settings SettingsProfileElements::toSettings() const
     Settings res;
     for (const auto & elem : *this)
     {
-        if (!elem.setting_name.empty() && !isAllowBackupSetting(elem.setting_name) && elem.value)
-            res.set(elem.setting_name, *elem.value);
+        if (!elem.setting_name.empty() && !isAllowBackupSetting(elem.setting_name) && !elem.value.isNull())
+            res.set(elem.setting_name, elem.value);
     }
     return res;
 }
@@ -200,8 +200,8 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     {
         if (!elem.setting_name.empty() && !isAllowBackupSetting(elem.setting_name))
         {
-            if (elem.value)
-                res.push_back({elem.setting_name, *elem.value});
+            if (!elem.value.isNull())
+                res.push_back({elem.setting_name, elem.value});
         }
     }
     return res;
@@ -214,8 +214,8 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
         if (!elem.setting_name.empty() && elem.isConstraint() && !isAllowBackupSetting(elem.setting_name))
             res.set(
                 elem.setting_name,
-                elem.min_value ? *elem.min_value : Field{},
-                elem.max_value ? *elem.max_value : Field{},
+                elem.min_value,
+                elem.max_value,
                 elem.writability ? *elem.writability : SettingConstraintWritability::WRITABLE);
     return res;
 }
@@ -240,8 +240,8 @@ bool SettingsProfileElements::isBackupAllowed() const
 {
     for (const auto & setting : *this)
     {
-        if (isAllowBackupSetting(setting.setting_name) && setting.value)
-            return static_cast<bool>(SettingFieldBool{*setting.value});
+        if (isAllowBackupSetting(setting.setting_name))
+            return static_cast<bool>(SettingFieldBool{setting.value});
     }
     return true;
 }

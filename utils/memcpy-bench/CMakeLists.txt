@@ -1,9 +1,3 @@
-# memcpy_jart.S contains position dependent code
-if (CMAKE_POSITION_INDEPENDENT_CODE OR NOT OS_LINUX OR NOT ARCH_AMD64)
-    message (WARNING "Not building memcpy-bench due to PIC enabled or not Linux or not x86")
-    return ()
-endif ()
-
 enable_language(ASM)
 
 clickhouse_add_executable (memcpy-bench

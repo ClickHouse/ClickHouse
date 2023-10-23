@@ -6,12 +6,11 @@ drop table if exists test;
 create table test (x Nullable(UInt32), y UInt32) engine=Memory();
 
 set use_structure_from_insertion_table_in_table_functions=2;
-set input_format_json_infer_incomplete_types_as_strings=0;
 insert into test select * from file(02458_data.jsonl);
 insert into test select x, 1 from file(02458_data.jsonl);
 insert into test select x, y from file(02458_data.jsonl);
 insert into test select x + 1, y from file(02458_data.jsonl); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
-insert into test select x, z from file(02458_data.jsonl);
+insert into test select x, z from file(02458_data.jsonl); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
 
 insert into test select * from file(02458_data.jsoncompacteachrow);
 insert into test select x, 1 from file(02458_data.jsoncompacteachrow); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
@@ -29,8 +28,8 @@ drop table test;
 create table test (x Nullable(UInt32)) engine=Memory();
 insert into test select * from file(02458_data.jsonl);
 insert into test select x from file(02458_data.jsonl);
-insert into test select y from file(02458_data.jsonl);
-insert into test select y as x from file(02458_data.jsonl);
+insert into test select y from file(02458_data.jsonl); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
+insert into test select y as x from file(02458_data.jsonl); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
 
 insert into test select c1 from input() format CSV 1,2; -- {serverError CANNOT_EXTRACT_TABLE_STRUCTURE}
 insert into test select x from input() format JSONEachRow {"x" : null, "y" : 42}

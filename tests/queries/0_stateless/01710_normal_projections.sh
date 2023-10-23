@@ -9,73 +9,73 @@ $CLICKHOUSE_CLIENT -q "insert into test_sort_proj select number, toUInt32(-numbe
 
 echo "select where x < 10"
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 0"
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0"
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 1"
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1"
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 0"
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0"
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 1"
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 0" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0" | grep rows_read
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 1" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1" | grep rows_read
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 0" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0" | grep rows_read
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE x < 10 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 1" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1" | grep rows_read
 
 
 echo "select where y > 4294967286"
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 0"
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0"
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 1"
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1"
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 0"
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0"
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 1"
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 0" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0" | grep rows_read
 
-echo "optimize_move_to_prewhere = 0, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 0, optimize_use_projections = 1" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1" | grep rows_read
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 0"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 0" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0" | grep rows_read
 
-echo "optimize_move_to_prewhere = 1, optimize_use_projections = 1"
+echo "optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM test_sort_proj WHERE y > 4294967286 order by x FORMAT JSON
-                       SETTINGS optimize_move_to_prewhere = 1, optimize_use_projections = 1" | grep rows_read
+                       SETTINGS optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1" | grep rows_read
 
 $CLICKHOUSE_CLIENT -q "ALTER TABLE test_sort_proj DELETE WHERE x % 2 = 0 SETTINGS mutations_sync=2;"
 $CLICKHOUSE_CLIENT -q "SELECT count() from test_sort_proj;"

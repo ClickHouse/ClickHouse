@@ -2,10 +2,9 @@
 
 #include <city.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
-#include <base/StringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/StringRef.h>
 
 #include <type_traits>
 
@@ -58,25 +57,28 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 
 inline uint32_t s390x_crc32_u8(uint32_t crc, uint8_t v)
 {
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
+    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
 }
 
 inline uint32_t s390x_crc32_u16(uint32_t crc, uint16_t v)
 {
-    v = std::byteswap(v);
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
+    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
 }
 
 inline uint32_t s390x_crc32_u32(uint32_t crc, uint32_t v)
 {
-    v = std::byteswap(v);
-    return crc32c_le_vx(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
+    return crc32_be(crc, reinterpret_cast<unsigned char *>(&v), sizeof(v));
 }
 
 inline uint64_t s390x_crc32(uint64_t crc, uint64_t v)
 {
-    v = std::byteswap(v);
-    return crc32c_le_vx(static_cast<uint32_t>(crc), reinterpret_cast<unsigned char *>(&v), sizeof(uint64_t));
+    uint64_t _crc = crc;
+    uint32_t value_h, value_l;
+    value_h = (v >> 32) & 0xffffffff;
+    value_l = v & 0xffffffff;
+    _crc = crc32_be(static_cast<uint32_t>(_crc), reinterpret_cast<unsigned char *>(&value_h), sizeof(uint32_t));
+    _crc = crc32_be(static_cast<uint32_t>(_crc), reinterpret_cast<unsigned char *>(&value_l), sizeof(uint32_t));
+    return _crc;
 }
 #endif
 
@@ -219,7 +221,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
     const auto * end = pos + size;
     while (pos + 8 <= end)
     {
-        auto word = unalignedLoadLittleEndian<UInt64>(pos);
+        auto word = unalignedLoadLE<UInt64>(pos);
         updated_value = static_cast<UInt32>(intHashCRC32(word, updated_value));
 
         pos += 8;
@@ -231,7 +233,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
         DB::UInt8 tail_size = end - pos;
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
-        auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
+        auto word = unalignedLoadLE<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
         /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
         word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
@@ -249,10 +251,7 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t DefaultHash64(T key)
 {
     DB::UInt64 out {0};
-    if constexpr (std::endian::native == std::endian::little)
-        std::memcpy(&out, &key, sizeof(T));
-    else
-        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(DB::UInt64) - sizeof(T), &key, sizeof(T));
+    std::memcpy(&out, &key, sizeof(T));
     return intHash64(out);
 }
 
@@ -310,10 +309,7 @@ requires (sizeof(T) <= sizeof(UInt64))
 inline size_t hashCRC32(T key, DB::UInt64 updated_value = -1)
 {
     DB::UInt64 out {0};
-    if constexpr (std::endian::native == std::endian::little)
-        std::memcpy(&out, &key, sizeof(T));
-    else
-        std::memcpy(reinterpret_cast<char*>(&out) + sizeof(UInt64) - sizeof(T), &key, sizeof(T));
+    std::memcpy(&out, &key, sizeof(T));
     return intHashCRC32(out, updated_value);
 }
 
@@ -396,18 +392,6 @@ struct UInt128HashCRC32
     }
 };
 
-#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-
-struct UInt128HashCRC32
-{
-    size_t operator()(UInt128 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(0)]);
-        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(1)]);
-        return crc;
-    }
-};
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -417,12 +401,12 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.items[UInt128::_impl::little(0)]; }
+    size_t operator()(UInt128 x) const { return x.items[0]; }
 };
 
 struct UUIDTrivialHash
 {
-    size_t operator()(DB::UUID x) const { return DB::UUIDHelpers::getHighBytes(x); }
+    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
 };
 
 struct UInt256Hash
@@ -466,19 +450,6 @@ struct UInt256HashCRC32
     }
 };
 
-#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-struct UInt256HashCRC32
-{
-    size_t operator()(UInt256 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(0)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(1)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(2)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(3)]);
-        return crc;
-    }
-};
 #else
 
 /// We do not need to use CRC32 on other platforms. NOTE This can be confusing.

@@ -51,11 +51,22 @@ public:
 
     void onStart() override;
     void consume(Chunk chunk) override;
+    void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
-    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+
+    /// For proper deduplication in MaterializedViews
+    bool lastBlockIsDuplicate() const override
+    {
+        /// If MV is responsible for deduplication, block is not considered duplicating.
+        if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+            return false;
+
+        return last_block_is_duplicate;
+    }
 
     struct DelayedChunk;
 private:
@@ -76,8 +87,7 @@ private:
     size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
-    std::pair<std::vector<String>, bool> commitPart(
+    std::vector<String> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
@@ -111,7 +121,7 @@ private:
     bool is_attach = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
-    UInt64 num_blocks_processed = 0;
+    bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;

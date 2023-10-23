@@ -42,7 +42,10 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
     BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_LGWIN, 24);
 }
 
-BrotliWriteBuffer::~BrotliWriteBuffer() = default;
+BrotliWriteBuffer::~BrotliWriteBuffer()
+{
+    finalize();
+}
 
 void BrotliWriteBuffer::nextImpl()
 {

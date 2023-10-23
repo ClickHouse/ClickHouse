@@ -21,21 +21,21 @@ Alias: `medianTimingWeighted`.
 
 **Arguments**
 
-- `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
-- `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
+-   `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
-- `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
+-   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
 **Accuracy**
 
 The calculation is accurate if:
 
-- Total number of values does not exceed 5670.
-- Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+-   Total number of values does not exceed 5670.
+-   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
@@ -45,7 +45,7 @@ For calculating page loading time quantiles, this function is more effective and
 
 **Returned value**
 
-- Quantile of the specified level.
+-   Quantile of the specified level.
 
 Type: `Float32`.
 
@@ -118,5 +118,5 @@ Result:
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+-   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

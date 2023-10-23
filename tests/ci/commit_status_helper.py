@@ -8,7 +8,7 @@ import logging
 import time
 
 from github import Github
-from github.GithubObject import _NotSetType, NotSet as NotSet
+from github.GithubObject import _NotSetType, NotSet as NotSet  # type: ignore
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.IssueComment import IssueComment
@@ -141,6 +141,16 @@ STATUS_ICON_MAP = defaultdict(
 )
 
 
+def update_pr_status_label(pr: PullRequest, status: str) -> None:
+    new_label = "pr-status-" + STATUS_ICON_MAP[status]
+    for label in pr.get_labels():
+        if label.name == new_label:
+            return
+        if label.name.startswith("pr-status-"):
+            pr.remove_from_labels(label.name)
+    pr.add_to_labels(new_label)
+
+
 def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     """It adds or updates the comment status to all Pull Requests but for release
     one, so the method does nothing for simple pushes and pull requests with
@@ -179,6 +189,8 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
         if ic.body.startswith(comment_service_header):
             comment = ic
             break
+
+    update_pr_status_label(pr, get_worst_state(statuses))
 
     if comment is None:
         pr.create_issue_comment(comment_body)
@@ -240,16 +252,9 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     hidden_table_rows = []  # type: List[str]
     for desc, gs in grouped_statuses.items():
         state = get_worst_state(gs)
-        state_text = f"{STATUS_ICON_MAP[state]} {state}"
-        # take the first target_url
-        target_url = next(
-            (status.target_url for status in gs if status.target_url), None
-        )
-        if target_url:
-            state_text = f'<a href="{target_url}">{state_text}</a>'
         table_row = (
             f"<tr><td>{desc.name}</td><td>{desc.description}</td>"
-            f"<td>{state_text}</td></tr>\n"
+            f"<td>{STATUS_ICON_MAP[state]} {state}</td></tr>\n"
         )
         if state == SUCCESS:
             hidden_table_rows.append(table_row)
@@ -337,7 +342,6 @@ def remove_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.remove_from_labels(label)
-        pr_info.labels.remove(label)
 
 
 def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
@@ -345,7 +349,6 @@ def post_labels(gh: Github, pr_info: PRInfo, labels_names: List[str]) -> None:
     pull_request = repo.get_pull(pr_info.number)
     for label in labels_names:
         pull_request.add_to_labels(label)
-        pr_info.labels.add(label)
 
 
 def format_description(description: str) -> str:
@@ -403,6 +406,8 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
 
     if fail:
         description = "failed: " + ", ".join(fail)
+        if success:
+            description += "; succeeded: " + ", ".join(success)
         description = format_description(description)
         if mergeable_status is None or mergeable_status.description != description:
             set_mergeable_check(commit, description, FAILURE)

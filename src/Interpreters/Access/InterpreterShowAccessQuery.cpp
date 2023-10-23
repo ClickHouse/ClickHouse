@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Columns/ColumnString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
@@ -34,7 +33,7 @@ QueryPipeline InterpreterShowAccessQuery::executeImpl() const
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
     for (const auto & query : queries)
-        column->insert(format({getContext(), *query}));
+        column->insert(query->formatWithSecretsHidden());
 
     String desc = "ACCESS";
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));

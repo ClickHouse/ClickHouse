@@ -86,7 +86,7 @@ public:
 
     void createFile(const String & path) override;
 
-    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path) override;
 
     /// writeFile is a difficult function for transactions.
     /// Now it's almost noop because metadata added to transaction in finalize method
@@ -100,7 +100,11 @@ public:
         bool autocommit = true) override;
 
     /// Write a file using a custom function to write an object to the disk's object storage.
-    void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
+    void writeFileUsingCustomWriteObject(
+        const String & path,
+        WriteMode mode,
+        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+            custom_write_object_function) override;
 
     void removeFile(const std::string & path) override;
     void removeFileIfExists(const std::string & path) override;

@@ -20,7 +20,10 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
+#include <base/hex.h>
+#include <Common/getResource.h>
 #include <base/sleep.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -31,14 +34,6 @@
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
-
-#include <incbin.h>
-
-#include "config.h"
-
-/// Embedded configuration files used inside the install program
-INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
-INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -380,22 +375,15 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
                 try
                 {
-                    String source = binary_self_path.string();
-                    String destination = main_bin_tmp_path.string();
+                    ReadBufferFromFile in(binary_self_path.string());
+                    WriteBufferFromFile out(main_bin_tmp_path.string());
+                    copyData(in, out);
+                    out.sync();
 
-                    /// Try to make a hard link first, as an optimization.
-                    /// It is possible if the source and the destination are on the same filesystems.
-                    if (0 != link(source.c_str(), destination.c_str()))
-                    {
-                        ReadBufferFromFile in(binary_self_path.string());
-                        WriteBufferFromFile out(main_bin_tmp_path.string());
-                        copyData(in, out);
-                        out.sync();
-                        out.finalize();
-                    }
-
-                    if (0 != chmod(destination.c_str(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
+                    if (0 != fchmod(out.getFD(), S_IRUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH))
                         throwFromErrno(fmt::format("Cannot chmod {}", main_bin_tmp_path.string()), ErrorCodes::SYSTEM_ERROR);
+
+                    out.finalize();
                 }
                 catch (const Exception & e)
                 {
@@ -565,7 +553,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
+            std::string_view main_config_content = getResource("config.xml");
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -677,7 +665,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
+            std::string_view users_config_content = getResource("users.xml");
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());

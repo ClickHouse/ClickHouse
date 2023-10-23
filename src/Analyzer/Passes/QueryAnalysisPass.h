@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreePass.h>
 
