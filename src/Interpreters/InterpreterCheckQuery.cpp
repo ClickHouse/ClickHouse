@@ -80,7 +80,7 @@ protected:
             return {};
 
         /// We can omit manual `progess` call, ISource will may count it automatically by returned chunk
-        /// However, we want to report only rows in progress
+        /// However, we want to report only rows in progress, since bytes doesn't make sense here
         progress(1, 0);
 
         if (!check_result->success)
@@ -184,9 +184,10 @@ BlockIO InterpreterCheckQuery::execute()
             auto resize_inport_it = resize_inputs.begin();
             for (size_t i = 0; i < worker_ports.size(); ++i, ++resize_inport_it)
                 connect(*worker_ports[i], *resize_inport_it);
-
-            resize_outport = &resize_processor->getOutputs().front();
             processors->emplace_back(resize_processor);
+
+            assert(resize_processor->getOutputs().size() == 1);
+            resize_outport = &resize_processor->getOutputs().front();
         }
 
         if (settings.check_query_single_value_result)
