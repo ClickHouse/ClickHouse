@@ -109,7 +109,7 @@ public:
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
     DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
-    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 

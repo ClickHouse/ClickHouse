@@ -231,7 +231,7 @@ public:
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
     DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
-    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;

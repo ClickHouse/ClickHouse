@@ -2214,7 +2214,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(const ASTPtr
     return std::make_unique<DataValidationTasks>(std::move(data_parts), local_context);
 }
 
-CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
+std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
     auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
     auto local_context = data_validation_tasks->context;
@@ -2259,11 +2259,8 @@ CheckResult StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_
             }
         }
     }
-    else
-    {
-        has_nothing_to_do = true;
-        return {};
-    }
+
+    return {};
 }
 
 

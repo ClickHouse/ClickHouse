@@ -75,25 +75,24 @@ protected:
 
     std::optional<Chunk> tryGenerate() override
     {
-        bool has_nothing_to_do = false;
-        auto check_result = table->checkDataNext(check_data_tasks, has_nothing_to_do);
-        if (has_nothing_to_do)
+        auto check_result = table->checkDataNext(check_data_tasks);
+        if (!check_result)
             return {};
 
         /// We can omit manual `progess` call, ISource will may count it automatically by returned chunk
         /// However, we want to report only rows in progress
         progress(1, 0);
 
-        if (!check_result.success)
+        if (!check_result->success)
         {
             LOG_WARNING(&Poco::Logger::get("InterpreterCheckQuery"),
                 "Check query for table {} failed, path {}, reason: {}",
                 table->getStorageID().getNameForLogs(),
-                check_result.fs_path,
-                check_result.failure_message);
+                check_result->fs_path,
+                check_result->failure_message);
         }
 
-        return getChunkFromCheckResult(check_result);
+        return getChunkFromCheckResult(*check_result);
     }
 
 private:

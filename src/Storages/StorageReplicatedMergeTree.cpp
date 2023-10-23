@@ -8577,7 +8577,7 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(co
     return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(part_check_lock));
 }
 
-CheckResult StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
+std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
 
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
@@ -8592,11 +8592,8 @@ CheckResult StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & c
             return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
         }
     }
-    else
-    {
-        has_nothing_to_do = true;
-        return {};
-    }
+
+    return {};
 }
 
 
