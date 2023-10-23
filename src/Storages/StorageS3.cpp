@@ -1539,7 +1539,7 @@ namespace
                 /// In union mode, check cached columns only for current key.
                 if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
                 {
-                    StorageS3::KeysWithInfo keys = {*current_key_with_info};
+                    StorageS3::KeysWithInfo keys = {current_key_with_info};
                     if (auto columns_from_cache = tryGetColumnsFromCache(keys.begin(), keys.end()))
                     {
                         first = false;
@@ -1587,7 +1587,7 @@ namespace
             auto host_and_bucket = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket;
             Strings sources;
             sources.reserve(read_keys.size());
-            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket / elem.key; });
+            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket / elem->key; });
             auto cache_keys = getKeysForSchemaCache(sources, configuration.format, format_settings, getContext());
             StorageS3::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
@@ -1608,9 +1608,9 @@ namespace
                 auto get_last_mod_time = [&]
                 {
                     time_t last_modification_time = 0;
-                    if (it->info)
+                    if ((*it)->info)
                     {
-                        last_modification_time = it->info->last_modification_time;
+                        last_modification_time = (*it)->info->last_modification_time;
                     }
                     else
                     {
@@ -1620,7 +1620,7 @@ namespace
                         last_modification_time = S3::getObjectInfo(
                              *configuration.client,
                              configuration.url.bucket,
-                             it->key,
+                             (*it)->key,
                              configuration.url.version_id,
                              configuration.request_settings,
                              /*with_metadata=*/ false,
@@ -1631,7 +1631,7 @@ namespace
                     return last_modification_time ? std::make_optional(last_modification_time) : std::nullopt;
                 };
 
-                String path = fs::path(configuration.url.bucket) / it->key;
+                String path = fs::path(configuration.url.bucket) / (*it)->key;
                 String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / path;
                 auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
                 auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
