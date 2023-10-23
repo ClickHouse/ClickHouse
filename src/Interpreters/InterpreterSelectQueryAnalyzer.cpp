@@ -249,6 +249,15 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
     auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
 
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        /// We can try to send invalid data type to the initiator when sending partial results
+        /// There can be other additional problems related to sending partial results to the initiator node
+        /// and there is no other useful usage of the partial results that is not on the client side
+        /// so we are always disabling it for secondary queries
+        build_pipeline_settings.partial_result_duration_ms = 0;
+    }
+
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }
 
