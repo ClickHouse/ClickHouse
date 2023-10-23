@@ -1149,7 +1149,7 @@ Result:
 └─────┘
 ```
 
-**Example with the fibonacci sequence**
+**Example with the Fibonacci sequence**
 
 ```sql
 SELECT arrayFold( x, acc -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
