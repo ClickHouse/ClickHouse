@@ -26,6 +26,8 @@ $CLICKHOUSE_CLIENT --param_hash=\$2a\$12\$wuohz0HFSBBNE8huN0Yx6.kmWrefiYVKeMp4gs
 $CLICKHOUSE_CLIENT --param_server=qwerty9 -q "CREATE USER user9_02713 IDENTIFIED WITH LDAP SERVER {server:String}";
 $CLICKHOUSE_CLIENT --param_realm=qwerty10 -q "CREATE USER user10_02713 IDENTIFIED WITH KERBEROS REALM {realm:String}";
 $CLICKHOUSE_CLIENT --param_cert1=qwerty11 --param_cert2=qwerty12 -q "CREATE USER user11_02713 IDENTIFIED WITH SSL_CERTIFICATE CN {cert1:String}, {cert2:String}";
+$CLICKHOUSE_CLIENT --param_server=basic_server -q "CREATE USER user12_02713 IDENTIFIED WITH http SERVER {server:String}"
+$CLICKHOUSE_CLIENT --param_server=basic_server -q "CREATE USER user13_02713 IDENTIFIED WITH http SERVER {server:String} SCHEME 'Basic'"
 
 $CLICKHOUSE_CLIENT --user=user1_02713 --password=qwerty1 -q "SELECT 1";
 $CLICKHOUSE_CLIENT --user=user2_02713 --password=qwerty2 -q "SELECT 2";
@@ -39,5 +41,7 @@ $CLICKHOUSE_CLIENT --user=user8_02713 --password=qwerty8 -q "SELECT 8";
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user9_02713";
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user10_02713";
 $CLICKHOUSE_CLIENT -q "SHOW CREATE USER user11_02713";
+$CLICKHOUSE_CLIENT -q "SHOW CREATE USER user12_02713";
+$CLICKHOUSE_CLIENT -q "SHOW CREATE USER user13_02713";
 
-$CLICKHOUSE_CLIENT -q "DROP USER user1_02713, user2_02713, user3_02713, user4_02713, user5_02713, user6_02713, user7_02713, user8_02713, user9_02713, user10_02713, user11_02713";
+$CLICKHOUSE_CLIENT -q "DROP USER user1_02713, user2_02713, user3_02713, user4_02713, user5_02713, user6_02713, user7_02713, user8_02713, user9_02713, user10_02713, user11_02713, user12_02713, user13_02713";

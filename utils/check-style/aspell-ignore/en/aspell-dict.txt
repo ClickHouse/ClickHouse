@@ -1455,6 +1455,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fibonacci
 fifo
 filesystem
 filesystemAvailable
@@ -2147,6 +2148,7 @@ repo
 representable
 requestor
 requireTLSv
+resolvers
 resharding
 reshards
 resultset
