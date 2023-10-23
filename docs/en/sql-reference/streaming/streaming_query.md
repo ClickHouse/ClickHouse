@@ -4,7 +4,7 @@ slug: /en/sql-reference/streaming/streaming_query
 
 Enable streaming query over Kafka table engine by specifying `EMIT STREAM` clause.
 Streaming query never ends until gets cancelled. It monitors the changes (new data) in 
-Kafka topic continuously and emit the (intermediate) results continuoulsy. 
+Kafka topic continuously and emit the (intermediate) results continuously. 
 
 **Syntax**
 
