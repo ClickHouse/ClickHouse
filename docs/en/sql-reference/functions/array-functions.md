@@ -1149,24 +1149,24 @@ Result:
 └─────┘
 ```
 
-**Example with fibonacci sequence**
+**Example with the fibonacci sequence**
 
 ```sql
-SELECT arrayFold( x, acc -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS result
+SELECT arrayFold( x, acc -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
 FROM numbers(1,10);
 
-┌─result─┐
-│      0 │
-│      1 │
-│      1 │
-│      2 │
-│      3 │
-│      5 │
-│      8 │
-│     13 │
-│     21 │
-│     34 │
-└────────┘
+┌─fibonacci─┐
+│         0 │
+│         1 │
+│         1 │
+│         2 │
+│         3 │
+│         5 │
+│         8 │
+│        13 │
+│        21 │
+│        34 │
+└───────────┘
 ```
 
 
