@@ -4144,7 +4144,7 @@ Possible values:
 
 Default value: `0`.
 
-## date_time_overflow_mode {#date_time_overflow_mode}
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
 

@@ -23,7 +23,7 @@ namespace DB
 static constexpr auto microsecond_multiplier = 1000000;
 static constexpr auto millisecond_multiplier = 1000;
 
-static constexpr DateTimeOverflowMode default_date_time_overflow_mode = DateTimeOverflowMode::Ignore;
+static constexpr FormatSettings::DateTimeOverflowBehavior default_date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
 
 namespace ErrorCodes
 {
@@ -47,11 +47,11 @@ namespace ErrorCodes
   *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
-constexpr time_t MAX_DT64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:00:00 UTC
-constexpr time_t MIN_DT64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
-constexpr time_t MAX_DT_TIMESTAMP = 0xFFFFFFFF;
+constexpr time_t MAX_DATETIME64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:00:00 UTC
+constexpr time_t MIN_DATETIME64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
+constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
-constexpr time_t MAX_DT_DAY_NUM =  49710;               // 2106-02-07
+constexpr time_t MAX_DATETIME_DAY_NUM =  49710;               // 2106-02-07
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDateTimeIsNotSupported(const char * name);
@@ -66,7 +66,7 @@ struct ZeroTransform
     static UInt16 execute(UInt16, const DateLUTImpl &) { return 0; }
 };
 
-template <DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode>
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior>
 struct ToDateImpl
 {
     static constexpr auto name = "toDate";
@@ -78,16 +78,16 @@ struct ToDateImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
             if (t < 0)
                 t = 0;
             else if (t > MAX_DATE_TIMESTAMP)
                 t = MAX_DATE_TIMESTAMP;
         }
-        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (t < 0 || t > MAX_DATE_TIMESTAMP)
+            if (t < 0 || t > MAX_DATE_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
         }
         return static_cast<UInt16>(time_zone.toDayNum(t));
@@ -98,14 +98,14 @@ struct ToDateImpl
     }
     static UInt16 execute(Int32 t, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
             if (t < 0)
                 return UInt16(0);
             else if (t > DATE_LUT_MAX_DAY_NUM)
                 return UInt16(DATE_LUT_MAX_DAY_NUM);
         }
-        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (t < 0 || t > DATE_LUT_MAX_DAY_NUM)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
@@ -124,7 +124,6 @@ struct ToDateImpl
     using FactorTransform = ZeroTransform;
 };
 
-template <DateTimeOverflowMode date_time_overflow_mode = default_date_time_overflow_mode>
 struct ToDate32Impl
 {
     static constexpr auto name = "toDate32";
