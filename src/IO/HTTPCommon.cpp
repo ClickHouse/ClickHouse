@@ -160,15 +160,18 @@ namespace
     {
         HTTPSessionPtr session;
 
-        bool is_proxy_http_and_is_tunneling_off = DB::ProxyConfiguration::Protocol::HTTP == proxy_configuration.protocol
-            && !proxy_configuration.use_connect_protocol;
-
-        // If it is an HTTPS request, proxy server is HTTP and user opted for tunneling off, we must not create an HTTPS request.
-        // The desired flow is: HTTP request to the proxy server, then proxy server will initiate an HTTPS request to the target server.
-        // There is a weak link in the security, but that's what the user opted for.
-        if (https && is_proxy_http_and_is_tunneling_off)
+        if (!proxy_configuration.host.empty())
         {
-            https = false;
+            bool is_proxy_http_and_is_tunneling_off = DB::ProxyConfiguration::Protocol::HTTP == proxy_configuration.protocol
+                && !proxy_configuration.use_connect_protocol;
+
+            // If it is an HTTPS request, proxy server is HTTP and user opted for tunneling off, we must not create an HTTPS request.
+            // The desired flow is: HTTP request to the proxy server, then proxy server will initiate an HTTPS request to the target server.
+            // There is a weak link in the security, but that's what the user opted for.
+            if (https && is_proxy_http_and_is_tunneling_off)
+            {
+                https = false;
+            }
         }
 
         if (https)
@@ -209,11 +212,7 @@ namespace
             /// Pool is global, we shouldn't attribute this memory to query/user.
             MemoryTrackerSwitcher switcher{&total_memory_tracker};
 
-            auto session = makeHTTPSessionImpl(host, port, https, true);
-            if (!proxy_config.host.empty())
-            {
-                session->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_config));
-            }
+            auto session = makeHTTPSessionImpl(host, port, https, true, proxy_config);
             return session;
         }
 
