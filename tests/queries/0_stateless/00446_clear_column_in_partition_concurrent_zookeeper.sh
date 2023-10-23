@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-<<<<<<< HEAD
-# Tags: zookeeper, no-replicated-database
-=======
-# Tags: zookeeper, no-replicated-database, no-parallel, no-random-detach
->>>>>>> origin/randomize-detach-attach
+# Tags: zookeeper, no-replicated-database, no-random-detach
 # Tag no-replicated-database: Old syntax is not allowed
 # Tag no-random-detach: parallel queries
 

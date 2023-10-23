@@ -36,7 +36,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
-#include <Parsers/wipePasswordFromQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 
@@ -646,22 +645,6 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
-static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
-{
-    const ASTs & children = select_with_union.list_of_selects->children;
-    if (children.empty())
-        return;
-
-    // We might have an arbitrarily complex UNION tree, so just give
-    // up if the last first-order child is not a plain SELECT.
-    // It is flattened later, when we process UNION ALL/DISTINCT.
-    const auto * last_select = children.back()->as<ASTSelectQuery>();
-    if (last_select && last_select->settings())
-    {
-        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
-    }
-}
-
 namespace
 {
 
@@ -742,22 +725,23 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (table_id.getDatabaseName() == "system")
             continue;
 
-        if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
-            continue;
-
-        auto loading_dependencies = DatabaseCatalog::instance().getLoadingDependenciesInfo(table_id);
-        if (!loading_dependencies.dependencies.empty() || !loading_dependencies.dependent_database_objects.empty())
-            continue;
+        const auto & catalog = DatabaseCatalog::instance();
 
         /// If table doesn't store data on disk, the data will be lost after detach.
         /// If table has lock for any action, it will be removed after detach.
         /// Since it will affect future queries do not detach in those cases.
-        auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context);
+        auto [database, table] = catalog.tryGetDatabaseAndTable(table_id, context);
         if (!database
             || !database->supportsDetachingTables()
             || !table
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        if (!catalog.getReferentialDependencies(table_id).empty()
+            || !catalog.getReferentialDependents(table_id).empty()
+            || !catalog.getLoadingDependencies(table_id).empty()
+            || !catalog.getLoadingDependents(table_id).empty())
             continue;
 
         auto uuid = table->getStorageID().uuid;
@@ -767,12 +751,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         auto detach_query = fmt::format("DETACH TABLE {}", full_name);
         auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
 
-        auto detach = executeQuery(detach_query, context, true);
+        auto detach = executeQuery(detach_query, context, true).second;
         executeTrivialBlockIO(detach, context);
 
         database->waitDetachedTableNotInUse(uuid);
 
-        auto attach = executeQuery(attach_query, context, true);
+        auto attach = executeQuery(attach_query, context, true).second;
         executeTrivialBlockIO(attach, context);
     }
 
