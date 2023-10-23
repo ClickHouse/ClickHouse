@@ -70,10 +70,14 @@ def azure_query(
 
 def get_azure_file_content(filename, port):
     container_name = "cont"
-    connection_string = (f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                         f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                         f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;")
-    blob_service_client = BlobServiceClient.from_connection_string(str(connection_string))
+    connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
+    )
+    blob_service_client = BlobServiceClient.from_connection_string(
+        str(connection_string)
+    )
     container_client = blob_service_client.get_container_client(container_name)
     blob_client = container_client.get_blob_client(filename)
     download_stream = blob_client.download_blob()
@@ -82,9 +86,11 @@ def get_azure_file_content(filename, port):
 
 def put_azure_file_content(filename, port, data):
     container_name = "cont"
-    connection_string = (f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                         f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                         f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;")
+    connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
+    )
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     try:
         container_client = blob_service_client.create_container(container_name)
@@ -598,9 +604,11 @@ def test_put_get_with_globs_tf(cluster):
                 f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
                 f" container='cont', blob_path='{path}', format='CSV', compression='auto', structure='{table_format}') VALUES {values}",
             )
-    query = (f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
-             f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-             f"blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV', structure='{table_format}')")
+    query = (
+        f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv', format='CSV', structure='{table_format}')"
+    )
     assert azure_query(node, query).splitlines() == [
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
@@ -612,9 +620,11 @@ def test_schema_inference_no_globs_tf(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 String, column3 UInt32"
 
-    query = (f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
-             f"container='cont', blob_path='test_schema_inference_no_globs_tf.csv', format='CSVWithNames', structure='{table_format}') "
-             f"SELECT number, toString(number), number * number FROM numbers(1000)")
+    query = (
+        f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
+        f"container='cont', blob_path='test_schema_inference_no_globs_tf.csv', format='CSVWithNames', structure='{table_format}') "
+        f"SELECT number, toString(number), number * number FROM numbers(1000)"
+    )
     azure_query(node, query)
 
     query = (
@@ -642,13 +652,17 @@ def test_schema_inference_from_globs_tf(cluster):
             max_path = max(path, max_path)
             values = f"({i},{j},{i + j})"
 
-            query = (f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
-                     f"container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}")
+            query = (
+                f"insert into table function azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
+                f"container='cont', blob_path='{path}', format='CSVWithNames', structure='{table_format}') VALUES {values}"
+            )
             azure_query(node, query)
 
-    query = (f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
-             f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
-             f"blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')")
+    query = (
+        f"select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from azureBlobStorage(azure_conf2, "
+        f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', "
+        f"blob_path='{unique_prefix}/*_{{a,b,c,d}}/?.csv')"
+    )
     assert azure_query(node, query).splitlines() == [
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(
             bucket="cont", max_path=max_path
@@ -690,15 +704,17 @@ def test_filter_using_file(cluster):
         f"'{table_format}') PARTITION BY {partition_by} VALUES {values}",
     )
 
-    query = (f"select count(*) from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont', 'test_partition_tf_*.csv', "
-             f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
-             f"'{table_format}') WHERE _file='test_partition_tf_3.csv'")
+    query = (
+        f"select count(*) from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont', 'test_partition_tf_*.csv', "
+        f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
+        f"'{table_format}') WHERE _file='test_partition_tf_3.csv'"
+    )
     assert azure_query(node, query) == "1\n"
 
 
 def test_read_subcolumns(cluster):
     node = cluster.instances["node"]
-    storage_account_url = cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_subcolumns.tsv', "
@@ -748,16 +764,18 @@ def test_read_subcolumns(cluster):
 
 def test_read_from_not_existing_container(cluster):
     node = cluster.instances["node"]
-    query = (f"select * from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont_not_exists', 'test_table.csv', "
-             f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')")
+    query = (
+        f"select * from azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',  'cont_not_exists', 'test_table.csv', "
+        f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto')"
+    )
     expected_err_msg = "container does not exist"
     assert expected_err_msg in azure_query(node, query, expect_error="true")
 
 
 def test_function_signatures(cluster):
     node = cluster.instances["node"]
-    connection_string = cluster.env_variables['AZURITE_CONNECTION_STRING']
-    storage_account_url = cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     azure_query(
@@ -871,8 +889,8 @@ def check_cache(instance, expected_files):
 
 def test_schema_inference_cache(cluster):
     node = cluster.instances["node"]
-    connection_string = cluster.env_variables['AZURITE_CONNECTION_STRING']
-    storage_account_url = cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
@@ -1083,7 +1101,7 @@ def test_schema_inference_cache(cluster):
 
 def test_filtering_by_file_or_path(cluster):
     node = cluster.instances["node"]
-    storage_account_url = cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     azure_query(
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}','cont', 'test_filter1.tsv', 'devstoreaccount1',  "

@@ -1445,11 +1445,14 @@ class ClickHouseCluster:
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
-        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
-        env_variables["AZURITE_CONNECTION_STRING"] = (f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                                                      f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                                                      f"BlobEndpoint={env_variables['AZURITE_STORAGE_ACCOUNT_URL']};")
-
+        env_variables[
+            "AZURITE_STORAGE_ACCOUNT_URL"
+        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_CONNECTION_STRING"] = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint={env_variables['AZURITE_STORAGE_ACCOUNT_URL']};"
+        )
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
@@ -2539,9 +2542,10 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        connection_string = (f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                             f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                             f"BlobEndpoint=http://127.0.0.1:{self.env_variables['AZURITE_PORT']}/devstoreaccount1;"
+        connection_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint=http://127.0.0.1:{self.env_variables['AZURITE_PORT']}/devstoreaccount1;"
         )
         time.sleep(1)
         start = time.time()
