@@ -13,7 +13,9 @@ The `DELETE` statement removes rows from the table `[db.]table` that match the e
 DELETE FROM [db.]table [ON CLUSTER cluster] WHERE expr;
 ```
 
-Deleted rows are internally marked as deleted immediately and will be automatically filtered out of all subsequent queries. Cleanup of data happens asynchronously in the background. The `DELETE` statement is only available for the *MergeTree table engine family.
+Deleted rows are internally marked as deleted immediately and will be automatically filtered out of all subsequent queries. Cleanup of data happens asynchronously in the background until the next merge. As a result, it is possible that for an unspecified period, data is not actually deleted from storage and is only marked as deleted.
+
+The `DELETE` statement is only available for the *MergeTree table engine family.
 
 **Do not use the DELETE statement frequently as it can negatively affect ClickHouse performance.**
 
@@ -26,15 +28,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 ## Handling large `DELETE`s
 
-Large deletes can negatively affect ClickHouse performance. If you are attempting to delete all rows from a table, consider using the [`TRUNCATE TABLE`](/en/sql-reference/statements/truncate) command and then re-create the table.
+Large deletes can negatively affect ClickHouse performance. If you are attempting to delete all rows from a table, consider using the [`TRUNCATE TABLE`](/en/sql-reference/statements/truncate) command.
 
-If you anticipate frequent deletes, consider using a [customer partitioning key](/en/engines/table-engines/mergetree-family/custom-partitioning-key). You can then use the [`ALTER TABLE...DROP PARTITION`](/en/sql-reference/statements/alter/partition#drop-partitionpart) command to quickly drop all rows associated with that partition.
+If you anticipate frequent deletes, consider using a [custom partitioning key](/en/engines/table-engines/mergetree-family/custom-partitioning-key). You can then use the [`ALTER TABLE...DROP PARTITION`](/en/sql-reference/statements/alter/partition#drop-partitionpart) command to quickly drop all rows associated with that partition.
 
 ## Limitations of `DELETE`
-
-### `DELETE`s are eventually consistent
-
-`DELETE`s are asynchronous by default. This means that if you use `DELETE` in a multi-replica setup, your rows will not be deleted immediately. To change this behavior, set `mutations_sync` equal to 1 to wait for one replica to process the statement, or set `mutations_sync` to 2 to wait for all replicas.
 
 ### `DELETE`s do not work with projections
 
