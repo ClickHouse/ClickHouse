@@ -103,8 +103,13 @@ def put_azure_file_content(filename, port, data):
 
 
 @pytest.fixture(autouse=True, scope="function")
-def delete_all_files():
-    connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+def delete_all_files(cluster):
+    port = cluster.env_variables["AZURITE_PORT"]
+    connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
+    )
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     containers = blob_service_client.list_containers()
     for container in containers:
