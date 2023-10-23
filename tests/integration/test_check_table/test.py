@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -197,6 +198,28 @@ def test_check_replicated_table_simple(started_cluster):
             settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201901_0_0_0\t1\t\n"
+    )
+
+    assert sorted(
+        node2.query(
+            "CHECK TABLE replicated_mt",
+            settings={"check_query_single_value_result": 0},
+        ).split("\n")
+    ) == ["", "201901_0_0_0\t1\t", "201902_0_0_0\t1\t"]
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node2.query(
+            "CHECK TABLE replicated_mt PART '201801_0_0_0'",
+            settings={"check_query_single_value_result": 0},
+        )
+    assert "NO_SUCH_DATA_PART" in str(exc.value)
+
+    assert (
+        node2.query(
+            "CHECK TABLE replicated_mt PART '201902_0_0_0'",
+            settings={"check_query_single_value_result": 0},
+        )
+        == "201902_0_0_0\t1\t\n"
     )
 
 

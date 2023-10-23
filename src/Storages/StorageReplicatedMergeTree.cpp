@@ -8570,6 +8570,14 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(co
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
         data_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
     }
+    else if (!check_query.part_name.empty())
+    {
+        auto part = getPartIfExists(check_query.part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+        if (!part)
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No such data part '{}' to check in table '{}'",
+                            check_query.part_name, getStorageID().getFullTableName());
+        data_parts.emplace_back(std::move(part));
+    }
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
