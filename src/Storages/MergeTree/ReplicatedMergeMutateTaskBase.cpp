@@ -69,11 +69,11 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             else
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-            /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
-                 * The thread that performs this action will sleep a few seconds after the exception.
-                 * See `queue.processEntry` function.
-                 */
-            throw;
+            /// This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
+            /// The thread that performs this action will sleep a few seconds after the exception.
+            /// See `queue.processEntry` function.
+            if (!retryable_error)
+                throw;
         }
         catch (...)
         {
