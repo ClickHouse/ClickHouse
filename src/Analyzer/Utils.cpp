@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
@@ -513,6 +515,31 @@ private:
     bool has_function = false;
 };
 
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_node)
+{
+    Array parameters;
+    for (const auto & param : function_node->getParameters())
+    {
+        auto * constant = param->as<ConstantNode>();
+        parameters.push_back(constant->getValue());
+    }
+
+    const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
+
+    DataTypes argument_types;
+    argument_types.reserve(function_node_argument_nodes.size());
+
+    for (const auto & function_node_argument : function_node_argument_nodes)
+        argument_types.emplace_back(function_node_argument->getResultType());
+
+    AggregateFunctionProperties properties;
+    return AggregateFunctionFactory::instance().get(
+        function_node->getFunctionName(),
+        argument_types,
+        parameters,
+        properties);
+}
+
 }
 
 bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name)
@@ -572,5 +599,28 @@ void replaceColumns(QueryTreeNodePtr & node,
     ReplaceColumnsVisitor visitor(table_expression_node, column_name_to_node);
     visitor.visit(node);
 }
+
+void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
+{
+    chassert(function_node->isResolved());
+    if (function_node->isOrdinaryFunction())
+    {
+        const auto & name = function_node->getFunctionName();
+        // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
+        if (name == "grouping")
+            return;
+        auto function = FunctionFactory::instance().get(name, context);
+        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+    }
+    else if (function_node->isAggregateFunction())
+    {
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
+    }
+    else if (function_node->isWindowFunction())
+    {
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(function_node));
+    }
+}
+
 
 }
