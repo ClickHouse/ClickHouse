@@ -44,7 +44,7 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class FunctionNode;
 using FunctionNodePtr = std::shared_ptr<FunctionNode>;
 
-enum class FunctionKind
+enum class FunctionKind : UInt8
 {
     UNKNOWN,
     ORDINARY,
