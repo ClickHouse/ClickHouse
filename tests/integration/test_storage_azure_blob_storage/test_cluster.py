@@ -51,9 +51,11 @@ def cluster():
 
 def get_azure_file_content(filename, port):
     container_name = "cont"
-    connection_string = (f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                         f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                         f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;")
+    connection_string = (
+        f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        f"BlobEndpoint=http://127.0.0.1:{port}/devstoreaccount1;"
+    )
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container_client = blob_service_client.get_container_client(container_name)
     blob_client = container_client.get_blob_client(filename)
@@ -83,7 +85,8 @@ def test_select_all(cluster):
         node,
         f"SELECT * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',"
-        f"'auto')""",
+        f"'auto')"
+        "",
     )
     print(distributed_azure)
     assert TSV(pure_azure) == TSV(distributed_azure)
