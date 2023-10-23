@@ -7,6 +7,8 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Parsers/ASTCheckQuery.h>
+
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -57,6 +59,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -874,11 +877,16 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & /* query */, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
 {
+    const auto * check_query = query->as<ASTCheckQuery>();
+    if (check_query->partition || !check_query->part_name.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
+
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
     return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
 }
 
