@@ -490,8 +490,6 @@ void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, Keepe
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
 
-    std::queue<fs::path> queue;
-    queue.push(path);
     Coordination::Stat stat;
     client->zookeeper->get(path, &stat);
 
@@ -512,6 +510,9 @@ bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTK
 void GetAllChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
 {
     auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+
+    std::queue<fs::path> queue;
+    queue.push(path);
     Coordination::Stat stat;
     client->zookeeper->get(path, &stat);
 
