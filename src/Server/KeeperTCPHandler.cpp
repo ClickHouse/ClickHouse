@@ -490,7 +490,6 @@ void KeeperTCPHandler::runImpl()
 
                 response->write(*maybe_compressed_out);
                 maybe_compressed_out->next();
-                out->next();
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {

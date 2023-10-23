@@ -355,6 +355,8 @@ ZooKeeper::ZooKeeper(
     }
     catch (...)
     {
+        /// If we get exception & compression is enabled, then its possible that keeper does not support compression, 
+        /// try without compression
         if (use_compression)
         {
             use_compression = false;
@@ -549,7 +551,6 @@ void ZooKeeper::sendHandshake()
     write(passwd);
 
     maybe_compressed_out->next();
-    out->next();
 }
 
 void ZooKeeper::receiveHandshake()
@@ -599,7 +600,6 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.xid = AUTH_XID;
     request.write(*maybe_compressed_out);
     maybe_compressed_out->next();
-    out->next();
 
     int32_t length;
     XID read_xid;
@@ -681,7 +681,6 @@ void ZooKeeper::sendThread()
                     info.request->write(*maybe_compressed_out);
 
                     maybe_compressed_out->next();
-                    out->next();
 
                     logOperationIfNeeded(info.request);
 
@@ -699,7 +698,6 @@ void ZooKeeper::sendThread()
                 request.xid = PING_XID;
                 request.write(*maybe_compressed_out);
                 maybe_compressed_out->next();
-                out->next();
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesSent, out->count() - prev_bytes_sent);
