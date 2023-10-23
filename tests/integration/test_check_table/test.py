@@ -141,7 +141,6 @@ def test_check_normal_table_corruption(started_cluster):
     ).strip().split("\t")[0:2] == ["201901_2_2_0", "0"]
 
 
-
 def test_check_replicated_table_simple(started_cluster):
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS replicated_mt")
