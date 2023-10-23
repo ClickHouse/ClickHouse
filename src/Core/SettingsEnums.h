@@ -244,9 +244,9 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 enum class DateTimeOverflowMode
 {
-    THROW,
-    IGNORE,
-    SATURATE,
+    Throw,
+    Ignore,
+    Saturate,
 };
 
 DECLARE_SETTING_ENUM(DateTimeOverflowMode)

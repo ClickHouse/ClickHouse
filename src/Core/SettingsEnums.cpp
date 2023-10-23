@@ -191,8 +191,8 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
      {"throw", ExternalCommandStderrReaction::THROW}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeOverflowMode, ErrorCodes::BAD_ARGUMENTS,
-                       {{"throw", DateTimeOverflowMode::THROW},
-                        {"ignore", DateTimeOverflowMode::IGNORE},
-                        {"saturate", DateTimeOverflowMode::SATURATE}})
+                       {{"throw", DateTimeOverflowMode::Throw},
+                        {"ignore", DateTimeOverflowMode::Ignore},
+                        {"saturate", DateTimeOverflowMode::Saturate}})
 
 }

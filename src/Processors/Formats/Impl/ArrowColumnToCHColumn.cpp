@@ -254,7 +254,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
     bool check_date_range = false;
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
 
-    DateTimeOverflowMode date_time_overflow_mode = DateTimeOverflowMode::THROW;
+    DateTimeOverflowMode date_time_overflow_mode = DateTimeOverflowMode::Throw;
 
     if (DB::CurrentThread::isInitialized())
     {
@@ -290,7 +290,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
                 if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH)
                 {
-                    if (likely(date_time_overflow_mode == DateTimeOverflowMode::SATURATE))
+                    if (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
                         days_num = (days_num < -DAYNUM_OFFSET_EPOCH) ? -DAYNUM_OFFSET_EPOCH : DATE_LUT_MAX_EXTEND_DAY_NUM;
                     else
                     {
