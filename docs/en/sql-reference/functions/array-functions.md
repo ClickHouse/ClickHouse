@@ -1144,10 +1144,31 @@ SELECT arrayFold( x,acc -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
 Result:
 
 ``` text
-┌─arrayFold(lambda(tuple(x, acc), plus(acc, multiply(x, 2))), [1, 2, 3, 4], toInt64(3))─┐
-│                                                                                     3 │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+┌─res─┐
+│  23 │
+└─────┘
 ```
+
+**Example with fibonacci sequence**
+
+```sql
+SELECT arrayFold( x, acc -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS result
+FROM numbers(1,10);
+
+┌─result─┐
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      3 │
+│      5 │
+│      8 │
+│     13 │
+│     21 │
+│     34 │
+└────────┘
+```
+
 
 ## arrayReverse(arr)
 
