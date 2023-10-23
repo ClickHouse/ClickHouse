@@ -309,6 +309,7 @@ struct MergeTreeDataSelectAnalysisResult
 
     bool error() const;
     size_t marks() const;
+    UInt64 rows() const;
 };
 
 }
