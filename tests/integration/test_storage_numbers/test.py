@@ -233,3 +233,12 @@ def test_multi_streams(started_cluster):
     )
     assert response == "(2),(4),(6),(8),(9)"
     check_read_rows("test_multi_streams", 5)
+
+
+def test_overflow(started_cluster):
+    response = node.query(
+        "SELECT number FROM numbers(18446744073709551614, 5) FORMAT Values",
+        query_id="test_overflow",
+    )
+    assert response == "(18446744073709551614),(18446744073709551615),(0),(1),(2)"
+    check_read_rows("test_overflow", 5)

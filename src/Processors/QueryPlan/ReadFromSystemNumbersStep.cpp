@@ -199,9 +199,9 @@ protected:
                 ? end.offset_in_range - cursor.offset_in_range
                 : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
 
-            UInt64 start_value = first_value(range) + cursor.offset_in_range;
             if (can_provide > need)
             {
+                UInt64 start_value = first_value(range) + cursor.offset_in_range;
                 auto end_value = start_value + need;
                 while (start_value < end_value)
                     *(pos++) = start_value++;
@@ -211,6 +211,8 @@ protected:
             }
             else if (can_provide == need)
             {
+                /// to avoid UInt64 overflow
+                UInt128 start_value = first_value(range) + cursor.offset_in_range;
                 auto end_value = start_value + need;
                 while (start_value < end_value)
                     *(pos++) = start_value++;
@@ -221,6 +223,8 @@ protected:
             }
             else
             {
+                /// to avoid UInt64 overflow
+                UInt128 start_value = first_value(range) + cursor.offset_in_range;
                 auto end_value = start_value + static_cast<UInt64>(can_provide);
                 while (start_value < end_value)
                     *(pos++) = start_value++;
@@ -364,10 +368,27 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     {
         /// Intersect ranges with table range
         std::optional<Range> table_range;
-        if (numbers_storage.limit.has_value() && std::numeric_limits<UInt64>::max() - numbers_storage.offset >= *(numbers_storage.limit))
-            table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
+        std::optional<Range> overflowed_table_range;
+
+        if (numbers_storage.limit.has_value())
+        {
+            if (std::numeric_limits<UInt64>::max() - numbers_storage.offset >= *(numbers_storage.limit))
+            {
+                table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
+            }
+            /// UInt64 overflow
+            else
+            {
+                table_range.emplace(FieldRef(numbers_storage.offset), true, std::numeric_limits<UInt64>::max(), true);
+                auto overflow_end = UInt128(numbers_storage.offset) + UInt128(*numbers_storage.limit);
+                overflowed_table_range.emplace(
+                    FieldRef(UInt64(0)), true, FieldRef(UInt64(overflow_end - std::numeric_limits<UInt64>::max() - 1)), false);
+            }
+        }
         else
-            table_range.emplace(FieldRef(numbers_storage.offset), true, std::numeric_limits<UInt64>::max(), true);
+        {
+            table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(std::numeric_limits<UInt64>::max()), true);
+        }
 
         Ranges intersected_ranges;
         for (auto & r : ranges)
@@ -375,6 +396,16 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             auto intersected_range = table_range->intersectWith(r);
             if (intersected_range)
                 intersected_ranges.push_back(*intersected_range);
+        }
+        /// intersection with overflowed_table_range goes back.
+        if (overflowed_table_range.has_value())
+        {
+            for (auto & r : ranges)
+            {
+                auto intersected_range = overflowed_table_range->intersectWith(r);
+                if (intersected_range)
+                    intersected_ranges.push_back(*overflowed_table_range);
+            }
         }
 
         /// ranges is blank, return a source who has no data
