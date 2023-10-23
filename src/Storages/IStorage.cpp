@@ -281,9 +281,8 @@ IStorage::DataValidationTasksPtr IStorage::getCheckTaskList(const ASTPtr & /* qu
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName());
 }
 
-CheckResult IStorage::checkDataNext(DataValidationTasksPtr & /* check_task_list */, bool & has_nothing_to_do)
+std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* check_task_list */)
 {
-    has_nothing_to_do = true;
     return {};
 }
 

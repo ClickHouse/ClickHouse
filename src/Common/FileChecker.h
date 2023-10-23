@@ -33,7 +33,7 @@ public:
     struct DataValidationTasks;
     using DataValidationTasksPtr = std::unique_ptr<DataValidationTasks>;
     DataValidationTasksPtr getDataValidationTasks();
-    CheckResult checkNextEntry(DataValidationTasksPtr & check_data_tasks, bool & has_nothing_to_do) const;
+    std::optional<CheckResult> checkNextEntry(DataValidationTasksPtr & check_data_tasks) const;
 
     /// Truncate files that have excessive size to the expected size.
     /// Throw exception if the file size is less than expected.

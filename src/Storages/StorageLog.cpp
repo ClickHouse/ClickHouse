@@ -882,9 +882,9 @@ IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & /* 
     return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
 }
 
-CheckResult StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do)
+std::optional<CheckResult> StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks, has_nothing_to_do);
+    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
 }
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const

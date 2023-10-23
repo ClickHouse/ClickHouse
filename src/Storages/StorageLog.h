@@ -60,7 +60,7 @@ public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override;
-    CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

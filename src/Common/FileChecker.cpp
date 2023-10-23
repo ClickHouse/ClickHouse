@@ -87,16 +87,13 @@ FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
     return std::make_unique<DataValidationTasks>(map);
 }
 
-CheckResult FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks, bool & has_nothing_to_do) const
+std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks) const
 {
     String name;
     size_t expected_size;
     bool is_finished = check_data_tasks->next(name, expected_size);
     if (is_finished)
-    {
-        has_nothing_to_do = true;
         return {};
-    }
 
     String path = parentPath(files_info_path) + name;
     bool exists = fileReallyExists(path);

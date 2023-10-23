@@ -619,7 +619,7 @@ public:
     virtual DataValidationTasksPtr getCheckTaskList(const ASTPtr & /* query */, ContextPtr /* context */);
 
     /** Executes one task from the list.
-      * If no tasks left, sets has_nothing_to_do to true.
+      * If no tasks left - returns nullopt.
       * Note: Function `checkDataNext` is accessing `check_task_list` thread-safely,
       *   and can be called simultaneously for the same `getCheckTaskList` result
       *   to process different tasks in parallel.
@@ -631,14 +631,13 @@ public:
       * {
       *     size_t tasks_left = check_task_list->size();
       *     std::cout << "Checking data: " << (total_tasks - tasks_left) << " / " << total_tasks << " tasks done." << std::endl;
-      *     bool has_nothing_to_do = false;
-      *     auto result = storage.checkDataNext(check_task_list, has_nothing_to_do);
-      *     if (has_nothing_to_do)
+      *     auto result = storage.checkDataNext(check_task_list);
+      *     if (!result)
       *         break;
-      *     doSomething(result);
+      *     doSomething(*result);
       * }
       */
-    virtual CheckResult checkDataNext(DataValidationTasksPtr & check_task_list, bool & has_nothing_to_do);
+    virtual std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list);
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
