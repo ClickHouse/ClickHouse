@@ -134,7 +134,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
         return false;
     }
 
-    bool is_active = false;
+    bool is_active = true;
     if (storage.cluster.has_value())
         is_active = storage.cluster->isReplicaActive();
     if (is_active)
