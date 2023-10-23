@@ -41,6 +41,7 @@ def cluster():
             env_variables={
                 "https_proxy": "https://proxy1",
             },
+            instance_env_variables=True,
         )
 
         logging.info("Starting cluster...")

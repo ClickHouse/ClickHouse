@@ -6664,10 +6664,26 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     return res;
 }
 
+ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select)
+{
+    const auto & analysis_result = select.getAnalysisResult();
+    const auto & before_where = analysis_result.before_where;
+    const auto & where_column_name = analysis_result.where_column_name;
+
+    ActionDAGNodes filter_nodes;
+    if (auto additional_filter_info = select.getAdditionalQueryInfo())
+        filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+
+    if (before_where)
+        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+
+    return filter_nodes;
+}
+
 QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
     if (query_context->getClientInfo().collaborate_with_initiator)
@@ -6676,12 +6692,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// Parallel replicas
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
-        if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
-        {
-            query_info.parallel_replicas_disabled = true;
-            return QueryProcessingStage::Enum::FetchColumns;
-        }
-
         /// ReplicatedMergeTree
         if (supportsReplication())
             return QueryProcessingStage::Enum::WithMergeableState;
@@ -6700,10 +6710,11 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 }
 
 
-bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
+UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info) const
+    const SelectQueryInfo & query_info,
+    const ActionDAGNodes & added_filter_nodes) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -6716,23 +6727,14 @@ bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
         storage_snapshot->metadata,
         storage_snapshot->metadata,
         query_info,
-        /*added_filter_nodes*/ActionDAGNodes{},
+        added_filter_nodes,
         query_context,
         query_context->getSettingsRef().max_threads);
 
-    if (result_ptr->error())
-        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
-
-    LOG_TRACE(log, "Estimated number of granules to read is {}", result_ptr->marks());
-
-    bool decision = result_ptr->marks() >= query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable;
-
-    if (!decision)
-        LOG_DEBUG(log, "Parallel replicas will be disabled, because the estimated number of granules to read {} is less than the threshold which is {}",
-            result_ptr->marks(),
-            query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable);
-
-    return decision;
+    UInt64 total_rows = result_ptr->rows();
+    if (query_info.limit > 0 && query_info.limit < total_rows)
+        total_rows = query_info.limit;
+    return total_rows;
 }
 
 void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
