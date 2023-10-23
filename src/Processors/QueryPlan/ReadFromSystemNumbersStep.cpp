@@ -376,7 +376,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             {
                 table_range.emplace(FieldRef(numbers_storage.offset), true, FieldRef(numbers_storage.offset + *(numbers_storage.limit)), false);
             }
-            /// UInt64 overflow
+            /// UInt64 overflow, for example: SELECT number FROM numbers(18446744073709551614, 5)
             else
             {
                 table_range.emplace(FieldRef(numbers_storage.offset), true, std::numeric_limits<UInt64>::max(), true);
