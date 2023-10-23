@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/ColumnLazy.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -68,7 +69,6 @@ void MergeTreeTransform::transform(Chunk & chunk)
     MutableColumns lazily_read_columns;
     lazily_read_columns.resize(columns_size);
     size_t column_idx = 0;
-    size_t row_idx = 0;
     for (auto & iter : names_and_types_list)
     {
         lazily_read_columns[column_idx] = iter.type->createColumn();
@@ -76,7 +76,7 @@ void MergeTreeTransform::transform(Chunk & chunk)
         column_idx++;
     }
 
-    for (; row_idx < rows_size; ++row_idx)
+    for (size_t row_idx = 0; row_idx < rows_size; ++row_idx)
     {
         size_t row_offset = row_num_column->getUInt(row_idx);
         size_t part_index = part_num_column->getUInt(row_idx);
@@ -94,7 +94,16 @@ void MergeTreeTransform::transform(Chunk & chunk)
         columns_to_read.resize(columns_size);
         size_t current_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range.begin);
 
-        reader->readRows(mark_range.begin, mark_range.end, false, current_offset + 1, columns_to_read);
+        size_t rows_read = reader->readRows(mark_range.begin, mark_range.end, false, current_offset + 1, columns_to_read);
+        chassert(rows_read > current_offset);
+
+        bool should_evaluate_missing_defaults = false;
+        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
+
+        if (should_evaluate_missing_defaults)
+            reader->evaluateMissingDefaults({}, columns_to_read);
+
+        reader->performRequiredConversions(columns_to_read);
 
         for (size_t i = 0; i < columns_size; ++i)
             lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset]);
