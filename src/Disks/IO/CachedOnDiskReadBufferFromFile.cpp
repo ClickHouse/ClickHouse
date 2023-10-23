@@ -162,13 +162,23 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     }
 
     ReadSettings local_read_settings{settings};
-    /// Do not allow to use asynchronous version of LocalFSReadMethod.
-    local_read_settings.local_fs_method = LocalFSReadMethod::pread;
+    local_read_settings.local_fs_method = LocalFSReadMethod::pread_threadpool;
 
     if (use_external_buffer)
+    {
         local_read_settings.local_fs_buffer_size = 0;
+        local_read_settings.local_fs_prefetch = false;
+    }
 
-    cache_file_reader = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    cache_file_reader = createReadBufferFromFileBase(
+        path,
+        local_read_settings,
+        std::nullopt,
+        std::nullopt,
+        file_segment.getFlagsForLocalRead(),
+        /*existing_memory=*/nullptr,
+        /*alignment=*/0,
+        /*use_external_buffer=*/true);
 
     if (getFileSizeFromReadBuffer(*cache_file_reader) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
