@@ -288,7 +288,7 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() 
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
-    HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+    DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
     parent_to_child.reserve(element_count);
 
     UInt64 child_keys_size = static_cast<UInt64>(parent_keys.size());
