@@ -166,13 +166,7 @@ BlockIO InterpreterCheckQuery::execute()
         auto processors = std::make_shared<Processors>();
 
         std::vector<OutputPort *> worker_ports;
-
-        /// For verbose mode (`check_query_single_value_result = 0`)
-        /// if `max_threads` is not explicitly set, we will use single thread to have deterministic output order
-        const auto * settings_ast = typeid_cast<const ASTSetQuery *>(check.settings_ast.get());
-        bool use_max_threads = settings.check_query_single_value_result || (settings_ast && settings_ast->changes.tryGet("max_threads") != nullptr);
-        size_t num_streams = use_max_threads && settings.max_threads > 1 ? settings.max_threads : 1;
-
+        size_t num_streams = std::max<size_t>(settings.max_threads, 1);
         for (size_t i = 0; i < num_streams; ++i)
         {
             auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(check_data_tasks, table);
