@@ -90,13 +90,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int CANNOT_PARSE_BOOL;
-    extern const int DATE_TIME_OVERFLOW;
-
-constexpr time_t MAX_DT64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:00:00 UTC
-constexpr time_t MIN_DT64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
-constexpr time_t MAX_DT_TIMESTAMP = 0xFFFFFFFF;
-constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;
-constexpr time_t MAX_DT_DAY_NUM =  49710;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
 
 /** Type conversion functions.
   * toType - conversion in "natural way";
@@ -413,12 +408,12 @@ struct ToDateTimeImpl
 
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (d > MAX_DT_DAY_NUM)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Day number {} is out of bounds of type DateTime", d);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Day number {} is out of bounds of type DateTime", d);
         }
-        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::SATURATE)
+        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
         {
             if (d > MAX_DT_DAY_NUM)
                 d = MAX_DT_DAY_NUM;
@@ -428,17 +423,17 @@ struct ToDateTimeImpl
 
     static UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::SATURATE)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
         {
             if (d < 0)
                 return 0;
             else if (d > MAX_DT_DAY_NUM)
                 d = MAX_DT_DAY_NUM;
         }
-        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        else if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
-            if (unlikely(d < 0 || d > MAX_DT_DAY_NUM))
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type DateTime", d);
+            if (d < 0 || d > MAX_DT_DAY_NUM)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", d);
         }
         return static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(d)));
     }
@@ -450,16 +445,16 @@ struct ToDateTimeImpl
 
     static UInt32 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::IGNORE)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Ignore)
             return static_cast<UInt32>(dt64);
         else
         {
-            if (unlikely(dt64 < 0 || dt64 >= MAX_DT_TIMESTAMP))
+            if (dt64 < 0 || dt64 >= MAX_DT_TIMESTAMP)
             {
-                if constexpr (date_time_overflow_mode == DateTimeOverflowMode::SATURATE)
+                if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Saturate)
                     return dt64 < 0 ? 0 : std::numeric_limits<UInt32>::max();
                 else
-                    throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type DateTime", dt64);
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", dt64);
             }
             else
                 return static_cast<UInt32>(dt64);
@@ -484,10 +479,10 @@ struct ToDateTransform32Or64
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from > MAX_DT_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type Date", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
         }
         /// if value is smaller (or equal) than maximum day value for Date, than treat it as day num,
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
@@ -512,10 +507,10 @@ struct ToDateTransform32Or64Signed
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // TODO: decide narrow or extended range based on FromType
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from < 0 || from > MAX_DATE_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type Date", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
         }
         else
         {
@@ -537,8 +532,8 @@ struct ToDateTransform8Or16Signed
     {
         if (from < 0)
         {
-            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Value {} is out of bounds of type Date", from);
+            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", from);
             else
                 return 0;
         }
@@ -563,10 +558,10 @@ struct ToDate32Transform32Or64
             return static_cast<ToType>(from);
         else
         {
-            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
             {
                 if (from > MAX_DT64_TIMESTAMP)
-                    throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type Date32", from);
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
             }
             return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DT64_TIMESTAMP)));
         }
@@ -582,10 +577,10 @@ struct ToDate32Transform32Or64Signed
     {
         static const Int32 daynum_min_offset = -static_cast<Int32>(time_zone.getDayNumOffsetEpoch());
 
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from < daynum_min_offset || from > MAX_DT64_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type Date32", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", from);
         }
 
         if (from < daynum_min_offset)
@@ -690,10 +685,10 @@ struct ToDateTimeTransform64
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from > MAX_DT_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type DateTime", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
         return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DT_TIMESTAMP)));
     }
@@ -708,8 +703,8 @@ struct ToDateTimeTransformSigned
     {
         if (from < 0)
         {
-            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type DateTime", from);
+            if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
             else
                 return 0;
         }
@@ -724,10 +719,10 @@ struct ToDateTimeTransform64Signed
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from < 0 || from > MAX_DT_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type DateTime", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
         if (from < 0)
@@ -781,10 +776,10 @@ struct ToDateTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from > MAX_DT64_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type DateTime64", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
@@ -805,10 +800,10 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from < MIN_DT64_TIMESTAMP || from > MAX_DT64_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type DateTime64", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
         from = static_cast<FromType>(std::max<time_t>(from, MIN_DT64_TIMESTAMP));
         from = static_cast<FromType>(std::min<time_t>(from, MAX_DT64_TIMESTAMP));
@@ -829,10 +824,10 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::THROW)
+        if constexpr (date_time_overflow_mode == DateTimeOverflowMode::Throw)
         {
             if (from < MIN_DT64_TIMESTAMP || from > MAX_DT64_TIMESTAMP)
-                throw Exception(ErrorCodes::DATE_TIME_OVERFLOW, "Timestamp value {} is out of bounds of type DateTime64", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
         from = std::max(from, static_cast<FromType>(MIN_DT64_TIMESTAMP));
@@ -1295,8 +1290,8 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 {
     if (unlikely(time < 0))
         x = 0;
-    else if (unlikely(time > 0xFFFFFFFF))
-        x = 0xFFFFFFFF;
+    else if (unlikely(time > MAX_DT_TIMESTAMP))
+        x = MAX_DT_TIMESTAMP;
     else
         x = static_cast<UInt32>(time);
 }
@@ -2303,14 +2298,14 @@ private:
 
                 switch (date_time_overflow_mode)
                 {
-                    case DateTimeOverflowMode::THROW:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::THROW>::execute(arguments, result_type, input_rows_count, scale);
+                    case DateTimeOverflowMode::Throw:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Throw>::execute(arguments, result_type, input_rows_count, scale);
                         break;
-                    case DateTimeOverflowMode::IGNORE:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::IGNORE>::execute(arguments, result_type, input_rows_count, scale);
+                    case DateTimeOverflowMode::Ignore:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Ignore>::execute(arguments, result_type, input_rows_count, scale);
                         break;
-                    case DateTimeOverflowMode::SATURATE:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::SATURATE>::execute(arguments, result_type, input_rows_count, scale);
+                    case DateTimeOverflowMode::Saturate:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Saturate>::execute(arguments, result_type, input_rows_count, scale);
                         break;
                 }
 
@@ -2320,14 +2315,14 @@ private:
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
                 switch (date_time_overflow_mode)
                 {
-                    case DateTimeOverflowMode::THROW:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::THROW>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                    case DateTimeOverflowMode::Throw:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Throw>::execute(arguments, result_type, input_rows_count, dt64->getScale());
                         break;
-                    case DateTimeOverflowMode::IGNORE:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::IGNORE>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                    case DateTimeOverflowMode::Ignore:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Ignore>::execute(arguments, result_type, input_rows_count, dt64->getScale());
                         break;
-                    case DateTimeOverflowMode::SATURATE:
-                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::SATURATE>::execute(arguments, result_type, input_rows_count, dt64->getScale());
+                    case DateTimeOverflowMode::Saturate:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag, DateTimeOverflowMode::Saturate>::execute(arguments, result_type, input_rows_count, dt64->getScale());
                         break;
                 }
             }
@@ -2357,9 +2352,9 @@ private:
                 {
                     switch (date_time_overflow_mode)
                     {
-                        GENERATE_OVERFLOW_MODE_CASE(THROW)
-                        GENERATE_OVERFLOW_MODE_CASE(IGNORE)
-                        GENERATE_OVERFLOW_MODE_CASE(SATURATE)
+                        GENERATE_OVERFLOW_MODE_CASE(Throw)
+                        GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                        GENERATE_OVERFLOW_MODE_CASE(Saturate)
                     }
                 }
             }
@@ -2368,9 +2363,9 @@ private:
             {
                 switch (date_time_overflow_mode)
                 {
-                    GENERATE_OVERFLOW_MODE_CASE(THROW)
-                    GENERATE_OVERFLOW_MODE_CASE(IGNORE)
-                    GENERATE_OVERFLOW_MODE_CASE(SATURATE)
+                    GENERATE_OVERFLOW_MODE_CASE(Throw)
+                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
                 }
             }
 #undef GENERATE_OVERFLOW_MODE_CASE
@@ -3330,18 +3325,18 @@ private:
                         {
                             switch (date_time_overflow_mode)
                             {
-                                GENERATE_OVERFLOW_MODE_CASE(THROW, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(IGNORE, AccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(SATURATE, AccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateConvertStrategyAdditions)
                             }
                         }
                         else
                         {
                             switch (date_time_overflow_mode)
                             {
-                                GENERATE_OVERFLOW_MODE_CASE(THROW, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(IGNORE, AccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(SATURATE, AccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Throw, AccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Ignore, AccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Saturate, AccurateOrNullConvertStrategyAdditions)
                             }
                         }
 #undef GENERATE_OVERFLOW_MODE_CASE
@@ -3360,18 +3355,18 @@ arguments, result_type, input_rows_count); \
                         {
                             switch (date_time_overflow_mode)
                             {
-                                GENERATE_OVERFLOW_MODE_CASE(THROW, DateTimeAccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(IGNORE, DateTimeAccurateConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(SATURATE, DateTimeAccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateConvertStrategyAdditions)
                             }
                         }
                         else
                         {
                             switch (date_time_overflow_mode)
                             {
-                                GENERATE_OVERFLOW_MODE_CASE(THROW, DateTimeAccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(IGNORE, DateTimeAccurateOrNullConvertStrategyAdditions)
-                                GENERATE_OVERFLOW_MODE_CASE(SATURATE, DateTimeAccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)
+                                GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateOrNullConvertStrategyAdditions)
                             }
                         }
 #undef GENERATE_OVERFLOW_MODE_CASE

@@ -3838,6 +3838,18 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
+## date_time_overflow_mode {#date_time_overflow_mode}
+
+Задаёт поведение при преобразовании [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), а также численных типов данных к Date, Date32, DateTime, DateTime64 в случае, если результат выходит за пределы диапазона значений необходимого типа.
+
+Возможные значения:
+
+- `ignore` — Молча игнорирует переполнение. В таком случае, результатом будет случайное значение.
+- `throw` — Выкинуть исключение при переполнении.
+- `saturate` — Молча округлить до ближайшего (то есть наибольшего или наименьшего) значения из диапазона значений результата.
+
+Значение по умолчанию: `ignore`.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).
@@ -4209,15 +4221,3 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
 ```
-
-## date_time_overflow_mode {#date_time_overflow_mode}
-
-Определяет поведение при переполнении во время преобразования типов [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-Возможные значения:
-
-- `ignore` — Молча игнорирует переполнение. Полученный результат может быть округлём до ближайшего действительного значения области значений результирующего типа. А может и не быть, тогда результатом будет просто какое-то значение из всех возможных.
-- `throw` — Выкинуть исключение при переполнении.
-- `saturate` — Молча округлить до ближайшего (то есть наибольшего или наименьшего) значения из области значений результирующего типа.
-
-Значение по умолчанию: `ignore`.
