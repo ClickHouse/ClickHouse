@@ -280,7 +280,6 @@ public:
 
                 auto input_format = FormatFactory::instance().getInput(
                     format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
-                input_format->setQueryInfo(query_info, getContext());
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
