@@ -204,6 +204,7 @@ struct FormatSettings
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
+
     } json;
 
     struct
