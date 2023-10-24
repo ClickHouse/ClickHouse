@@ -616,7 +616,9 @@ public:
 
     using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;
 
-    virtual DataValidationTasksPtr getCheckTaskList(const ASTPtr & /* query */, ContextPtr /* context */);
+    /// Specifies to check all data / partition / part
+    using CheckTaskFilter = std::variant<std::monostate, ASTPtr, String>;
+    virtual DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & /* check_task_filter */, ContextPtr /* context */);
 
     /** Executes one task from the list.
       * If no tasks left - returns nullopt.
@@ -625,7 +627,7 @@ public:
       *   to process different tasks in parallel.
       * Usage:
       *
-      * auto check_task_list = storage.getCheckTaskList(query, context);
+      * auto check_task_list = storage.getCheckTaskList({}, context);
       * size_t total_tasks = check_task_list->size();
       * while (true)
       * {
