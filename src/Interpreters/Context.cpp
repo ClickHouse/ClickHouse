@@ -315,7 +315,7 @@ struct ContextSharedPart : boost::noncopyable
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
-    std::atomic<LoadTaskPtr> ddl_worker_startup_task;       /// To postpone `ddl_worker->startup()` after all tables startup
+    LoadTaskPtr ddl_worker_startup_task;                    /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines

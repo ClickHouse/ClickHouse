@@ -1657,7 +1657,7 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
-    LoadTasksPtrs load_metadata_tasks;
+    LoadTaskPtrs load_metadata_tasks;
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();

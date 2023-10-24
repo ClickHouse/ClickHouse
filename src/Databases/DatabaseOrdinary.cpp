@@ -228,7 +228,7 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     auto job = makeLoadJob(
         std::move(startup_after),
         AsyncLoaderPoolId::BackgroundStartup,
-        fmt::format("startup Ordinary database {}", database_name));
+        fmt::format("startup Ordinary database {}", getDatabaseName()));
     return startup_database_task = makeLoadTask(async_loader, {job});
 }
 

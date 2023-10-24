@@ -508,17 +508,22 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
     auto job = makeLoadJob(
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
-        fmt::format("startup Replicated database {}", database_name),
+        fmt::format("startup Replicated database {}", getDatabaseName()),
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
-            /// TSA: No concurrent writes are possible during loading
             UInt64 digest = 0;
-            for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
-                digest += getMetadataHash(table.first);
+            {
+                std::lock_guard lock{mutex};
+                for (const auto & table : tables)
+                    digest += getMetadataHash(table.first);
+                LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", tables.size(), digest);
+            }
 
-            LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", TSA_SUPPRESS_WARNING_FOR_READ(tables).size(), digest);
-            chassert(!TSA_SUPPRESS_WARNING_FOR_READ(tables_metadata_digest));
-            TSA_SUPPRESS_WARNING_FOR_WRITE(tables_metadata_digest) = digest;
+            {
+                std::lock_guard lock{metadata_mutex};
+                chassert(!tables_metadata_digest);
+                tables_metadata_digest = digest;
+            }
 
             if (is_probably_dropped)
                 return;

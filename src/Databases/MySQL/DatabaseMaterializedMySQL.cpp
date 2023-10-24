@@ -70,7 +70,7 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
     auto job = makeLoadJob(
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
-        fmt::format("startup MaterializedMySQL database {}", database_name),
+        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
         [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             LOG_TRACE(log, "Starting MaterializeMySQL database");
