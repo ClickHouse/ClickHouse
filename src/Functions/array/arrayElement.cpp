@@ -18,8 +18,6 @@
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
