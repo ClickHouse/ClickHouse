@@ -2794,3 +2794,47 @@ message Root
     uint32 column2 = 2;
 }
 ```
+
+## formatQuery
+
+Returns a formatted version of the given SQL query.
+
+**Syntax**
+
+```sql
+formatQuery(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuery('select 1;');
+```
+
+Result:
+
+```result
+┌─formatQuery('select 1;')─┐
+│ SELECT 1                 │
+└──────────────────────────┘
+```
+
+```sql
+SELECT formatQuery('SeLecT 1');
+```
+
+Result:
+
+```result
+┌─formatQuery('SeLecT 1')──┐
+│ SELECT 1                 │
+└──────────────────────────┘
+```
