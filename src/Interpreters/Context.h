@@ -13,7 +13,7 @@
 #include <Common/Throttler_fwd.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
-#include <Common/MutexUtils.h>
+#include <Common/SharedMutexHelper.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
