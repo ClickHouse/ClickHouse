@@ -18,6 +18,8 @@
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -829,6 +831,7 @@ void FunctionArrayElement::executeMatchKeyToIndex(
                 matched_idxs.push_back(j -  offsets[-1] + 1);
                 matched = true;
                 expected_match_pos = end + j - offsets[-1];
+                // expected_match_pos = j - offsets[-1];
                 break;
             }
         }
@@ -848,8 +851,9 @@ void FunctionArrayElement::executeMatchKeyToIndex(
         const auto & end = offsets[i];
         if (expected_match_pos < end && matcher.match(expected_match_pos, i))
         {
-            matched_idxs.push_back(expected_match_pos - begin + 1);
-            expected_match_pos = end + expected_match_pos - begin;
+            auto map_key_index = expected_match_pos - begin;
+            matched_idxs.push_back(map_key_index + 1);
+            expected_match_pos = end + map_key_index;
         }
         else
             break;
