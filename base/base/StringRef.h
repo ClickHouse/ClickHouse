@@ -36,8 +36,8 @@
 #endif
 
 #if defined(__s390x__)
-    #include <base/crc32_s390x.h>
-    #define CRC_INT s390x_crc32
+    #include <base/crc32c_s390x.h>
+    #define CRC_INT s390x_crc32c
 #endif
 
 /**
