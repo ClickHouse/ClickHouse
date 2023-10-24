@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-ordinary-database
+# Tag no-ordinary-database: requires UUID
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,23 +20,32 @@ $CLICKHOUSE_CLIENT -nm -q "
     insert into rmt1 values (1);
     insert into rmt1 values (2);
 
+    system sync replica rmt1;
     system stop pulling replication log rmt2;
-    optimize table rmt1 final settings alter_sync=0;
-"
+    optimize table rmt1 final settings alter_sync=0, optimize_throw_if_noop=1;
+" || exit 1
+
+table_uuid=$($CLICKHOUSE_CLIENT -q "select uuid from system.tables where database = currentDatabase() and table = 'rmt1'")
+if [[ -z $table_uuid ]]; then
+    echo "Table does not have UUID" >&2
+    exit 1
+fi
+
+# NOTE: that part name can be different from all_0_1_1, in case of ZooKeeper retries
+part_name='%'
 
 # wait while there be at least one 'No active replica has part all_0_1_1 or covering part' in logs
-for _ in {0..1000}; do
+for _ in {0..50}; do
     no_active_repilica_messages=$($CLICKHOUSE_CLIENT -nm -q "
         system flush logs;
-        with
-            (select uuid from system.tables where database = currentDatabase() and table = 'rmt1') as uuid_
+
         select count()
         from system.text_log
         where
             event_date >= yesterday() and event_time >= now() - 600 and
             (
-                (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{' || uuid_::String || '::all_0_1_1}%No active replica has part all_0_1_1 or covering part%') or
-                (logger_name = uuid_::String || '::all_0_1_1 (MergeFromLogEntryTask)' and message like '%No active replica has part all_0_1_1 or covering part%')
+                (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
+                (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
             );
     ")
     if [[ $no_active_repilica_messages -gt 0 ]]; then
@@ -47,16 +58,15 @@ done
 $CLICKHOUSE_CLIENT -nm -q "
     system start pulling replication log rmt2;
     system flush logs;
-    with
-        (select uuid from system.tables where database = currentDatabase() and table = 'rmt1') as uuid_
+
     select
         level, count() > 0
     from system.text_log
     where
         event_date >= yesterday() and event_time >= now() - 600 and
         (
-            (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{' || uuid_::String || '::all_0_1_1}%No active replica has part all_0_1_1 or covering part%') or
-            (logger_name = uuid_::String || '::all_0_1_1 (MergeFromLogEntryTask)' and message like '%No active replica has part all_0_1_1 or covering part%')
+            (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
+            (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
         )
     group by level;
 "
