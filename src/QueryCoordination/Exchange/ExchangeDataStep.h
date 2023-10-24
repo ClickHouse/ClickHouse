@@ -19,6 +19,8 @@ public:
 
     String getName() const override { return "ExchangeData"; }
 
+    StepType stepType() const override { return Exchange; }
+
     void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override;
 
     void setPlanID(UInt32 plan_id_)

@@ -32,14 +32,14 @@ def started_cluster():
 
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
+    node1.query("INSERT INTO distributed_table SELECT number%50, '123', 'test' FROM numbers(200)")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
 
-    node1.query("SELECT * FROM distributed_table")
+    node1.query("SELECT * FROM distributed_table ORDER BY id LIMIT 0,5")
 
-    node1.query("SELECT * FROM distributed_table SETTINGS allow_experimental_query_coordination = 1")
+    node1.query("SELECT * FROM distributed_table ORDER BY id LIMIT 0,5 WITH TIES")
 
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4")
+    node1.query("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5")
 
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4 SETTINGS allow_experimental_query_coordination = 1")
+    node1.query("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5 WITH TIES")

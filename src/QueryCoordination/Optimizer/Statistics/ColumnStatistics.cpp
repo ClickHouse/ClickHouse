@@ -241,12 +241,13 @@ const DataTypePtr & ColumnStatistics::getDataType() const
 void ColumnStatistics::setDataType(const DataTypePtr & dataType)
 {
     data_type = dataType;
-    try
+
+    if (data_type->haveMaximumSizeOfValue())
     {
-        auto fixed_row_size = data_type->getSizeOfValueInMemory();
+        auto fixed_row_size = data_type->getMaximumSizeOfValueInMemory();
         avg_row_size = fixed_row_size;
     }
-    catch (...)
+    else
     {
         avg_row_size = 8; /// TODO add to settings
     }

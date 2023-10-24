@@ -40,23 +40,15 @@ def started_cluster():
 
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO table_1 SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 600")
-    node1.query("INSERT INTO table_1 SELECT id,'234','test1' FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("INSERT INTO table_1 SELECT id,'123','test' FROM generateRandom('id UInt8') LIMIT 600")
+    node1.query("INSERT INTO table_1 SELECT id,'234','test1' FROM generateRandom('id UInt16') LIMIT 500")
 
-    node1.query("INSERT INTO table_2 SELECT id,'123',10 FROM generateRandom('id Int16') LIMIT 500")
-    node1.query("INSERT INTO table_2 SELECT id,'234',12 FROM generateRandom('id Int16') LIMIT 600")
+    node1.query("INSERT INTO table_2 SELECT id,'123',10 FROM generateRandom('id UInt16') LIMIT 500")
+    node1.query("INSERT INTO table_2 SELECT id,'234',12 FROM generateRandom('id UInt8') LIMIT 600")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test')")
+    node1.query("SELECT id FROM table_1 INTERSECT SELECT id FROM table_2")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') OR (name = 'test')")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2)")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2)")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
+    node1.query("SELECT id FROM table_1 EXCEPT SELECT id FROM table_2")

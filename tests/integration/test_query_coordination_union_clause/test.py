@@ -49,14 +49,6 @@ def test_query(started_cluster):
     node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test')")
+    node1.query("SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') OR (name = 'test')")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2)")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2)")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
-
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
+    node1.query("SELECT id, val, name FROM table_1 UNION ALL SELECT id, text, toString(scores) FROM table_2 UNION ALL SELECT 1,'2','3'")

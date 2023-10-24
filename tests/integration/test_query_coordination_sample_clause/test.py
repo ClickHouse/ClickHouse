@@ -31,7 +31,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_aggregate_query(started_cluster):
+def test_query(started_cluster):
     node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 10000")
     node1.query("INSERT INTO distributed_table SELECT id,'124','test1' FROM generateRandom('id Int16') LIMIT 10000")
 

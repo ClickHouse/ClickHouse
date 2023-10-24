@@ -245,17 +245,26 @@ std::optional<TableStatistics> loadTableStats(const StorageID & storage_id, cons
         storage_id.getTableName());
 
     auto load_query_context = createQueryContext();
-    auto block_io = executeQuery(sql, load_query_context, true);
 
-    auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
+    try
+    {
+        auto block_io = executeQuery(sql, load_query_context, true);
 
-    Block block;
-    executor->pull(block);
+        auto executor = std::make_unique<PullingAsyncPipelineExecutor>(block_io.pipeline);
 
-    if (!block)
+        Block block;
+        executor->pull(block);
+
+        if (!block)
+            return std::nullopt;
+
+        return block.getByPosition(0).column->getUInt(0);
+    }
+    catch(...)
+    {
+        tryLogCurrentException(&Poco::Logger::get("IStatisticsStorage"), "Got exception when execute load table statistics query.");
         return std::nullopt;
-
-    return block.getByPosition(0).column->getUInt(0);
+    }
 }
 
 std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_id, const String & cluster_name)

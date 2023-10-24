@@ -31,7 +31,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_aggregate_query(started_cluster):
+def test_query(started_cluster):
     node1.query("INSERT INTO distributed_table SELECT number, 0, if(number between 100 and 200, 'x', toString(number)) FROM numbers(1000)")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")

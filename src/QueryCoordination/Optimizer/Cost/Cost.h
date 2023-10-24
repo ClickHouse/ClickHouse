@@ -25,8 +25,8 @@ public:
     void dividedBy(size_t n);
     void multiplyBy(size_t n);
 
-    Cost & operator+(const Cost & other);
-    Cost & operator-(const Cost & other);
+    Cost operator+(const Cost & other);
+    Cost operator-(const Cost & other);
 
     Cost & operator+=(const Cost & other);
     Cost & operator-=(const Cost & other);

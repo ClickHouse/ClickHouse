@@ -18,11 +18,11 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, local_table, rand());"""
+            """CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val UInt32) ENGINE = Distributed(test_two_shards, default, local_table, rand());"""
         )
 
         yield cluster
@@ -32,14 +32,12 @@ def started_cluster():
 
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
+    node1.query("INSERT INTO distributed_table VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21)")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
 
-    node1.query("SELECT * FROM distributed_table")
+    node1.query("SELECT * FROM distributed_table ORDER BY id, val LIMIT 2 BY id")
 
-    node1.query("SELECT * FROM distributed_table SETTINGS allow_experimental_query_coordination = 1")
+    node1.query("SELECT * FROM distributed_table ORDER BY id, val LIMIT 1, 2 BY id")
 
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4")
-
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4 SETTINGS allow_experimental_query_coordination = 1")
+    node1.query("SELECT * FROM distributed_table ORDER BY id, val LIMIT 2 OFFSET 1 BY id")

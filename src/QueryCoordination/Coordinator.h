@@ -18,13 +18,7 @@ using FragmentToHosts = std::unordered_map<FragmentID , Hosts>;
 class Coordinator
 {
 public:
-    Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
-        : log(&Poco::Logger::get("Coordinator"))
-        , fragments(fragments_)
-        , context(context_)
-        , query(query_)
-    {
-    }
+    Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr context_, String query_);
 
     void schedulePrepareDistributedPipelines();
 
@@ -33,7 +27,13 @@ public:
     Pipelines pipelines;
 
 private:
-    String assignFragmentToHost();
+    void assignFragmentToHost();
+
+    std::unordered_map<UInt32, std::vector<String>> assignSourceFragment();
+
+    PoolBase<DB::Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name);
+
+    PoolBase<DB::Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info);
 
     bool isUpToDate(const QualifiedTableName & table_name);
 

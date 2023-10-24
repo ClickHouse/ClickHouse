@@ -18,11 +18,11 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE test_fetch_local ON CLUSTER test_two_shards (a UInt32, b UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_fetch_local', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, local_table, rand());"""
+            """CREATE TABLE test_fetch ON CLUSTER test_two_shards (a UInt32, b UInt32) ENGINE = Distributed(test_two_shards, default, test_fetch_local, rand());"""
         )
 
         yield cluster
@@ -32,14 +32,10 @@ def started_cluster():
 
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
+    node1.query("INSERT INTO test_fetch VALUES (1,1), (2,1), (3,4), (1,3), (5,4), (0,6), (5,7)")
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
+    node1.query("SYSTEM FLUSH DISTRIBUTED test_fetch")
 
-    node1.query("SELECT * FROM distributed_table")
+    node1.query("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY")
 
-    node1.query("SELECT * FROM distributed_table SETTINGS allow_experimental_query_coordination = 1")
-
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4")
-
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4 SETTINGS allow_experimental_query_coordination = 1")
+    node1.query("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES")

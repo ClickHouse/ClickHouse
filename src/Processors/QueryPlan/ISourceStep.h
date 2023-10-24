@@ -16,6 +16,8 @@ public:
     virtual void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     void describePipeline(FormatSettings & settings) const override;
+
+    StepType stepType() const override { return Scan; }
 };
 
 }

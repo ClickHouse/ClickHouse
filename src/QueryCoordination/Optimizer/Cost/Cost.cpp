@@ -46,25 +46,28 @@ Cost& Cost::operator=(const Cost & other)
     return *this;
 }
 
-Cost& Cost::operator+(const Cost & other)
+Cost Cost::operator+(const Cost & other)
 {
-    this->cpu_cost += other.cpu_cost;
-    this->mem_cost += other.mem_cost;
-    this->net_cost += other.net_cost;
-    return *this;
+    Cost result;
+    result.cpu_cost = this->cpu_cost + other.cpu_cost;
+    result.mem_cost = this->mem_cost + other.mem_cost;
+    result.net_cost = this->net_cost + other.net_cost;
+
+    return result;
 }
 
-Cost& Cost::operator-(const Cost & other)
+Cost Cost::operator-(const Cost & other)
 {
-    this->cpu_cost -= other.cpu_cost;
-    this->mem_cost -= other.mem_cost;
-    this->net_cost -= other.net_cost;
+    Cost result;
+    result.cpu_cost = this->cpu_cost - other.cpu_cost;
+    result.mem_cost = this->mem_cost - other.mem_cost;
+    result.net_cost = this->net_cost - other.net_cost;
 
-    this->cpu_cost = std::max(0.0, other.cpu_cost);
-    this->mem_cost = std::max(0.0, other.mem_cost);
-    this->net_cost = std::max(0.0, other.net_cost);
+    result.cpu_cost = std::max(0.0, result.cpu_cost);
+    result.mem_cost = std::max(0.0, result.mem_cost);
+    result.net_cost = std::max(0.0, result.net_cost);
 
-    return *this;
+    return result;
 }
 
 Cost& Cost::operator+=(const Cost & other)
