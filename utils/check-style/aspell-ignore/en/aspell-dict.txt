@@ -992,8 +992,11 @@ activerecord
 addDate
 addDays
 addHours
+addMicroseconds
+addMilliseconds
 addMinutes
 addMonths
+addNanoseconds
 addQuarters
 addSeconds
 addWeeks
@@ -1455,6 +1458,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fibonacci
 fifo
 filesystem
 filesystemAvailable
@@ -2314,8 +2318,11 @@ substrings
 subtitiles
 subtractDays
 subtractHours
+subtractMicroseconds
+subtractMilliseconds
 subtractMinutes
 subtractMonths
+subtractNanoseconds
 subtractQuarters
 subtractSeconds
 subtractWeeks
