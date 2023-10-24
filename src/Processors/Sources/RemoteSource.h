@@ -39,7 +39,6 @@ protected:
     void onCancel() override;
 
 private:
-    std::atomic<bool> was_query_canceled = false;
     bool was_query_sent = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
