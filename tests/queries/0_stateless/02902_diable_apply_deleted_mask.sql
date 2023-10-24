@@ -9,7 +9,7 @@ DELETE FROM test_apply_deleted_mask WHERE id % 2 = 0;
 SELECT 'Normal SELECT does not see deleted rows';
 SELECT *, _row_exists FROM test_apply_deleted_mask;
 
-SELECT 'With the setting enabled the deleted rows are visible';
+SELECT 'With the setting disabled the deleted rows are visible';
 SELECT *, _row_exists FROM test_apply_deleted_mask SETTINGS apply_deleted_mask = 0;
 
 SELECT 'With the setting enabled the deleted rows are visible but still can be filterd out';
