@@ -26,7 +26,8 @@ public:
         const std::string & format_name_,
         bool allow_missing_columns_,
         bool null_as_default_,
-        bool case_insensitive_matching_ = false);
+        bool case_insensitive_matching_ = false,
+        bool is_stream_ = false);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
@@ -56,6 +57,7 @@ private:
     bool allow_missing_columns;
     bool null_as_default;
     bool case_insensitive_matching;
+    bool is_stream;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
