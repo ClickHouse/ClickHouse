@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace ActionLocks
@@ -505,7 +506,11 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
 }
 
 
-void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message)
+void StorageMergeTree::updateMutationEntriesErrors(
+    FutureMergedMutatedPartPtr result_part,
+    bool is_successful,
+    const String & exception_message,
+    int exception_code)
 {
     /// Update the information about failed parts in the system.mutations table.
 
@@ -516,6 +521,8 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
         std::lock_guard lock(currently_processing_in_background_mutex);
         auto mutations_begin_it = current_mutations_by_version.upper_bound(sources_data_version);
         auto mutations_end_it = current_mutations_by_version.upper_bound(result_data_version);
+
+        std::vector<decltype(mutations_begin_it)> mutations_to_erase;
 
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
@@ -536,8 +543,17 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                 entry.latest_failed_part_info = result_part->parts.at(0)->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
+
+                if (exception_code == ErrorCodes::UNKNOWN_TABLE)
+                {
+                    entry.removeFile();
+                    mutations_to_erase.push_back(it);
+                }
             }
         }
+
+        for (auto it : mutations_to_erase)
+            current_mutations_by_version.erase(it);
     }
 
     std::unique_lock lock(mutation_wait_mutex);

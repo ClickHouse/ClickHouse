@@ -112,8 +112,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                     merge_mutate_entry->txn->onException();
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
-                write_part_log(ExecutionStatus::fromCurrentException("", true));
+                auto status = ExecutionStatus::fromCurrentException("", true);
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, status.code);
+                write_part_log(status);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
             }
