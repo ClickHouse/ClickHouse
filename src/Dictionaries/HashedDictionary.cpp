@@ -4,13 +4,13 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/ArenaUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 #include <Core/Defines.h>
 
@@ -600,7 +600,7 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
         for (const auto & map : child_key_to_parent_key_maps)
             size += map.size();
 
-        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
         parent_to_child.reserve(size);
 
         for (const auto & map : child_key_to_parent_key_maps)

@@ -20,6 +20,12 @@ namespace DB
 {
 struct Settings;
 
+static inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 template <typename T>
 struct AggregateFunctionTopKData
@@ -163,11 +169,18 @@ public:
     {
         auto & set = this->data(place).value;
         set.clear();
-        set.resize(reserved);
 
         // Specialized here because there's no deserialiser for StringRef
         size_t size = 0;
         readVarUInt(size, buf);
+        if (unlikely(size > TOP_K_MAX_SIZE))
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Too large size ({}) for aggregate function '{}' state (maximum is {})",
+                size,
+                getName(),
+                TOP_K_MAX_SIZE);
+        set.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
             auto ref = readStringBinaryInto(*arena, buf);
