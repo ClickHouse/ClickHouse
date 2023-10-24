@@ -67,7 +67,6 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
 LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
     auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
-    std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
@@ -82,6 +81,12 @@ LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_
             started_up = true;
         });
     return startup_mysql_database_task = makeLoadTask(async_loader, {job});
+}
+
+void DatabaseMaterializedMySQL::waitDatabaseStarted() const
+{
+    assert(startup_mysql_database_task);
+    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_mysql_database_task);
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
@@ -169,6 +174,7 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
+    waitDatabaseStarted();
     materialize_thread.stopSynchronization();
     started_up = false;
 }

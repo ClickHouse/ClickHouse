@@ -198,6 +198,12 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
+    /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
+    virtual void waitTableStarted(const String & /*name*/) const {}
+
+    /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
+    virtual void waitDatabaseStarted() const {}
+
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
 

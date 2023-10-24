@@ -224,38 +224,45 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     LoadJobSet startup_after,
     LoadingStrictnessLevel /*mode*/)
 {
-    std::scoped_lock lock(mutex);
     // NOTE: this task is empty, but it is required for correct dependency handling (startup should be done after tables loading)
     auto job = makeLoadJob(
         std::move(startup_after),
         AsyncLoaderPoolId::BackgroundStartup,
         fmt::format("startup Ordinary database {}", database_name));
-    return makeLoadTask(async_loader, {job});
+    return startup_database_task = makeLoadTask(async_loader, {job});
+}
+
+void DatabaseOrdinary::waitTableStarted(const String & name) const
+{
+    /// Prioritize jobs (load and startup the table) to be executed in foreground pool and wait for them synchronously
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        if (auto it = startup_table.find(name); it != startup_table.end())
+            task = it->second;
+    }
+
+    if (task)
+        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), task);
+}
+
+void DatabaseOrdinary::waitDatabaseStarted() const
+{
+    /// Prioritize load and startup of all tables and database itself and wait for them synchronously
+    assert(startup_database_task);
+    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_database_task);
 }
 
 // TODO(serxa): implement
 // DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 // }
 
-StoragePtr DatabaseOrdinary::tryGetTable(const String & name, ContextPtr local_context) const
-{
-    const LoadTaskPtr * startup_task = nullptr;
-    {
-        std::scoped_lock lock(mutex);
-        if (auto it = startup_table.find(name); it != startup_table.end())
-            startup_task = &it->second;
-    }
-
-    // Prioritize jobs (load and startup the table) to be executed in foreground pool and wait for them synchronously
-    if (startup_task)
-        waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), *startup_task);
-
-    return DatabaseOnDisk::tryGetTable(name, local_context);
-}
-
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
+    waitDatabaseStarted();
+
     String table_name = table_id.table_name;
+
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";

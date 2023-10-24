@@ -1657,6 +1657,7 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
+    LoadTasksPtrs load_metadata_tasks;
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -1684,9 +1685,9 @@ try
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
         /// Then, load remaining databases (some of them maybe be loaded asynchronously)
-        auto load_metadata = loadMetadata(global_context, default_database, server_settings.async_load_databases);
+        load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
         /// If we need to convert database engines, disable async tables loading
-        convertDatabasesEnginesIfNeed(load_metadata, global_context);
+        convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
         database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1851,8 +1852,13 @@ try
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
+                                         load_metadata_tasks);
         }
+
+        /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
+        load_metadata_tasks.clear();
+        load_metadata_tasks.shrink_to_fit();
 
         {
             std::lock_guard lock(servers_lock);

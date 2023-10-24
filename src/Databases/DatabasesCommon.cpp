@@ -199,6 +199,7 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
+    waitTableStarted(table_name);
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())

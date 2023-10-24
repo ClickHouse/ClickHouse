@@ -75,6 +75,7 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
+    waitDatabaseStarted();
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
@@ -90,6 +91,7 @@ void DatabaseAtomic::drop(ContextPtr)
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
+    waitDatabaseStarted();
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
@@ -102,6 +104,7 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    waitDatabaseStarted();
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
     auto table = DatabaseOrdinary::detachTableUnlocked(name);
@@ -113,9 +116,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    // To DROP tables we need the database to be started up (including all the tables)
-    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), getStartupTask());
-
+    waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
     /// (due to attempt to execute DROP from the worker thread)
@@ -125,12 +126,6 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(table_name));
 
     dropTableImpl(local_context, table_name, sync);
-}
-
-LoadTaskPtr DatabaseAtomic::getStartupTask()
-{
-    std::scoped_lock lock(mutex);
-    return startup_atomic_database_task;
 }
 
 void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & table_name, bool sync)
@@ -184,6 +179,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     if (exchange && !supportsAtomicRename())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
+
+    waitDatabaseStarted();
 
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
@@ -454,7 +451,6 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
     auto base = DatabaseOrdinary::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
-    std::scoped_lock lock{mutex};
     auto job = makeLoadJob(
         base->goals(),
         AsyncLoaderPoolId::BackgroundStartup,
@@ -465,7 +461,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
                 return;
             NameToPathMap table_names;
             {
-                std::lock_guard lock2{mutex};
+                std::lock_guard lock{mutex};
                 table_names = table_name_to_path;
             }
 
@@ -474,6 +470,12 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
                 tryCreateSymlink(table.first, table.second, true);
         });
     return startup_atomic_database_task = makeLoadTask(async_loader, {job});
+}
+
+void DatabaseAtomic::waitDatabaseStarted() const
+{
+    assert(startup_atomic_database_task);
+    waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_atomic_database_task);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)
@@ -542,6 +544,8 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
+
+    waitDatabaseStarted();
 
     bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;

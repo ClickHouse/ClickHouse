@@ -315,6 +315,7 @@ struct ContextSharedPart : boost::noncopyable
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
+    std::atomic<LoadTaskPtr> ddl_worker_startup_task;       /// To postpone `ddl_worker->startup()` after all tables startup
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage disk chooser for MergeTree engines
@@ -2935,17 +2936,36 @@ bool Context::hasDistributedDDL() const
     return getConfigRef().has("distributed_ddl");
 }
 
-void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
+void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTaskPtrs & startup_after)
 {
     auto lock = getGlobalLock();
     if (shared->ddl_worker)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DDL background thread has already been initialized");
-    ddl_worker->startup();
+
     shared->ddl_worker = std::move(ddl_worker);
+
+    auto job = makeLoadJob(
+        getGoals(startup_after),
+        AsyncLoaderPoolId::BackgroundStartup,
+        "startup ddl worker",
+        [this] (AsyncLoader &, const LoadJobPtr &)
+        {
+            auto lock2 = getGlobalSharedLock();
+            shared->ddl_worker->startup();
+        });
+
+    shared->ddl_worker_startup_task = makeLoadTask(getAsyncLoader(), {job});
 }
 
 DDLWorker & Context::getDDLWorker() const
 {
+    // We have to ensure that DDL worker will not interfere with async loading of tables.
+    // For example to prevent creation of a table that already exists, but has not been yet loaded.
+    // So we have to wait for all tables to be loaded before starting up DDL worker.
+    // NOTE: Possible improvement: above requirement can be loosen by waiting for specific tables to load.
+    if (shared->ddl_worker_startup_task)
+        waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
+
     auto lock = getGlobalSharedLock();
     if (!shared->ddl_worker)
     {
