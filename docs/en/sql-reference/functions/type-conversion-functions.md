@@ -1987,7 +1987,7 @@ Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as
 **Syntax**
 
 ``` sql
-snowflakeToDateTime(value [, time_zone])
+snowflakeToDateTime(value[, time_zone])
 ```
 
 **Parameters**
@@ -2023,7 +2023,7 @@ Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as
 **Syntax**
 
 ``` sql
-snowflakeToDateTime64(value [, time_zone])
+snowflakeToDateTime64(value[, time_zone])
 ```
 
 **Parameters**
@@ -2033,7 +2033,7 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Returned value**
 
-- Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
+- Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type with millisecond precision (scale = 3).
 
 **Example**
 
