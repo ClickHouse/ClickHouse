@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserQuery.h>
@@ -36,13 +37,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return arguments[0];
+        FunctionArgumentDescriptors mandatory_args{{"query", &isString<IDataType>, nullptr, "String"}};
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args);
+        return arguments[0].type;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
