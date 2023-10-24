@@ -40,7 +40,8 @@ Cost Group::getSatisfyBestCost(const PhysicalProperties & required_properties) c
     return std::numeric_limits<Float64>::max();
 }
 
-std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const
+std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>>
+Group::getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const
 {
     auto min_cost = Cost::infinite();
 
@@ -65,12 +66,14 @@ std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> Group::getSat
     return {res};
 }
 
-void Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost)
+bool Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost)
 {
     if (!prop_to_best_node.contains(properties) || cost < prop_to_best_node[properties].cost)
     {
         prop_to_best_node[properties] = {group_node, cost};
+        return true;
     }
+    return false;
 }
 
 Cost Group::getCostByProp(const PhysicalProperties & properties)
@@ -78,12 +81,10 @@ Cost Group::getCostByProp(const PhysicalProperties & properties)
     return prop_to_best_node[properties].cost;
 }
 
-
 UInt32 Group::getId() const
 {
     return id;
 }
-
 
 void Group::setStatistics(Statistics & statistics_)
 {
@@ -95,14 +96,24 @@ const Statistics & Group::getStatistics() const
     return statistics;
 }
 
-void Group::setDeriveStat()
+void Group::setStatsDerived()
 {
-    is_derive_stat = true;
+    stats_derived = true;
 }
 
-bool Group::isDeriveStat() const
+bool Group::hasStatsDerived() const
 {
-    return is_derive_stat;
+    return stats_derived;
+}
+
+String Group::getDescription() const
+{
+    String res = "Group ";
+    res += std::to_string(getId());
+
+    if (!group_nodes.empty())
+        res += " with first node: { " + group_nodes.front()->getDescription() + "}";
+    return res;
 }
 
 String Group::toString() const
@@ -119,7 +130,8 @@ String Group::toString() const
     String prop_map;
     for(const auto & [prop, cost_group_node] : prop_to_best_node)
     {
-        prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost.get()) + "，" + std::to_string(cost_group_node.group_node->getId()) + ")}, ";
+        prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost.get()) + ", "
+            + std::to_string(cost_group_node.group_node->getId()) + ")}, ";
     }
 
     res += "prop_to_best_node: " + prop_map;

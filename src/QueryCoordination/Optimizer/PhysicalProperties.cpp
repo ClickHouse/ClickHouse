@@ -50,7 +50,7 @@ bool PhysicalProperties::satisfy(const PhysicalProperties & required) const
 
 String PhysicalProperties::toString() const
 {
-    return "distribution type: " + distributionType(distribution.type);
+    return distributionType(distribution.type);
 }
 
 }

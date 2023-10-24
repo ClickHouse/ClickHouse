@@ -21,8 +21,7 @@ public:
             alternative_child_prop = node->accept(visitor);
         }
 
-        /// New alternative sub problem, for example as to join,
-        /// there are 2 sub problem broadcast join and shuffle join.
+        /// Whether it is turn to visit new alternative sub problem.
         bool newAlternativeCalc() const
         {
             return pre_child_idx == -1 && child_idx == 0;
@@ -32,11 +31,14 @@ public:
         {
             pre_child_idx = -1;
             child_idx = 0;
-            local_cost = 0;
-            total_cost = 0;
+            local_cost.reset();
+            total_cost.reset();
             actual_children_prop.clear();
         }
 
+        /// Alternative children properties, actually they are child problems, for example as to join,
+        /// there are 2 child problems broadcast join and shuffle join.
+        /// For leaf node of query plan, alternative_child_prop has one element which has no child property.
         AlternativeChildrenProp alternative_child_prop;
         Int32 prop_idx{0};
 
@@ -66,6 +68,8 @@ private:
 
     GroupNodePtr group_node;
     std::unique_ptr<Frame> frame;
+
+    Poco::Logger * log;
 };
 
 }

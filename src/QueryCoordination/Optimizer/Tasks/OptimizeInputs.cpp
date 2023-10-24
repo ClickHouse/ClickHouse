@@ -12,7 +12,7 @@ namespace DB
 {
 
 OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_)
-    : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
+    : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_)), log(&Poco::Logger::get("OptimizeInputs"))
 {
 }
 
@@ -50,7 +50,7 @@ void OptimizeInputs::execute()
         }
 
         const auto & child_groups = group_node->getChildren();
-        for (; frame->child_idx < static_cast<Int32>(group_node->getChildren().size()); ++frame->child_idx)
+        for (; frame->child_idx < static_cast<Int32>(child_groups.size()); ++frame->child_idx)
         {
             auto required_child_prop = required_child_props[frame->child_idx];
             auto & child_group = *child_groups[frame->child_idx];
@@ -81,14 +81,40 @@ void OptimizeInputs::execute()
         /// all child problem has solution
         if (frame->child_idx == static_cast<Int32>(group_node->getChildren().size()))
         {
-            /// derivation output prop by required_prop and children_prop
+            /// derive output prop by required_prop and children_prop
             DeriveOutputProp output_prop_visitor(group_node, required_prop, frame->actual_children_prop, task_context->getQueryContext());
             auto output_prop = group_node->accept(output_prop_visitor);
 
             auto child_cost = frame->total_cost - frame->local_cost;
-            group_node->updateBestChild(output_prop, frame->actual_children_prop, child_cost);
 
-            group.updatePropBestNode(output_prop, group_node->shared_from_this(), frame->total_cost);
+            if (group_node->updateBestChild(output_prop, frame->actual_children_prop, child_cost))
+            {
+                String children_prop_desc = "[";
+                for (auto & actual_child_prop : frame->actual_children_prop)
+                    children_prop_desc += actual_child_prop.toString() + ", ";
+                if (frame->actual_children_prop.empty())
+                    children_prop_desc += "]";
+                else
+                    children_prop_desc[children_prop_desc.size() - 1] = ']';
+                LOG_DEBUG(
+                    log,
+                    "GroupNode {} update best for property {} to {}, cost: {}",
+                    group_node->getDescription(),
+                    output_prop.toString(),
+                    children_prop_desc,
+                    child_cost.toString());
+            }
+
+            if (group.updatePropBestNode(output_prop, group_node, frame->total_cost))
+            {
+                LOG_DEBUG(
+                    log,
+                    "{} update best for property {} to {}, total cost: {}",
+                    group.getDescription(),
+                    output_prop.toString(),
+                    group_node->getDescription(),
+                    frame->total_cost.toString());
+            }
 
             if (!output_prop.satisfy(required_prop))
             {

@@ -6,7 +6,7 @@ namespace DB
 
 GroupNode::GroupNode(
     QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_)
-    : step(step_), id(0), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), is_derived_stat(false)
+    : step(step_), id(0), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), stats_derived(false)
 {
 }
 
@@ -43,12 +43,14 @@ void GroupNode::setGroup(Group * group_)
     group = group_;
 }
 
-void GroupNode::updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost)
+bool GroupNode::updateBestChild(const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost)
 {
     if (!prop_to_best_child.contains(physical_properties) || child_cost < prop_to_best_child[physical_properties].cost)
     {
         prop_to_best_child[physical_properties] = {child_properties, child_cost};
+        return true;
     }
+    return false;
 }
 
 const std::vector<PhysicalProperties> & GroupNode::getChildrenProp(const PhysicalProperties & physical_properties)
@@ -86,14 +88,22 @@ void GroupNode::setId(UInt32 id_)
     id = id_;
 }
 
-void GroupNode::setDerivedStat()
+void GroupNode::setStatsDerived()
 {
-    is_derived_stat = true;
+    stats_derived = true;
 }
 
-bool GroupNode::isDerivedStat() const
+bool GroupNode::hasStatsDerived() const
 {
-    return is_derived_stat;
+    return stats_derived;
+}
+
+String GroupNode::getDescription() const
+{
+    String res;
+    res += "node " + std::to_string(getId()) + "(";
+    res += step->getName() + ")";
+    return res;
 }
 
 String GroupNode::toString() const

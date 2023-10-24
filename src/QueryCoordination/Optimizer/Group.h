@@ -18,40 +18,36 @@ public:
     };
 
     Group() = default;
-
     Group(UInt32 id_);
+    Group(Group &&) noexcept = default;
 
     ~Group() = default;
-    Group(Group &&) noexcept = default;
     Group & operator=(Group &&) noexcept = default;
 
     void addGroupNode(GroupNodePtr group_node, UInt32 group_node_id);
-
     GroupNodePtr getOneGroupNode();
 
     const std::list<GroupNodePtr> & getGroupNodes() const;
-
     std::list<GroupNodePtr> & getGroupNodes();
 
-    void updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
+    bool updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
 
     Cost getCostByProp(const PhysicalProperties & properties);
-
-    std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>> getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
-
     Cost getSatisfyBestCost(const PhysicalProperties & required_properties) const;
+
+    std::optional<std::pair<PhysicalProperties, Group::GroupNodeCost>>
+    getSatisfyBestGroupNode(const PhysicalProperties & required_properties) const;
 
     UInt32 getId() const;
 
     String toString() const;
+    String getDescription() const;
 
     void setStatistics(Statistics & statistics_);
-
     const Statistics & getStatistics() const;
 
-    void setDeriveStat();
-
-    bool isDeriveStat() const;
+    void setStatsDerived();
+    bool hasStatsDerived() const;
 
 private:
     UInt32 id = 0;
@@ -63,7 +59,7 @@ private:
 
     Statistics statistics;
 
-    bool is_derive_stat = false;
+    bool stats_derived = false;
 };
 
 }

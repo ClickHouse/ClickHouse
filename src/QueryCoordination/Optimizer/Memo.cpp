@@ -111,6 +111,8 @@ StepTree Memo::extractPlan()
 StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_prop)
 {
     const auto & prop_group_node = group.getSatisfyBestGroupNode(required_prop);
+    chassert(prop_group_node.has_value());
+
     auto & group_node = *prop_group_node->second.group_node;
     LOG_DEBUG(log, "Best node: group id {}, {}, required_prop {}", group.getId(), group_node.getStep()->getName(), required_prop.toString());
 

@@ -40,6 +40,7 @@ public:
     bool operator>=(const Cost & other) const;
 
     String toString();
+    void reset();
 
 private:
     Float64 cpu_cost;

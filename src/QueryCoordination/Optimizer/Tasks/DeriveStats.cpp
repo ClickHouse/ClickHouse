@@ -16,7 +16,7 @@ DeriveStats::DeriveStats(GroupNodePtr group_node_, bool need_derive_child_, Task
 
 void DeriveStats::execute()
 {
-    if (group_node->isDerivedStat())
+    if (group_node->hasStatsDerived())
         return;
 
     if (need_derive_child)
@@ -29,7 +29,7 @@ void DeriveStats::execute()
             TaskContextPtr child_task_context = std::make_shared<TaskContext>(*child_group, any_prop, task_context->getOptimizeContext());
             for (auto & child_node : child_group->getGroupNodes())
             {
-                if (child_node->isDerivedStat() || child_node->isEnforceNode())
+                if (child_node->hasStatsDerived() || child_node->isEnforceNode())
                     continue;
 
                 pushTask(std::make_unique<DeriveStats>(child_node, true, child_task_context));
@@ -54,7 +54,7 @@ void DeriveStats::deriveStats()
     DeriveStatistics visitor(child_statistics, getQueryContext());
     Statistics stat = group_node->accept(visitor);
 
-    group_node->setDerivedStat();
+    group_node->setStatsDerived();
 
     /// TODO update group statistics
     task_context->getCurrentGroup().setStatistics(stat);

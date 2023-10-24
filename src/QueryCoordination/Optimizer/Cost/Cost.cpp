@@ -84,9 +84,9 @@ Cost& Cost::operator-=(const Cost & other)
     this->mem_cost -= other.mem_cost;
     this->net_cost -= other.net_cost;
 
-    this->cpu_cost = std::max(0.0, other.cpu_cost);
-    this->mem_cost = std::max(0.0, other.mem_cost);
-    this->net_cost = std::max(0.0, other.net_cost);
+    this->cpu_cost = std::max(0.0, cpu_cost);
+    this->mem_cost = std::max(0.0, mem_cost);
+    this->net_cost = std::max(0.0, net_cost);
 
     return *this;
 }
@@ -111,9 +111,16 @@ bool Cost::operator>=(const Cost & other) const
     return this->get() >= other.get();
 }
 
+void Cost::reset()
+{
+    cpu_cost = 0;
+    mem_cost = 0;
+    net_cost = 0;
+}
+
 String Cost::toString()
 {
-    return fmt::format("[cpu_cost: {}, mem_cost: {}, net_cost: {}]", cpu_cost, mem_cost, net_cost);
+    return fmt::format("({:.2f}, {:.2f}, {:.2f})", cpu_cost, mem_cost, net_cost);
 }
 
 }
