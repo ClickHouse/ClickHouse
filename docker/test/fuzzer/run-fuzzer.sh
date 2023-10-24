@@ -1,6 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031,SC2010,SC2015
 
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 set -x
 
 # core.COMM.PID-TID
@@ -15,7 +17,7 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-16_debug_none_unsplitted_disable_False_binary"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-17_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function git_clone_with_retry
@@ -123,22 +125,7 @@ EOL
 </clickhouse>
 EOL
 
-    # Setup a cluster for logs export to ClickHouse Cloud
-    # Note: these variables are provided to the Docker run command by the Python script in tests/ci
-    if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-    then
-        echo "
-remote_servers:
-    system_logs_export:
-        shard:
-            replica:
-                secure: 1
-                user: ci
-                host: '${CLICKHOUSE_CI_LOGS_HOST}'
-                port: 9440
-                password: '${CLICKHOUSE_CI_LOGS_PASSWORD}'
-" > db/config.d/system_logs_export.yaml
-    fi
+    config_logs_export_cluster db/config.d/system_logs_export.yaml
 }
 
 function filter_exists_and_template
@@ -242,20 +229,7 @@ quit
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
     echo 'Server started and responded'
 
-    # Initialize export of system logs to ClickHouse Cloud
-    if [ -n "${CLICKHOUSE_CI_LOGS_HOST}" ]
-    then
-        export EXTRA_COLUMNS_EXPRESSION="$PR_TO_TEST AS pull_request_number, '$SHA_TO_TEST' AS commit_sha, '$CHECK_START_TIME' AS check_start_time, '$CHECK_NAME' AS check_name, '$INSTANCE_TYPE' AS instance_type"
-        # TODO: Check if the password will appear in the logs.
-        export CONNECTION_PARAMETERS="--secure --user ci --host ${CLICKHOUSE_CI_LOGS_HOST} --password ${CLICKHOUSE_CI_LOGS_PASSWORD}"
-
-        /setup_export_logs.sh
-
-        # Unset variables after use
-        export CONNECTION_PARAMETERS=''
-        export CLICKHOUSE_CI_LOGS_HOST=''
-        export CLICKHOUSE_CI_LOGS_PASSWORD=''
-    fi
+    setup_logs_replication
 
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
@@ -363,8 +337,8 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg --text -o "Found error:.*" fuzzer.log \
-            || rg --text -ao "Exception:.*" fuzzer.log \
+        { rg -ao "Found error:.*" fuzzer.log \
+            || rg -ao "Exception:.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

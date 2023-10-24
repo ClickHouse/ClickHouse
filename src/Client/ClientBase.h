@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include "Common/NamePrompter.h"
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
@@ -24,6 +25,7 @@ namespace po = boost::program_options;
 namespace DB
 {
 
+static constexpr std::string_view DEFAULT_CLIENT_NAME = "client";
 
 static const NameSet exit_strings
 {
@@ -56,12 +58,10 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
+class ClientBase : public Poco::Util::Application, public IHints<2>
 {
 
 public:
@@ -182,6 +182,9 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
     void initTtyBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
@@ -200,6 +203,7 @@ protected:
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
+    std::vector<String> queries; /// Queries passed via '--query'
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
     std::vector<String> cmd_options;
@@ -208,6 +212,8 @@ protected:
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
+
+    String pager;
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
@@ -268,6 +274,21 @@ protected:
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
     bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
+
+    enum class PartialResultMode: UInt8
+    {
+        /// Query doesn't show partial result before the first block with 0 rows.
+        /// The first block with 0 rows initializes the output table format using its header.
+        NotInit,
+
+        /// Query shows partial result after the first and before the second block with 0 rows.
+        /// The second block with 0 rows indicates that that receiving blocks with partial result has been completed and next blocks will be with the full result.
+        Active,
+
+        /// Query doesn't show partial result at all.
+        Inactive,
+    };
+    PartialResultMode partial_result_mode = PartialResultMode::Inactive;
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the

@@ -91,7 +91,7 @@ using IndexSize = ColumnSize;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<>
 {
 public:
     IStorage() = delete;
@@ -254,7 +254,8 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
-    /// Return true if the trivial count query could be optimized without reading the data at all.
+    /// Return true if the trivial count query could be optimized without reading the data at all
+    /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
     virtual bool supportsTrivialCountOptimization() const { return false; }
 
 private:
@@ -494,7 +495,11 @@ public:
         ContextPtr /* context */);
 
     /// Checks that partition commands can be applied to storage.
-    virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
+    virtual void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr context) const;
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
@@ -601,7 +606,7 @@ public:
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
-    virtual void checkTableCanBeDropped() const {}
+    virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
@@ -618,8 +623,6 @@ public:
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
     virtual bool isStaticStorage() const;
-
-    virtual bool supportsSubsetOfColumns() const { return false; }
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

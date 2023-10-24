@@ -11,21 +11,21 @@ The `system.part_log` table contains the following columns:
 
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the `INSERT` query that created this data part.
 - `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event that occurred with the data part. Can have one of the following values:
-    - `NEW_PART` — Inserting of a new data part.
-    - `MERGE_PARTS` — Merging of data parts.
-    - `DOWNLOAD_PART` — Downloading a data part.
-    - `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
-    - `MUTATE_PART` — Mutating of a data part.
-    - `MOVE_PART` — Moving the data part from the one disk to another one.
+    - `NewPart` — Inserting of a new data part.
+    - `MergeParts` — Merging of data parts.
+    - `DownloadParts` — Downloading a data part.
+    - `RemovePart` — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
+    - `MutatePart` — Mutating of a data part.
+    - `MovePart` — Moving the data part from the one disk to another one.
 - `merge_reason` ([Enum8](../../sql-reference/data-types/enum.md)) — The reason for the event with type `MERGE_PARTS`. Can have one of the following values:
-    - `NOT_A_MERGE` — The current event has the type other than `MERGE_PARTS`.
-    - `REGULAR_MERGE` — Some regular merge.
-    - `TTL_DELETE_MERGE` — Cleaning up expired data.
-    - `TTL_RECOMPRESS_MERGE` — Recompressing data part with the.
+    - `NotAMerge` — The current event has the type other than `MERGE_PARTS`.
+    - `RegularMerge` — Some regular merge.
+    - `TTLDeleteMerge` — Cleaning up expired data.
+    - `TTLRecompressMerge` — Recompressing data part with the.
 - `merge_algorithm` ([Enum8](../../sql-reference/data-types/enum.md)) — Merge algorithm for the event with type `MERGE_PARTS`. Can have one of the following values:
-    - `UNDECIDED`
-    - `HORIZONTAL`
-    - `VERTICAL`
+    - `Undecided`
+    - `Horizontal`
+    - `Vertical`
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds precision.

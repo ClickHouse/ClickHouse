@@ -5,6 +5,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
+from helpers.test_tools import assert_eq_with_retry
 
 
 @pytest.fixture(scope="module")
@@ -18,6 +19,18 @@ def cluster():
             ],
             user_configs=[
                 "configs/setting.xml",
+                "configs/s3_retries.xml",
+            ],
+            with_minio=True,
+        )
+        cluster.add_instance(
+            "node_with_inf_s3_retries",
+            main_configs=[
+                "configs/storage_conf.xml",
+            ],
+            user_configs=[
+                "configs/setting.xml",
+                "configs/inf_s3_retries.xml",
             ],
             with_minio=True,
         )
@@ -464,3 +477,59 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         "DB::Exception: Poco::Exception. Code: 1000, e.code() = 32, I/O error: Broken pipe"
         in error
     ), error
+
+
+def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
+    node = cluster.instances["node_with_inf_s3_retries"]
+
+    broken_s3.setup_at_part_upload(
+        count=10000000,
+        after=2,
+        action="connection_refused",
+    )
+
+    insert_query_id = f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES"
+    request = node.get_query_request(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_query_is_canceled_with_inf_retries',
+                'minio', 'minio123',
+                'CSV', auto, 'none'
+            )
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 1000000
+        SETTINGS
+            s3_max_single_part_upload_size=100,
+            s3_min_upload_part_size=10000,
+            s3_check_objects_after_upload=0
+        """,
+        query_id=insert_query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{insert_query_id}'",
+        "1",
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT ProfileEvents['S3WriteRequestsErrors'] > 10 FROM system.processes WHERE query_id='{insert_query_id}'",
+        "1",
+        retry_count=12,
+        sleep_time=10,
+    )
+
+    node.query(f"KILL QUERY WHERE query_id = '{insert_query_id}' ASYNC")
+
+    # no more than 2 minutes
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{insert_query_id}'",
+        "0",
+        retry_count=120,
+        sleep_time=1,
+    )

@@ -87,7 +87,7 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
         return;
 
     Settings settings;
-    for (auto setting : settings.all())
+    for (const auto & setting : settings.all())
     {
         const auto & name = setting.getName();
         if (config.has(name) && !setting.isObsolete())
@@ -158,6 +158,6 @@ void Settings::applyCompatibilitySetting(const String & compatibility_value)
     }
 }
 
-IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, LIST_OF_ALL_FORMAT_SETTINGS)
 
 }

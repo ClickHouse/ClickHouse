@@ -46,7 +46,7 @@ void MultipleAccessStorage::setStorages(const std::vector<StoragePtr> & storages
 {
     std::lock_guard lock{mutex};
     nested_storages = std::make_shared<const Storages>(storages);
-    ids_cache.reset();
+    ids_cache.clear();
 }
 
 void MultipleAccessStorage::addStorage(const StoragePtr & new_storage)
@@ -69,7 +69,7 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     auto new_storages = std::make_shared<Storages>(*nested_storages);
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
-    ids_cache.reset();
+    ids_cache.clear();
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -415,7 +415,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-std::optional<UUID>
+std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
                                         bool throw_if_user_not_exists,
@@ -426,14 +426,14 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto id = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
-        if (id)
+        if (auth_result)
         {
             std::lock_guard lock{mutex};
-            ids_cache.set(*id, storage);
-            return id;
+            ids_cache.set(auth_result->user_id, storage);
+            return auth_result;
         }
     }
 

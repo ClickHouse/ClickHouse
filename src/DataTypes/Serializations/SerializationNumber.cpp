@@ -1,14 +1,14 @@
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <Columns/ColumnVector.h>
+
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVector.h>
+#include <Core/Field.h>
+#include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Core/Field.h>
+#include <Common/typeid_cast.h>
 
 #include <ranges>
 
@@ -144,17 +144,8 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
         return;
 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-    {
-        static constexpr auto to_little_endian = [](auto i)
-        {
-            transformEndianness<std::endian::little>(i);
-            return i;
-        };
-
-        std::ranges::for_each(
-            x | std::views::drop(offset) | std::views::take(limit) | std::views::transform(to_little_endian),
-            [&ostr](const auto & i) { ostr.write(reinterpret_cast<const char *>(&i), sizeof(typename ColumnVector<T>::ValueType)); });
-    }
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(x[i], ostr);
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
 }
@@ -169,7 +160,8 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::ValueType));
 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
-        std::ranges::for_each(x | std::views::drop(initial_size), [](auto & i) { transformEndianness<std::endian::big, std::endian::little>(i); });
+        for (size_t i = initial_size; i < x.size(); ++i)
+            transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
 template class SerializationNumber<UInt8>;
