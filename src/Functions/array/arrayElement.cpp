@@ -193,7 +193,11 @@ struct ArrayElementNumImpl
 
             if (index < array_size)
             {
-                size_t j = !negative ? (current_offset + index) : (offsets[i] - index - 1);
+                size_t j;
+                if constexpr (negative)
+                    j = offsets[i] - index - 1;
+                else
+                    j = current_offset + index;
                 result[i] = data[j];
                 if (builder)
                     builder.update(j);
@@ -258,7 +262,7 @@ struct ArrayElementNumImpl
 
 struct ArrayElementStringImpl
 {
-    template <bool negative>
+    template <bool negative, bool used_builder>
     static void vectorConst(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const ColumnArray::Offset index,
@@ -270,18 +274,27 @@ struct ArrayElementStringImpl
         result_data.reserve(data.size());
 
         ColumnArray::Offset current_offset = 0;
-        ColumnArray::Offset current_result_offset = 0;
+        /// get the total result bytes at first, and reduce the cost of result_data.resize.
+        size_t total_result_byts = 0;
+        std::vector<std::pair<UInt64, Int64>> selected_offsets;
+        selected_offsets.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
 
             if (index < array_size)
             {
-                size_t adjusted_index = !negative ? index : (array_size - index - 1);
+                size_t adjusted_index;
+                if constexpr (negative)
+                    adjusted_index = array_size - index - 1;
+                else
+                     adjusted_index = index;
 
-                size_t j = current_offset + adjusted_index;
-                if (builder)
+                if constexpr (used_builder)
+                {
+                    size_t j = current_offset + adjusted_index;
                     builder.update(j);
+                }
 
                 ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
@@ -289,30 +302,44 @@ struct ArrayElementStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
-                result_data.resize(current_result_offset + string_size);
-                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
-                current_result_offset += string_size;
-                result_offsets[i] = current_result_offset;
+                total_result_byts += string_size;
+                selected_offsets.emplace_back(string_pos, string_size);
+                result_offsets[i] = total_result_byts;
             }
             else
             {
                 /// Insert an empty row.
-                result_data.resize(current_result_offset + 1);
-                result_data[current_result_offset] = 0;
-                current_result_offset += 1;
-                result_offsets[i] = current_result_offset;
+                total_result_byts += 1;
+                selected_offsets.emplace_back(0, -1);
+                result_offsets[i] = total_result_byts;
 
-                if (builder)
+                if constexpr (used_builder)
                     builder.update();
             }
 
             current_offset = offsets[i];
         }
+
+        ColumnArray::Offset current_result_offset = 0;
+        result_data.resize(total_result_byts);
+        for (const auto & offset : selected_offsets)
+        {
+            if (offset.second == -1)
+            {
+                result_data[current_result_offset] = 0;
+                current_result_offset += 1;
+            }
+            else
+            {
+                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[offset.first], offset.second);
+                current_result_offset += offset.second;
+            }
+        }
     }
 
     /** Implementation for non-constant index.
       */
-    template <typename TIndex>
+    template <typename TIndex, bool used_builder>
     static void vector(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const PaddedPODArray<TIndex> & indices,
@@ -324,7 +351,10 @@ struct ArrayElementStringImpl
         result_data.reserve(data.size());
 
         ColumnArray::Offset current_offset = 0;
-        ColumnArray::Offset current_result_offset = 0;
+        /// get the total result bytes at first, and reduce the cost of result_data.resize.
+        size_t total_result_byts = 0;
+        std::vector<std::pair<UInt64, Int64>> selected_offsets;
+        selected_offsets.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
@@ -340,34 +370,50 @@ struct ArrayElementStringImpl
 
             if (adjusted_index < array_size)
             {
-                size_t j = current_offset + adjusted_index;
-                if (builder)
+                if constexpr (used_builder)
+                {
+                    size_t j = current_offset + adjusted_index;
                     builder.update(j);
+                }
 
                 ColumnArray::Offset string_pos = current_offset == 0 && adjusted_index == 0
                     ? 0
                     : string_offsets[current_offset + adjusted_index - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
+                total_result_byts += string_size;
+                selected_offsets.emplace_back(string_pos, string_size);
 
-                result_data.resize(current_result_offset + string_size);
-                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[string_pos], string_size);
-                current_result_offset += string_size;
-                result_offsets[i] = current_result_offset;
+                result_offsets[i] = total_result_byts;
             }
             else
             {
                 /// Insert empty string
-                result_data.resize(current_result_offset + 1);
-                result_data[current_result_offset] = 0;
-                current_result_offset += 1;
-                result_offsets[i] = current_result_offset;
+                total_result_byts += 1;
+                selected_offsets.emplace_back(0, -1);
+                result_offsets[i] = total_result_byts;
 
-                if (builder)
+                if constexpr (used_builder)
                     builder.update();
             }
 
             current_offset = offsets[i];
+        }
+
+        ColumnArray::Offset current_result_offset = 0;
+        result_data.resize(total_result_byts);
+        for (const auto & offset : selected_offsets)
+        {
+            if (offset.second > 0)
+            {
+                memcpySmallAllowReadWriteOverflow15(&result_data[current_result_offset], &data[offset.first], offset.second);
+                current_result_offset += offset.second;
+            }
+            else
+            {
+                result_data[current_result_offset] = 0;
+                current_result_offset += 1;
+            }
         }
     }
 };
@@ -540,23 +586,47 @@ FunctionArrayElement::executeStringConst(const ColumnsWithTypeAndName & argument
 
     if (index.getType() == Field::Types::UInt64
         || (index.getType() == Field::Types::Int64 && index.get<Int64>() >= 0))
-        ArrayElementStringImpl::vectorConst<false>(
-            col_nested->getChars(),
-            col_array->getOffsets(),
-            col_nested->getOffsets(),
-            index.get<UInt64>() - 1,
-            col_res->getChars(),
-            col_res->getOffsets(),
-            builder);
+    {
+        if (builder)
+            ArrayElementStringImpl::vectorConst<false, true>(
+                col_nested->getChars(),
+                col_array->getOffsets(),
+                col_nested->getOffsets(),
+                index.get<UInt64>() - 1,
+                col_res->getChars(),
+                col_res->getOffsets(),
+                builder);
+        else
+            ArrayElementStringImpl::vectorConst<false, false>(
+                col_nested->getChars(),
+                col_array->getOffsets(),
+                col_nested->getOffsets(),
+                index.get<UInt64>() - 1,
+                col_res->getChars(),
+                col_res->getOffsets(),
+                builder);
+    }
     else if (index.getType() == Field::Types::Int64)
-        ArrayElementStringImpl::vectorConst<true>(
-            col_nested->getChars(),
-            col_array->getOffsets(),
-            col_nested->getOffsets(),
-            -(UInt64(index.get<Int64>()) + 1),
-            col_res->getChars(),
-            col_res->getOffsets(),
-            builder);
+    {
+        if (builder)
+            ArrayElementStringImpl::vectorConst<true, true>(
+                col_nested->getChars(),
+                col_array->getOffsets(),
+                col_nested->getOffsets(),
+                -(UInt64(index.get<Int64>()) + 1),
+                col_res->getChars(),
+                col_res->getOffsets(),
+                builder);
+        else
+            ArrayElementStringImpl::vectorConst<true, false>(
+                col_nested->getChars(),
+                col_array->getOffsets(),
+                col_nested->getOffsets(),
+                -(UInt64(index.get<Int64>()) + 1),
+                col_res->getChars(),
+                col_res->getOffsets(),
+                builder);
+    }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal type of array index");
 
@@ -578,14 +648,25 @@ ColumnPtr FunctionArrayElement::executeString(
         return nullptr;
 
     auto col_res = ColumnString::create();
-    ArrayElementStringImpl::vector<IndexType>(
-        col_nested->getChars(),
-        col_array->getOffsets(),
-        col_nested->getOffsets(),
-        indices,
-        col_res->getChars(),
-        col_res->getOffsets(),
-        builder);
+
+    if (builder)
+        ArrayElementStringImpl::vector<IndexType, true>(
+            col_nested->getChars(),
+            col_array->getOffsets(),
+            col_nested->getOffsets(),
+            indices,
+            col_res->getChars(),
+            col_res->getOffsets(),
+            builder);
+    else
+        ArrayElementStringImpl::vector<IndexType, false>(
+            col_nested->getChars(),
+            col_array->getOffsets(),
+            col_nested->getOffsets(),
+            indices,
+            col_res->getChars(),
+            col_res->getOffsets(),
+            builder);
 
     return col_res;
 }
