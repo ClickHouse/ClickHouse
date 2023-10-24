@@ -32,19 +32,20 @@ Expression ((Projection + Before ORDER BY))
 - Annoy: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.tab_annoy)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Skip
-            Name: idx
-            Description: annoy GRANULARITY 100000000
-            Parts: 1/1
-            Granules: 1/1
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromMergeTree (default.tab_annoy)
+          Indexes:
+            PrimaryKey
+              Condition: true
+              Parts: 1/1
+              Granules: 1/1
+            Skip
+              Name: idx
+              Description: annoy GRANULARITY 100000000
+              Parts: 1/1
+              Granules: 1/1
 - Usearch: WHERE-type, EXPLAIN
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
@@ -62,19 +63,20 @@ Expression ((Projection + Before ORDER BY))
 - Usearch: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.tab_usearch)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Skip
-            Name: idx
-            Description: usearch GRANULARITY 100000000
-            Parts: 1/1
-            Granules: 1/1
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromMergeTree (default.tab_usearch)
+          Indexes:
+            PrimaryKey
+              Condition: true
+              Parts: 1/1
+              Granules: 1/1
+            Skip
+              Name: idx
+              Description: usearch GRANULARITY 100000000
+              Parts: 1/1
+              Granules: 1/1
 ARRAY vectors, 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
 - Annoy: WHERE-type
 6	[0,2]	0
@@ -109,19 +111,20 @@ Expression ((Projection + Before ORDER BY))
 - Annoy: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.tab_annoy)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 1/1
-            Granules: 4/4
-          Skip
-            Name: idx
-            Description: annoy GRANULARITY 2
-            Parts: 1/1
-            Granules: 2/4
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromMergeTree (default.tab_annoy)
+          Indexes:
+            PrimaryKey
+              Condition: true
+              Parts: 1/1
+              Granules: 4/4
+            Skip
+              Name: idx
+              Description: annoy GRANULARITY 2
+              Parts: 1/1
+              Granules: 2/4
 - Usearch: WHERE-type, EXPLAIN
 Expression ((Projection + Before ORDER BY))
   Limit (preliminary LIMIT (without OFFSET))
@@ -139,19 +142,20 @@ Expression ((Projection + Before ORDER BY))
 - Usearch: ORDER-BY-type, EXPLAIN
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.tab_usearch)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 1/1
-            Granules: 4/4
-          Skip
-            Name: idx
-            Description: usearch GRANULARITY 2
-            Parts: 1/1
-            Granules: 2/4
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromMergeTree (default.tab_usearch)
+          Indexes:
+            PrimaryKey
+              Condition: true
+              Parts: 1/1
+              Granules: 4/4
+            Skip
+              Name: idx
+              Description: usearch GRANULARITY 2
+              Parts: 1/1
+              Granules: 2/4
 TUPLE vectors and special cases
 - Annoy: WHERE-type
 0	(4.6,2.3)	0.5527864045000421
@@ -175,22 +179,24 @@ TUPLE vectors and special cases
 - Special case: setting "max_limit_for_ann_queries"
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.tab_annoy)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 1/1
-            Granules: 4/4
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromMergeTree (default.tab_annoy)
+          Indexes:
+            PrimaryKey
+              Condition: true
+              Parts: 1/1
+              Granules: 4/4
 - Special case: setting "max_limit_for_ann_queries"
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
-        ReadFromMergeTree (default.tab_usearch)
-        Indexes:
-          PrimaryKey
-            Condition: true
-            Parts: 1/1
-            Granules: 4/4
+    LazilyRead (Lazily Read)
+      Sorting (Sorting for ORDER BY)
+        Expression (Before ORDER BY)
+          ReadFromMergeTree (default.tab_usearch)
+          Indexes:
+            PrimaryKey
+              Condition: true
+              Parts: 1/1
+              Granules: 4/4

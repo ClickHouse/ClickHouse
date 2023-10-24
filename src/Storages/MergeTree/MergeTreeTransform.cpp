@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeTransform.h>
-
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/ColumnLazy.h>
 #include "base/defines.h"
@@ -39,7 +40,7 @@ MergeTreeTransform::MergeTreeTransform(
     {
         if (isColumnLazy(*(it.column)))
         {
-            names_and_types_list.emplace_back((*alias_index_)[it.name], it.type);
+            requested_column_names.emplace_back((*alias_index_)[it.name]);
             alias_column_names.emplace_back(it.name);
         }
     }
@@ -47,9 +48,7 @@ MergeTreeTransform::MergeTreeTransform(
 
 void MergeTreeTransform::transform(Chunk & chunk)
 {
-    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-
-    const size_t columns_size = names_and_types_list.size();
+    const size_t columns_size = alias_column_names.size();
     const size_t rows_size = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
@@ -68,12 +67,11 @@ void MergeTreeTransform::transform(Chunk & chunk)
 
     MutableColumns lazily_read_columns;
     lazily_read_columns.resize(columns_size);
-    size_t column_idx = 0;
-    for (auto & iter : names_and_types_list)
+    for (size_t i = 0; i < alias_column_names.size(); ++i)
     {
-        lazily_read_columns[column_idx] = iter.type->createColumn();
-        lazily_read_columns[column_idx]->reserve(rows_size);
-        column_idx++;
+        const auto & alias_name = alias_column_names[i];
+        lazily_read_columns[i] = block.getByName(alias_name).type->createColumn();
+        lazily_read_columns[i]->reserve(rows_size);
     }
 
     for (size_t row_idx = 0; row_idx < rows_size; ++row_idx)
@@ -84,21 +82,36 @@ void MergeTreeTransform::transform(Chunk & chunk)
         AlterConversionsPtr alter_conversions = (*data_parts_info)[part_index].alter_conversions;
         MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
         MarkRanges mark_ranges{mark_range};
+
+        Names tmp_requested_column_names(requested_column_names.begin(), requested_column_names.end());
+        injectRequiredColumns(
+            LoadedMergeTreeDataPartInfoForReader(data_part, alter_conversions),
+            storage_snapshot,
+            storage.supportsSubcolumns(),
+            tmp_requested_column_names);
+
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
+            .withSystemColumns();
+        if (storage.supportsSubcolumns())
+            options.withSubcolumns();
+        NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);
+
         MergeTreeReaderPtr reader = data_part->getReader(
-            names_and_types_list, storage_snapshot, mark_ranges,
+            columns_for_reader, storage_snapshot, mark_ranges,
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
             storage.getContext()->getMarkCache().get(), alter_conversions,
             reader_settings, {}, {});
 
         Columns columns_to_read;
-        columns_to_read.resize(columns_size);
+        columns_to_read.resize(columns_for_reader.size());
         size_t current_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range.begin);
 
-        size_t rows_read = reader->readRows(mark_range.begin, mark_range.end, false, current_offset + 1, columns_to_read);
-        chassert(rows_read > current_offset);
+        reader->readRows(
+            mark_range.begin, mark_range.end, false, current_offset + 1, columns_to_read);
 
         bool should_evaluate_missing_defaults = false;
-        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
+        reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, current_offset + 1, data_part->info.min_block);
 
         if (should_evaluate_missing_defaults)
             reader->evaluateMissingDefaults({}, columns_to_read);
@@ -109,10 +122,10 @@ void MergeTreeTransform::transform(Chunk & chunk)
             lazily_read_columns[i]->insert((*columns_to_read[i])[current_offset]);
     }
 
-    column_idx = 0;
-    for (auto & alias_name : alias_column_names)
+    for (size_t i = 0; i < alias_column_names.size(); ++i)
     {
-        block.getByName(alias_name).column = std::move(lazily_read_columns[column_idx++]);
+        const auto & alias_name = alias_column_names[i];
+        block.getByName(alias_name).column = std::move(lazily_read_columns[i]);
     }
 
     chunk.setColumns(block.getColumns(), rows_size);

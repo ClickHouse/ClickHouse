@@ -30,7 +30,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     bool use_uncompressed_cache;
     DataPartsInfoPtr data_parts_info;
-    NamesAndTypesList names_and_types_list;
+    Names requested_column_names;
     Names alias_column_names;
 };
 
