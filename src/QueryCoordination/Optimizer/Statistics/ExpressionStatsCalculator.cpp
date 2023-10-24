@@ -133,6 +133,9 @@ ActionNodeStatistics ExpressionNodeVisitor::visitBinaryFunction(const ActionsDAG
 
 Statistics ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expressions, const Statistics & input)
 {
+    if (expressions->getNodes().empty()) /// Expression (Before GROUP BY) maybe empty
+        return input;
+
     auto & input_nodes = expressions->getInputs();
     ExpressionNodeVisitor::VisitContext context;
 

@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/Coordinator.h>
@@ -28,6 +30,14 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
+        // Only propagate WITH elements to subqueries if we're not a subquery
+        if (!options.is_subquery)
+        {
+            if (context->getSettingsRef().enable_global_with_statement)
+                ApplyWithAliasVisitor().visit(query_ptr);
+            ApplyWithSubqueryVisitor().visit(query_ptr);
+        }
+
         ReplaceDistributedTableNameVisitor visitor(context);
         visitor.visit(query_ptr);
 
