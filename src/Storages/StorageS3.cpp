@@ -498,7 +498,7 @@ size_t StorageS3Source::KeysIterator::estimatedKeysCount()
 
 StorageS3Source::ReadTaskIterator::ReadTaskIterator(
     const DB::ReadTaskCallback & callback_,
-    const size_t max_threads_count)
+    size_t max_threads_count)
     : callback(callback_)
 {
     ThreadPool pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, max_threads_count);
@@ -569,9 +569,17 @@ StorageS3Source::StorageS3Source(
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
+}
+
+void StorageS3Source::lazyInitialize()
+{
+    if (initialized)
+        return;
+
     reader = createReader();
     if (reader)
         reader_future = createReaderAsync();
+    initialized = true;
 }
 
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
@@ -736,6 +744,8 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
+    lazyInitialize();
+
     while (true)
     {
         if (isCancelled() || !reader)

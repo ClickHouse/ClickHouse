@@ -120,7 +120,7 @@ public:
     class ReadTaskIterator : public IIterator
     {
     public:
-        explicit ReadTaskIterator(const ReadTaskCallback & callback_, const size_t max_threads_count);
+        explicit ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
         KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
@@ -255,8 +255,13 @@ private:
     ThreadPool create_reader_pool;
     ThreadPoolCallbackRunner<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+    std::atomic<bool> initialized{false};
 
     size_t total_rows_in_file = 0;
+
+    /// Notice: we should initialize reader and future_reader lazily in generate to make sure key_condition
+    /// is set before createReader is invoked for key_condition is read in createReader.
+    void lazyInitialize();
 
     /// Recreate ReadBuffer and Pipeline for each file.
     ReaderHolder createReader();
