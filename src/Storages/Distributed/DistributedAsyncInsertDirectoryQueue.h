@@ -36,12 +36,10 @@ class ISource;
  * Later, in background, those files will be send to the remote nodes.
  *
  * The behaviour of this queue can be configured via the following settings:
- * - distributed_directory_monitor_batch_inserts
- * - distributed_directory_monitor_split_batch_on_failure
- * - distributed_directory_monitor_sleep_time_ms
- * - distributed_directory_monitor_max_sleep_time_ms
- * NOTE: It worth to rename the settings too
- * ("directory_monitor" in settings looks too internal).
+ * - distributed_async_insert_batch
+ * - distributed_async_insert_split_batch_on_failure
+ * - distributed_async_insert_sleep_time_ms
+ * - distributed_async_insert_max_sleep_time_ms
  */
 class DistributedAsyncInsertDirectoryQueue
 {

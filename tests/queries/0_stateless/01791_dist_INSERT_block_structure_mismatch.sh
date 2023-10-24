@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT --prefer_localhost_replica=0 -nm -q "
     INSERT INTO dist_01683 VALUES (1),(2);
     SYSTEM FLUSH DISTRIBUTED dist_01683;
 
-    -- TODO: cover distributed_directory_monitor_batch_inserts=1
+    -- TODO: cover distributed_async_insert_batch=1
 
     SELECT * FROM tmp_01683 ORDER BY n;
 

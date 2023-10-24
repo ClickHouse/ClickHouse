@@ -250,7 +250,7 @@ private:
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
-    ActionBlocker monitors_blocker;
+    ActionBlocker async_insert_blocker;
 
     String relative_data_path;
 
@@ -266,7 +266,7 @@ private:
 
     struct ClusterNodeData
     {
-        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_monitor;
+        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolPtr connection_pool;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;

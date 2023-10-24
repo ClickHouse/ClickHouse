@@ -2473,7 +2473,7 @@ See also:
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
 - [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_async_insert_sleep_time_ms {#distributed_async_insert_sleep_time_ms}
 
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
@@ -2483,9 +2483,9 @@ Possible values:
 
 Default value: 100 milliseconds.
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_async_insert_max_sleep_time_ms {#distributed_async_insert_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_async_insert_sleep_time_ms](#distributed_async_insert_sleep_time_ms) setting.
 
 Possible values:
 
@@ -2493,7 +2493,7 @@ Possible values:
 
 Default value: 30000 milliseconds (30 seconds).
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_async_insert_batch {#distributed_async_insert_batch}
 
 Enables/disables inserted data sending in batches.
 
@@ -2506,13 +2506,13 @@ Possible values:
 
 Default value: 0.
 
-## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+## distributed_async_insert_split_batch_on_failure {#distributed_async_insert_split_batch_on_failure}
 
 Enables/disables splitting batches on failures.
 
 Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
 
-So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_async_insert_batch` for failed batches).
 
 Possible values:
 

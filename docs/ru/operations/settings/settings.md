@@ -2136,7 +2136,7 @@ SELECT * FROM test_table
 -   [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_async_insert_sleep_time_ms {#distributed_async_insert_sleep_time_ms}
 
 Основной интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Фактический интервал растёт экспоненциально при возникновении ошибок.
 
@@ -2146,9 +2146,9 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 100 миллисекунд.
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_async_insert_max_sleep_time_ms {#distributed_async_insert_max_sleep_time_ms}
 
-Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms).
+Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_async_insert_sleep_time_ms](#distributed_async_insert_sleep_time_ms).
 
 Возможные значения:
 
@@ -2156,7 +2156,7 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 30000 миллисекунд (30 секунд).
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_async_insert_batch {#distributed_async_insert_batch}
 
 Включает/выключает пакетную отправку вставленных данных.
 
