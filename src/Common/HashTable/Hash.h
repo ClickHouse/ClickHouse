@@ -54,7 +54,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #endif
 
 #if defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-#include <base/crc32_s390x.h>
+#include <base/crc32c_s390x.h>
 #endif
 
 /// NOTE: Intel intrinsic can be confusing.
@@ -69,7 +69,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(-1U, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return s390x_crc32(-1U, x);
+    return s390x_crc32c(-1U, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
@@ -85,7 +85,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     return crc32_ppc(updated_value, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-    return s390x_crc32(updated_value, x);
+    return s390x_crc32c(updated_value, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x) ^ updated_value;
@@ -380,8 +380,8 @@ struct UInt128HashCRC32
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(0)]);
-        crc = s390x_crc32(crc, x.items[UInt128::_impl::little(1)]);
+        crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt128::_impl::little(1)]);
         return crc;
     }
 };
@@ -449,10 +449,10 @@ struct UInt256HashCRC32
     size_t operator()(UInt256 x) const
     {
         UInt64 crc = -1ULL;
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(0)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(1)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(2)]);
-        crc = s390x_crc32(crc, x.items[UInt256::_impl::little(3)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(0)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(1)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(2)]);
+        crc = s390x_crc32c(crc, x.items[UInt256::_impl::little(3)]);
         return crc;
     }
 };
