@@ -833,7 +833,10 @@ void FunctionArrayElement::executeMatchKeyToIndex(
             }
         }
         if (!matched)
+        {
+            expected_match_pos = offsets[0];
             matched_idxs.push_back(0);
+        }
     }
 
     /// In practice, map keys are usually in the same order, it is worth a try to
