@@ -22,12 +22,18 @@ class Arena;
 class IPAddressDictionary final : public IDictionary
 {
 public:
+    struct Configuration
+    {
+        DictionaryLifetime dict_lifetime;
+        bool require_nonempty;
+        bool use_async_executor = false;
+    };
+
     IPAddressDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_, /// NOLINT
-        bool require_nonempty_);
+        Configuration configuration_);
 
     std::string getKeyDescription() const { return key_description; }
 
@@ -53,12 +59,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.dict_lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -199,8 +205,7 @@ private:
 
     DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
-    const DictionaryLifetime dict_lifetime;
-    const bool require_nonempty;
+    const Configuration configuration;
     const bool access_to_key_from_attributes;
     const std::string key_description{dict_struct.getKeyDescription()};
 
