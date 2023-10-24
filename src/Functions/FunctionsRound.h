@@ -94,7 +94,7 @@ using Scale = Int16;
 template<typename S>
 Scale clampScale(S scale)
 {
-    if constexpr(std::is_unsigned_v<S> && sizeof(S) >= sizeof(Scale))
+    if constexpr (std::is_unsigned_v<S> && sizeof(S) >= sizeof(Scale))
         return scale <= std::numeric_limits<Scale>::max() ? scale : std::numeric_limits<Scale>::max();
     else
         return scale;
@@ -677,10 +677,6 @@ public:
         if (arguments.size() == 2)
         {
             const IColumn & scale_column = *arguments[1].column;
-            // if (!isColumnConst(scale_column))
-            //     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument for rounding functions must be constant");
-
-            //Field scale_field = assert_cast<const ColumnConst &>(scale_column).getField();
             auto scale_field = scale_column[0];
 
             if (scale_field.getType() != Field::Types::UInt64
@@ -721,7 +717,8 @@ public:
                 else
                 {
                     const ColumnWithTypeAndName & scale_column = arguments[1];
-                    auto try_type = [&]<typename S>(S) {
+                    auto try_type = [&]<typename S>(S)
+                    {
                         if (const ColumnVector<S> * typed_column = checkAndGetColumn<ColumnVector<S>>(scale_column.column.get()))
                         {
                             res = Dispatcher<FieldType, rounding_mode, tie_breaking_mode>::apply(column.column.get(), typed_column);
