@@ -203,7 +203,7 @@ MaskInfo extractMaskImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
-    auto column = col->convertToFullColumnIfLowCardinality();
+    auto column = col->convertToFullColumnIfLowCardinality()->convertToFullColumnIfSparse();
 
     /// Special implementation for Null and Const columns.
     if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
