@@ -12,7 +12,7 @@ SELECT *, _row_exists FROM test_apply_deleted_mask;
 SELECT 'With the setting disabled the deleted rows are visible';
 SELECT *, _row_exists FROM test_apply_deleted_mask SETTINGS apply_deleted_mask = 0;
 
-SELECT 'With the setting enabled the deleted rows are visible but still can be filterd out';
+SELECT 'With the setting disabled the deleted rows are visible but still can be filterd out';
 SELECT * FROM test_apply_deleted_mask WHERE _row_exists SETTINGS apply_deleted_mask = 0;
 
 INSERT INTO test_apply_deleted_mask SELECT number, number::String FROM numbers(5, 1);
