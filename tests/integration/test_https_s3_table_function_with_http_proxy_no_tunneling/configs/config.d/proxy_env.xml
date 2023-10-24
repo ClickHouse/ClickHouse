@@ -1,0 +1,5 @@
+<clickhouse>
+    <proxy>
+        <use_connect_protocol>0</use_connect_protocol>
+    </proxy>
+</clickhouse>
