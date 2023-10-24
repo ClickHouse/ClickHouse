@@ -27,8 +27,6 @@ public:
 
     String getName() const override { return "NpyRowInputFormat"; }
 
-    void readFromBuffer(MutableColumns &  /*columns*/);
-
     void resetParser() override;
 
 private:
@@ -43,6 +41,7 @@ private:
     std::vector<int> shape;
     DataTypePtr nestedType;
     int endian;
+    int sizeForStrings = 0;
 };
 
 class NpySchemaReader : public ISchemaReader
@@ -54,8 +53,6 @@ public:
 
 private:
     NamesAndTypesList readSchema() override;
-    // NamesAndTypesList getDataTypesFromNpyDocument([[maybe_unused]]bool allow_to_skip_unsupported_types);
-    // String readHeader(bool & eof);
 
     bool first_row = true;
 };

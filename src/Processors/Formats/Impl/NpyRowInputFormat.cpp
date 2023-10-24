@@ -12,10 +12,12 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include "Columns/ColumnArray.h"
-#include "Columns/ColumnsNumber.h"
-#include "Storages/IStorage.h"
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Storages/IStorage.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
@@ -45,9 +47,12 @@ DataTypePtr createDataType(size_t depth, DataTypePtr nested_type)
 {
     DataTypePtr result_type = nested_type;
 
-    assert(depth > 1);
-    for (size_t i = 0; i < depth - 1; ++i)
-        result_type = std::make_shared<DataTypeArray>(std::move(result_type));
+    assert(depth > 0);
+    if (depth > 1)
+    {
+        for (size_t i = 0; i < depth - 1; ++i)
+            result_type = std::make_shared<DataTypeArray>(std::move(result_type));
+    }
     return result_type;
 }
 
@@ -100,7 +105,7 @@ DataTypePtr parseType(String type)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
     else if (type == "|b1")
         return std::make_shared<DataTypeInt8>();
-    else if (type == "<U10" || type == "<U20" || type == "<U21")
+    else if (type[1] == 'U' || type[1] == 'S')
         return std::make_shared<DataTypeString>();
     else if (type == "O")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support object types");
@@ -225,6 +230,20 @@ std::unordered_map<String, String> parseHeader(ReadBuffer &buf)
     return header_data;
 }
 
+int parseStringSize(const std::string type)
+{
+    int size;
+    try
+    {
+        size = std::stoi(type.substr(2, type.length() - 2));
+        return size;
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid data type");
+    }
+}
+
 NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params params_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_))
 {
@@ -232,70 +251,112 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params par
     endian = endianOrientation(header["descr"]);
     shape = parseShape(header["shape"]);
     nestedType = parseType(header["descr"]);
+
+    if (isString(nestedType))
+        sizeForStrings = parseStringSize(header["descr"]);
 }
 
 void NpyRowInputFormat::readRows(MutableColumns & columns)
 {
-        auto & column = columns[0];
-        IColumn * current_column = column.get();
-        // size_t total_elements_to_read = 1;
-        for (size_t i = 1; i != shape.size() - 1; ++i)
-        {
-            // total_elements_to_read *= shape[i];
-            auto & array_column = assert_cast<ColumnArray &>(*column);
-            /// Fill offsets of array columns.
-            array_column.getOffsets().push_back(shape[i]);
-            current_column = &array_column.getData();
-        }
-
-        size_t total_elements_to_insert = 1;
-        for (size_t i = 1; i != shape.size() - 1; i++)
-            total_elements_to_insert *= shape[i];
-        for (size_t i = 0; i != total_elements_to_insert; ++i)
-        {
-            readValueAndinsertIntoColumn(current_column->getPtr());
-            [[maybe_unused]] size_t size = current_column->size();
-            [[maybe_unused]] String str = current_column->dumpStructure();
-        }
-}
-
-void NpyRowInputFormat::readValueAndinsertIntoColumn([[maybe_unused]]MutableColumnPtr column)
-{
-    size_t to_insert = shape[shape.size() - 1];
-    if (auto * column_array = typeid_cast<ColumnArray *>(column.get()))
+    auto & column = columns[0];
+    IColumn * current_column = column.get();
+    size_t elements_in_current_column = 1;
+    for (size_t i = 1; i != shape.size(); ++i)
     {
-        /// Обновляем оффсет
-        column_array->getOffsets().push_back(column_array->getOffsets().back() + to_insert);
-        /// Достаём вложенную колонку
-        auto nested_column = column_array->getData().getPtr();
-        /// Проверяем что это и правда колонка UInt32
-        if (auto * column_int64 = typeid_cast<ColumnInt64 *>(nested_column.get()))
-        {
-            // Читаем из данных n значений и вставляем их во вложенную колонку
-            for (size_t i = 0; i != to_insert; ++i)
-            {
-                Int64 value = 0;
-                readBinaryLittleEndian(value, *in);
-                column_int64->insertValue(value);
-            }
-        }
+        auto & array_column = assert_cast<ColumnArray &>(*current_column);
+        /// Fill offsets of array columns.
+        for (size_t j = 0; j != elements_in_current_column; ++j)
+            array_column.getOffsets().push_back(array_column.getOffsets().back() + shape[i]);
+        current_column = &array_column.getData();
+        elements_in_current_column *= shape[i];
     }
+
+    for (size_t i = 0; i != elements_in_current_column; ++i)
+        readValueAndinsertIntoColumn(current_column->getPtr());
 }
 
-
-void NpyRowInputFormat::readFromBuffer([[maybe_unused]]MutableColumns & columns)
+void NpyRowInputFormat::readValueAndinsertIntoColumn(MutableColumnPtr column)
 {
-    readRows(columns);
+    if (auto * column_int8 = typeid_cast<ColumnInt8 *>(column.get()))
+    {
+        Int8 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_int8->insertValue(value);
+    }
+    else if (auto * column_int16 = typeid_cast<ColumnInt16 *>(column.get()))
+    {
+        Int16 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_int16->insertValue(value);
+    }
+    else if (auto * column_int32 = typeid_cast<ColumnInt32 *>(column.get()))
+    {
+        Int32 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_int32->insertValue(value);
+    }
+    else if (auto * column_int64 = typeid_cast<ColumnInt64 *>(column.get()))
+    {
+        Int64 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_int64->insertValue(value);
+    }
+    else if (auto * column_uint8 = typeid_cast<ColumnUInt8 *>(column.get()))
+    {
+        UInt8 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_uint8->insertValue(value);
+    }
+    else if (auto * column_uint16 = typeid_cast<ColumnUInt16 *>(column.get()))
+    {
+        UInt16 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_uint16->insertValue(value);
+    }
+    else if (auto * column_uint32 = typeid_cast<ColumnUInt32 *>(column.get()))
+    {
+        UInt32 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_uint32->insertValue(value);
+    }
+    else if (auto * column_uint64 = typeid_cast<ColumnUInt64 *>(column.get()))
+    {
+        UInt64 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_uint64->insertValue(value);
+    }
+    else if (auto * column_float32 = typeid_cast<ColumnFloat32 *>(column.get()))
+    {
+        Float32 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_float32->insertValue(value);
+    }
+    else if (auto * column_float64 = typeid_cast<ColumnFloat64 *>(column.get()))
+    {
+        Float64 value = 0;
+        endian == 1 ? readBinaryBigEndian(value, *in) : readBinaryLittleEndian(value, *in);
+        column_float64->insertValue(value);
+    }
+    else if (auto * column_string = typeid_cast<ColumnString *>(column.get()))
+    {
+        size_t size = sizeForStrings;
+        String tmp;
+        if (header["descr"][1] == 'U')
+            size = sizeForStrings * 4;
+
+        tmp.resize(size);
+        in->readStrict(tmp.data(), size);
+        tmp.erase(std::remove(tmp.begin(), tmp.end(), '\0'), tmp.end());
+        column_string->insertData(tmp.c_str(), tmp.size());
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Error while reading data");
 }
 
-bool NpyRowInputFormat::readRow([[maybe_unused]]MutableColumns & columns, RowReadExtension &  /*ext*/)
+bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*ext*/)
 {
     if (in->eof())
         return false;
-
-    // while (*in->position() != '\n')
-    //     ++in->position();
-    // ++in->position();
 
     if (unlikely(*in->position() == '\n'))
     {
@@ -303,7 +364,7 @@ bool NpyRowInputFormat::readRow([[maybe_unused]]MutableColumns & columns, RowRea
         ++in->position();
     }
     else
-        readFromBuffer(columns);
+        readRows(columns);
 
     return true;
 }
