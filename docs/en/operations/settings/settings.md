@@ -3310,6 +3310,28 @@ Possible values:
 
 Default value: `0`.
 
+## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
+
+When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
+## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
+
+When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.
@@ -4745,4 +4767,19 @@ a	Tuple(
     ),
     l Nullable(String)
 )
+```
+
+## dictionary_use_async_executor {#dictionary_use_async_executor}
+
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+
+You may specify it in `SETTINGS` section of dictionary definition:
+
+```sql
+CREATE DICTIONARY t1_dict ( key String, attr UInt64 )
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY `SELECT key, attr FROM t1 GROUP BY key`))
+LIFETIME(MIN 0 MAX 3600)
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```

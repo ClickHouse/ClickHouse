@@ -105,6 +105,7 @@ class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
+class S3QueueLog;
 class AsynchronousInsertLog;
 class BackupLog;
 class IAsynchronousReader;
@@ -1044,6 +1045,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<S3QueueLog> getS3QueueLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1060,10 +1062,12 @@ public:
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
+    size_t getMaxTableSizeToDrop() const;
     void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxPartitionSizeToDrop(size_t max_size);
+    size_t getMaxPartitionSizeToDrop() const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.

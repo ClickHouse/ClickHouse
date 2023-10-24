@@ -85,6 +85,7 @@
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemS3Queue.h>
 
 #if USE_RDKAFKA
 #include <Storages/System/StorageSystemKafkaConsumers.h>
@@ -198,6 +199,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAsyncLoader>(context, system_database, "async_loader");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes");
     attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
+    attach<StorageSystemS3Queue>(context, system_database, "s3queue");
 
     if (has_zookeeper)
     {

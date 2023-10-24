@@ -257,7 +257,8 @@ InputFormatPtr FormatFactory::getInput(
     std::optional<size_t> _max_parsing_threads,
     std::optional<size_t> _max_download_threads,
     bool is_remote_fs,
-    CompressionMethod compression) const
+    CompressionMethod compression,
+    bool need_only_count) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
@@ -285,7 +286,9 @@ InputFormatPtr FormatFactory::getInput(
 
     // Decide whether to use ParallelParsingInputFormat.
 
-    bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine && !creators.random_access_input_creator;
+    bool parallel_parsing =
+        max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine &&
+        !creators.random_access_input_creator && !need_only_count;
 
     if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
@@ -407,7 +410,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
 {
-    auto element_id = context->getProcessListElement();
+    auto element_id = context->getProcessListElementSafe();
     if (element_id)
     {
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
