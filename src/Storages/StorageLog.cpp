@@ -877,10 +877,10 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(
+    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
-    const auto * check_query = query->as<ASTCheckQuery>();
-    if (check_query->partition || !check_query->part_name.empty())
+    if (!std::holds_alternative<std::monostate>(check_task_filter))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
 
     ReadLock lock{rwlock, getLockTimeout(local_context)};
