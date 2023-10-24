@@ -73,6 +73,7 @@ private:
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
+
     std::shared_ptr<orc::SearchArgument> sarg;
 
     // indices of columns to read from ORC file
