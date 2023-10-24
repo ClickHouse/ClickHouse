@@ -1592,7 +1592,12 @@ namespace
             StorageS3::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
-        String getLastFileName() const override { return current_key_with_info->key; }
+        String getLastFileName() const override
+        {
+            if (current_key_with_info)
+                return current_key_with_info->key;
+            return "";
+        }
 
     private:
         std::optional<ColumnsDescription> tryGetColumnsFromCache(
