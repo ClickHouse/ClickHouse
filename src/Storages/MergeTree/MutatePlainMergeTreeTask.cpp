@@ -100,7 +100,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 storage.renameTempPartAndReplace(new_part, transaction);
                 transaction.commit();
 
-                storage.updateMutationEntriesErrors(future_part, true, "");
+                storage.updateMutationEntriesErrors(future_part, true, "", 0);
                 write_part_log({});
 
                 state = State::NEED_FINISH;
