@@ -1,4 +1,5 @@
--- Mutations containing subqueries to deleted tables don't retry indefinitely and don't flood logs
+-- Mutations containing subqueries to tables deleted while processing mutation
+-- don't retry indefinitely and don't flood logs
 DROP TABLE IF EXISTS main;
 DROP TABLE IF EXISTS sub;
 CREATE TABLE main (id Int8) ENGINE=MergeTree() ORDER BY id;
