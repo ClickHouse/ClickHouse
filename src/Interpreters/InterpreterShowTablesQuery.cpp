@@ -158,7 +158,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else if (query.where_expression)
         rewritten_query << " AND (" << query.where_expression << ")";
 
-        /// (*)
+    /// (*)
     rewritten_query << " ORDER BY name ";
 
     if (query.limit_length)
