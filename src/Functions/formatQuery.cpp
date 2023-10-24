@@ -101,9 +101,7 @@ REGISTER_FUNCTION(formatQuery)
         .syntax = "formatQuery(query)",
         .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
         .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
-        .examples{
-            {"simple", "SELECT formatQuery('select 1;')", "SELECT 1"},
-            {"camelcase", "SELECT formatQuery('SeLecT 1')", "SELECT 1"}},
-        .categories{"String"}});
+        .examples{{"simple", "SELECT formatQuery('select 1;')", "SELECT 1"}, {"camelcase", "SELECT formatQuery('SeLecT 1')", "SELECT 1"}},
+        .categories{"Other"}});
 }
 }
