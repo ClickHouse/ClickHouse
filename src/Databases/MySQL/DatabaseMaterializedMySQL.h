@@ -46,7 +46,7 @@ protected:
 
     std::atomic_bool started_up{false};
 
-    std::atomic<LoadTaskPtr> startup_mysql_database_task;
+    LoadTaskPtr startup_mysql_database_task;
 
 public:
     String getEngineName() const override { return "MaterializedMySQL"; }

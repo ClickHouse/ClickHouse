@@ -87,7 +87,7 @@ protected:
     String path_to_metadata_symlink;
     const UUID db_uuid;
 
-    std::atomic<LoadTaskPtr> startup_atomic_database_task;
+    LoadTaskPtr startup_atomic_database_task;
 };
 
 }

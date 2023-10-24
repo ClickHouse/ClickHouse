@@ -77,7 +77,7 @@ protected:
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);
-    std::atomic<LoadTaskPtr> startup_database_task;
+    LoadTaskPtr startup_database_task;
     std::atomic<size_t> total_tables_to_startup{0};
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;

@@ -94,7 +94,7 @@ private:
     BackgroundSchedulePool::TaskHolder startup_task;
     bool shutdown_called = false;
 
-    std::atomic<LoadTaskPtr> startup_postgresql_database_task;
+    LoadTaskPtr startup_postgresql_database_task;
 };
 
 }

@@ -149,7 +149,7 @@ private:
 
     mutable ClusterPtr cluster;
 
-    std::atomic<LoadTaskPtr> startup_replicated_database_task;
+    LoadTaskPtr startup_replicated_database_task;
 };
 
 }
