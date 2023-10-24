@@ -24,7 +24,8 @@ CREATE DICTIONARY 01765_db.hashed_dictionary_simple_key_simple_attributes
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_simple_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(HASHED());
+LAYOUT(HASHED())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 
 SELECT 'Dictionary hashed_dictionary_simple_key_simple_attributes';
 SELECT 'dictGet existing value';

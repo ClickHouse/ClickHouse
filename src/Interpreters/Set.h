@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -33,9 +34,9 @@ public:
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
         : log(&Poco::Logger::get("Set")),
-        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_)
-    {
-    }
+        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
+        cast_cache(std::make_unique<InternalCastFunctionCache>())
+    {}
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -141,6 +142,10 @@ private:
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
     mutable SharedMutex rwlock;
+
+    /// A cache for cast functions (if any) to avoid rebuilding cast functions
+    /// for every call to `execute`
+    mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
     template <typename Method>
     void insertFromBlockImpl(

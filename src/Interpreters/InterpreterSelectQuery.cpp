@@ -2427,17 +2427,22 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings.max_threads;
 
-    /** With distributed query processing, almost no computations are done in the threads,
-     *  but wait and receive data from remote servers.
-     *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
-     *  connect and ask only 8 servers at a time.
-     *  To simultaneously query more remote servers,
-     *  instead of max_threads, max_distributed_connections is used.
+    /**
+     * To simultaneously query more remote servers when async_socket_for_remote is off
+     * instead of max_threads, max_distributed_connections is used:
+     * since threads there mostly spend time waiting for data from remote servers,
+     * we can increase the degree of parallelism to avoid sequential querying of remote servers.
+     *
+     * DANGER: that can lead to insane number of threads working if there are a lot of stream and prefer_localhost_replica is used.
+     *
+     * That is not needed when async_socket_for_remote is on, because in that case
+     * threads are not blocked waiting for data from remote servers.
+     *
      */
-    bool is_remote = false;
-    if (storage && storage->isRemote())
+    bool is_sync_remote = false;
+    if (storage && storage->isRemote() && !settings.async_socket_for_remote)
     {
-        is_remote = true;
+        is_sync_remote = true;
         max_threads_execute_query = max_streams = settings.max_distributed_connections;
     }
 
@@ -2493,7 +2498,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
-        if (max_streams > 1 && !is_remote)
+        if (max_streams > 1 && !is_sync_remote)
             max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
         auto & prewhere_info = analysis_result.prewhere_info;
@@ -2591,7 +2596,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     /// The inner local query (that is done in the same process, without
     /// network interaction), it will setMaxThreads earlier and distributed
     /// query will not update it.
-    if (!query_plan.getMaxThreads() || is_remote)
+    if (!query_plan.getMaxThreads() || is_sync_remote)
         query_plan.setMaxThreads(max_threads_execute_query);
 
     query_plan.setConcurrencyControl(settings.use_concurrency_control);

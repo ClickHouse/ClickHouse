@@ -122,6 +122,8 @@ static DataTypePtr parseORCType(const orc::Type * orc_type, bool skip_columns_wi
             return std::make_shared<DataTypeDate32>();
         case orc::TypeKind::TIMESTAMP:
             return std::make_shared<DataTypeDateTime64>(9);
+        case orc::TypeKind::TIMESTAMP_INSTANT:
+            return std::make_shared<DataTypeDateTime64>(9, "UTC");
         case orc::TypeKind::VARCHAR:
         case orc::TypeKind::BINARY:
         case orc::TypeKind::STRING:
@@ -496,16 +498,21 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
     size_t reserver_size = 0;
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
-        reserver_size += orc_str_column->length[i] + 1;
+    {
+        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
+            reserver_size += orc_str_column->length[i];
+        reserver_size += 1;
+    }
+
     column_chars_t.reserve(reserver_size);
     column_offsets.reserve(orc_str_column->numElements);
 
     size_t curr_offset = 0;
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
-        const auto * buf = orc_str_column->data[i];
-        if (buf)
+        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
         {
+            const auto * buf = orc_str_column->data[i];
             size_t buf_size = orc_str_column->length[i];
             column_chars_t.insert_assume_reserved(buf, buf + buf_size);
             curr_offset += buf_size;
@@ -531,7 +538,7 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
     const auto * orc_str_column = dynamic_cast<const orc::StringVectorBatch *>(orc_column);
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
-        if (orc_str_column->data[i])
+        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
             column_chars_t.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + orc_str_column->length[i]);
         else
             column_chars_t.resize_fill(column_chars_t.size() + fixed_len);
@@ -580,7 +587,7 @@ readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const or
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
         /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
-        if (orc_str_column->data[i] && orc_str_column->length[i] != sizeof(IPv6))
+        if ((!orc_str_column->hasNulls || orc_str_column->notNull[i]) && orc_str_column->length[i] != sizeof(IPv6))
             return readColumnWithStringData(orc_column, orc_type, column_name);
     }
 
@@ -591,10 +598,10 @@ readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const or
 
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
-        if (!orc_str_column->data[i]) [[unlikely]]
-            ipv6_column.insertDefault();
-        else
+        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
             ipv6_column.insertData(orc_str_column->data[i], orc_str_column->length[i]);
+        else
+            ipv6_column.insertDefault();
     }
 
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -628,9 +635,7 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
 
     for (size_t i = 0; i < orc_str_column->numElements; ++i)
     {
-        if (!orc_str_column->data[i]) [[unlikely]]
-            integer_column.insertDefault();
-        else
+        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
         {
             if (sizeof(typename ColumnType::ValueType) != orc_str_column->length[i])
                 throw Exception(
@@ -641,6 +646,10 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
                     orc_str_column->length[i]);
 
             integer_column.insertData(orc_str_column->data[i], orc_str_column->length[i]);
+        }
+        else
+        {
+            integer_column.insertDefault();
         }
     }
     return {std::move(internal_column), column_type, column_name};
@@ -795,7 +804,8 @@ static ColumnWithTypeAndName readColumnFromORCColumn(
             return readColumnWithNumericData<Float64, orc::DoubleVectorBatch>(orc_column, orc_type, column_name);
         case orc::DATE:
             return readColumnWithDateData(orc_column, orc_type, column_name, type_hint);
-        case orc::TIMESTAMP:
+        case orc::TIMESTAMP: [[fallthrough]];
+        case orc::TIMESTAMP_INSTANT:
             return readColumnWithTimestampData(orc_column, orc_type, column_name);
         case orc::DECIMAL: {
             auto interal_type = parseORCType(orc_type, false, skipped);
