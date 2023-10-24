@@ -178,6 +178,7 @@
 #    define TSA_ACQUIRE_SHARED(...)
 #    define TSA_TRY_ACQUIRE_SHARED(...)
 #    define TSA_RELEASE_SHARED(...)
+#    define TSA_SCOPED_LOCKABLE
 
 #    define TSA_SUPPRESS_WARNING_FOR_READ(x) (x)
 #    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) (x)

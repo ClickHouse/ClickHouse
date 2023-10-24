@@ -7,6 +7,38 @@
 namespace DB
 {
 
+/** SharedMutexHelper class allows to inject specific logic when underlying shared mutex is acquired
+  * and released.
+  *
+  * Example:
+  *
+  * class ProfileSharedMutex : public SharedMutexHelper<ProfileSharedMutex>
+  * {
+  * public:
+  *     size_t getLockCount() const { return lock_count; }
+  *
+  *     size_t getSharedLockCount() const { return shared_lock_count; }
+  *
+  * private:
+  *     using Base = SharedMutexHelper<ProfileSharedMutex, SharedMutex>;
+  *     friend class SharedMutexHelper<ProfileSharedMutex, SharedMutex>;
+  *
+  *     void lockImpl()
+  *     {
+  *         ++lock_count;
+  *         Base::lockImpl();
+  *     }
+  *
+  *     void lockSharedImpl()
+  *     {
+  *         ++shared_lock_count;
+  *         Base::lockSharedImpl();
+  *     }
+  *
+  *     std::atomic<size_t> lock_count = 0;
+  *     std::atomic<size_t> shared_lock_count = 0;
+  * };
+  */
 template <typename Derived, typename MutexType = SharedMutex>
 class TSA_CAPABILITY("SharedMutexHelper") SharedMutexHelper
 {
@@ -51,7 +83,7 @@ protected:
 
     void tryLockImpl() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        mutex.TryLock();
+        mutex.try_lock();
     }
 
     void unlockImpl() TSA_NO_THREAD_SAFETY_ANALYSIS

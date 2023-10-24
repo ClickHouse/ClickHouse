@@ -3596,7 +3596,7 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 
 std::shared_ptr<S3QueueLog> Context::getS3QueueLog() const
 {
-    auto lock = getGlobalSharedLock();
+    SharedLockGuard lock(shared->mutex);
     if (!shared->system_logs)
         return {};
 
