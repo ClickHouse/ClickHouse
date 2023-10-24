@@ -822,28 +822,26 @@ void FunctionArrayElement::executeMatchKeyToIndex(
     size_t rows = offsets.size();
     size_t expected_match_pos = 0;
     bool matched = false;
-    if (rows)
-    {
-        for (size_t j = offsets[-1], end = offsets[0]; j < end; ++j)
-        {
-            if (matcher.match(j, 0))
-            {
-                matched_idxs.push_back(j -  offsets[-1] + 1);
-                matched = true;
-                expected_match_pos = end + j - offsets[-1];
-                // expected_match_pos = j - offsets[-1];
-                break;
-            }
-        }
-        if (!matched)
-        {
-            expected_match_pos = offsets[0];
-            matched_idxs.push_back(0);
-        }
-    }
+    if (!rows)
+        return;
 
     /// In practice, map keys are usually in the same order, it is worth a try to
-    /// predicate the next key position. So it can save a lot of comparisons.
+    /// predict the next key position. So it can avoid a lot of unnecessary comparisons.
+    for (size_t j = offsets[-1], end = offsets[0]; j < end; ++j)
+    {
+        if (matcher.match(j, 0))
+        {
+            matched_idxs.push_back(j - offsets[-1] + 1);
+            matched = true;
+            expected_match_pos = end + j - offsets[-1];
+            break;
+        }
+    }
+    if (!matched)
+    {
+        expected_match_pos = offsets[0];
+        matched_idxs.push_back(0);
+    }
     size_t i = 1;
     for (; i < rows; ++i)
     {
@@ -858,6 +856,8 @@ void FunctionArrayElement::executeMatchKeyToIndex(
         else
             break;
     }
+
+    // fallback to linear search
     for (; i < rows; ++i)
     {
         matched = false;
