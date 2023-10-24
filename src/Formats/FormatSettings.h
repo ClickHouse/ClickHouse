@@ -188,6 +188,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool write_named_tuples_as_objects = false;
+        bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
         bool serialize_as_strings = false;
