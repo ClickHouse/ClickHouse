@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 }
@@ -1443,6 +1444,23 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     }
 }
 
+namespace
+{
+    bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
+    {
+        try
+        {
+            return !std_in.eof();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
+                return false;
+            throw;
+        }
+    }
+}
+
 
 void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
@@ -1460,7 +1478,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
 
     if (need_render_progress)
     {
@@ -1851,7 +1869,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
