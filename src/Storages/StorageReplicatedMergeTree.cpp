@@ -9680,7 +9680,12 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 }
             }
 
-            getCommitPartOps(ops, new_data_part);
+            /// Two replicas may try to commit an empty part simultaneusely,
+            /// so some lost part may be counter twice in lost_part_count. Avoid that by using the part name as deduplication id.
+            /// There's a small chance that the empty part will be lost again. In this case we will have to wait for the block id
+            ///  to be cleaned up before replacing it again (see replicated_deduplication_window, replicated_deduplication_window_seconds)
+            String block_id_path = zookeeper_path + "/blocks/" + lost_part_name;
+            getCommitPartOps(ops, new_data_part, block_id_path);
 
             /// Increment lost_part_count
             auto lost_part_count_path = fs::path(zookeeper_path) / "lost_part_count";
