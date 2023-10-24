@@ -337,8 +337,8 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg --text -o "Found error:.*" fuzzer.log \
-            || rg --text -ao "Exception:.*" fuzzer.log \
+        { rg -ao "Found error:.*" fuzzer.log \
+            || rg -ao "Exception:.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

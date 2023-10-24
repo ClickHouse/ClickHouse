@@ -926,12 +926,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->select)
                 reason = "insert query has select";
-            else if (!insert_query->hasInlinedData())
-                reason = "insert query doesn't have inlined data";
-            else
+            else if (insert_query->hasInlinedData())
                 async_insert = true;
 
-            if (!async_insert)
+            if (!reason.empty())
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
@@ -954,7 +952,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            auto result = queue->push(ast, context);
+            auto result = queue->pushQueryWithInlinedData(ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
@@ -988,7 +986,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         QueryCachePtr query_cache = context->getQueryCache();
-        const bool can_use_query_cache = query_cache != nullptr && settings.use_query_cache && !internal && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+        const bool can_use_query_cache = query_cache != nullptr
+            && settings.use_query_cache
+            && !internal
+            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
         if (!async_insert)
@@ -1224,19 +1226,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, std::move(res));
+    return std::make_tuple(std::move(ast), std::move(res));
 }
 
 
-BlockIO executeQuery(
+std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
-    BlockIO streams;
-    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
+    BlockIO res;
+
+    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1245,25 +1248,11 @@ BlockIO executeQuery(
                 : context->getDefaultFormat();
 
         if (format_name == "Null")
-            streams.null_format = true;
+            res.null_format = true;
     }
 
-    return streams;
+    return std::make_pair(std::move(ast), std::move(res));
 }
-
-BlockIO executeQuery(
-    bool allow_processors,
-    const String & query,
-    ContextMutablePtr context,
-    bool internal,
-    QueryProcessingStage::Enum stage)
-{
-    if (!allow_processors)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Flag allow_processors is deprecated for executeQuery");
-
-    return executeQuery(query, context, internal, stage);
-}
-
 
 void executeQuery(
     ReadBuffer & istr,
@@ -1332,7 +1321,46 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto update_format_for_exception_if_needed = [&]()
+    {
+        if (!output_format)
+        {
+            try
+            {
+                String format_name = context->getDefaultFormat();
+                output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+                if (output_format && output_format->supportsWritingException())
+                {
+                    /// Force an update of the headers before we start writing
+                    result_details.content_type = output_format->getContentType();
+                    result_details.format = format_name;
+                    set_result_details(result_details);
+                    set_result_details = nullptr;
+                }
+            }
+            catch (const DB::Exception & e)
+            {
+                /// Ignore this exception and report the original one
+                LOG_WARNING(&Poco::Logger::get("executeQuery"), getExceptionMessageAndPattern(e, true));
+            }
+        }
+    };
+
+    try
+    {
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    }
+    catch (...)
+    {
+        if (handle_exception_in_output_format)
+        {
+            update_format_for_exception_if_needed();
+            if (output_format)
+                handle_exception_in_output_format(*output_format);
+        }
+        throw;
+    }
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
@@ -1426,8 +1454,12 @@ void executeQuery(
     }
     catch (...)
     {
-        if (handle_exception_in_output_format && output_format)
-            handle_exception_in_output_format(*output_format);
+        if (handle_exception_in_output_format)
+        {
+            update_format_for_exception_if_needed();
+            if (output_format)
+                handle_exception_in_output_format(*output_format);
+        }
         streams.onException();
         throw;
     }
