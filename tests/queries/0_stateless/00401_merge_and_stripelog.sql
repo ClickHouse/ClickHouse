@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS stripe9;
 DROP TABLE IF EXISTS stripe10;
 DROP TABLE IF EXISTS merge_00401;
 
+SET allow_table_engine_stripelog=1;
+
 CREATE TABLE stripe1 ENGINE = StripeLog AS SELECT number AS x FROM system.numbers LIMIT 10;
 CREATE TABLE stripe2 ENGINE = StripeLog AS SELECT number AS x FROM system.numbers LIMIT 10;
 CREATE TABLE stripe3 ENGINE = StripeLog AS SELECT number AS x FROM system.numbers LIMIT 10;

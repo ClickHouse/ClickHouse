@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS test_00681;
 
+SET allow_table_engine_log=1;
+
 CREATE TABLE test_00681(x Int32) ENGINE = Log;
 INSERT INTO test_00681 VALUES (123);
 

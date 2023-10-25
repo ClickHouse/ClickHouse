@@ -1,5 +1,6 @@
 SET optimize_move_to_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
+SET allow_table_engine_log=1;
 
 DROP TABLE IF EXISTS t_02156_mt1;
 DROP TABLE IF EXISTS t_02156_mt2;

@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS nested;
 
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1, allow_table_engine_stripelog=1;
+
 CREATE TABLE nested (x UInt8, n Nested(a UInt64, b String)) ENGINE = TinyLog;
 
 INSERT INTO nested VALUES (1, [2, 3], ['Hello', 'World']);

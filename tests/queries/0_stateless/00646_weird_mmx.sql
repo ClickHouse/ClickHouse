@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS weird_mmx;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE weird_mmx (x Array(UInt64)) ENGINE = TinyLog;
 -- this triggers overlapping matches in LZ4 decompression routine; 915 is the minimum number
 -- see comment in LZ4_decompression_faster.cpp about usage of MMX registers

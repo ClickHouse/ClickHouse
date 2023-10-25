@@ -1,6 +1,8 @@
 drop table if exists t_00725_3;
 drop table if exists z_00725_3;
 
+SET allow_table_engine_tinylog=1;
+
 create table t_00725_3(a Int64, b Int64) engine = TinyLog;
 insert into t_00725_3 values(1,1);
 insert into t_00725_3 values(2,2);

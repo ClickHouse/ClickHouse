@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS merge_a;
 DROP TABLE IF EXISTS merge_b;
 DROP TABLE IF EXISTS merge_ab;
 
+SET allow_table_engine_stripelog=1;
+
 CREATE TABLE merge_a (x UInt8) ENGINE = StripeLog;
 CREATE TABLE merge_b (x UInt8) ENGINE = StripeLog;
 CREATE TABLE merge_ab AS merge(currentDatabase(), '^merge_[ab]$');

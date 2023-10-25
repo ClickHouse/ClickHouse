@@ -1,4 +1,7 @@
 drop table if exists test;
+
+SET allow_table_engine_stripelog=1;
+
 -- this queries does not have to pass, but they works historically
 -- let's support this while can, see #31687
 create table test (x String) Engine=StripeLog;
