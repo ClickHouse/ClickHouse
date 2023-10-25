@@ -1401,7 +1401,7 @@ For more information, see the section [Creating replicated tables](../../engines
 Replica group name for database Replicated.
 
 The cluster created by Replicated database will consist of replicas in the same group.
-DDL queries will only wail for the replicas in the same group.
+DDL queries will only wait for the replicas in the same group.
 
 Empty by default.
 
