@@ -206,7 +206,7 @@ bool DiskObjectStorageMetadata::getWriteFullObjectKeySetting()
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     return Context::getGlobalContextInstance()->getSettings().storage_metadata_write_full_object_key;
 #else
-    return false;
+    return true;
 #endif
 }
 
