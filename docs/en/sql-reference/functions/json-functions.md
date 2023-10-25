@@ -509,3 +509,34 @@ SELECT
 │                ᴺᵁᴸᴸ │                          3 │
 └─────────────────────┴────────────────────────────┘
 ```
+
+
+## jsonMergePatch
+
+Return the merged JSON object string which is formed by merging multiple JSON objects.
+
+**Syntax**
+
+``` sql
+jsonMergePatch(json1, json2, ...)
+```
+
+**Arguments**
+
+- `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+
+**Returned value**
+
+- If JSON object strings are valid, return the merged JSON object string.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+``` sql
+SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res
+
+┌─res───────────────────┐
+│ {"a":1,"name":"zoey"} │
+└───────────────────────┘
+```
