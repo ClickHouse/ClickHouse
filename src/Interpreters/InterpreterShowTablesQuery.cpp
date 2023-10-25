@@ -134,7 +134,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         }
 
         /// (*)
-        rewritten_query << " ORDER BY elapsed desc, database, table";
+        rewritten_query << " ORDER BY elapsed desc";
 
         if (query.limit_length)
             rewritten_query << " LIMIT " << query.limit_length;
