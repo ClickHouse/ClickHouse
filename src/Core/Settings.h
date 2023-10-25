@@ -542,6 +542,9 @@ class IColumn;
     \
     M(DefaultTableEngine, default_temporary_table_engine, DefaultTableEngine::Memory, "Default table engine used when ENGINE is not set in CREATE TEMPORARY statement.",0) \
     M(DefaultTableEngine, default_table_engine, DefaultTableEngine::None, "Default table engine used when ENGINE is not set in CREATE statement.",0) \
+    M(Bool, allow_table_engine_log, false, "Allow creating tables in databases with Engine=Log.", 0) \
+    M(Bool, allow_table_engine_tinylog, false, "Allow creating tables in databases with Engine=TinyLog.", 0) \
+    M(Bool, allow_table_engine_stripelog, false, "Allow creating tables in databases with Engine=StripeLog.", 0) \
     M(Bool, show_table_uuid_in_table_create_query_if_not_nil, false, "For tables in databases with Engine=Atomic show UUID of the table in its CREATE query.", 0) \
     M(Bool, database_atomic_wait_for_drop_and_detach_synchronously, false, "When executing DROP or DETACH TABLE in Atomic database, wait for table data to be finally dropped or detached.", 0) \
     M(Bool, enable_scalar_subquery_optimization, true, "If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.", 0) \

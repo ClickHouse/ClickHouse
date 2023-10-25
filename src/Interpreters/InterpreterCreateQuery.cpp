@@ -1304,6 +1304,22 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
     auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
 
+    auto engine = create.storage->engine->name;
+    const auto & settings = getContext()->getSettingsRef();
+
+    /// Disable support for these engines by default unless explicitly enabled by the user.
+    /// The rationale here is to prevent people from using these engines without fully understanding their shortcomings.
+    /// For most of the cases MergeTree engine family should be the preferred engine of choice.
+    if (engine == "Log" && !settings.allow_table_engine_log)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Log Engine not allowed by default. Allow it by setting allow_table_engine_log=1");
+    if (engine == "TinyLog" && !settings.allow_table_engine_tinylog)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "TinyLog Engine not allowed by default. Allow it by setting allow_table_engine_tinylog=1");
+    if (engine == "StripeLog" && !settings.allow_table_engine_stripelog)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "StripeLog Engine not allowed by default. Allow it by setting allow_table_engine_stripelog=1");
+
     /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
     if (database->isTableExist(create.getTable(), getContext()))
     {
