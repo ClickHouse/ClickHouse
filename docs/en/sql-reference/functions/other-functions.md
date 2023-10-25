@@ -2838,3 +2838,75 @@ Result:
 │ SELECT 1                 │
 └──────────────────────────┘
 ```
+
+```sql
+SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT
+    a,
+    b
+FROM tab
+WHERE (a > 3) AND (b < 3)            │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## formatQueryOneLine
+
+Returns a formatted version of the given SQL query on a single line.
+
+**Syntax**
+
+```sql
+formatQueryOneLine(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQueryOneLine('select 1;');
+```
+
+Result:
+
+```result
+┌─formatQueryOneLine('select 1;')─┐
+│ SELECT 1                        │
+└─────────────────────────────────┘
+```
+
+```sql
+SELECT formatQueryOneLine('SeLecT 1');
+```
+
+Result:
+
+```result
+┌─formatQueryOneLine('SeLecT 1')──┐
+│ SELECT 1                        │
+└─────────────────────────────────┘
+```
+
+```sql
+SELECT formatQueryOneLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQueryOneLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                       │
+└──────────────────────────────────────────────────────────────────────┘
+```

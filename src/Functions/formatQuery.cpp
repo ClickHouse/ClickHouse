@@ -16,10 +16,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+template <bool one_line, typename Name>
 class FunctionFormatQuery : public IFunction
 {
 public:
-    static constexpr auto name = "formatQuery";
+    static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettings();
@@ -66,7 +67,7 @@ private:
         ParserQuery parser{end};
         auto ast = parseQuery(parser, begin, end, {}, max_query_size, max_parser_depth);
         WriteBufferFromVector buf(output, AppendModeTag{});
-        formatAST(*ast, buf, /* hilite */ false);
+        formatAST(*ast, buf, /* hilite */ false, /* one_line */ one_line);
         buf.finalize();
     }
     void formatVector(
@@ -93,15 +94,49 @@ private:
     size_t max_parser_depth;
 };
 
+struct NameFormatQuery
+{
+    static constexpr auto name = "formatQuery";
+};
+
+struct NameFormatQueryOneLine
+{
+    static constexpr auto name = "formatQueryOneLine";
+};
 
 REGISTER_FUNCTION(formatQuery)
 {
-    factory.registerFunction<FunctionFormatQuery>(FunctionDocumentation{
+    factory.registerFunction<FunctionFormatQuery<false, NameFormatQuery>>(FunctionDocumentation{
         .description = "Returns a formatted version of the given SQL query.\n[example:simple]\n[example:camelcase]",
         .syntax = "formatQuery(query)",
         .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
         .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
-        .examples{{"simple", "SELECT formatQuery('select 1;')", "SELECT 1"}, {"camelcase", "SELECT formatQuery('SeLecT 1')", "SELECT 1"}},
+        .examples{
+            {"simple", "SELECT formatQuery('select 1;')", "SELECT 1"},
+            {"camelcase", "SELECT formatQuery('SeLecT 1')", "SELECT 1"},
+            {"multiline",
+             "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
+             "SELECT\n"
+             "    a,\n"
+             "    b\n"
+             "FROM tab\n"
+             "WHERE (a > 3) AND (b < 3)"}},
+        .categories{"Other"}});
+}
+
+REGISTER_FUNCTION(formatQueryOneLine)
+{
+    factory.registerFunction<FunctionFormatQuery<true, NameFormatQueryOneLine>>(FunctionDocumentation{
+        .description = "Returns a formatted version of the given SQL query on a single line.\n[example:simple]\n[example:camelcase]",
+        .syntax = "formatQueryOneLine(query)",
+        .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
+        .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
+        .examples{
+            {"simple", "SELECT formatQueryOneLine('select 1;')", "SELECT 1"},
+            {"camelcase", "SELECT formatQueryOneLine('SeLecT 1')", "SELECT 1"},
+            {"multiline",
+             "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
+             "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
         .categories{"Other"}});
 }
 }
