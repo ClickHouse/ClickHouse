@@ -902,8 +902,8 @@ namespace
 {
     void checkTemporaryTableEngineName(const String& name)
     {
-        if (name.starts_with("Replicated") || name == "KeeperMap")
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
+        if (name.starts_with("Replicated") || name.starts_with("Shared") || name == "KeeperMap")
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated, Shared or KeeperMap table engines");
     }
 
     void setDefaultTableEngine(ASTStorage &storage, DefaultTableEngine engine)
