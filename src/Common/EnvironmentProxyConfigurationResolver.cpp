@@ -13,8 +13,9 @@ namespace DB
 static constexpr auto PROXY_HTTP_ENVIRONMENT_VARIABLE = "http_proxy";
 static constexpr auto PROXY_HTTPS_ENVIRONMENT_VARIABLE = "https_proxy";
 
-EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(Protocol request_protocol_, ConnectProtocolPolicy connect_protocol_policy_)
-    : ProxyConfigurationResolver(request_protocol_, connect_protocol_policy_)
+EnvironmentProxyConfigurationResolver::EnvironmentProxyConfigurationResolver(
+    Protocol request_protocol_, bool use_tunneling_for_https_requests_over_http_proxy_)
+    : ProxyConfigurationResolver(request_protocol_, use_tunneling_for_https_requests_over_http_proxy_)
 {}
 
 namespace
@@ -55,7 +56,7 @@ ProxyConfiguration EnvironmentProxyConfigurationResolver::resolve()
         host,
         ProxyConfiguration::protocolFromString(scheme),
         port,
-        useTunneling(ProxyConfiguration::protocolFromString(scheme)),
+        use_tunneling_for_https_requests_over_http_proxy,
         request_protocol
     };
 }

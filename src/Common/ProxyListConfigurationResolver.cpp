@@ -9,10 +9,9 @@ namespace DB
 
 ProxyListConfigurationResolver::ProxyListConfigurationResolver(
     std::vector<Poco::URI> proxies_,
-    Protocol request_protocol_,
-    ConnectProtocolPolicy connect_protocol_policy_
+    Protocol request_protocol_, bool use_tunneling_for_https_requests_over_http_proxy_
 )
-    : ProxyConfigurationResolver(request_protocol_, connect_protocol_policy_), proxies(std::move(proxies_))
+    : ProxyConfigurationResolver(request_protocol_, use_tunneling_for_https_requests_over_http_proxy_), proxies(std::move(proxies_))
 {
 }
 
@@ -34,7 +33,7 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve()
         proxy.getHost(),
         ProxyConfiguration::protocolFromString(proxy.getScheme()),
         proxy.getPort(),
-        useTunneling(ProxyConfiguration::protocolFromString(proxy.getScheme())),
+        use_tunneling_for_https_requests_over_http_proxy,
         request_protocol
     };
 }

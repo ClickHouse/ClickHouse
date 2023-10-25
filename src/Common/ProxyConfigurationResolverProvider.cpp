@@ -17,20 +17,17 @@ namespace ErrorCodes
 
 namespace
 {
-    using ConnectProtocolPolicy = ProxyConfigurationResolver::ConnectProtocolPolicy;
-
-    ConnectProtocolPolicy getConnectProtocolPolicy(
+    bool getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(
         const Poco::Util::AbstractConfiguration & configuration
     )
     {
-        static constexpr auto use_connect_protocol_config_key = "proxy.use_connect_protocol";
-        if (configuration.has(use_connect_protocol_config_key))
+        static constexpr auto use_tunneling_for_https_requests_over_http_proxy = "proxy.use_tunneling_for_https_requests_over_http_proxy";
+        if (configuration.has(use_tunneling_for_https_requests_over_http_proxy))
         {
-            return configuration.getBool(use_connect_protocol_config_key) ? ConnectProtocolPolicy::FORCE_ON
-                                                                          : ConnectProtocolPolicy::FORCE_OFF;
+            return configuration.getBool(use_tunneling_for_https_requests_over_http_proxy);
         }
 
-        return ConnectProtocolPolicy::DEFAULT;
+        return true;
     }
 
     std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
@@ -57,7 +54,11 @@ namespace
             cache_ttl
         };
 
-        return std::make_shared<RemoteProxyConfigurationResolver>(server_configuration, request_protocol, getConnectProtocolPolicy(configuration));
+        return std::make_shared<RemoteProxyConfigurationResolver>(
+            server_configuration,
+            request_protocol,
+            getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(configuration)
+        );
     }
 
     auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -96,7 +97,7 @@ namespace
 
         return uris.empty()
             ? nullptr
-            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, getConnectProtocolPolicy(configuration));
+            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -158,7 +159,10 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
         return resolver;
     }
 
-    return std::make_shared<EnvironmentProxyConfigurationResolver>(request_protocol, getConnectProtocolPolicy(configuration));
+    return std::make_shared<EnvironmentProxyConfigurationResolver>(
+        request_protocol,
+        getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(configuration)
+    );
 }
 
 template <bool is_new_syntax>

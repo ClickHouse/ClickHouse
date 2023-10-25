@@ -65,7 +65,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPOnly)
 
     // No https configuration since it's not set
     ASSERT_EQ(https_proxy_configuration.host, "");
-    ASSERT_EQ(https_proxy_configuration.port, 80);
+    ASSERT_EQ(https_proxy_configuration.port, 0);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
@@ -80,7 +80,7 @@ TEST_F(ProxyConfigurationResolverProviderTests, ListHTTPSOnly)
     auto http_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTP, *config)->resolve();
 
     ASSERT_EQ(http_proxy_configuration.host, "");
-    ASSERT_EQ(http_proxy_configuration.port, 80);
+    ASSERT_EQ(http_proxy_configuration.port, 0);
 
     auto https_proxy_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 
@@ -196,8 +196,8 @@ TEST_F(ProxyConfigurationResolverProviderTests, RemoteResolverIsBasedOnProtocolC
 
 // remote resolver is tricky to be tested in unit tests
 
-template <bool USE_CONNECT_PROTOCOL, bool STRING>
-void test_connect_protocol(DB::ContextMutablePtr context)
+template <bool USE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY, bool STRING>
+void test_tunneling(DB::ContextMutablePtr context)
 {
     EnvironmentProxySetter setter(http_env_proxy_server, https_env_proxy_server);
 
@@ -207,25 +207,25 @@ void test_connect_protocol(DB::ContextMutablePtr context)
 
     if constexpr (STRING)
     {
-        config->setString("proxy.use_connect_protocol", USE_CONNECT_PROTOCOL ? "true" : "false");
+        config->setString("proxy.use_tunneling_for_https_requests_over_http_proxy", USE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY ? "true" : "false");
     }
     else
     {
-        config->setBool("proxy.use_connect_protocol", USE_CONNECT_PROTOCOL);
+        config->setBool("proxy.use_tunneling_for_https_requests_over_http_proxy", USE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY);
     }
 
     context->setConfig(config);
 
     auto https_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 
-    ASSERT_EQ(https_configuration.use_tunneling, USE_CONNECT_PROTOCOL);
+    ASSERT_EQ(https_configuration.use_tunneling_for_https_requests_over_http_proxy, USE_TUNNELING_FOR_HTTPS_REQUESTS_OVER_HTTP_PROXY);
 }
 
-TEST_F(ProxyConfigurationResolverProviderTests, ConnectProtocolString)
+TEST_F(ProxyConfigurationResolverProviderTests, TunnelingForHTTPSRequestsOverHTTPProxySetting)
 {
-    test_connect_protocol<false, false>(context);
-    test_connect_protocol<false, true>(context);
-    test_connect_protocol<true, false>(context);
-    test_connect_protocol<true, true>(context);
+    test_tunneling<false, false>(context);
+    test_tunneling<false, true>(context);
+    test_tunneling<true, false>(context);
+    test_tunneling<true, true>(context);
 }
 

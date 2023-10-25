@@ -28,7 +28,7 @@ public:
     RemoteProxyConfigurationResolver(
         const RemoteServerConfiguration & remote_server_configuration_,
         Protocol request_protocol_,
-        ConnectProtocolPolicy connect_protocol_policy_
+        bool use_tunneling_for_https_requests_over_http_proxy_ = true
     );
 
     ProxyConfiguration resolve() override;

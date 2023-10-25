@@ -11,7 +11,7 @@ namespace DB
 class EnvironmentProxyConfigurationResolver : public ProxyConfigurationResolver
 {
 public:
-    EnvironmentProxyConfigurationResolver(Protocol request_protocol, ConnectProtocolPolicy connect_protocol_policy_);
+    EnvironmentProxyConfigurationResolver(Protocol request_protocol, bool use_tunneling_for_https_requests_over_http_proxy_ = true);
 
     ProxyConfiguration resolve() override;
     void errorReport(const ProxyConfiguration &) override {}

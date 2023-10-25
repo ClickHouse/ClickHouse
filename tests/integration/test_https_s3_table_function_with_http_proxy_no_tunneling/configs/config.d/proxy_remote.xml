@@ -1,6 +1,6 @@
 <clickhouse>
     <proxy>
-        <use_connect_protocol>0</use_connect_protocol>
+        <use_tunneling_for_https_requests_over_http_proxy>0</use_tunneling_for_https_requests_over_http_proxy>
         <https>
             <resolver>
                 <endpoint>http://resolver:8080/hostname</endpoint>

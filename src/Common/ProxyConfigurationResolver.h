@@ -9,15 +9,8 @@ struct ProxyConfigurationResolver
 {
     using Protocol = ProxyConfiguration::Protocol;
 
-    enum class ConnectProtocolPolicy
-    {
-        DEFAULT,
-        FORCE_OFF,
-        FORCE_ON
-    };
-
-    explicit ProxyConfigurationResolver(Protocol request_protocol_, ConnectProtocolPolicy connect_protocol_policy_ = ConnectProtocolPolicy::DEFAULT)
-        : request_protocol(request_protocol_), connect_protocol_policy(connect_protocol_policy_)
+    explicit ProxyConfigurationResolver(Protocol request_protocol_, bool use_tunneling_for_https_requests_over_http_proxy_ = true)
+        : request_protocol(request_protocol_), use_tunneling_for_https_requests_over_http_proxy(use_tunneling_for_https_requests_over_http_proxy_)
     {
     }
 
@@ -27,22 +20,7 @@ struct ProxyConfigurationResolver
 
 protected:
     Protocol request_protocol;
-
-    bool useTunneling(Protocol proxy_protocol) const
-    {
-        switch (connect_protocol_policy)
-        {
-            case ConnectProtocolPolicy::DEFAULT:
-                return ProxyConfiguration::Protocol::HTTPS == request_protocol && ProxyConfiguration::Protocol::HTTP == proxy_protocol;
-            case ConnectProtocolPolicy::FORCE_OFF:
-                return false;
-            case ConnectProtocolPolicy::FORCE_ON:
-                return true;
-        }
-    }
-
-private:
-    ConnectProtocolPolicy connect_protocol_policy;
+    bool use_tunneling_for_https_requests_over_http_proxy;
 };
 
 }
