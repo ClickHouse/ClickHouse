@@ -161,7 +161,10 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         if (unlikely(res.ec != std::errc()))
         {
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value");
+                throw ParsingException(
+                    ErrorCodes::CANNOT_PARSE_NUMBER,
+                    "Cannot read floating point value here: {}",
+                    String(initial_position, buf.buffer().end() - initial_position));
             else
                 return ReturnType(false);
         }
@@ -248,10 +251,11 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
             res = fast_float::from_chars(tmp_buf, tmp_buf + num_copied_chars, x64);
             x = static_cast<T>(x64);
         }
-        if (unlikely(res.ec != std::errc()))
+        if (unlikely(res.ec != std::errc() || res.ptr - tmp_buf != num_copied_chars))
         {
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value");
+                throw ParsingException(
+                    ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value here: {}", String(tmp_buf, num_copied_chars));
             else
                 return ReturnType(false);
         }
