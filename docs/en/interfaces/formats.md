@@ -74,6 +74,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
 | [One](#data-format-one)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
 | [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
 | [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
@@ -2443,6 +2444,26 @@ Result:
 ┌─_file────────┐
 │ data.parquet │
 └──────────────┘
+```
+
+## Npy {#data-format-npy}
+
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. It stores all the top-level dimension objects as a separate column.
+
+**Example**
+
+Query:
+```sql
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+Result:
+```
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
 ```
 
 ## LineAsString {#lineasstring}

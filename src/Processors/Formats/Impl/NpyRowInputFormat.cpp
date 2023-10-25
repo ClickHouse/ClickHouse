@@ -37,9 +37,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -119,16 +118,21 @@ std::vector<int> parseShape(String shapeString)
     shapeString.erase(std::remove(shapeString.begin(), shapeString.end(), ')'), shapeString.end());
 
     // Use a string stream to extract integers
-    std::istringstream ss(shapeString);
-    int value;
-    char comma; // to handle commas between values
+    String value;
 
     std::vector<int> shape;
 
-    while (ss >> value) {
-        shape.push_back(value);
-        ss >> comma; // read the comma
+    size_t start = 0, end = 0;
+
+    while ((end = shapeString.find(',', start)) != std::string::npos)
+    {
+        shape.push_back(std::stoi(shapeString.substr(start, end - start)));
+        start = end + 1;
     }
+
+    // Add the last token (or the only token if no delimiter is found)
+    if (start != shapeString.length())
+        shape.push_back(std::stoi(shapeString.substr(start)));
     return shape;
 }
 
