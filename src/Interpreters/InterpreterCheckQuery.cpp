@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -33,6 +34,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char check_table_query_delay_for_part[];
 }
 
 namespace
@@ -106,6 +112,13 @@ public:
     {
         if (!table || !check_data_tasks)
             return {};
+
+        fiu_do_on(FailPoints::check_table_query_delay_for_part,
+        {
+            std::chrono::milliseconds sleep_time{rand() % 1000};
+            std::this_thread::sleep_for(sleep_time);
+        });
+
         IStorage::DataValidationTasksPtr check_data_tasks_ = check_data_tasks;
         auto result = table->checkDataNext(check_data_tasks_);
         is_finished = !result.has_value();
