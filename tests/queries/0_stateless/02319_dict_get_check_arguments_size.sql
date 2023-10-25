@@ -26,6 +26,9 @@ SELECT dictGetOrDefault('test_dictionary', 'value', 1, 'DefaultValue', 1); --{se
 DROP DICTIONARY test_dictionary;
 
 DROP TABLE dictionary_source_table;
+
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE dictionary_source_table
 (
     key UInt64,

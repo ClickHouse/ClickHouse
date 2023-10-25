@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS t_ab1;
 DROP TABLE IF EXISTS t_ab2;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE t_ab1 (id Nullable(Int32), a UInt16, b UInt8) ENGINE = TinyLog;
 CREATE TABLE t_ab2 (id Nullable(Int32), a Int16, b Nullable(Int64)) ENGINE = TinyLog;
 INSERT INTO t_ab1 VALUES (0, 1, 1), (1, 2, 2);

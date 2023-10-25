@@ -1,5 +1,8 @@
 DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
+
+SET allow_table_engine_log=1;
+
 CREATE TABLE table1 ( id String ) ENGINE = Log;
 CREATE TABLE table2 ( parent_id String ) ENGINE = Log;
 
