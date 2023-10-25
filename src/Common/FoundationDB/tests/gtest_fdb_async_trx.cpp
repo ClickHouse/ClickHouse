@@ -1,4 +1,7 @@
+#include "config.h"
+
 #if USE_FDB
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -471,9 +474,9 @@ TEST_F(FDBAsyncTrx, TSanLogInTrx)
         {
             return fdb_delay(0.5);
         }
-        | TRX_STEP(log = log)
+        | TRX_STEP(log_ = log)
         {
-            LOG_DEBUG(log, "log");
+            LOG_DEBUG(log_, "log");
             return nullptr;
         };
 

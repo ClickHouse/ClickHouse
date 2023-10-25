@@ -1,5 +1,7 @@
-#if USE_FDB
 #include "gtest_fdb_common.h"
+
+#if USE_FDB
+
 #include <cstdlib>
 #include <cstring>
 #include <foundationdb/fdb_c.h>

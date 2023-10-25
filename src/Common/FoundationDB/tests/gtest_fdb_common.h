@@ -1,4 +1,7 @@
 #pragma once
+
+#include "config.h"
+
 #if USE_FDB
 #include <string>
 #include <gtest/gtest.h>

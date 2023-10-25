@@ -1,4 +1,7 @@
+#include "config.h"
+
 #if USE_FDB
+
 #include <chrono>
 #include <thread>
 #include <tuple>

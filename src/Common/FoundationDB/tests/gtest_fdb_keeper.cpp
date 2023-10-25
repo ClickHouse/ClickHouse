@@ -1,4 +1,7 @@
+#include "config.h"
+
 #if USE_FDB
+
 #include <cstddef>
 #include <exception>
 #include <future>

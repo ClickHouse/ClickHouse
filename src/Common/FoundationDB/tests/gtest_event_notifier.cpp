@@ -1,4 +1,7 @@
+#include "config.h"
+
 #if USE_FDB
+
 #include <gtest/gtest.h>
 #include <Common/EventNotifier.h>
 

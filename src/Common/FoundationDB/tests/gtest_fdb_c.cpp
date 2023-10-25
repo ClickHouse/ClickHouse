@@ -1,4 +1,7 @@
+#include "config.h"
+
 #if USE_FDB
+
 #include <future>
 #include <memory>
 #include <foundationdb/fdb_c.h>

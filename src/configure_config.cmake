@@ -168,5 +168,6 @@ if (TARGET ch_contrib::libarchive)
 endif()
 if (ENABLE_FDB)
     set(USE_FDB 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})
