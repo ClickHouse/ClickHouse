@@ -861,6 +861,84 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
     LOG_DEBUG(log, "Creating replica {}", replica_path);
 
+    const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
+    const String local_columns = metadata_snapshot->getColumns().toString();
+    const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
+
+    /// It is possible for the replica to fail after creating ZK nodes without saving local metadata.
+    /// Because of that we need to check whether the replica exists and is newly created.
+    /// For this we check that all nodes exist, the metadata of the table is the same, and other nodes are not modified.
+
+    std::vector<String> paths_exists = {
+        replica_path,
+        replica_path + "/host",
+        replica_path + "/log_pointer",
+        replica_path + "/queue",
+        replica_path + "/parts",
+        replica_path + "/flags",
+        replica_path + "/is_lost",
+        replica_path + "/metadata",
+        replica_path + "/columns",
+        replica_path + "/metadata_version",
+        replica_path + "/mutation_pointer",
+        replica_path + "/min_unprocessed_insert_time",
+        replica_path + "/max_processed_insert_time",
+        replica_path + "/mutation_pointer"
+    };
+
+    auto response_exists = zookeeper->tryGet(paths_exists);
+    size_t response_num = 0;
+
+    if (response_exists[response_num++].error == Coordination::Error::ZOK)
+    {
+        bool all_nodes_exist = true;
+
+        for (size_t i = 0; i < response_exists.size(); ++i)
+        {
+            if (response_exists[i].error != Coordination::Error::ZOK)
+            {
+                all_nodes_exist = false;
+                break;
+            }
+        }
+
+        if (all_nodes_exist)
+        {
+            const auto & zk_host                        = response_exists[response_num++].data;
+            const auto & zk_log_pointer                 = response_exists[response_num++].data;
+            const auto & zk_queue                       = response_exists[response_num++].data;
+            const auto & zk_parts                       = response_exists[response_num++].data;
+            const auto & zk_flags                       = response_exists[response_num++].data;
+            const auto & zk_is_lost                     = response_exists[response_num++].data;
+            const auto & zk_metadata                    = response_exists[response_num++].data;
+            const auto & zk_columns                     = response_exists[response_num++].data;
+            const auto & zk_metadata_version            = response_exists[response_num++].data;
+            const auto & zk_min_unprocessed_insert_time = response_exists[response_num++].data;
+            const auto & zk_max_processed_insert_time   = response_exists[response_num++].data;
+            const auto & zk_mutation_pointer            = response_exists[response_num++].data;
+
+            if (zk_host.empty() &&
+                zk_log_pointer.empty() &&
+                zk_queue.empty() &&
+                zk_parts.empty() &&
+                zk_flags.empty() &&
+                (zk_is_lost == "0" || zk_is_lost == "1") &&
+                zk_metadata == local_metadata &&
+                zk_columns == local_columns &&
+                zk_metadata_version == local_metadata_version &&
+                zk_mutation_pointer.empty() &&
+                zk_min_unprocessed_insert_time.empty() &&
+                zk_max_processed_insert_time.empty() &&
+                zk_mutation_pointer.empty())
+            {
+                LOG_DEBUG(log, "Empty replica {} exists, will use it", replica_path);
+                return;
+            }
+        }
+
+        throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Replica {} already exists", replica_path);
+    }
+
     Coordination::Error code;
 
     do
@@ -892,11 +970,11 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", local_metadata,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", metadata_snapshot->getColumns().toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", local_columns,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(metadata_snapshot->getMetadataVersion()),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", local_metadata_version,
             zkutil::CreateMode::Persistent));
 
         /// The following 3 nodes were added in version 1.1.xxx, so we create them here, not in createNewZooKeeperNodes()
