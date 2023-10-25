@@ -5,9 +5,9 @@
 namespace DB
 {
 
-/** Parses queries of the form
- * SHOW SETTING setting_name
- */
+/** Parses queries of the form:
+  * SHOW SETTING [setting_name]
+  */
 class ParserShowSettingQuery : public IParserBase
 {
 protected:
