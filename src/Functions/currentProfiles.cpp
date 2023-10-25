@@ -32,7 +32,7 @@ namespace
         }
     }
 
-    class FunctionCurrentProfiles : public IFunction
+    class FunctionProfiles : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -45,7 +45,7 @@ namespace
             return toString(kind);
         }
 
-        explicit FunctionCurrentProfiles(const ContextPtr & context, Kind kind_)
+        explicit FunctionProfiles(const ContextPtr & context, Kind kind_)
             : kind(kind_)
         {
             const auto & manager = context->getAccessControl();
@@ -87,11 +87,11 @@ namespace
     };
 }
 
-REGISTER_FUNCTION(CurrentProfiles)
+REGISTER_FUNCTION(Profiles)
 {
-    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCurrentProfiles>(context, Kind::currentProfiles)); });
-    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCurrentProfiles>(context, Kind::enabledProfiles)); });
-    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCurrentProfiles>(context, Kind::defaultProfiles)); });
+    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionProfiles>(context, Kind::currentProfiles)); });
+    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles)); });
+    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles)); });
 }
 
 }
