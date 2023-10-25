@@ -40,7 +40,6 @@ struct FieldRef : public Field
 
 /** Range with open or closed ends; possibly unbounded.
   */
-
 struct Range;
 using Ranges = std::vector<Range>;
 
@@ -53,9 +52,6 @@ using Hyperrectangle = std::vector<Range>;
 struct Range
 {
 public:
-    static bool equals(const Field & lhs, const Field & rhs);
-    static bool less(const Field & lhs, const Field & rhs);
-
     FieldRef left;        /// the left border
     FieldRef right;       /// the right border
     bool left_included;   /// includes the left border
