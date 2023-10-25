@@ -31,7 +31,7 @@ def generate_cluster_def(port):
         <disks>
             <blob_storage_disk>
                 <type>azure_blob_storage</type>
-                <storage_account_url>http://azurite1:{str(port)}/devstoreaccount1</storage_account_url>
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
                 <skip_access_check>false</skip_access_check>
                 <account_name>devstoreaccount1</account_name>
