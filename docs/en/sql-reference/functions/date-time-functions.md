@@ -605,7 +605,7 @@ The first argument can also be specified as [String](../data-types/string.md) in
 
 **Returned value**
 
-- The day of the month (1 - 31) of the given date/time
+- The day of the week (1-7), depending on the choosen mode, of the given date/time
 
 **Example**
 
