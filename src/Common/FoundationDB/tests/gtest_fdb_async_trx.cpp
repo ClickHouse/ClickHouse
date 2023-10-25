@@ -1,3 +1,4 @@
+#if USE_FDB
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -693,3 +694,4 @@ TEST_F(FDBAsyncTrx, CancelUncancelableTrxWithCancelSource)
     ASSERT_EQ(future.wait_until(std::chrono::steady_clock::time_point::min()), std::future_status::ready);
     ASSERT_NO_THROW(future.get());
 }
+#endif

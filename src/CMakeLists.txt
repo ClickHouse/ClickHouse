@@ -179,7 +179,10 @@ target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_con
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
-add_subdirectory(Common/FoundationDB)
+
+if(ENABLE_FDB)
+    add_subdirectory(Common/FoundationDB)
+endif()
 
 set (all_modules)
 macro(add_object_library name common_path)
@@ -376,7 +379,6 @@ dbms_target_link_libraries (
         boost::program_options
         clickhouse_common_config
         clickhouse_common_zookeeper
-        clickhouse_common_foundationdb
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         ch_contrib::lz4

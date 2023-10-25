@@ -7,24 +7,27 @@ list(APPEND clickhouse_common_zookeeper_sources ${CMAKE_CURRENT_SOURCE_DIR}/../.
 # for clickhouse server
 add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
 target_compile_definitions (clickhouse_common_zookeeper PRIVATE -DZOOKEEPER_LOG)
-target_link_libraries (clickhouse_common_zookeeper
+set(COMMON_LIBS 
+    clickhouse_common_io
+    common
+    string_utils
+)
+
+if(ENABLE_FDB)
+    list(APPEND COMMON_LIBS clickhouse_common_foundationdb)
+    add_definitions(-DENABLE_FDB)
+endif()
+
+target_link_libraries(clickhouse_common_zookeeper
     PUBLIC
-        clickhouse_common_io
-        common
-    PRIVATE
-        string_utils
-        clickhouse_common_foundationdb
+        ${COMMON_LIBS}
 )
 
 # for examples -- no logging (to avoid extra dependencies)
 add_library(clickhouse_common_zookeeper_no_log ${clickhouse_common_zookeeper_headers} ${clickhouse_common_zookeeper_sources})
-target_link_libraries (clickhouse_common_zookeeper_no_log
+target_link_libraries(clickhouse_common_zookeeper_no_log
     PUBLIC
-        clickhouse_common_io
-        common
-    PRIVATE
-        string_utils
-        clickhouse_common_foundationdb
+        ${COMMON_LIBS}
 )
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)

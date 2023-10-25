@@ -1,3 +1,4 @@
+#if USE_FDB
 #include <cstddef>
 #include <exception>
 #include <future>
@@ -1556,3 +1557,4 @@ TEST_P(FDBKeeperChrootSuite, CreateIgnoreExists)
     ASSERT_EQ(create_resp.path_created, "/a");
     ASSERT_EQ(create_resp.error, Error::ZOK);
 }
+#endif

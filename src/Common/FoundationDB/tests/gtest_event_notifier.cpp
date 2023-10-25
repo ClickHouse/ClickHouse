@@ -1,3 +1,4 @@
+#if USE_FDB
 #include <gtest/gtest.h>
 #include <Common/EventNotifier.h>
 
@@ -12,3 +13,5 @@ struct EventNotifierEnvironment : public ::testing::Environment
 
 const auto * env = testing::AddGlobalTestEnvironment(new EventNotifierEnvironment());
 }
+#endif
+

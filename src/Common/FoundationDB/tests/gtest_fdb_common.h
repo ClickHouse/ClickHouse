@@ -1,5 +1,5 @@
 #pragma once
-
+#if USE_FDB
 #include <string>
 #include <gtest/gtest.h>
 #include <Common/FoundationDB/fdb_c_fwd.h>
@@ -25,3 +25,4 @@ private:
 #define SKIP_IF_NO_FDB() \
     if (!hasFDB()) \
     GTEST_SKIP() << "Skipped because CLICKHOUSE_UT_FDB_CLUSTER_FILE is not defined or empty"
+#endif

@@ -1,3 +1,4 @@
+#if USE_FDB
 #include <chrono>
 #include <thread>
 #include <tuple>
@@ -196,3 +197,4 @@ INSTANTIATE_TEST_SUITE_P(
         multiLockOrder("012", {"R1W2", "W1W2", "R1W2"}),
         multiLockOrder("0000", {"R1R2", "R2R3", "R3R1", "R5R1"})));
 }
+#endif

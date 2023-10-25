@@ -1,3 +1,4 @@
+#if USE_FDB
 #include "gtest_fdb_common.h"
 #include <cstdlib>
 #include <cstring>
@@ -73,3 +74,4 @@ std::string FDBFixture::cluster_file;
 std::string FDBFixture::key_prefix;
 FDBDatabase * FDBFixture::db = nullptr;
 }
+#endif

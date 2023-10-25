@@ -1,3 +1,4 @@
+#if USE_FDB
 #include <future>
 #include <memory>
 #include <foundationdb/fdb_c.h>
@@ -107,3 +108,4 @@ TEST_F(FDBCTests, WatchClearRange)
     ASSERT_EQ(wait_future.wait_for(1s), std::future_status::ready);
 }
 }
+#endif
