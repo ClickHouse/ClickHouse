@@ -674,9 +674,9 @@ SHOW MERGES;
 Result:
 
 ```text
-┌─table──────┬─database─┬─────elapsed─┬─merge_type─┐
-│ your_table │ default  │ 0.039891507 │ Regular    │
-└────────────┴──────────┴─────────────┴────────────┘
+┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
+│ your_table │ default  │              0.14 │ 0.365592338 │     0.73 │           0 │ 5.40 MiB │ 10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
 
 ```
 
@@ -689,9 +689,9 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 Result:
 
 ```text
-┌─table──────┬─database─┬─────elapsed─┬─merge_type─┐
-│ your_table │ default  │ 0.049192524 │ Regular    │
-└────────────┴──────────┴─────────────┴────────────┘
+┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
+│ your_table │ default  │              0.05 │ 1.727629065 │     0.97 │           0 │ 5.40 MiB │ 10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
 
 ```
 
