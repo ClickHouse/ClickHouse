@@ -732,7 +732,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             is_create_parameterized_view = create_query->isParameterizedView();
         else if (const auto * explain_query = ast->as<ASTExplainQuery>())
         {
-            assert(explain_query->children.size() => 1);
+            assert(explain_query->children.size() >= 1);
             if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
                 is_create_parameterized_view = create_of_explain_query->isParameterizedView();
         }
