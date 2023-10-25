@@ -58,8 +58,8 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
     , is_binary(is_binary_)
     , with_names(with_names_)
     , with_types(with_types_)
-    , format_reader(std::move(format_reader_))
     , try_detect_header(try_detect_header_)
+    , format_reader(std::move(format_reader_))
 {
     column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
@@ -262,6 +262,30 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
         ext.read_columns.assign(ext.read_columns.size(), true);
 
     return true;
+}
+
+size_t RowInputFormatWithNamesAndTypes::countRows(size_t max_block_size)
+{
+    if (unlikely(end_of_stream))
+        return 0;
+
+    size_t num_rows = 0;
+    bool is_first_row = getTotalRows() == 0 && !with_names && !with_types && !is_header_detected;
+    while (!format_reader->checkForSuffix() && num_rows < max_block_size)
+    {
+        if (likely(!is_first_row))
+            format_reader->skipRowBetweenDelimiter();
+        else
+            is_first_row = false;
+
+        format_reader->skipRow();
+        ++num_rows;
+    }
+
+    if (num_rows == 0 || num_rows < max_block_size)
+        end_of_stream = true;
+
+    return num_rows;
 }
 
 void RowInputFormatWithNamesAndTypes::resetParser()

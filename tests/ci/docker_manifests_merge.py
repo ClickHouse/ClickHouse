@@ -6,13 +6,21 @@ import logging
 import os
 import subprocess
 
+from pathlib import Path
 from typing import List, Dict, Tuple
+
 from github import Github
 
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+    CHException,
+)
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP
+from docker_images_helper import IMAGES_FILE_PATH, get_image_names
+from env_helper import RUNNER_TEMP, REPO_COPY
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from git_helper import Runner
 from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
@@ -41,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--path",
-        type=str,
+        type=Path,
         default=RUNNER_TEMP,
         help="path to changed_images_*.json files",
     )
@@ -69,8 +77,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_images(path: str, suffix: str) -> Images:
-    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
+def load_images(path: Path, suffix: str) -> Images:
+    with open(path / CHANGED_IMAGES.format(suffix), "rb") as images:
         return json.load(images)  # type: ignore
 
 
@@ -167,6 +175,74 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     return manifest, "OK"
 
 
+def enrich_images(changed_images: Dict[str, str]) -> None:
+    all_image_names = get_image_names(Path(REPO_COPY), IMAGES_FILE_PATH)
+
+    images_to_find_tags_for = [
+        image for image in all_image_names if image not in changed_images
+    ]
+    images_to_find_tags_for.sort()
+
+    logging.info(
+        "Trying to find versions for images:\n %s", "\n ".join(images_to_find_tags_for)
+    )
+
+    COMMIT_SHA_BATCH_SIZE = 100
+    MAX_COMMIT_BATCHES_TO_CHECK = 10
+    # Gets the sha of the last COMMIT_SHA_BATCH_SIZE commits after skipping some commits (see below)
+    LAST_N_ANCESTOR_SHA_COMMAND = f"git log --format=format:'%H' --max-count={COMMIT_SHA_BATCH_SIZE} --skip={{}} --merges"
+    git_runner = Runner()
+
+    GET_COMMIT_SHAS_QUERY = """
+        WITH {commit_shas:Array(String)} AS commit_shas,
+             {images:Array(String)} AS images
+        SELECT
+            splitByChar(':', test_name)[1] AS image_name,
+            argMax(splitByChar(':', test_name)[2], check_start_time) AS tag
+        FROM checks
+            WHERE
+                check_name == 'Push multi-arch images to Dockerhub'
+                AND position(test_name, checks.commit_sha)
+                AND checks.commit_sha IN commit_shas
+                AND image_name IN images
+        GROUP BY image_name
+        """
+
+    batch_count = 0
+    # We use always publicly available DB here intentionally
+    ch_helper = ClickHouseHelper(
+        "https://play.clickhouse.com", {"X-ClickHouse-User": "play"}
+    )
+
+    while (
+        batch_count <= MAX_COMMIT_BATCHES_TO_CHECK and len(images_to_find_tags_for) != 0
+    ):
+        commit_shas = git_runner(
+            LAST_N_ANCESTOR_SHA_COMMAND.format(batch_count * COMMIT_SHA_BATCH_SIZE)
+        ).split("\n")
+
+        result = ch_helper.select_json_each_row(
+            "default",
+            GET_COMMIT_SHAS_QUERY,
+            {"commit_shas": commit_shas, "images": images_to_find_tags_for},
+        )
+        result.sort(key=lambda x: x["image_name"])
+
+        logging.info(
+            "Found images for commits %s..%s:\n %s",
+            commit_shas[0],
+            commit_shas[-1],
+            "\n ".join(f"{im['image_name']}:{im['tag']}" for im in result),
+        )
+
+        for row in result:
+            image_name = row["image_name"]
+            changed_images[image_name] = row["tag"]
+            images_to_find_tags_for.remove(image_name)
+
+        batch_count += 1
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
@@ -198,10 +274,15 @@ def main():
             if test_result != "OK":
                 status = "failure"
 
-    with open(
-        os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
-    ) as ci:
-        json.dump(changed_images, ci)
+    enriched_images = changed_images.copy()
+    try:
+        # changed_images now contains all the images that are changed in this PR. Let's find the latest tag for the images that are not changed.
+        enrich_images(enriched_images)
+    except CHException as ex:
+        logging.warning("Couldn't get proper tags for not changed images: %s", ex)
+
+    with open(args.path / "changed_images.json", "w", encoding="utf-8") as ci:
+        json.dump(enriched_images, ci)
 
     pr_info = PRInfo()
     s3_helper = S3Helper()

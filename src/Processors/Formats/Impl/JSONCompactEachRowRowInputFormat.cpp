@@ -88,6 +88,17 @@ void JSONCompactEachRowFormatReader::skipHeaderRow()
     skipRowEndDelimiter();
 }
 
+bool JSONCompactEachRowFormatReader::checkForSuffix()
+{
+    skipWhitespaceIfAny(*in);
+    return in->eof();
+}
+
+void JSONCompactEachRowFormatReader::skipRow()
+{
+    JSONUtils::skipRowForJSONCompactEachRow(*in);
+}
+
 std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
 {
     skipRowStartDelimiter();
@@ -219,7 +230,7 @@ void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & typ
 
 void JSONCompactEachRowRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)

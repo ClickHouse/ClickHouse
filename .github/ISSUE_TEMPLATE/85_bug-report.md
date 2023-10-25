@@ -7,6 +7,8 @@ assignees: ''
 
 ---
 
+> Please make sure that the version you're using is still supported (you can find the list [here](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#scope-and-supported-versions)).
+
 > You have to provide the following information whenever possible.
 
 **Describe what's wrong**
@@ -21,8 +23,7 @@ assignees: ''
 
 **Enable crash reporting**
 
-> If possible, change "enabled" to true in "send_crash_reports" section in `config.xml`:
-
+> Change "enabled" to true in "send_crash_reports" section in `config.xml`:
 ```
 <send_crash_reports>
         <!-- Changing <enabled> to true allows sending crash reports to -->

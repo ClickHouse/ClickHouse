@@ -40,7 +40,6 @@ bool MergePlainMergeTreeTask::executeStep()
     if (merge_list_entry)
     {
         switcher.emplace((*merge_list_entry)->thread_group);
-
     }
 
     switch (state)

@@ -201,7 +201,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -385,7 +385,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
-    friend class AsyncBlockIDsCache;
+    friend class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -512,7 +512,7 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    AsyncBlockIDsCache async_block_ids_cache;
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
@@ -631,8 +631,12 @@ private:
       * Adds actions to `ops` that add data about the part into ZooKeeper.
       * Call under lockForShare.
       */
-    void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const DataPartPtr & part,
-                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+    bool checkPartChecksumsAndAddCommitOps(
+        const ZooKeeperWithFaultInjectionPtr & zookeeper,
+        const DataPartPtr & part,
+        Coordination::Requests & ops,
+        String part_name,
+        NameSet & absent_replicas_paths);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 

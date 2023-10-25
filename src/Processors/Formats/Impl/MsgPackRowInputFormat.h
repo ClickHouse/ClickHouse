@@ -75,7 +75,11 @@ private:
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
-    bool readObject();
+    template <typename Parser>
+    bool readObject(Parser & msgpack_parser);
+
+    size_t countRows(size_t max_block_size) override;
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;

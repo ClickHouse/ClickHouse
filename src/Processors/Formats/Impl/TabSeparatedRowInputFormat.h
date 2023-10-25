@@ -33,6 +33,7 @@ private:
     void syncAfterError() override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
 
+    bool supportsCountRows() const override { return true; }
 
     std::unique_ptr<PeekableReadBuffer> buf;
 };
@@ -58,6 +59,8 @@ public:
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
     std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
+
+    void skipRow() override;
 
     template <bool read_string>
     String readFieldIntoString();

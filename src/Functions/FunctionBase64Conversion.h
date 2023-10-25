@@ -8,53 +8,34 @@
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
 #    include <Interpreters/Context_fwd.h>
-#    include <turbob64.h>
+#    include <libbase64.h>
 #    include <Common/MemorySanitizer.h>
 
+#    include <cstddef>
 #    include <span>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
-}
-
-namespace Detail
-{
-    inline size_t base64Decode(const std::span<const UInt8> src, UInt8 * dst)
-    {
-#    if defined(__aarch64__)
-        return tb64sdec(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    else
-        return _tb64d(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    endif
-    }
 }
 
 struct Base64Encode
 {
     static constexpr auto name = "base64Encode";
 
-    static size_t getBufferSize(const size_t string_length, const size_t string_count)
+    static size_t getBufferSize(size_t string_length, size_t string_count)
     {
         return ((string_length - string_count) / 3 + string_count) * 4 + string_count;
     }
 
-    static size_t performCoding(const std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
     {
-        /*
-        * Some bug in sse arm64 implementation?
-        * `base64Encode(repeat('a', 46))` returns wrong padding character
-        */
-#    if defined(__aarch64__)
-        return tb64senc(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    else
-        return _tb64e(reinterpret_cast<const uint8_t *>(src.data()), src.size(), reinterpret_cast<uint8_t *>(dst));
-#    endif
+        size_t outlen = 0;
+        base64_encode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+        return outlen;
     }
 };
 
@@ -62,15 +43,17 @@ struct Base64Decode
 {
     static constexpr auto name = "base64Decode";
 
-    static size_t getBufferSize(const size_t string_length, const size_t string_count)
+    static size_t getBufferSize(size_t string_length, size_t string_count)
     {
         return ((string_length - string_count) / 4 + string_count) * 3 + string_count;
     }
 
-    static size_t performCoding(const std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
     {
-        const auto outlen = Detail::base64Decode(src, dst);
-        if (src.size() > 0 && !outlen)
+        size_t outlen = 0;
+        int rc = base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
+
+        if (rc != 1)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Failed to {} input '{}'",
@@ -85,17 +68,16 @@ struct TryBase64Decode
 {
     static constexpr auto name = "tryBase64Decode";
 
-    static size_t getBufferSize(const size_t string_length, const size_t string_count)
+    static size_t getBufferSize(size_t string_length, size_t string_count)
     {
         return Base64Decode::getBufferSize(string_length, string_count);
     }
 
-    static size_t performCoding(const std::span<const UInt8> src, UInt8 * dst)
+    static size_t perform(const std::span<const UInt8> src, UInt8 * dst)
     {
-        if (src.empty())
-            return 0;
+        size_t outlen = 0;
+        base64_decode(reinterpret_cast<const char *>(src.data()), src.size(), reinterpret_cast<char *>(dst), &outlen, 0);
 
-        const auto outlen = Detail::base64Decode(src, dst);
         // during decoding character array can be partially polluted
         // if fail, revert back and clean
         if (!outlen)
@@ -119,20 +101,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}: 1 expected.", getName());
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"value", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}
+        };
 
-        if (!WhichDataType(arguments[0].type).isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Must be FixedString or String.",
-                arguments[0].type->getName(),
-                getName());
+        validateFunctionArgumentTypes(*this, arguments, mandatory_arguments);
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, const size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_column = arguments[0].column;
         if (const auto * src_column_as_fixed_string = checkAndGetColumn<ColumnFixedString>(*input_column))
@@ -148,7 +126,7 @@ public:
     }
 
 private:
-    static ColumnPtr execute(const ColumnString & src_column, const size_t src_row_count)
+    static ColumnPtr execute(const ColumnString & src_column, size_t src_row_count)
     {
         auto dst_column = ColumnString::create();
         auto & dst_chars = dst_column->getChars();
@@ -169,7 +147,7 @@ private:
         for (size_t row = 0; row < src_row_count; ++row)
         {
             const size_t src_length = src_offsets[row] - src_offset_prev - 1;
-            const auto outlen = Func::performCoding({src, src_length}, dst_pos);
+            const auto outlen = Func::perform({src, src_length}, dst_pos);
 
             /// Base64 library is using AVX-512 with some shuffle operations.
             /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
@@ -188,7 +166,7 @@ private:
         return dst_column;
     }
 
-    static ColumnPtr execute(const ColumnFixedString & src_column, const size_t src_row_count)
+    static ColumnPtr execute(const ColumnFixedString & src_column, size_t src_row_count)
     {
         auto dst_column = ColumnString::create();
         auto & dst_chars = dst_column->getChars();
@@ -207,7 +185,7 @@ private:
 
         for (size_t row = 0; row < src_row_count; ++row)
         {
-            const auto outlen = Func::performCoding({src, src_n}, dst_pos);
+            const auto outlen = Func::perform({src, src_n}, dst_pos);
 
             /// Base64 library is using AVX-512 with some shuffle operations.
             /// Memory sanitizer don't understand if there was uninitialized memory in SIMD register but it was not used in the result of shuffle.
@@ -225,6 +203,7 @@ private:
         return dst_column;
     }
 };
+
 }
 
 #endif

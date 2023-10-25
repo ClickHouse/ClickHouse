@@ -9,7 +9,7 @@ TEST(SLRUCache, set)
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(2, std::make_shared<int>(3));
 
-    auto w = slru_cache.weight();
+    auto w = slru_cache.sizeInBytes();
     auto n = slru_cache.count();
     ASSERT_EQ(w, 2);
     ASSERT_EQ(n, 2);
@@ -125,7 +125,7 @@ TEST(SLRUCache, evictOnElements)
     auto n = slru_cache.count();
     ASSERT_EQ(n, 1);
 
-    auto w = slru_cache.weight();
+    auto w = slru_cache.sizeInBytes();
     ASSERT_EQ(w, 3);
 
     auto value = slru_cache.get(1);
@@ -148,7 +148,7 @@ TEST(SLRUCache, evictOnWeight)
     auto n = slru_cache.count();
     ASSERT_EQ(n, 2);
 
-    auto w = slru_cache.weight();
+    auto w = slru_cache.sizeInBytes();
     ASSERT_EQ(w, 9);
 
     auto value = slru_cache.get(1);

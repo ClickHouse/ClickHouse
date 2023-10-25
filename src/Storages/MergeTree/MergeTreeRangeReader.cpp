@@ -907,13 +907,21 @@ UInt64 MergeTreeRangeReader::Stream::lastPartOffset() const
 
 size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num) const
 {
-    /// FIXME suboptimal
-    size_t result = 0;
-    size_t from_mark = current_mark;
-    while (result < rows_num && from_mark < last_mark)
-        result += index_granularity->getMarkRows(from_mark++);
-
-    return result;
+    /// Find the first occurrence of mark that satisfies getRowsCountInRange(left, mark + 1) >= rows_num
+    /// in [current_mark, last_mark).
+    assert(current_mark + 1 <= last_mark);
+    size_t left_mark = current_mark;
+    size_t right_mark = last_mark;
+    while (left_mark < right_mark)
+    {
+        size_t mid_mark = left_mark + (right_mark - left_mark) / 2;
+        if (index_granularity->getRowsCountInRange(current_mark, mid_mark + 1) >= rows_num)
+            right_mark = mid_mark;
+        else
+            left_mark = mid_mark + 1;
+    }
+    size_t end_mark = (left_mark == last_mark) ? left_mark : left_mark + 1;
+    return index_granularity->getRowsCountInRange(current_mark, end_mark);
 }
 
 
@@ -1166,7 +1174,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     UInt64 * pos = vec.data();
     UInt64 * end = &vec[num_rows];
 
-    /// Fill the reamining part of the previous range (it was started in the previous read request).
+    /// Fill the remaining part of the previous range (it was started in the previous read request).
     while (pos < end && leading_begin_part_offset < leading_end_part_offset)
         *pos++ = leading_begin_part_offset++;
 

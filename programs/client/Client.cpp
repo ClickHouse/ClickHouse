@@ -125,7 +125,7 @@ void Client::showWarnings()
             std::cout << std::endl;
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Ignore exception
     }
@@ -320,6 +320,7 @@ try
     registerAggregateFunctions();
 
     processConfig();
+    adjustSettings();
     initTtyBuffer(toProgressOption(config().getString("progress", "default")));
 
     {
@@ -706,6 +707,17 @@ bool Client::processWithFuzzing(const String & full_query)
         return true;
     }
 
+    // Kusto is not a subject for fuzzing (yet)
+    if (global_context->getSettingsRef().dialect == DB::Dialect::kusto)
+    {
+        return true;
+    }
+    if (auto *q = orig_ast->as<ASTSetQuery>())
+    {
+        if (auto *setDialect = q->changes.tryGet("dialect"); setDialect && setDialect->safeGet<String>() == "kusto")
+            return true;
+    }
+
     // Don't repeat:
     // - INSERT -- Because the tables may grow too big.
     // - CREATE -- Because first we run the unmodified query, it will succeed,
@@ -994,6 +1006,8 @@ void Client::addOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
+        ("ssh-key-file", po::value<std::string>(), "File containing ssh private key needed for authentication. If not set does password authentication.")
+        ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for imported ssh key.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
@@ -1136,6 +1150,10 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("password", options["password"].as<std::string>());
     if (options.count("ask-password"))
         config().setBool("ask-password", true);
+    if (options.count("ssh-key-file"))
+        config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
+    if (options.count("ssh-key-passphrase"))
+        config().setString("ssh-key-passphrase", options["ssh-key-passphrase"].as<std::string>());
     if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
     if (options.count("max_client_network_bandwidth"))
@@ -1189,7 +1207,7 @@ void Client::processOptions(const OptionsDescription & options_description,
 
 void Client::processConfig()
 {
-    if (config().has("query") && config().has("queries-file"))
+    if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -1200,9 +1218,9 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (stdin_is_a_tty
-        && (delayed_interactive || (!config().has("query") && queries_files.empty())))
+        && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }
@@ -1220,6 +1238,8 @@ void Client::processConfig()
 
     if (config().has("multiquery"))
         is_multiquery = true;
+
+    pager = config().getString("pager", "");
 
     is_default_format = !config().has("vertical") && !config().has("format");
     if (config().has("vertical"))
@@ -1243,6 +1263,7 @@ void Client::processConfig()
             global_context->getSettingsRef().max_insert_block_size);
     }
 
+    global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
     global_context->setQueryKindInitial();
     global_context->setQuotaClientKey(config().getString("quota_key", ""));
     global_context->setQueryKind(query_kind);

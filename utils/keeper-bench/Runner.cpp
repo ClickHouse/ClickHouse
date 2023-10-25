@@ -336,7 +336,7 @@ void Runner::runBenchmark()
         for (size_t i = 0; i < concurrency; ++i)
         {
             auto thread_connections = connections;
-            pool->scheduleOrThrowOnError([this, connections = std::move(thread_connections)]() mutable { thread(connections); });
+            pool->scheduleOrThrowOnError([this, connections_ = std::move(thread_connections)]() mutable { thread(connections_); });
         }
     }
     catch (...)
@@ -416,16 +416,16 @@ void Runner::createConnections()
 
         for (size_t session = 0; session < connection_info.sessions; ++session)
         {
-            connections.emplace_back(getConnection(connection_info));
+            connections.emplace_back(getConnection(connection_info, connection_info_idx));
             connections_to_info_map[connections.size() - 1] = connection_info_idx;
         }
     }
     std::cerr << "---- Done creating connections ----\n" << std::endl;
 }
 
-std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info)
+std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
 {
-    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, connection_info.secure};
+    Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, static_cast<UInt8>(connection_info_idx), connection_info.secure};
     std::vector<Coordination::ZooKeeper::Node> nodes;
     nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
@@ -444,7 +444,7 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections
         if (connection->isExpired())
         {
             const auto & connection_info = connection_infos[connections_to_info_map[connection_idx]];
-            connection = getConnection(connection_info);
+            connection = getConnection(connection_info, connection_idx);
         }
     }
     return connections;
