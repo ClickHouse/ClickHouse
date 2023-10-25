@@ -198,7 +198,7 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   */
 struct FieldValue
 {
-    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+    explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
     void update(const Field & x);
 
     bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
@@ -229,6 +229,8 @@ public:
     MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
     size_t size() const { return ordered_set.at(0)->size(); }
+
+    const Columns & getOrderedSet() const { return ordered_set; }
 
     bool hasMonotonicFunctionsChain() const;
 

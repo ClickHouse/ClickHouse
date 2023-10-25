@@ -1,7 +1,7 @@
 #include <Core/Range.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -9,25 +9,16 @@ namespace DB
 
 
 Range::Range(const FieldRef & point) /// NOLINT
-    : left(point), right(point), left_included(true), right_included(true)
-{
-}
+    : left(point), right(point), left_included(true), right_included(true) {}
 
 /// A bounded two-sided range.
 Range::Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
-    : left(left_), right(right_), left_included(left_included_), right_included(right_included_)
+    : left(left_)
+    , right(right_)
+    , left_included(left_included_)
+    , right_included(right_included_)
 {
     shrinkToIncludedIfPossible();
-}
-
-bool Range::equals(const Field & lhs, const Field & rhs)
-{
-    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
-}
-
-bool Range::less(const Field & lhs, const Field & rhs)
-{
-    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
 }
 
 Range Range::createWholeUniverse()
@@ -98,9 +89,21 @@ void Range::shrinkToIncludedIfPossible()
     }
 }
 
+bool Range::equals(const Field & lhs, const Field & rhs)
+{
+    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
+}
+
+bool Range::less(const Field & lhs, const Field & rhs)
+{
+    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
+}
+
 bool Range::empty() const
 {
-    return less(right, left) || ((!left_included || !right_included) && !less(left, right));
+    return less(right, left)
+        || ((!left_included || !right_included)
+            && !less(left, right));
 }
 
 /// x contained in the range
