@@ -294,10 +294,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     }
     else if (query->as<ASTKillQueryQuery>())
     {
-        return std::make_unique<InterpreterCheckQuery>(query, context);
-    }
-    else if (query->as<ASTKillQueryQuery>())
-    {
         return std::make_unique<InterpreterKillQueryQuery>(query, context);
     }
     else if (query->as<ASTSystemQuery>())

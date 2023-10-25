@@ -1,21 +1,30 @@
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
-#include <Access/Common/AccessFlags.h>
-#include <Storages/IStorage.h>
-#include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
-#include <Interpreters/ProcessList.h>
+
 #include <algorithm>
 
+#include <Access/Common/AccessFlags.h>
+
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 
-#include <Processors/ResizeProcessor.h>
+#include <Common/typeid_cast.h>
+
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+
+#include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTSetQuery.h>
+
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/IInflatingTransform.h>
+#include <Processors/ISimpleTransform.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -34,37 +43,54 @@ Block getSingleValueBlock(UInt8 value)
     return Block{{ColumnUInt8::create(1, value), std::make_shared<DataTypeUInt8>(), "result"}};
 }
 
-Block getHeaderForCheckResult()
+Block getHeaderForCheckResult(bool with_table_name)
 {
-    auto names_and_types = NamesAndTypes{
-        {"part_path", std::make_shared<DataTypeString>()},
-        {"is_passed", std::make_shared<DataTypeUInt8>()},
-        {"message", std::make_shared<DataTypeString>()},
-    };
+    NamesAndTypes names_and_types;
+    if (with_table_name)
+    {
+        names_and_types.emplace_back("database", std::make_shared<DataTypeString>());
+        names_and_types.emplace_back("table", std::make_shared<DataTypeString>());
+    }
 
-    return Block({
-        {names_and_types[0].type->createColumn(), names_and_types[0].type, names_and_types[0].name},
-        {names_and_types[1].type->createColumn(), names_and_types[1].type, names_and_types[1].name},
-        {names_and_types[2].type->createColumn(), names_and_types[2].type, names_and_types[2].name},
-    });
+    names_and_types.emplace_back("part_path", std::make_shared<DataTypeString>());
+    names_and_types.emplace_back("is_passed", std::make_shared<DataTypeUInt8>());
+    names_and_types.emplace_back("message", std::make_shared<DataTypeString>());
+
+    ColumnsWithTypeAndName columns;
+    for (const auto & [name, type] : names_and_types)
+        columns.emplace_back(type->createColumn(), type, name);
+
+    return Block(std::move(columns));
 }
 
 Chunk getChunkFromCheckResult(const CheckResult & check_result)
 {
-    MutableColumns columns = getHeaderForCheckResult().cloneEmptyColumns();
+    MutableColumns columns = getHeaderForCheckResult(false).cloneEmptyColumns();
     columns[0]->insert(check_result.fs_path);
     columns[1]->insert(static_cast<UInt8>(check_result.success));
     columns[2]->insert(check_result.failure_message);
     return Chunk(std::move(columns), 1);
 }
 
-class TableCheckTask
+Chunk getChunkFromCheckResult(const String & database, const String & table, const CheckResult & check_result)
+{
+    MutableColumns columns = getHeaderForCheckResult(true).cloneEmptyColumns();
+    columns[0]->insert(database);
+    columns[1]->insert(table);
+    columns[2]->insert(check_result.fs_path);
+    columns[3]->insert(static_cast<UInt8>(check_result.success));
+    columns[4]->insert(check_result.failure_message);
+    return Chunk(std::move(columns), 1);
+}
+
+class TableCheckTask : public ChunkInfo
 {
 public:
     TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
         : table(DatabaseCatalog::instance().getTable(table_id, context))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
+        chassert(context);
         context->checkAccess(AccessType::SHOW_TABLES, table_id);
     }
 
@@ -72,86 +98,86 @@ public:
         : table(table_)
         , check_data_tasks(table->getCheckTaskList({}, context))
     {
+        chassert(context);
         context->checkAccess(AccessType::SHOW_TABLES, table_->getStorageID());
     }
 
-    std::optional<CheckResult> checkNext()
+    std::optional<CheckResult> checkNext() const
     {
         if (!table || !check_data_tasks)
             return {};
-        auto result = table->checkDataNext(check_data_tasks);
+        IStorage::DataValidationTasksPtr check_data_tasks_ = check_data_tasks;
+        auto result = table->checkDataNext(check_data_tasks_);
         is_finished = !result.has_value();
         return result;
     }
 
-    bool isFinished() const { return !table || !check_data_tasks || is_finished; }
+    bool isFinished() const { return is_finished || !table || !check_data_tasks; }
     size_t size() const { return check_data_tasks ? check_data_tasks->size() : 0; }
     String getNameForLogs() const { return table ? table->getStorageID().getNameForLogs() : ""; }
+
+    std::pair<String, String> getDatabaseAndTableName() const
+    {
+        if (!table)
+            return {};
+        const auto & storage_id = table->getStorageID();
+        return {storage_id.getDatabaseName(), storage_id.getTableName()};
+    }
 
 private:
     StoragePtr table;
     IStorage::DataValidationTasksPtr check_data_tasks;
 
-    std::atomic_bool is_finished{false};
+    mutable std::atomic_bool is_finished{false};
 };
 
-class TableCheckWorkerProcessor : public ISource
+class TableCheckSource : public ISource
 {
 public:
-    TableCheckWorkerProcessor(std::shared_ptr<TableCheckTask> table_check_task_, Poco::Logger * log_)
-        : ISource(getHeaderForCheckResult())
-        , table_check_task(table_check_task_)
-        , log(log_)
-    {
-    }
-
-
-    TableCheckWorkerProcessor(Strings databases_, ContextPtr context_, Poco::Logger * log_)
-        : ISource(getHeaderForCheckResult())
+    TableCheckSource(Strings databases_, ContextPtr context_, Poco::Logger * log_)
+        : ISource(getSingleValueBlock(0))
         , databases(databases_)
         , context(context_)
         , log(log_)
     {
     }
 
-    String getName() const override { return "TableCheckWorkerProcessor"; }
+    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, Poco::Logger * log_)
+        : ISource(getSingleValueBlock(0))
+        , table_check_task(table_check_task_)
+        , log(log_)
+    {
+    }
+
+    String getName() const override { return "TableCheckSource"; }
 
 protected:
-
     std::optional<Chunk> tryGenerate() override
     {
-        while (true)
-        {
-            std::shared_ptr<TableCheckTask> current_check_task = getTableToCheck();
-            if (!current_check_task)
-                return {};
+        std::shared_ptr<TableCheckTask> current_check_task = getTableToCheck();
+        if (!current_check_task)
+            return {};
 
-            auto check_result = current_check_task->checkNext();
-            if (!check_result)
-                continue;
+        progress(1, 0);
 
-            /// We can omit manual `progess` call, ISource will may count it automatically by returned chunk
-            /// However, we want to report only rows in progress, since bytes doesn't make sense here
-            progress(1, 0);
-
-            if (!check_result->success)
-            {
-                LOG_WARNING(log, "Check query for table {} failed, path {}, reason: {}",
-                    current_check_task->getNameForLogs(), check_result->fs_path, check_result->failure_message);
-            }
-
-            return getChunkFromCheckResult(*check_result);
-        }
+        Chunk result;
+        /// source should return at least one row to start pipeline
+        result.addColumn(ColumnUInt8::create(1, 1));
+        /// actual data stored in chunk info
+        result.setChunkInfo(std::move(current_check_task));
+        return result;
     }
 
 private:
     std::shared_ptr<TableCheckTask> getTableToCheck()
     {
-        std::lock_guard lock(current_table_mutex);
         if (table_check_task && !table_check_task->isFinished())
             return table_check_task;
 
         const auto & database_catalog = DatabaseCatalog::instance();
+
+        if (current_table_it && current_table_it->isValid())
+            current_table_it->next();
 
         while ((current_table_it && current_table_it->isValid()) || !databases.empty())
         {
@@ -161,17 +187,16 @@ private:
             while (current_table_it && current_table_it->isValid())
             {
                 /// Try to get next table from current database
-                current_table_it->next();
                 StoragePtr table = current_table_it->table();
                 if (table && table->isMergeTree())
                 {
                     table_check_task = std::make_shared<TableCheckTask>(table, context);
-                    addTotalRowsApprox(table_check_task->size());
-                    LOG_DEBUG(log, "Checking {} parts in table {}", table_check_task->size(), table_check_task->getNameForLogs());
+                    LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
                     return table_check_task;
                 }
-
-                LOG_TRACE(log, "Skip checking table {} because it is not {}", current_table_it->name(), table ? "MergeTree" : "found");
+                current_table_it->next();
+                LOG_TRACE(log, "Skip checking table '{}.{}' because it is not {}",
+                    current_database->getDatabaseName(), current_table_it->name(), table ? "MergeTree" : "found");
             }
 
             /// No more tables in current database, try to get next database
@@ -180,15 +205,14 @@ private:
                 auto database_name = std::move(databases.back());
                 databases.pop_back();
                 current_database = database_catalog.tryGetDatabase(database_name);
-
                 if (current_database)
                 {
-                    LOG_DEBUG(log, "Checking {} database", database_name);
+                    LOG_DEBUG(log, "Checking '{}' database", database_name);
                     current_table_it = current_database->getTablesIterator(context);
                 }
                 else
                 {
-                    LOG_DEBUG(log, "Skipping database {} because it was dropped", database_name);
+                    LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
                 }
             }
             else
@@ -200,7 +224,6 @@ private:
         return {};
     }
 
-    std::mutex current_table_mutex;
     Strings databases;
     DatabasePtr current_database = nullptr;
     DatabaseTablesIteratorPtr current_table_it = nullptr;
@@ -212,10 +235,59 @@ private:
     Poco::Logger * log;
 };
 
+class TableCheckWorkerProcessor : public ISimpleTransform
+{
+public:
+    TableCheckWorkerProcessor(bool with_table_name_, Poco::Logger * log_)
+        : ISimpleTransform(getSingleValueBlock(0), getHeaderForCheckResult(with_table_name_), true)
+        , with_table_name(with_table_name_)
+        , log(log_)
+    {
+    }
+
+    String getName() const override { return "TableCheckWorkerProcessor"; }
+
+protected:
+    virtual void transform(Chunk & chunk) override
+    {
+        auto table_check_task = std::dynamic_pointer_cast<const TableCheckTask>(chunk.getChunkInfo());
+        auto check_result = table_check_task->checkNext();
+        if (!check_result)
+        {
+            chunk = {};
+            return;
+        }
+
+        if (!check_result->success)
+        {
+            LOG_WARNING(log, "Check query for table {} failed, path {}, reason: {}",
+                table_check_task->getNameForLogs(), check_result->fs_path, check_result->failure_message);
+        }
+
+        if (with_table_name)
+        {
+            const auto & [database, table] = table_check_task->getDatabaseAndTableName();
+            chunk = getChunkFromCheckResult(database, table, *check_result);
+        }
+        else
+        {
+            chunk = getChunkFromCheckResult(*check_result);
+        }
+    }
+
+private:
+    bool with_table_name;
+
+    Poco::Logger * log;
+};
+
 class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
-    TableCheckResultEmitter() : IAccumulatingTransform(getHeaderForCheckResult(), getSingleValueBlock(1).cloneEmpty()) {}
+    TableCheckResultEmitter(Block input_header) : IAccumulatingTransform(input_header, getSingleValueBlock(1).cloneEmpty())
+    {
+        column_position_to_check = input_header.getPositionByName("is_passed");
+    }
 
     String getName() const override { return "TableCheckResultEmitter"; }
 
@@ -225,10 +297,10 @@ public:
             return;
 
         auto columns = chunk.getColumns();
-        if (columns.size() != 3)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}", columns.size());
+        if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 
-        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[1].get());
+        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[column_position_to_check].get());
         for (size_t i = 0; i < col->size(); ++i)
         {
             if (col->getElement(i) == 0)
@@ -248,6 +320,8 @@ public:
     }
 
 private:
+    size_t column_position_to_check;
+
     std::atomic<UInt8> result_value{1};
     std::atomic_bool is_value_emitted{false};
 };
@@ -279,73 +353,90 @@ BlockIO InterpreterCheckQuery::execute()
 {
     const auto & context = getContext();
 
-    BlockIO res;
+    const auto & settings = context->getSettingsRef();
+    auto processors = std::make_shared<Processors>();
+    std::shared_ptr<TableCheckSource> worker_source;
+    bool with_table_name = false;
+    if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
     {
-        const auto & settings = context->getSettingsRef();
-        auto processors = std::make_shared<Processors>();
-
-        std::vector<OutputPort *> worker_ports;
-        size_t num_streams = std::max<size_t>(settings.max_threads, 1);
-        if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
-        {
-            /// Check specific table
-            auto table_id = context->resolveStorageID(*check_query, Context::ResolveOrdinary);
-            auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
-            LOG_DEBUG(log, "Checking {} parts in table {}", table_check_task->size(), table_check_task->getNameForLogs());
-            for (size_t i = 0; i < num_streams; ++i)
-            {
-                auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(table_check_task, log);
-                /// Set total rows approx to first worker only not to count it multiple times
-                if (i == 0)
-                    worker_processor->addTotalRowsApprox(table_check_task->size());
-
-                worker_ports.emplace_back(&worker_processor->getPort());
-                processors->emplace_back(std::move(worker_processor));
-            }
-        }
-        else if (query_ptr->as<ASTCheckAllTablesQuery>())
-        {
-            /// Check all tables in all databases
-            auto databases = getAllDatabases(context);
-            LOG_DEBUG(log, "Checking {} databases", databases.size());
-            for (size_t i = 0; i < num_streams; ++i)
-            {
-                auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(databases, context, log);
-                worker_ports.emplace_back(&worker_processor->getPort());
-                processors->emplace_back(std::move(worker_processor));
-            }
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query {} in InterpreterCheckQuery", query_ptr->formatForErrorMessage());
-        }
-
-        OutputPort * resize_outport;
-        {
-            auto resize_processor = std::make_shared<ResizeProcessor>(getHeaderForCheckResult(), worker_ports.size(), 1);
-
-            auto & resize_inputs = resize_processor->getInputs();
-            auto resize_inport_it = resize_inputs.begin();
-            for (size_t i = 0; i < worker_ports.size(); ++i, ++resize_inport_it)
-                connect(*worker_ports[i], *resize_inport_it);
-            processors->emplace_back(resize_processor);
-
-            assert(resize_processor->getOutputs().size() == 1);
-            resize_outport = &resize_processor->getOutputs().front();
-        }
-
-        if (settings.check_query_single_value_result)
-        {
-            auto emitter_processor = std::make_shared<TableCheckResultEmitter>();
-            auto * input_port = &emitter_processor->getInputPort();
-            processors->emplace_back(emitter_processor);
-
-            connect(*resize_outport, *input_port);
-        }
-
-        res.pipeline = QueryPipeline(Pipe(std::move(processors)));
-        res.pipeline.setNumThreads(num_streams);
+        /// Check specific table
+        auto table_id = context->resolveStorageID(*check_query, Context::ResolveOrdinary);
+        auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
+        worker_source = std::make_shared<TableCheckSource>(table_check_task, log);
+        worker_source->addTotalRowsApprox(table_check_task->size());
     }
+    else if (query_ptr->as<ASTCheckAllTablesQuery>())
+    {
+        with_table_name = true;
+        /// Check all tables in all databases
+        auto databases = getAllDatabases(context);
+        LOG_DEBUG(log, "Checking {} databases", databases.size());
+        worker_source = std::make_shared<TableCheckSource>(databases, context, log);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query {} in InterpreterCheckQuery", query_ptr->formatForErrorMessage());
+    }
+
+    size_t num_streams = std::max<size_t>(settings.max_threads, 1);
+
+    processors->emplace_back(worker_source);
+    std::vector<OutputPort *> worker_ports;
+    {
+        /// Create one source and N workers
+        auto & worker_source_port = worker_source->getPort();
+
+        auto resize_processor = std::make_shared<ResizeProcessor>(worker_source_port.getHeader(), 1, num_streams);
+        processors->emplace_back(resize_processor);
+
+        connect(worker_source_port, resize_processor->getInputs().front());
+
+        auto & resize_outputs = resize_processor->getOutputs();
+        for (auto & resize_output : resize_outputs)
+        {
+            auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(with_table_name, log);
+            worker_ports.emplace_back(&worker_processor->getOutputPort());
+            connect(resize_output, worker_processor->getInputPort());
+            processors->emplace_back(std::move(worker_processor));
+        }
+    }
+
+    OutputPort * resize_outport;
+    {
+        chassert(!processors->empty() && !processors->back()->getOutputs().empty());
+        Block header = processors->back()->getOutputs().front().getHeader();
+
+        /// Merge output of all workers
+        auto resize_processor = std::make_shared<ResizeProcessor>(header, worker_ports.size(), 1);
+
+        auto & resize_inputs = resize_processor->getInputs();
+        auto resize_inport_it = resize_inputs.begin();
+        for (size_t i = 0; i < worker_ports.size(); ++i, ++resize_inport_it)
+            connect(*worker_ports[i], *resize_inport_it);
+        processors->emplace_back(resize_processor);
+
+        assert(resize_processor->getOutputs().size() == 1);
+        resize_outport = &resize_processor->getOutputs().front();
+    }
+
+    if (settings.check_query_single_value_result)
+    {
+        chassert(!processors->empty() && !processors->back()->getOutputs().empty());
+        Block header = processors->back()->getOutputs().front().getHeader();
+
+        /// Merge all results into single value
+        auto emitter_processor = std::make_shared<TableCheckResultEmitter>(header);
+        auto * input_port = &emitter_processor->getInputPort();
+        processors->emplace_back(emitter_processor);
+
+        connect(*resize_outport, *input_port);
+    }
+
+    BlockIO res;
+
+    res.pipeline = QueryPipeline(Pipe(std::move(processors)));
+    res.pipeline.setNumThreads(num_streams);
+
     return res;
 }
 

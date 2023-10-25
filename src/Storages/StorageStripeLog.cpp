@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
