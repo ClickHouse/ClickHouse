@@ -1,3 +1,5 @@
+SET session_timezone = 'Africa/Juba';
+
 -- Error cases
 SELECT dateTimeToSnowflake();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
 SELECT dateTime64ToSnowflake();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
@@ -30,11 +32,11 @@ SELECT dateTime64ToSnowflake(dt64_0),
        dateTime64ToSnowflake(dt64_4);
 
 -- DateTime64-to-Snowflake-to-DateTime64 is idempotent *if* the scale is <=3 (millisecond precision)
-WITH now64(0) AS dt64_0,
-     now64(1) AS dt64_1,
-     now64(2) AS dt64_2,
-     now64(3) AS dt64_3,
-     now64(4) AS dt64_4
+WITH now64(0, 'UTC') AS dt64_0,
+     now64(1, 'UTC') AS dt64_1,
+     now64(2, 'UTC') AS dt64_2,
+     now64(3, 'UTC') AS dt64_3,
+     now64(4, 'UTC') AS dt64_4
 SELECT snowflakeToDateTime64(dateTime64ToSnowflake(dt64_0)) == dt64_0,
        snowflakeToDateTime64(dateTime64ToSnowflake(dt64_1)) == dt64_1,
        snowflakeToDateTime64(dateTime64ToSnowflake(dt64_2)) == dt64_2,
