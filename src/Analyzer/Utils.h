@@ -90,4 +90,7 @@ void replaceColumns(QueryTreeNodePtr & node,
   */
 void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 
+/// Just collect all identifiers from query tree
+NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
+
 }

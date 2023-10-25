@@ -1137,7 +1137,6 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
                 format, *read_buf, sample_block, getContext(), max_block_size,
                 format_settings, max_parsing_threads, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
-        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();
