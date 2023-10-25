@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -22,7 +23,6 @@ public:
 
     explicit FunctionOpDate(ContextPtr context_) : context(context_) {}
 
-
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionOpDate<Op>>(context); }
 
     String getName() const override { return name; }
@@ -32,19 +32,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 1st argument of function {}. Should be a date or a date with time",
-                arguments[0].type->getName(),
-                getName());
-
-        if (!isInterval(arguments[1].type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of 2nd argument of function {}. Should be an interval",
-                arguments[1].type->getName(),
-                getName());
+        FunctionArgumentDescriptors args{
+            {"date", &isDateOrDate32OrDateTimeOrDateTime64<IDataType>, nullptr, "Date or date with time"},
+            {"interval", &isInterval<IDataType>, nullptr, "Interval"}
+        };
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
