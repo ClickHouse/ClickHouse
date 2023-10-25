@@ -118,7 +118,7 @@ def test_cluster_groups(started_cluster):
     # 4. SYSTEM DROP DATABASE REPLICA
     backup_node_2.stop_clickhouse()
     backup_node_1.query(
-        "SYSTEM DROP DATABASE REPLICA '4' FROM SHARD '1' FROM GROUP 'backups' FROM DATABASE cluster_groups"
+        "SYSTEM DROP DATABASE REPLICA '1|4' FROM DATABASE cluster_groups"
     )
 
     assert_eq_with_retry(backup_node_1, cluster_query, "backup_node_1\n")
