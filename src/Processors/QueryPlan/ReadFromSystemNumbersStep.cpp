@@ -199,10 +199,27 @@ protected:
                 ? end.offset_in_range - cursor.offset_in_range
                 : static_cast<UInt128>(last_value(range)) - first_value(range) + 1 - cursor.offset_in_range;
 
+            /// set value to block
+            auto set_value = [&pos](UInt128 & start_value, UInt128 & end_value)
+            {
+                if (end_value > std::numeric_limits<UInt64>::max())
+                {
+                    while (start_value < end_value)
+                        *(pos++) = start_value++;
+                }
+                else
+                {
+                    auto start_value_64 = static_cast<UInt64>(start_value);
+                    auto end_value_64 = static_cast<UInt64>(end_value);
+                    while (start_value_64 < end_value_64)
+                        *(pos++) = start_value_64++;
+                }
+            };
+
             if (can_provide > need)
             {
                 UInt64 start_value = first_value(range) + cursor.offset_in_range;
-                auto end_value = start_value + need;
+                UInt64 end_value = start_value + need; /// end_value will never overflow
                 while (start_value < end_value)
                     *(pos++) = start_value++;
 
@@ -212,10 +229,9 @@ protected:
             else if (can_provide == need)
             {
                 /// to avoid UInt64 overflow
-                UInt128 start_value = first_value(range) + cursor.offset_in_range;
-                auto end_value = start_value + need;
-                while (start_value < end_value)
-                    *(pos++) = start_value++;
+                UInt128 start_value = static_cast<UInt128>(first_value(range)) + cursor.offset_in_range;
+                UInt128 end_value = start_value + need;
+                set_value(start_value, end_value);
 
                 provided += need;
                 cursor.offset_in_ranges++;
@@ -224,10 +240,9 @@ protected:
             else
             {
                 /// to avoid UInt64 overflow
-                UInt128 start_value = first_value(range) + cursor.offset_in_range;
-                auto end_value = start_value + static_cast<UInt64>(can_provide);
-                while (start_value < end_value)
-                    *(pos++) = start_value++;
+                UInt128 start_value = static_cast<UInt128>(first_value(range)) + cursor.offset_in_range;
+                UInt128 end_value = start_value + can_provide;
+                set_value(start_value, end_value);
 
                 provided += static_cast<UInt64>(can_provide);
                 cursor.offset_in_ranges++;
