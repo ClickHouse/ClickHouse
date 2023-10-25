@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS insert_select_dst;
 DROP TABLE IF EXISTS insert_select_src;
 
+SET allow_table_engine_log=1;
+
 CREATE TABLE insert_select_dst (i int, middle_a int, middle_b int, j int) ENGINE = Log;
 
 CREATE TABLE insert_select_src (i int, j int) ENGINE = Log;

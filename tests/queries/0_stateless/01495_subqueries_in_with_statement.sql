@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS test1;
 
+SET allow_table_engine_log=1;
+
 CREATE TABLE test1(i int, j int) ENGINE Log;
 
 INSERT INTO test1 VALUES (1, 2), (3, 4);

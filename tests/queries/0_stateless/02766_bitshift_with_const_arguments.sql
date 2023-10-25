@@ -7,6 +7,9 @@ SELECT bitShiftLeft(if(materialize(1), '123', '123'), 1)  from numbers(1);
 -- The next queries are from fuzzer that found the bug:
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
+
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE t0 (vkey UInt32, pkey UInt32, c0 UInt32) engine = TinyLog;
 CREATE TABLE t1 (vkey UInt32) ENGINE = AggregatingMergeTree  ORDER BY vkey;
 INSERT INTO t0 VALUES (15, 25000, 58);

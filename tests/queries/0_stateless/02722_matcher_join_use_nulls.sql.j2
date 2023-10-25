@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE t1 (a Int32) ENGINE = TinyLog;
 CREATE TABLE t2 (a UInt32, key UInt32) ENGINE = TinyLog;
 

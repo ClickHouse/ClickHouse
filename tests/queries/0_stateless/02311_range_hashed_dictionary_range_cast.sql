@@ -1,4 +1,7 @@
 DROP TABLE IF EXISTS dictionary_source_table;
+
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE dictionary_source_table
 (
     key UInt64,

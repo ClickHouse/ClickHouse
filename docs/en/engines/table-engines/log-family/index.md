@@ -16,7 +16,7 @@ Engines of the family:
 
 `Log` family table engines can store data to [HDFS](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-hdfs) or [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3) distributed file systems.
 
-Note that the support for creating tables with these engines is disabled by default. For most of the use cases the [MergeTree Engine Family](docs/en/engines/table-engines/mergetree-family) is preferred.
+Note that the support for creating tables with these engines is disabled by default. For most of the use cases the [MergeTree Engine Family](/docs/en/engines/table-engines/mergetree-family) is preferred.
 Enable support by explicitly using the profile settings `allow_table_engine_log=1`, `allow_table_engine_tinylog=1`, `allow_table_engine_stripelog=1` for the Log, TinyLog and StripeLog engines respectively.
 
 ## Common Properties {#common-properties}
