@@ -14,8 +14,11 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(QueryPlanStepPtr step)
     return Base::visit(step);
 }
 
-AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & /*step*/)
+AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & step)
 {
+    if (step.stepType() == StepType::Scan)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented.", step.getName());
+
     std::vector<PhysicalProperties> required_child_prop;
     for (size_t i = 0; i < group_node->childSize(); ++i)
     {
