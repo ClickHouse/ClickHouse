@@ -468,6 +468,8 @@ template <typename T>
 inline bool isInt32(const T & data_type) { return WhichDataType(data_type).isInt32(); }
 template <typename T>
 inline bool isInt64(const T & data_type) { return WhichDataType(data_type).isInt64(); }
+template <typename T>
+inline bool isInt(const T & data_type) { return WhichDataType(data_type).isInt(); }
 
 template <typename T>
 inline bool isInteger(const T & data_type)
