@@ -47,11 +47,11 @@ WindowStep::WindowStep(
     const DataStream & input_stream_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
-    bool preserve_num_streams_)
-    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!preserve_num_streams_))
+    bool streams_fan_out_)
+    : ITransformingStep(input_stream_, addWindowFunctionResultColumns(input_stream_.header, window_functions_), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
-    , streams_fan_out(preserve_num_streams_)
+    , streams_fan_out(streams_fan_out_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
