@@ -14,11 +14,11 @@ select jsonMergePatch('[1]'); -- { serverError BAD_ARGUMENTS }
 select jsonMergePatch('{"a": "1","b": 2,"c": [true,"qrdzkzjvnos": true,"yxqhipj": false,"oesax": "33o8_6AyUy"}]}', '{"c": "1"}'); -- { serverError BAD_ARGUMENTS }
 
 drop table if exists t_json_merge;
-create table t_json_merge (s1 String, s2 String) engine = Memory;
+create table t_json_merge (id UInt64, s1 String, s2 String) engine = Memory;
 
-insert into t_json_merge select toJSONString(map('k' || toString(number * 2), number * 2)), toJSONString(map('k' || toString(number * 2 + 1), number * 2 + 1)) from numbers(5);
-insert into t_json_merge select toJSONString(map('k' || toString(number * 2), number * 2)), toJSONString(map('k' || toString(number * 2 + 1), number * 2 + 1, 'k' || toString(number * 2), 222)) from numbers(5, 5);
+insert into t_json_merge select number, format('{{ "k{0}": {0} }}', toString(number * 2)), format('{{ "k{0}": {0} }}', toString(number * 2 + 1)) from numbers(5);
+insert into t_json_merge select number, format('{{ "k{0}": {0} }}', toString(number * 2)), format('{{ "k{0}": {0}, "k{1}": 222 }}', toString(number * 2 + 1), toString(number * 2)) from numbers(5, 5);
 
-select jsonMergePatch(s1, s2) from t_json_merge;
+select jsonMergePatch(s1, s2) from t_json_merge ORDER BY id;
 
 drop table t_json_merge;
