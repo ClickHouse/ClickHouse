@@ -99,11 +99,6 @@ StorageS3QueueSource::StorageS3QueueSource(
     , remove_file_func(remove_file_func_)
     , log(&Poco::Logger::get("StorageS3QueueSource"))
 {
-    reader = std::move(internal_source->reader);
-    if (reader)
-    {
-        reader_future = std::move(internal_source->reader_future);
-    }
 }
 
 StorageS3QueueSource::~StorageS3QueueSource()
@@ -116,8 +111,22 @@ String StorageS3QueueSource::getName() const
     return name;
 }
 
+void StorageS3QueueSource::lazyInitialize()
+{
+    if (initialized)
+        return;
+
+    internal_source->lazyInitialize();
+    reader = std::move(internal_source->reader);
+    if (reader)
+        reader_future = std::move(internal_source->reader_future);
+    initialized = true;
+}
+
 Chunk StorageS3QueueSource::generate()
 {
+    lazyInitialize();
+
     while (true)
     {
         if (!reader)
