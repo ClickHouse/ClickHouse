@@ -585,7 +585,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
-            bool replicated_table = create->storage && create->storage->engine && startsWith(create->storage->engine->name, "Replicated");
+            bool replicated_table = create->storage && create->storage->engine &&
+                (startsWith(create->storage->engine->name, "Replicated") || startsWith(create->storage->engine->name, "Shared"));
             if (!replicated_table || !create->storage->engine->arguments)
                 return;
 
@@ -711,8 +712,9 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
     bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
+    bool looks_like_shared = metadata.find("Shared") != std::string::npos;
     bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
-    if (!looks_like_replicated || !looks_like_merge_tree)
+    if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
     ParserCreateQuery parser;
@@ -722,7 +724,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     const ASTCreateQuery & create = query->as<const ASTCreateQuery &>();
     if (!create.storage || !create.storage->engine)
         return UUIDHelpers::Nil;
-    if (!startsWith(create.storage->engine->name, "Replicated") || !endsWith(create.storage->engine->name, "MergeTree"))
+    if (!(startsWith(create.storage->engine->name, "Replicated") || startsWith(create.storage->engine->name, "Shared"))
+        || !endsWith(create.storage->engine->name, "MergeTree"))
         return UUIDHelpers::Nil;
     chassert(create.uuid != UUIDHelpers::Nil);
     return create.uuid;
