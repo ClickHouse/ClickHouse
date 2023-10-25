@@ -1,4 +1,7 @@
 DROP TABLE IF EXISTS tutorial;
+
+SET allow_table_engine_log=1;
+
 create table tutorial ( inner_poly  Array(Tuple(Int32, Int32)), outer_poly  Array(Tuple(Int32, Int32)) ) engine = Log();
 
 SELECT * FROM tutorial;

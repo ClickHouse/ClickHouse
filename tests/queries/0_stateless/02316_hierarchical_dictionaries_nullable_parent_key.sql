@@ -1,4 +1,7 @@
 DROP TABLE IF EXISTS test_hierarhical_table;
+
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE test_hierarhical_table
 (
     id UInt64,

@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS nt;
 DROP TABLE IF EXISTS ntxy;
 
+SET allow_table_engine_log=1;
+
 CREATE TABLE t (x String) ENGINE = Log();
 CREATE TABLE nt (x Nullable(String)) ENGINE = Log();
 CREATE TABLE ntxy (x Nullable(String), y Nullable(String)) ENGINE = Log();

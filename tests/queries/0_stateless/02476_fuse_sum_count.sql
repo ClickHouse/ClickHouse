@@ -1,5 +1,6 @@
 SET allow_experimental_analyzer = 1;
 SET optimize_syntax_fuse_functions = 1;
+SET allow_table_engine_log=1;
 
 DROP TABLE IF EXISTS fuse_tbl;
 

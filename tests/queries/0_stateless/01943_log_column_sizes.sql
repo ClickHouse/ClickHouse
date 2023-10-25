@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS test_log;
 DROP TABLE IF EXISTS test_tiny_log;
 
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1;
+
 CREATE TABLE test_log (x UInt8, s String, a Array(Nullable(String))) ENGINE = Log;
 CREATE TABLE test_tiny_log (x UInt8, s String, a Array(Nullable(String))) ENGINE = TinyLog;
 

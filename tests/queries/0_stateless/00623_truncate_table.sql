@@ -1,4 +1,7 @@
-set allow_deprecated_syntax_for_merge_tree=1;
+SET allow_deprecated_syntax_for_merge_tree=1;
+SET allow_table_engine_log=1;
+SET allow_table_engine_tinylog=1;
+SET allow_table_engine_stripelog=1;
 
 DROP DATABASE IF EXISTS truncate_test;
 DROP TABLE IF EXISTS truncate_test_log;

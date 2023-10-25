@@ -4,6 +4,9 @@ SELECT 'Array sum ', (arraySum(array(1,2,3,4,5,6)));
 SELECT 'Array avg ', (arrayAvg(array(1,2,3,4,5,6)));
 
 DROP TABLE IF EXISTS test_aggregation;
+
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE test_aggregation (x Array(Int)) ENGINE=TinyLog;
 
 INSERT INTO test_aggregation VALUES ([1,2,3,4,5,6]), ([]), ([1,2,3]);

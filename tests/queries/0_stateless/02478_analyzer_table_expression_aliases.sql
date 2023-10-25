@@ -1,4 +1,5 @@
 SET allow_experimental_analyzer = 1;
+SET allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table

@@ -1,6 +1,9 @@
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS constraint_on_nullable_type;
+
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE constraint_on_nullable_type
 (
     `id` Nullable(UInt64),

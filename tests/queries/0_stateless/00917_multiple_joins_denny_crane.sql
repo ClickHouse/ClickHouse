@@ -2,6 +2,8 @@ SET joined_subquery_requires_alias = 0;
 
 DROP TABLE IF EXISTS ANIMAL;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE ANIMAL ( ANIMAL Nullable(String) ) engine = TinyLog;
 INSERT INTO ANIMAL (ANIMAL) VALUES ('CAT'), ('FISH'), ('DOG'), ('HORSE'), ('BIRD');
 
