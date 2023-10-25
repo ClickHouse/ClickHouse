@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /** Visitor that traverse query tree in depth.
   * Derived class must implement `visitImpl` method.
   * Additionally subclass can control if child need to be visited using `needChildVisit` method, by
