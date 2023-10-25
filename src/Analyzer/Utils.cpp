@@ -602,7 +602,7 @@ void replaceColumns(QueryTreeNodePtr & node,
 
 void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
 {
-    if(!function_node->isResolved())
+    if (!function_node->isResolved())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to rerun resolve of unresolved function '{}'", function_node->getFunctionName());
 
     if (function_node->isOrdinaryFunction())
