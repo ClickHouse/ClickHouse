@@ -651,3 +651,47 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 
 **See Also**
 - [system.functions](../../operations/system-tables/functions.md) table
+
+## SHOW MERGES
+
+Returns a list of merges. All merges are listed in the [system.merges](../../operations/system-tables/merges.md) table.
+
+
+**Syntax**
+
+``` sql
+SHOW MERGES [[NOT] LIKE|ILIKE '<table_name_pattern>'] [LIMIT <N>]
+```
+
+**Examples**
+
+Query:
+
+``` sql
+SHOW MERGES;
+```
+
+Result:
+
+```text
+┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
+│ your_table │ default  │              0.14 │ 0.365592338 │     0.73 │           0 │ 5.40 MiB │ 10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
+
+```
+
+Query:
+
+``` sql
+SHOW MERGES LIKE 'your_t%' LIMIT 1;
+```
+
+Result:
+
+```text
+┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
+│ your_table │ default  │              0.05 │ 1.727629065 │     0.97 │           0 │ 5.40 MiB │ 10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
+
+```
+
