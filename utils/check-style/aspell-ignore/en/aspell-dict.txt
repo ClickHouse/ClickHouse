@@ -568,6 +568,7 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumPy
 OFNS
 OLAP
 OLTP
