@@ -21,13 +21,7 @@ namespace
         const Poco::Util::AbstractConfiguration & configuration
     )
     {
-        static constexpr auto use_tunneling_for_https_requests_over_http_proxy = "proxy.use_tunneling_for_https_requests_over_http_proxy";
-        if (configuration.has(use_tunneling_for_https_requests_over_http_proxy))
-        {
-            return configuration.getBool(use_tunneling_for_https_requests_over_http_proxy);
-        }
-
-        return true;
+        return configuration.getBool("proxy.use_tunneling_for_https_requests_over_http_proxy", true);
     }
 
     std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
