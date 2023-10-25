@@ -2742,6 +2742,6 @@ ClickHouse will check the highest priority resolver type for the request protoco
 it will check the next highest priority resolver type, until it reaches the environment resolver.
 This also allows a mix of resolver types can be used.
 
-### use_connect_protocol {#use_connect_protocol}
+### use_tunnelings_for_https_requests_over_http_proxy {#use_tunnelings_for_https_requests_over_http_proxy}
 
-Enables or disables using the `CONNECT` method for proxied HTTPS requests. -- TODO: fix this
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. Default value is true.
