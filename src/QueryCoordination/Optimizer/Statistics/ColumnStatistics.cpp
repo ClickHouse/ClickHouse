@@ -23,6 +23,9 @@ ColumnStatisticsPtr ColumnStatistics::clone()
 
 Float64 ColumnStatistics::calculateByValue(OP_TYPE op_type, Float64 value)
 {
+    if (isUnKnown())
+        return 0.1; /// TODO add to settings
+
     /// whether the column is a number.
     bool nan = isColumnedAsNumber(data_type);
     return nan ? calculateForNaN(op_type) : calculateForNumber(op_type, value);

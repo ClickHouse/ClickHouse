@@ -70,8 +70,10 @@ public:
 
     /// Union min_value/max_value with others
     void mergeColumnValueByUnion(ColumnStatisticsPtr other);
+
     /// Intersect min_value/max_value with others
     void mergeColumnValueByIntersect(ColumnStatisticsPtr other);
+
     /// Revert min_value/max_value with others
     void revertColumnValue();
 
@@ -83,12 +85,16 @@ public:
 
     Float64 getMinValue() const;
     void setMinValue(Float64 minValue);
+
     Float64 getMaxValue() const;
     void setMaxValue(Float64 maxValue);
+
     Float64 getAvgRowSize() const;
     void setAvgRowSize(Float64 avgRowSize);
+
     const DataTypePtr & getDataType() const;
     void setDataType(const DataTypePtr & dataType);
+
     /// Whether value is in column.
     /// For numeric column check whether it is in min_value/max_value range.
     /// For non numeric column is always true.
