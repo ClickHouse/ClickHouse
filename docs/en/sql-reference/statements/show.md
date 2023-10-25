@@ -473,7 +473,7 @@ Shows all [users](../../guides/sre/user-management/index.md#user-account-managem
 ``` sql
 SHOW ACCESS
 ```
-## SHOW CLUSTER(s)
+## SHOW CLUSTER(S)
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
