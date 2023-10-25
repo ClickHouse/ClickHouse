@@ -29,8 +29,7 @@ SELECT dateTime64ToSnowflake(dt64_0),
        dateTime64ToSnowflake(dt64_3),
        dateTime64ToSnowflake(dt64_4);
 
--- DateTime64-to-Snowflake-to-DateTime64 is idempotent *if* the scale is <=3 (millisecond
--- precision)
+-- DateTime64-to-Snowflake-to-DateTime64 is idempotent *if* the scale is <=3 (millisecond precision)
 WITH now64(0) AS dt64_0,
      now64(1) AS dt64_1,
      now64(2) AS dt64_2,
