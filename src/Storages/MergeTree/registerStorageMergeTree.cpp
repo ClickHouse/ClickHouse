@@ -535,9 +535,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY ()");
+        {
+            if (args.getLocalContext()->getSettingsRef().create_table_empty_primary_key_by_default)
+            {
+                args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
+                                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY (). "
+                                "Otherwise, you can use the setting 'create_table_empty_primary_key_by_default' to "
+                                "automatically add an empty primary key to the table definition");
+            }
+        }
 
         /// Get sorting key from engine arguments.
         ///
