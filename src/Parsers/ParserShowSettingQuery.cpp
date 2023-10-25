@@ -1,13 +1,10 @@
 #include <Parsers/ParserShowSettingQuery.h>
 
 #include <Parsers/ASTIdentifier_fwd.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTShowSettingQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
 
-#include <boost/algorithm/string.hpp>
 
 namespace DB
 {

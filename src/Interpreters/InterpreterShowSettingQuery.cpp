@@ -1,10 +1,7 @@
 #include <Interpreters/InterpreterShowSettingQuery.h>
 
-#include <Common/quoteString.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
+#include <Common/escapeString.h>
 #include <Parsers/ASTShowSettingQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 
@@ -23,7 +20,7 @@ InterpreterShowSettingQuery::InterpreterShowSettingQuery(const ASTPtr & query_pt
 String InterpreterShowSettingQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowSettingQuery &>();
-    return fmt::format(R"(SELECT value FROM system.settings WHERE name = '{0}')", query.getSettingName());
+    return fmt::format(R"(SELECT value FROM system.settings WHERE name = '{0}')", escapeString(query.getSettingName()));
 }
 
 
