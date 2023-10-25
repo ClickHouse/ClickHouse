@@ -603,7 +603,7 @@ public:
 
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
-      * E.g. for some storages it to check data it need to check a list of files in filesystem, for others it can be a list of parts.
+      * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
       * Also it may hold resources (e.g. locks) required during check.
       */
     struct DataValidationTasksBase
