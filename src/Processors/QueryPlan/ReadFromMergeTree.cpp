@@ -115,6 +115,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
+        .apply_deleted_mask = settings.apply_deleted_mask,
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
         .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,

@@ -207,6 +207,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<SyncCommand>(),
         std::make_shared<HelpCommand>(),
         std::make_shared<FourLetterWordCommand>(),
+        std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
     });
 

@@ -94,6 +94,7 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/map_field.cc
   ${protobuf_source_dir}/src/google/protobuf/message.cc
   ${protobuf_source_dir}/src/google/protobuf/reflection_ops.cc
+  ${protobuf_source_dir}/src/google/protobuf/repeated_ptr_field.cc
   ${protobuf_source_dir}/src/google/protobuf/service.cc
   ${protobuf_source_dir}/src/google/protobuf/source_context.pb.cc
   ${protobuf_source_dir}/src/google/protobuf/struct.pb.cc
