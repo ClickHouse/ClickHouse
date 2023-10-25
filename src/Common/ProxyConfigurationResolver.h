@@ -28,7 +28,7 @@ struct ProxyConfigurationResolver
 protected:
     Protocol request_protocol;
 
-    bool useConnectProtocol(Protocol proxy_protocol) const
+    bool useTunneling(Protocol proxy_protocol) const
     {
         switch (connect_protocol_policy)
         {

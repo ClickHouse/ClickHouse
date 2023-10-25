@@ -63,7 +63,7 @@ namespace
         poco_proxy_config.host = proxy_configuration.host;
         poco_proxy_config.port = proxy_configuration.port;
         poco_proxy_config.protocol = ProxyConfiguration::protocolToString(proxy_configuration.protocol);
-        poco_proxy_config.tunnel = proxy_configuration.use_connect_protocol;
+        poco_proxy_config.tunnel = proxy_configuration.use_tunneling;
         poco_proxy_config.originalRequestProtocol = ProxyConfiguration::protocolToString(proxy_configuration.original_request_protocol);
 
         return poco_proxy_config;
@@ -163,7 +163,7 @@ namespace
         if (!proxy_configuration.host.empty())
         {
             bool is_proxy_http_and_is_tunneling_off = DB::ProxyConfiguration::Protocol::HTTP == proxy_configuration.protocol
-                && !proxy_configuration.use_connect_protocol;
+                && !proxy_configuration.use_tunneling;
 
             // If it is an HTTPS request, proxy server is HTTP and user opted for tunneling off, we must not create an HTTPS request.
             // The desired flow is: HTTP request to the proxy server, then proxy server will initiate an HTTPS request to the target server.
@@ -192,7 +192,10 @@ namespace
         /// doesn't work properly without patch
         session->setKeepAlive(keep_alive);
 
-        session->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
+        if (!proxy_configuration.host.empty())
+        {
+            session->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
+        }
 
         return session;
     }
@@ -256,7 +259,7 @@ namespace
                            proxy_config.host,
                            proxy_config.port,
                            proxy_config.protocol,
-                           proxy_config.use_connect_protocol,
+                           proxy_config.use_tunneling,
                            proxy_config.original_request_protocol,
                            wait_on_pool_size_limit
                        )
@@ -267,7 +270,7 @@ namespace
                            rhs.proxy_config.host,
                            rhs.proxy_config.port,
                            rhs.proxy_config.protocol,
-                           rhs.proxy_config.use_connect_protocol,
+                           rhs.proxy_config.use_tunneling,
                            rhs.proxy_config.original_request_protocol,
                            rhs.wait_on_pool_size_limit
                        );
@@ -289,7 +292,7 @@ namespace
                 s.update(k.proxy_config.host);
                 s.update(k.proxy_config.port);
                 s.update(k.proxy_config.protocol);
-                s.update(k.proxy_config.use_connect_protocol);
+                s.update(k.proxy_config.use_tunneling);
                 s.update(k.proxy_config.original_request_protocol);
                 s.update(k.wait_on_pool_size_limit);
                 return s.get64();

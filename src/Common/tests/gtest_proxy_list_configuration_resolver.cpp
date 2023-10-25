@@ -27,12 +27,12 @@ TEST(ProxyListConfigurationResolver, SimpleTest)
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
     ASSERT_EQ(configuration1.protocol, ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, false);
+    ASSERT_EQ(configuration1.use_tunneling, false);
 
     ASSERT_EQ(configuration2.host, proxy_server2.getHost());
     ASSERT_EQ(configuration2.port, proxy_server2.getPort());
     ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, false);
+    ASSERT_EQ(configuration1.use_tunneling, false);
 }
 
 TEST(ProxyListConfigurationResolver, ConnectProtocolDefault)
@@ -50,12 +50,12 @@ TEST(ProxyListConfigurationResolver, ConnectProtocolDefault)
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
     ASSERT_EQ(configuration1.protocol, ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, true);
+    ASSERT_EQ(configuration1.use_tunneling, true);
 
     ASSERT_EQ(configuration2.host, proxy_server2.getHost());
     ASSERT_EQ(configuration2.port, proxy_server2.getPort());
     ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, true);
+    ASSERT_EQ(configuration1.use_tunneling, true);
 }
 
 TEST(ProxyListConfigurationResolver, SimpleTestConnectProtocolOff)
@@ -72,12 +72,12 @@ TEST(ProxyListConfigurationResolver, SimpleTestConnectProtocolOff)
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
     ASSERT_EQ(configuration1.protocol, ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, false);
+    ASSERT_EQ(configuration1.use_tunneling, false);
 
     ASSERT_EQ(configuration2.host, proxy_server2.getHost());
     ASSERT_EQ(configuration2.port, proxy_server2.getPort());
     ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, false);
+    ASSERT_EQ(configuration1.use_tunneling, false);
 }
 
 TEST(ProxyListConfigurationResolver, SimpleTestConnectProtocolOn)
@@ -94,12 +94,12 @@ TEST(ProxyListConfigurationResolver, SimpleTestConnectProtocolOn)
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
     ASSERT_EQ(configuration1.protocol, ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, true);
+    ASSERT_EQ(configuration1.use_tunneling, true);
 
     ASSERT_EQ(configuration2.host, proxy_server2.getHost());
     ASSERT_EQ(configuration2.port, proxy_server2.getPort());
     ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
-    ASSERT_EQ(configuration1.use_connect_protocol, true);
+    ASSERT_EQ(configuration1.use_tunneling, true);
 }
 
 }

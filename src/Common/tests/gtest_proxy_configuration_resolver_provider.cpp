@@ -218,7 +218,7 @@ void test_connect_protocol(DB::ContextMutablePtr context)
 
     auto https_configuration = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::Protocol::HTTPS, *config)->resolve();
 
-    ASSERT_EQ(https_configuration.use_connect_protocol, USE_CONNECT_PROTOCOL);
+    ASSERT_EQ(https_configuration.use_tunneling, USE_CONNECT_PROTOCOL);
 }
 
 TEST_F(ProxyConfigurationResolverProviderTests, ConnectProtocolString)

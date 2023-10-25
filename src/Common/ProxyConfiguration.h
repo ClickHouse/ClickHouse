@@ -45,13 +45,10 @@ struct ProxyConfiguration
     }
 
     std::string host;
-    Protocol protocol = Protocol::HTTP;
-
-    // for some odd reason this needs to be set to 80. It seems like it is being misused somewhere in the code
-    // (e.g, empty proxy response being set)
-    uint16_t port = 80u;
-    bool use_connect_protocol = true;
-    Protocol original_request_protocol = Protocol::HTTP;
+    Protocol protocol;
+    uint16_t port;
+    bool use_tunneling;
+    Protocol original_request_protocol;
 };
 
 }

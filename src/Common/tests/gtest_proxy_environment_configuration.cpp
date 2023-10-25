@@ -25,7 +25,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTP)
     ASSERT_EQ(configuration.host, http_proxy_server.getHost());
     ASSERT_EQ(configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.use_connect_protocol, false);
+    ASSERT_EQ(configuration.use_tunneling, false);
 }
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPNoEnv)
@@ -78,7 +78,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPConnectProtocolOn)
     ASSERT_EQ(configuration.host, http_proxy_server.getHost());
     ASSERT_EQ(configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.use_connect_protocol, true);
+    ASSERT_EQ(configuration.use_tunneling, true);
 }
 
 TEST(EnvironmentProxyConfigurationResolver, TestHTTPsConnectProtocolOff)
@@ -94,7 +94,7 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPsConnectProtocolOff)
     ASSERT_EQ(configuration.host, http_proxy_server.getHost());
     ASSERT_EQ(configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.use_connect_protocol, false);
+    ASSERT_EQ(configuration.use_tunneling, false);
 }
 
 }
