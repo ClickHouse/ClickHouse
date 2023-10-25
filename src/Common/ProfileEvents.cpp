@@ -438,7 +438,6 @@ The server successfully detected this situation and will download merged part fr
     M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
-    M(ThreadpoolReaderIgnoredBytes, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
     M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
     M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading") \

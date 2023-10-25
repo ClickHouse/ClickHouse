@@ -162,7 +162,8 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     }
 
     ReadSettings local_read_settings{settings};
-    local_read_settings.local_fs_method = LocalFSReadMethod::pread_threadpool;
+    if (local_read_settings.local_fs_method != LocalFSReadMethod::pread_threadpool)
+        local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     if (use_external_buffer)
     {
