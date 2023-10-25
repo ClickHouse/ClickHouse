@@ -65,7 +65,6 @@ public:
 
     String getName() const override
     {
-        std::lock_guard lock{nested_mutex};
         return getNested()->getName();
     }
 
