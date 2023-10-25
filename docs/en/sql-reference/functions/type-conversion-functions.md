@@ -2033,7 +2033,7 @@ snowflakeToDateTime64(value[, time_zone])
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) with scale = 3, i.e. millisecond precison.
+- The timestamp component of `value` as a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
 
 **Example**
 
