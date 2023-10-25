@@ -500,10 +500,6 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         Coordination::Stat stat;
         String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
 
-        /// This way we make sure that other replica with the same replica_name and shard_name
-        ///  but with a different replica_group_name was not created at the same time.
-        String replica_value = "Last added replica: " + getFullReplicaName();
-
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
