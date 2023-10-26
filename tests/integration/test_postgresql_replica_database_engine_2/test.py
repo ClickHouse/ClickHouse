@@ -764,8 +764,12 @@ def test_replica_consumer(started_cluster):
     table = "test_replica_consumer"
     pg_manager_instance2.restart()
 
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number from numbers(0, 50)"
+    )
+
     for pm in [pg_manager, pg_manager_instance2]:
-        pm.create_and_fill_postgres_table(table)
         pm.create_materialized_db(
             ip=started_cluster.postgres_ip,
             port=started_cluster.postgres_port,
