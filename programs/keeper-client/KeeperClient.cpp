@@ -465,10 +465,8 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     else
         runInteractive();
 
-#ifdef ENABLE_FDB
     if (config().has("fdb"))
         FoundationDBNetwork::shutdownIfNeed();
-#endif
 
     return 0;
 }

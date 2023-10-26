@@ -535,8 +535,6 @@ Runner::~Runner()
     shutdown = true;
     pool->wait();
     generator->cleanup(*connections[0]);
-#ifdef ENABLE_FDB
     DB::FoundationDBNetwork::shutdownIfNeed();
-#endif
 }
 

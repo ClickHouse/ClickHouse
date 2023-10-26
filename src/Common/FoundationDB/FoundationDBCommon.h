@@ -45,8 +45,14 @@ public:
     /// It will stop the network thread if exists.
     /// If holders exists, the network thread will be stopped after all holders
     /// have been released.
-    static void shutdownIfNeed();
+    static void _shutdownIfNeed();
 
+    static void shutdownIfNeed()
+    {
+#ifdef ENABLE_FDB
+        _shutdownIfNeed();
+#endif
+    }
     /// Holder ensures that the FoundationDB Network thread remains active,
     /// even after shutdownIfNeed(). Holder implicitly ensureStarted(), so you
     /// don't need to call ensureStarted() if you are using Holder.
