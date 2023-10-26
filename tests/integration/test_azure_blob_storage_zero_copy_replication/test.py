@@ -16,6 +16,7 @@ CLUSTER_NAME = "test_cluster"
 
 drop_table_statement = f"DROP TABLE {TABLE_NAME} ON CLUSTER {CLUSTER_NAME} SYNC"
 
+
 def generate_cluster_def(port):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
@@ -126,27 +127,29 @@ def test_zero_copy_replication(cluster):
     values1 = "(0,'data'),(1,'data')"
     values2 = "(2,'data'),(3,'data')"
 
-    azure_query(node1,f"INSERT INTO {TABLE_NAME} VALUES {values1}")
+    azure_query(node1, f"INSERT INTO {TABLE_NAME} VALUES {values1}")
     node2.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
     assert (
-        azure_query(node1,f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values") == values1
+        azure_query(node1, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        == values1
     )
     assert (
-        azure_query(node2,f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values") == values1
+        azure_query(node2, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        == values1
     )
 
     # Based on version 21.x - should be only one file with size 100+ (checksums.txt), used by both nodes
     assert get_large_objects_count(blob_container_client) == 1
 
-    azure_query(node2,f"INSERT INTO {TABLE_NAME} VALUES {values2}")
+    azure_query(node2, f"INSERT INTO {TABLE_NAME} VALUES {values2}")
     node1.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
 
     assert (
-        azure_query(node2,f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        azure_query(node2, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
         == values1 + "," + values2
     )
     assert (
-        azure_query(node1,f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
+        azure_query(node1, f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values")
         == values1 + "," + values2
     )
 
