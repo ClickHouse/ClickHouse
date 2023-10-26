@@ -65,6 +65,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
             f"partial_result_update_duration_ms={random.randint(10, 1000)}"
         )
 
+    if random.random() < 0.1:
+        client_options.append("optimize_trivial_approximate_count_query=1")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
