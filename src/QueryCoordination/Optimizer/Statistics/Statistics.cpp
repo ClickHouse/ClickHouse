@@ -66,7 +66,7 @@ void Statistics::addColumnStatistics(const String & column_name, ColumnStatistic
 
 void Statistics::removeColumnStatistics(const String & column_name)
 {
-    if (columns_stats_map.contains(column_name))
+    if (!columns_stats_map.contains(column_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No statistics for column {}", column_name);
     columns_stats_map.erase(column_name);
 }
