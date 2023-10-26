@@ -597,7 +597,9 @@ try
 
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
+#ifdef ENABLE_FDB
     FoundationDBNetwork::setLibraryPath(config().getString("path", DBMS_DEFAULT_PATH) + "/libfdb_c.so");
+#endif
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.

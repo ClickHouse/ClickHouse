@@ -490,6 +490,7 @@ void Runner::createConnections()
 
 std::shared_ptr<Coordination::IKeeper> Runner::getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx)
 {
+#ifdef ENABLE_FDB
     if (connection_info.is_fdb)
     {
         zkutil::ZooKeeperArgs args;
@@ -499,6 +500,7 @@ std::shared_ptr<Coordination::IKeeper> Runner::getConnection(const ConnectionInf
     }
     else
     {
+#endif
         Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{connection_info.host}, static_cast<UInt8>(connection_info_idx), connection_info.secure};
         std::vector<Coordination::ZooKeeper::Node> nodes;
         nodes.push_back(node);
@@ -507,7 +509,9 @@ std::shared_ptr<Coordination::IKeeper> Runner::getConnection(const ConnectionInf
         args.connection_timeout_ms = connection_info.operation_timeout_ms;
         args.operation_timeout_ms = connection_info.connection_timeout_ms;
         return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+#ifdef ENABLE_FDB
     }
+#endif
 }
 
 std::vector<std::shared_ptr<Coordination::IKeeper>> Runner::refreshConnections()
@@ -531,6 +535,8 @@ Runner::~Runner()
     shutdown = true;
     pool->wait();
     generator->cleanup(*connections[0]);
+#ifdef ENABLE_FDB
     DB::FoundationDBNetwork::shutdownIfNeed();
+#endif
 }
 
