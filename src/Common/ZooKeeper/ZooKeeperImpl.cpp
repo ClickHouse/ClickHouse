@@ -355,7 +355,7 @@ ZooKeeper::ZooKeeper(
     }
     catch (...)
     {
-        /// If we get exception & compression is enabled, then its possible that keeper does not support compression, 
+        /// If we get exception & compression is enabled, then its possible that keeper does not support compression,
         /// try without compression
         if (use_compression)
         {
@@ -474,7 +474,7 @@ void ZooKeeper::connect(
                                                                                    CompressionCodecFactory::instance().get(
                                                                                            "ZSTD", {}));
                 }
-                
+
                 original_index = static_cast<Int8>(node.original_index);
 
                 if (i != 0)
