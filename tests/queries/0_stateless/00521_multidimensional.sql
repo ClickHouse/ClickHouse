@@ -1,3 +1,5 @@
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1, allow_table_engine_stripelog=1;
+
 DROP TABLE IF EXISTS multidimensional;
 CREATE TABLE multidimensional (x UInt64, arr Array(Array(String))) ENGINE = MergeTree ORDER BY x;
 

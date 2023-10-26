@@ -3,6 +3,8 @@
 
 DROP TABLE IF EXISTS check_query_comment_column;
 
+SET allow_table_engine_tinylog=1;
+
 -- Check COMMENT COLUMN and MODIFY COLUMN statements with simple engine
 CREATE TABLE check_query_comment_column
   (

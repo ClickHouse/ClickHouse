@@ -58,6 +58,9 @@ select coalesce(cast('123', 'Nullable(Decimal(40, 10))'), 0);
 select coalesce(cast('123', 'Decimal(40, 10)'), 0);
 
 DROP TABLE IF EXISTS decimal_insert_cast_issue;
+
+SET allow_table_engine_tinylog=1;
+
 create table decimal_insert_cast_issue (a Decimal(76, 0)) engine = TinyLog;
 SET param_param = 1;
 INSERT INTO decimal_insert_cast_issue VALUES ({param:Nullable(Decimal(41, 0))});

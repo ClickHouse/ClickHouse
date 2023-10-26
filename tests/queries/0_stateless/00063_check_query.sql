@@ -1,4 +1,5 @@
 SET check_query_single_value_result = 1;
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS check_query_tiny_log;
 

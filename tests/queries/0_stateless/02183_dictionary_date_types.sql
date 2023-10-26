@@ -1,3 +1,5 @@
+SET allow_table_engine_tinylog=1;
+
 DROP TABLE IF EXISTS 02183_dictionary_source_table;
 CREATE TABLE 02183_dictionary_source_table
 (

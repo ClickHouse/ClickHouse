@@ -1,5 +1,7 @@
 drop table if exists perf_lc_num;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE perf_lc_num(　        num UInt8,　        arr Array(LowCardinality(Int64)) default [num]　        ) ENGINE = TinyLog;
 
 INSERT INTO perf_lc_num (num) SELECT toUInt8(number) FROM numbers(10000000);

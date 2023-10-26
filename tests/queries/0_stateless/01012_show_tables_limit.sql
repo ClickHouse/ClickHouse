@@ -1,3 +1,4 @@
+SET allow_table_engine_tinylog=1;
 
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.test1 (test UInt8) ENGINE = TinyLog;
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.test2 (test UInt8) ENGINE = TinyLog;

@@ -1,6 +1,7 @@
 -- Tags: long
 
 SET send_logs_level = 'fatal';
+SET allow_table_engine_tinylog=1;
 
 SELECT '***ipv4 trie dict***';
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.table_ipv4_trie

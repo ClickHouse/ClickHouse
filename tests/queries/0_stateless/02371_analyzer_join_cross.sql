@@ -1,5 +1,6 @@
 SET allow_experimental_analyzer = 1;
 SET single_join_prefer_left_table = 0;
+SET allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS test_table_join_1;
 CREATE TABLE test_table_join_1

@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 SET send_logs_level = 'fatal'; -- failed connection tries are ok, if it succeeded after retry.
+SET allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS foo;
 

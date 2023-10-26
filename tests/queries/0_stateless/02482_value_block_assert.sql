@@ -1,4 +1,6 @@
 SET allow_suspicious_low_cardinality_types=1;
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE range_key_dictionary_source_table__fuzz_323
 (
     `key` UInt256,

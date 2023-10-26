@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET allow_table_engine_tinylog=1;
+
 DROP TABLE IF EXISTS dictionary_array_source_table;
 CREATE TABLE dictionary_array_source_table
 (

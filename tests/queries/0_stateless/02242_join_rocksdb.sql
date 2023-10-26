@@ -4,6 +4,8 @@ DROP TABLE IF EXISTS rdb;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE rdb (key UInt32, value Array(UInt32), value2 String) ENGINE = EmbeddedRocksDB PRIMARY KEY (key);
 INSERT INTO rdb
     SELECT

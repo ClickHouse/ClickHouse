@@ -3,6 +3,8 @@
 DROP DATABASE IF EXISTS 01681_database_for_flat_dictionary;
 CREATE DATABASE 01681_database_for_flat_dictionary;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE 01681_database_for_flat_dictionary.simple_key_simple_attributes_source_table
 (
    id UInt64,

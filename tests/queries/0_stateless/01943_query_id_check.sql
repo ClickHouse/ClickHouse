@@ -2,6 +2,7 @@
 -- Tag no-replicated-database: Different query_id
 
 SET prefer_localhost_replica = 1;
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS tmp;
 

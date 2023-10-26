@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS v_test2;
 DROP TABLE IF EXISTS v_test11;
 DROP TABLE IF EXISTS v_test22;
 
+SET allow_table_engine_tinylog=1;
+
 create table test1_00634 (id UInt8) engine = TinyLog;
 create table test2_00634 (id UInt8) engine = TinyLog;
 

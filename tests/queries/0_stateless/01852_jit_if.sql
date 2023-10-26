@@ -1,5 +1,6 @@
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 0;
+SET allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS test_jit_nonnull;
 CREATE TABLE test_jit_nonnull (value UInt8) ENGINE = TinyLog;

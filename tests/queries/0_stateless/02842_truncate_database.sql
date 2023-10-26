@@ -8,6 +8,7 @@ DROP DATABASE IF EXISTS test_truncate_database;
 CREATE DATABASE test_truncate_database;
 USE test_truncate_database;
 
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1, allow_table_engine_stripelog=1;
 -- create tables with several different types of table engines
 CREATE TABLE source_table_memory (x UInt16) ENGINE = Memory;
 CREATE TABLE source_table_log (x UInt16) ENGINE = Log;

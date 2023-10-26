@@ -1,5 +1,7 @@
 -- Tags: deadlock
 
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1, allow_table_engine_stripelog=1;
+
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x UInt8) ENGINE = TinyLog;
 

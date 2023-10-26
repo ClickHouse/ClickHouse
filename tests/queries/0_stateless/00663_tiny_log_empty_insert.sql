@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS empty;
 DROP TABLE IF EXISTS data;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE empty (value Int8) ENGINE = TinyLog;
 CREATE TABLE data (value Int8) ENGINE = TinyLog;
 

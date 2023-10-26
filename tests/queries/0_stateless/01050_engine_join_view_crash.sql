@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS b;
 DROP TABLE IF EXISTS id1;
 DROP TABLE IF EXISTS id2;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE a(`id1` UInt32, `id2` UInt32, `valA` UInt32) ENGINE = TinyLog;
 CREATE TABLE id1(`id1` UInt32, `val1` UInt8) ENGINE = Join(ANY, LEFT, id1);
 CREATE TABLE id2(`id2` UInt32, `val2` UInt8) ENGINE = Join(ANY, LEFT, id2);

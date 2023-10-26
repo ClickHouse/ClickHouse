@@ -1,3 +1,5 @@
+SET allow_table_engine_tinylog=1;
+
 DROP TABLE IF EXISTS source_table;
 CREATE TABLE source_table (x UInt16) ENGINE = TinyLog;
 INSERT INTO source_table SELECT * FROM system.numbers LIMIT 10;

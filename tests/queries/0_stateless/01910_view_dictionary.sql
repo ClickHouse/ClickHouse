@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS dictionary_source_ru;
 DROP TABLE IF EXISTS dictionary_source_view;
 DROP DICTIONARY IF EXISTS flat_dictionary;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE dictionary_source_en
 (
     id UInt64,

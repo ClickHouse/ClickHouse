@@ -1,3 +1,5 @@
+SET allow_table_engine_log=1, allow_table_engine_tinylog=1, allow_table_engine_stripelog=1;
+
 SELECT '----- NULL value -----';
 
 SELECT NULL;

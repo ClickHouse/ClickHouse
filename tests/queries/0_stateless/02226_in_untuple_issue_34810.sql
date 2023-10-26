@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS calendar;
 DROP TABLE IF EXISTS events32;
 
+SET allow_table_engine_tinylog=1;
+
 CREATE TABLE calendar ( `year` Int64, `month` Int64 ) ENGINE = TinyLog;
 INSERT INTO calendar VALUES (2000, 1), (2001, 2), (2000, 3);
 

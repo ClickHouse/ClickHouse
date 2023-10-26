@@ -1,6 +1,8 @@
 -- Tags: shard
 
 set max_threads = 1;
+set allow_table_engine_tinylog=1;
+
 drop table if exists enums;
 
 set allow_deprecated_syntax_for_merge_tree=1;

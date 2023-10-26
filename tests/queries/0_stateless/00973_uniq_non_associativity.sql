@@ -2,6 +2,7 @@
  * But due to subtle bug in implementation it is not associative in very rare cases.
  * In this test we fill data structure with specific pattern that reproduces this behaviour.
  */
+SET allow_table_engine_tinylog=1;
 
 DROP TABLE IF EXISTS part_a;
 DROP TABLE IF EXISTS part_b;
