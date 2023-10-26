@@ -7,7 +7,6 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>
-#include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 
 #include <Parsers/ASTAsterisk.h>

@@ -77,9 +77,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <QueryCoordination/Interpreters/InterpreterSelectQueryFragments.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <QueryCoordination/Interpreters/InterpreterSelectWithUnionQueryFragments.h>
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>

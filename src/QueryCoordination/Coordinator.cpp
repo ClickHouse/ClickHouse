@@ -132,7 +132,7 @@ std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragmen
 
 void Coordinator::assignFragmentToHost()
 {
-    std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts = assignSourceFragment();
+    const std::unordered_map<UInt32, std::vector<String>> & scan_fragment_hosts = assignSourceFragment();
 
     // For a fragment with a scanstep, process its dest fragment.
 
@@ -334,21 +334,8 @@ void Coordinator::sendFragmentsToPreparePipelines()
             if (package.type == Protocol::Server::Exception)
                 package.exception->rethrow();
 
-            size_t max_try_num = 5;
-            size_t try_num = 0;
-            while (package.type != Protocol::Server::PipelinesReady)
-            {
-                if (try_num >= max_try_num)
-                {
-                    break;
-                }
-                package = host_connection[host]->receivePacket();
-                LOG_WARNING(log, "Try receive ready from {} actual receive {}", host, package.type);
-                try_num++;
-            }
-
             if (package.type != Protocol::Server::PipelinesReady)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Didn't receive ready from {}", host);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No receive ready from {}", host);
         }
     }
 }

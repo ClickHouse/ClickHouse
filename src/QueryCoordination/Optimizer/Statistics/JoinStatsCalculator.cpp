@@ -354,7 +354,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Statistics &
     /// left table
     auto all_left_columns = left_input.getColumnNames();
     std::set_difference(
-        all_left_columns.begin(), all_left_columns.end(), left_join_on_keys.begin(), left_join_on_keys.end(), non_join_on_columns.begin());
+        all_left_columns.begin(), all_left_columns.end(), left_join_on_keys.begin(), left_join_on_keys.end(), std::inserter(non_join_on_columns, non_join_on_columns.begin()));
     set_ndv_for_non_join_on_columns();
 
     non_join_on_columns.clear();
@@ -366,7 +366,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForIntersecting(Statistics &
         all_right_columns.end(),
         right_join_on_keys.begin(),
         right_join_on_keys.end(),
-        non_join_on_columns.begin());
+        std::inserter(non_join_on_columns, non_join_on_columns.begin()));
     set_ndv_for_non_join_on_columns();
 }
 
@@ -406,7 +406,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForAnti(Statistics & statist
     /// left table
     auto all_left_columns = left_input.getColumnNames();
     std::set_difference(
-        all_left_columns.begin(), all_left_columns.end(), left_join_on_keys.begin(), left_join_on_keys.end(), non_join_on_columns.begin());
+        all_left_columns.begin(), all_left_columns.end(), left_join_on_keys.begin(), left_join_on_keys.end(), std::inserter(non_join_on_columns, non_join_on_columns.begin()));
     set_ndv_for_non_join_on_columns();
 
     non_join_on_columns.clear();
@@ -418,7 +418,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForAnti(Statistics & statist
         all_right_columns.end(),
         right_join_on_keys.begin(),
         right_join_on_keys.end(),
-        non_join_on_columns.begin());
+        std::inserter(non_join_on_columns, non_join_on_columns.begin()));
     set_ndv_for_non_join_on_columns();
 }
 
@@ -484,7 +484,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForOuterJoin(Statistics & st
                 all_right_columns.end(),
                 right_join_on_keys.begin(),
                 right_join_on_keys.end(),
-                non_join_on_columns.begin());
+                std::inserter(non_join_on_columns, non_join_on_columns.begin()));
             set_ndv_for_non_join_on_columns();
             break;
         case JoinKind::Right:
@@ -494,7 +494,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForOuterJoin(Statistics & st
                 all_left_columns.end(),
                 left_join_on_keys.begin(),
                 left_join_on_keys.end(),
-                non_join_on_columns.begin());
+                std::inserter(non_join_on_columns, non_join_on_columns.begin()));
             set_ndv_for_non_join_on_columns();
             break;
         case JoinKind::Full:
@@ -518,7 +518,7 @@ void JoinStatsCalculator::Impl::removeNonOutputColumn(Statistics & input)
 
         Names non_output_columns;
         std::set_difference(
-            stats_columns.begin(), stats_columns.end(), output_columns.begin(), output_columns.end(), non_output_columns.begin());
+            stats_columns.begin(), stats_columns.end(), output_columns.begin(), output_columns.end(), std::inserter(non_output_columns, non_output_columns.begin()));
 
         for (const auto & non_output_column : non_output_columns)
         {
