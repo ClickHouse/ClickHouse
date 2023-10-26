@@ -2797,7 +2797,7 @@ message Root
 
 ## formatQuery
 
-Returns a formatted version of the given SQL query.
+Returns a formatted, possibly multi-line, version of the given SQL query.
 
 **Syntax**
 
@@ -2814,30 +2814,6 @@ formatQuery(query)
 - The formatted query. [String](../../sql-reference/data-types/string.md).
 
 **Example**
-
-```sql
-SELECT formatQuery('select 1;');
-```
-
-Result:
-
-```result
-┌─formatQuery('select 1;')─┐
-│ SELECT 1                 │
-└──────────────────────────┘
-```
-
-```sql
-SELECT formatQuery('SeLecT 1');
-```
-
-Result:
-
-```result
-┌─formatQuery('SeLecT 1')──┐
-│ SELECT 1                 │
-└──────────────────────────┘
-```
 
 ```sql
 SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
@@ -2857,7 +2833,7 @@ WHERE (a > 3) AND (b < 3)            │
 
 ## formatQueryOneLine
 
-Returns a formatted version of the given SQL query on a single line.
+Like formatQuery() but the returned formatted string contains no line breaks.
 
 **Syntax**
 
@@ -2877,30 +2853,6 @@ formatQueryOneLine(query)
 
 ```sql
 SELECT formatQueryOneLine('select 1;');
-```
-
-Result:
-
-```result
-┌─formatQueryOneLine('select 1;')─┐
-│ SELECT 1                        │
-└─────────────────────────────────┘
-```
-
-```sql
-SELECT formatQueryOneLine('SeLecT 1');
-```
-
-Result:
-
-```result
-┌─formatQueryOneLine('SeLecT 1')──┐
-│ SELECT 1                        │
-└─────────────────────────────────┘
-```
-
-```sql
-SELECT formatQueryOneLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
 ```
 
 Result:

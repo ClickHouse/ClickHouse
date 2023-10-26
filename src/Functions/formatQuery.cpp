@@ -106,13 +106,11 @@ struct NameFormatQueryOneLine
 REGISTER_FUNCTION(formatQuery)
 {
     factory.registerFunction<FunctionFormatQuery<false, NameFormatQuery>>(FunctionDocumentation{
-        .description = "Returns a formatted version of the given SQL query.\n[example:simple]\n[example:camelcase]",
+        .description = "Returns a formatted, possibly multi-line, version of the given SQL query.\n[example:multiline]",
         .syntax = "formatQuery(query)",
         .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
         .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
         .examples{
-            {"simple", "SELECT formatQuery('select 1;')", "SELECT 1"},
-            {"camelcase", "SELECT formatQuery('SeLecT 1')", "SELECT 1"},
             {"multiline",
              "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
              "SELECT\n"
@@ -126,13 +124,11 @@ REGISTER_FUNCTION(formatQuery)
 REGISTER_FUNCTION(formatQueryOneLine)
 {
     factory.registerFunction<FunctionFormatQuery<true, NameFormatQueryOneLine>>(FunctionDocumentation{
-        .description = "Returns a formatted version of the given SQL query on a single line.\n[example:simple]\n[example:camelcase]",
+        .description = "Like formatQuery() but the returned formatted string contains no line breaks.\n[example:multiline]",
         .syntax = "formatQueryOneLine(query)",
         .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
         .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
         .examples{
-            {"simple", "SELECT formatQueryOneLine('select 1;')", "SELECT 1"},
-            {"camelcase", "SELECT formatQueryOneLine('SeLecT 1')", "SELECT 1"},
             {"multiline",
              "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
              "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
