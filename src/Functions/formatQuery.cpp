@@ -98,9 +98,9 @@ struct NameFormatQuery
     static constexpr auto name = "formatQuery";
 };
 
-struct NameFormatQueryOneLine
+struct NameFormatQuerySingleLine
 {
-    static constexpr auto name = "formatQueryOneLine";
+    static constexpr auto name = "formatQuerySingleLine";
 };
 
 REGISTER_FUNCTION(formatQuery)
@@ -121,16 +121,16 @@ REGISTER_FUNCTION(formatQuery)
         .categories{"Other"}});
 }
 
-REGISTER_FUNCTION(formatQueryOneLine)
+REGISTER_FUNCTION(formatQuerySingleLine)
 {
-    factory.registerFunction<FunctionFormatQuery<true, NameFormatQueryOneLine>>(FunctionDocumentation{
+    factory.registerFunction<FunctionFormatQuery<true, NameFormatQuerySingleLine>>(FunctionDocumentation{
         .description = "Like formatQuery() but the returned formatted string contains no line breaks.\n[example:multiline]",
-        .syntax = "formatQueryOneLine(query)",
+        .syntax = "formatQuerySingleLine(query)",
         .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
         .returned_value = "The formatted query. [String](../../sql-reference/data-types/string.md).",
         .examples{
             {"multiline",
-             "SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');",
+             "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
              "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
         .categories{"Other"}});
 }
