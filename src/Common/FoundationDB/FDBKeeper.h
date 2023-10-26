@@ -42,6 +42,10 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override;
 
+    Int8 getConnectedNodeIdx() const override { return 0; }
+    String getConnectedHostPort() const override { return "FDBKeeper:0000"; }
+    int32_t getConnectionXid() const override { return 0; }
+
     /// If the method will throw an exception, callbacks won't be called.
     ///
     /// After the method is executed successfully, you must wait for callbacks
