@@ -34,7 +34,6 @@ struct ParallelReadingExtension
     Names columns_to_read;
 };
 
-/// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
 public:

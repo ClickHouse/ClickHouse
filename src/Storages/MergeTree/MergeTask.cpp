@@ -958,7 +958,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
                 sort_description,
                 merge_block_size_rows,
                 merge_block_size_bytes,
-                SortingQueueStrategy::Default,
+                SortingQueueStrategy::Batch,
                 /* limit_= */0,
                 /* always_read_till_end_= */false,
                 ctx->rows_sources_write_buf.get(),
