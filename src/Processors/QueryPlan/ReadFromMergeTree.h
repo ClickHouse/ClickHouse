@@ -211,8 +211,6 @@ public:
 
     void applyFilters() override;
 
-    bool useSkippingFinal() const { return use_skipping_final; }
-
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,

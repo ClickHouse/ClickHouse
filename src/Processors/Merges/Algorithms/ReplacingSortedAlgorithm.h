@@ -52,7 +52,9 @@ private:
     ssize_t version_column_number = -1;
     bool cleanup = false;
     size_t * cleanedup_rows_count = nullptr;
-    bool use_skipping_final;
+
+    bool use_skipping_final; /// Either we use skipping final algorithm
+    std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.
@@ -62,7 +64,10 @@ private:
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;
 
-    detail::SharedChunkPtr insertRow();
+    void insertRow();
+
+    void saveChunkForSkippingFinalFromSource(size_t current_source_index);
+    void saveChunkForSkippingFinalFromSelectedRow();
     static Status emitChunk(detail::SharedChunkPtr & chunk, bool finished = false);
 };
 
