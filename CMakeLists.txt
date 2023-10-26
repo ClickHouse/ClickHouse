@@ -20,6 +20,7 @@ include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
 include (cmake/utils.cmake)
+include (cmake/message.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -70,7 +71,7 @@ if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     set (CMAKE_BUILD_TYPE "RelWithDebInfo")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = ${CMAKE_BUILD_TYPE}")
 endif ()
-message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+message (STATUS "${BLUE} CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE} ${END}")
 
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
