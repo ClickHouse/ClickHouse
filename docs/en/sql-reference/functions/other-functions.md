@@ -2831,14 +2831,14 @@ WHERE (a > 3) AND (b < 3)            │
 └───────────────────────────────────────────────────────────────┘
 ```
 
-## formatQueryOneLine
+## formatQuerySingleLine
 
 Like formatQuery() but the returned formatted string contains no line breaks.
 
 **Syntax**
 
 ```sql
-formatQueryOneLine(query)
+formatQuerySingleLine(query)
 ```
 
 **Arguments**
@@ -2852,13 +2852,13 @@ formatQueryOneLine(query)
 **Example**
 
 ```sql
-SELECT formatQueryOneLine('select 1;');
+SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
 ```
 
 Result:
 
 ```result
-┌─formatQueryOneLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
-│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                       │
-└──────────────────────────────────────────────────────────────────────┘
+┌─formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```

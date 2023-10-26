@@ -1477,7 +1477,7 @@ formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
 formatQuery
-formatQueryOneLine
+formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
