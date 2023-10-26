@@ -690,7 +690,6 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
     return res;
 }
 
-
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */

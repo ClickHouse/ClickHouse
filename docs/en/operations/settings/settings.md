@@ -2403,6 +2403,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
+
+Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+Default value: `0`.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
@@ -4707,18 +4718,6 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
 ```
-
-## partial_result_update_duration_ms
-
-Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
-
-:::note
-It's an experimental feature. Enable `allow_experimental_partial_result` setting first to use it.
-:::
-
-## max_rows_in_partial_result
-
-Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
 
 ## validate_tcp_client_information {#validate-tcp-client-information}
 

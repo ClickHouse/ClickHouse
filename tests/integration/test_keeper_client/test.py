@@ -218,6 +218,18 @@ def test_quoted_argument_parsing(client: KeeperClient):
     assert client.get(node_path) == "value4 with some whitespace"
 
 
+def get_direct_children_number(client: KeeperClient):
+    client.touch("/get_direct_children_number")
+    client.touch("/get_direct_children_number/1")
+    client.touch("/get_direct_children_number/1/1")
+    client.touch("/get_direct_children_number/1/2")
+    client.touch("/get_direct_children_number/2")
+    client.touch("/get_direct_children_number/2/1")
+    client.touch("/get_direct_children_number/2/2")
+
+    assert client.get_direct_children_number("/get_direct_children_number") == "2"
+
+
 def test_get_all_children_number(client: KeeperClient):
     client.touch("/test_get_all_children_number")
     client.touch("/test_get_all_children_number/1")
