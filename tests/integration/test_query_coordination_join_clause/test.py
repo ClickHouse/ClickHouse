@@ -39,7 +39,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_query(started_cluster):
+def insert_data():
     node1.query("INSERT INTO table_1 SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 600")
     node1.query("INSERT INTO table_1 SELECT id,'234','test1' FROM generateRandom('id Int16') LIMIT 500")
 
@@ -49,6 +49,15 @@ def test_query(started_cluster):
     node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
 
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+
+    assert accurate_result == test_result
+
+def test_query(started_cluster):
+    insert_data()
+
     # SELECT <expr_list>
     # FROM <left_table>
     # [GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
@@ -56,46 +65,45 @@ def test_query(started_cluster):
 
     # settings join_algorithm 'hash', 'parallel_hash', 'full_sorting_merge', 'grace_hash'
 
-    node1.query("SELECT name, text FROM table_1 INNER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 INNER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 INNER ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 INNER ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 INNER ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 INNER ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 INNER ASOF JOIN table_2 ON table_1.id > table_2.id AND table_1.val = table_2.text")
+    exec_query_compare_result("SELECT name, text FROM table_1 INNER ASOF JOIN table_2 ON table_1.id > table_2.id AND table_1.val = table_2.text ORDER BY name, text")
 
 
     # SEMI|ANTI JOIN should be LEFT or RIGHT
-    node1.query("SELECT name, text FROM table_1 LEFT OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 LEFT OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 LEFT SEMI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 LEFT SEMI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 LEFT ANTI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 LEFT ANTI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 LEFT ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 LEFT ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 LEFT ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 LEFT ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
     # Only ASOF and LEFT ASOF joins are supported
-    node1.query("SELECT name, text FROM table_1 LEFT ASOF JOIN table_2 ON table_1.id > table_2.id AND table_1.val = table_2.text")
+    exec_query_compare_result("SELECT name, text FROM table_1 LEFT ASOF JOIN table_2 ON table_1.id > table_2.id AND table_1.val = table_2.text ORDER BY name, text")
 
 
-    node1.query("SELECT name, text FROM table_1 RIGHT OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234')")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 RIGHT SEMI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234')")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT SEMI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 RIGHT ANTI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234')")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT ANTI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 RIGHT ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234')")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 RIGHT ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234')")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
 
 
     # ANY FULL JOINs are not implemented
-    node1.query("SELECT name, text FROM table_1 FULL OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123')")
+    exec_query_compare_result("SELECT name, text FROM table_1 FULL OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
 
 
-    node1.query("SELECT name, text FROM table_1 CROSS JOIN table_2")
+    exec_query_compare_result("SELECT name, text FROM table_1 CROSS JOIN table_2 ORDER BY name, text")
 
-    node1.query("SELECT name, text FROM table_1 CROSS JOIN table_2 WHERE table_1.val = table_2.text")
-
+    exec_query_compare_result("SELECT name, text FROM table_1 CROSS JOIN table_2 WHERE table_1.val = table_2.text ORDER BY name, text")

@@ -30,6 +30,8 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
+        checkCompatibleSettings();
+
         // Only propagate WITH elements to subqueries if we're not a subquery
         if (!options.is_subquery)
         {
@@ -77,6 +79,14 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     {
         context->setDistributedForQueryCoord(true);
     }
+}
+
+bool InterpreterSelectQueryCoordination::checkCompatibleSettings() const
+{
+    if (context->getSettings().use_index_for_in_with_subqueries)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support settings use_index_for_in_with_subqueries");
+
+    return true;
 }
 
 static String formattedAST(const ASTPtr & ast)

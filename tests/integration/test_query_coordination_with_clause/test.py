@@ -45,27 +45,20 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 10000")
+    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
 
-    res = node1.query(
-        """
+    exec_query_compare_result("""
         WITH cte_numbers AS (SELECT id FROM distributed_table WHERE id > 3 LIMIT 1000)
         SELECT count()
         FROM distributed_table
         WHERE id IN (SELECT id FROM cte_numbers)
         SETTINGS allow_experimental_query_coordination = 1
         """)
-
-    res1 = node1.query(
-        """
-        WITH cte_numbers AS (SELECT id FROM distributed_table WHERE id > 3 LIMIT 1000)
-        SELECT count()
-        FROM distributed_table
-        WHERE id IN (SELECT id FROM cte_numbers)
-        """)
-
-    assert res == res1

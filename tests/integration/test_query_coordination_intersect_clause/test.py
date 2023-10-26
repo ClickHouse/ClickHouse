@@ -18,19 +18,19 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table_1 ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table_1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE intersect_1 ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/intersect_1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE table_1 ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, local_table_1, rand());"""
+            """CREATE TABLE intersect_all_1 ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, intersect_1, rand());"""
         )
 
         node1.query(
-            """CREATE TABLE local_table_2 ON CLUSTER test_two_shards (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table_2', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE intersect_2 ON CLUSTER test_two_shards (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/intersect_2', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE table_2 ON CLUSTER test_two_shards (id UInt32, text String, scores UInt32) ENGINE = Distributed(test_two_shards, default, local_table_2, rand());"""
+            """CREATE TABLE intersect_all_2 ON CLUSTER test_two_shards (id UInt32, text String, scores UInt32) ENGINE = Distributed(test_two_shards, default, intersect_2, rand());"""
         )
 
         yield cluster
@@ -38,17 +38,28 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def insert_data():
+    node1.query("INSERT INTO intersect_1 SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 200")
+    node3.query("INSERT INTO intersect_1 SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 300")
+    node5.query("INSERT INTO intersect_1 SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 400")
+    node1.query("INSERT INTO intersect_all_1 SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("SYSTEM FLUSH DISTRIBUTED intersect_all_1")
+
+    node1.query("INSERT INTO intersect_2 SELECT id,'AAA',100 FROM generateRandom('id Int16') LIMIT 200")
+    node3.query("INSERT INTO intersect_2 SELECT id,'BBB',95 FROM generateRandom('id Int16') LIMIT 300")
+    node5.query("INSERT INTO intersect_2 SELECT id,'AAA',95 FROM generateRandom('id Int16') LIMIT 400")
+    node1.query("INSERT INTO intersect_all_2 SELECT id,'AAA',90 FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("SYSTEM FLUSH DISTRIBUTED intersect_all_2")
+
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO table_1 SELECT id,'123','test' FROM generateRandom('id UInt8') LIMIT 600")
-    node1.query("INSERT INTO table_1 SELECT id,'234','test1' FROM generateRandom('id UInt16') LIMIT 500")
+    insert_data()
 
-    node1.query("INSERT INTO table_2 SELECT id,'123',10 FROM generateRandom('id UInt16') LIMIT 500")
-    node1.query("INSERT INTO table_2 SELECT id,'234',12 FROM generateRandom('id UInt8') LIMIT 600")
+    exec_query_compare_result("SELECT id FROM intersect_all_1 INTERSECT SELECT id FROM intersect_all_2 ORDER BY id")
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
-    node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
-
-    node1.query("SELECT id FROM table_1 INTERSECT SELECT id FROM table_2")
-
-    node1.query("SELECT id FROM table_1 EXCEPT SELECT id FROM table_2")
+    exec_query_compare_result("SELECT id FROM intersect_all_1 EXCEPT SELECT id FROM intersect_all_2 ORDER BY id")

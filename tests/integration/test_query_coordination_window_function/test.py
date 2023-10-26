@@ -15,7 +15,7 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE wf_partition_local ON CLUSTER test_two_shards (part_key UInt64, value UInt64, order UInt64) ENGINE = Memory;"""
+            """CREATE TABLE wf_partition_local ON CLUSTER test_two_shards (part_key UInt64, value UInt64, order UInt64) ENGINE = MergeTree ORDER BY value SETTINGS index_granularity=100;"""
         )
 
         node1.query(
@@ -27,10 +27,14 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO wf_partition FORMAT Values (1,1,1), (1,2,2), (1,3,3), (2,0,0), (3,0,0)")
+    node1.query("INSERT INTO wf_partition SELECT part_key, value, order FROM generateRandom('part_key UInt8, value Int8, order Int8') LIMIT 200")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED wf_partition")
 
-    node1.query("SELECT part_key, value, order, groupArray(value) OVER (PARTITION BY part_key) AS frame_values FROM wf_partition ORDER BY part_key ASC, value ASC")
+    exec_query_compare_result("SELECT part_key, value, order, groupArray(value) OVER (PARTITION BY part_key) AS frame_values FROM wf_partition ORDER BY part_key ASC, value ASC")

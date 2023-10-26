@@ -38,6 +38,10 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
     node1.query("INSERT INTO table_1 SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 600")
@@ -49,14 +53,14 @@ def test_query(started_cluster):
     node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test')")
+    exec_query_compare_result("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test')")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') OR (name = 'test')")
+    exec_query_compare_result("SELECT count() FROM table_1 WHERE (val = '123') OR (name = 'test')")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2)")
+    exec_query_compare_result("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2)")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2)")
+    exec_query_compare_result("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2)")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
+    exec_query_compare_result("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
 
-    node1.query("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")
+    exec_query_compare_result("SELECT count() FROM table_1 WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM table_2 WHERE id IN (SELECT id FROM table_1))")

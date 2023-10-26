@@ -30,12 +30,17 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO test_fetch VALUES (1,1), (2,1), (3,4), (1,3), (5,4), (0,6), (5,7)")
+    node1.query("INSERT INTO test_fetch SELECT a, b FROM generateRandom('a UInt8, b Int8') LIMIT 200")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED test_fetch")
 
-    node1.query("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY")
+    exec_query_compare_result("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY")
 
-    node1.query("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES")
+    exec_query_compare_result("SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES")

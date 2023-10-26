@@ -17,7 +17,7 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(QueryPlanStepPtr step)
 AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & step)
 {
     if (step.stepType() == StepType::Scan)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented.", step.getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented", step.getName());
 
     std::vector<PhysicalProperties> required_child_prop;
     for (size_t i = 0; i < group_node->childSize(); ++i)
@@ -146,6 +146,10 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(JoinStep & step)
 
     /// shuffle join
     JoinPtr join = step.getJoin();
+
+    if (join->pipelineType() != JoinPipelineType::FillRightFirst)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support join pipeline type, please specify the join algorithm as hash or parallel_hash or grace_hash");
+
     const TableJoin & table_join = join->getTableJoin();
     if (table_join.getClauses().size() == 1 && table_join.strictness() != JoinStrictness::Asof) /// broadcast join. Asof support != condition
     {

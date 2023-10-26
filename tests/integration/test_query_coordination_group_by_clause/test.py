@@ -18,11 +18,11 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE test_aggregate ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_aggregate', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, local_table, rand());"""
+            """CREATE TABLE test_aggregate_all ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, test_aggregate, rand());"""
         )
 
         yield cluster
@@ -30,31 +30,40 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def insert_data():
+    node1.query("INSERT INTO test_aggregate SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 200")
+    node3.query("INSERT INTO test_aggregate SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 300")
+    node5.query("INSERT INTO test_aggregate SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 400")
+    node1.query("INSERT INTO test_aggregate_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("SYSTEM FLUSH DISTRIBUTED test_aggregate_all")
+
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
-    node1.query("INSERT INTO distributed_table SELECT id,'124','test1' FROM generateRandom('id Int8') LIMIT 1000")
+    insert_data()
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
+    exec_query_compare_result("SELECT id, val, name FROM test_aggregate_all GROUP BY id, val, name ORDER BY id, val, name")
 
-    node1.query("SELECT id, val, name FROM distributed_table GROUP BY id, val, name")
+    exec_query_compare_result("SELECT id, val, any(name) FROM test_aggregate_all GROUP BY id, val ORDER BY id, val")
 
-    node1.query("SELECT id, val, any(name) FROM distributed_table GROUP BY id, val")
+    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY val, name ORDER BY val, name")
 
-    node1.query("SELECT sum(id), val, name FROM distributed_table GROUP BY val, name")
+    exec_query_compare_result("SELECT sum(id), val FROM test_aggregate_all GROUP BY val ORDER BY val, name")
 
-    node1.query("SELECT sum(id), val FROM distributed_table GROUP BY val")
+    exec_query_compare_result("SELECT sum(id), val FROM test_aggregate_all GROUP BY val ORDER BY val, name")
 
-    node1.query("SELECT sum(id), val FROM distributed_table GROUP BY val")
+    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY GROUPING SETS((name,val),(name),(val),())")
 
-    node1.query("SELECT sum(id), val, name FROM distributed_table GROUP BY GROUPING SETS((name,val),(name),(val),())")
+    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY val, name WITH totals ORDER BY val, name")
 
-    node1.query("SELECT sum(id), val, name FROM distributed_table GROUP BY val, name WITH totals")
+    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY val, name WITH rollup  ORDER BY val, name")
 
-    node1.query("SELECT sum(id), val, name FROM distributed_table GROUP BY val, name WITH rollup")
+    exec_query_compare_result("SELECT sum(id), val, name FROM test_aggregate_all GROUP BY val, name WITH cube  ORDER BY val, name")
 
-    node1.query("SELECT sum(id), val, name FROM distributed_table GROUP BY val, name WITH cube")
+    exec_query_compare_result("SELECT sum(id) as ids, val, name FROM test_aggregate_all GROUP BY val, name HAVING ids > 10000 ORDER BY val, name")
 
-    node1.query("SELECT sum(id) as ids, val, name FROM distributed_table GROUP BY val, name HAVING ids > 10000")
-
-    node1.query("SELECT sum(id), substring(val, 1,2) FROM distributed_table GROUP BY substring(val, 1,2)")
+    exec_query_compare_result("SELECT sum(id), substring(val, 1,2) as v FROM test_aggregate_all GROUP BY substring(val, 1,2) ORDER BY v")

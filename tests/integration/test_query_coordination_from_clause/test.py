@@ -18,11 +18,11 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE test_from_clause ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_from_clause', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, local_table, rand());"""
+            """CREATE TABLE test_from_clause_all ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, test_from_clause, rand());"""
         )
 
         yield cluster
@@ -30,16 +30,22 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def insert_data():
+    node1.query("INSERT INTO test_from_clause SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 200")
+    node3.query("INSERT INTO test_from_clause SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 300")
+    node5.query("INSERT INTO test_from_clause SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 400")
+    node1.query("INSERT INTO test_from_clause_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("SYSTEM FLUSH DISTRIBUTED test_from_clause_all")
+
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
+    insert_data()
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
+    exec_query_compare_result("SELECT * FROM test_from_clause_all")
 
-    node1.query("SELECT * FROM distributed_table")
-
-    node1.query("SELECT * FROM distributed_table SETTINGS allow_experimental_query_coordination = 1")
-
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4")
-
-    node1.query("SELECT * FROM (SELECT id, name FROM distributed_table WHERE id > 3) WHERE id > 4 SETTINGS allow_experimental_query_coordination = 1")
+    exec_query_compare_result("SELECT * FROM (SELECT id, name FROM test_from_clause_all WHERE id > 3) WHERE id > 4")

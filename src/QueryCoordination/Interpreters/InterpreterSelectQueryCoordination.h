@@ -22,6 +22,8 @@ public:
 
     BlockIO execute() override;
 
+    bool checkCompatibleSettings() const;
+
     bool ignoreQuota() const override { return false; }
     bool ignoreLimits() const override { return false; }
 

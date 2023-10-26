@@ -30,12 +30,17 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def exec_query_compare_result(query_text):
+    accurate_result = node1.query(query_text)
+    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+
+    assert accurate_result == test_result
 
 def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT number, 0, if(number between 100 and 200, 'x', toString(number)) FROM numbers(1000)")
+    node1.query("INSERT INTO distributed_table SELECT number, 0, if(number between 100 and 200, 'x', toString(number)) FROM numbers(300)")
 
     node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
 
-    node1.query("SELECT count() FROM distributed_table WHERE (B = 0) AND (C = 'x')")
+    exec_query_compare_result("SELECT count() FROM distributed_table WHERE (B = 0) AND (C = 'x')")
 
-    node1.query("SELECT count() FROM distributed_table PREWHERE C = 'x' WHERE B = 0")
+    exec_query_compare_result("SELECT count() FROM distributed_table PREWHERE C = 'x' WHERE B = 0")
