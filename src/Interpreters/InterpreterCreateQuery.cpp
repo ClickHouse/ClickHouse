@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ABORTED;
 }
 
 namespace fs = std::filesystem;
@@ -1441,6 +1442,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    if (getContext()->getSettingsRef().create_replicated_merge_tree_fault_injection)
+    {
+        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        if (is_replicated_storage)
+            throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+    }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

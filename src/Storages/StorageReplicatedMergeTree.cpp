@@ -19,6 +19,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadFuzzer.h>
 
+#include <Core/ServerUUID.h>
+
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 
 #include <base/sort.h>
@@ -834,6 +836,9 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
             zkutil::CreateMode::Persistent));
 
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_uuid", toString(ServerUUID::get()),
+            zkutil::CreateMode::Persistent));
+
         Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
@@ -864,13 +869,13 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
     const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
     const String local_columns = metadata_snapshot->getColumns().toString();
     const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
+    const String creator_uuid = toString(ServerUUID::get());
 
     /// It is possible for the replica to fail after creating ZK nodes without saving local metadata.
     /// Because of that we need to check whether the replica exists and is newly created.
     /// For this we check that all nodes exist, the metadata of the table is the same, and other nodes are not modified.
 
     std::vector<String> paths_exists = {
-        replica_path,
         replica_path + "/host",
         replica_path + "/log_pointer",
         replica_path + "/queue",
@@ -880,63 +885,59 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         replica_path + "/metadata",
         replica_path + "/columns",
         replica_path + "/metadata_version",
-        replica_path + "/mutation_pointer",
         replica_path + "/min_unprocessed_insert_time",
         replica_path + "/max_processed_insert_time",
-        replica_path + "/mutation_pointer"
+        replica_path + "/mutation_pointer",
+        replica_path + "/creator_uuid"
     };
 
     auto response_exists = zookeeper->tryGet(paths_exists);
-    size_t response_num = 0;
+    bool all_nodes_exist = true;
 
-    if (response_exists[response_num++].error == Coordination::Error::ZOK)
+    for (size_t i = 0; i < response_exists.size(); ++i)
     {
-        bool all_nodes_exist = true;
-
-        for (size_t i = 0; i < response_exists.size(); ++i)
+        if (response_exists[i].error != Coordination::Error::ZOK)
         {
-            if (response_exists[i].error != Coordination::Error::ZOK)
-            {
-                all_nodes_exist = false;
-                break;
-            }
+            all_nodes_exist = false;
+            break;
         }
+    }
 
-        if (all_nodes_exist)
+    if (all_nodes_exist)
+    {
+        size_t response_num = 0;
+
+        const auto & zk_host                        = response_exists[response_num++].data;
+        const auto & zk_log_pointer                 = response_exists[response_num++].data;
+        const auto & zk_queue                       = response_exists[response_num++].data;
+        const auto & zk_parts                       = response_exists[response_num++].data;
+        const auto & zk_flags                       = response_exists[response_num++].data;
+        const auto & zk_is_lost                     = response_exists[response_num++].data;
+        const auto & zk_metadata                    = response_exists[response_num++].data;
+        const auto & zk_columns                     = response_exists[response_num++].data;
+        const auto & zk_metadata_version            = response_exists[response_num++].data;
+        const auto & zk_min_unprocessed_insert_time = response_exists[response_num++].data;
+        const auto & zk_max_processed_insert_time   = response_exists[response_num++].data;
+        const auto & zk_mutation_pointer            = response_exists[response_num++].data;
+        const auto & zk_creator_uuid                = response_exists[response_num++].data;
+
+        if (zk_host.empty() &&
+            zk_log_pointer.empty() &&
+            zk_queue.empty() &&
+            zk_parts.empty() &&
+            zk_flags.empty() &&
+            (zk_is_lost == "0" || zk_is_lost == "1") &&
+            zk_metadata == local_metadata &&
+            zk_columns == local_columns &&
+            zk_metadata_version == local_metadata_version &&
+            zk_min_unprocessed_insert_time.empty() &&
+            zk_max_processed_insert_time.empty() &&
+            zk_mutation_pointer.empty() &&
+            zk_creator_uuid == creator_uuid)
         {
-            const auto & zk_host                        = response_exists[response_num++].data;
-            const auto & zk_log_pointer                 = response_exists[response_num++].data;
-            const auto & zk_queue                       = response_exists[response_num++].data;
-            const auto & zk_parts                       = response_exists[response_num++].data;
-            const auto & zk_flags                       = response_exists[response_num++].data;
-            const auto & zk_is_lost                     = response_exists[response_num++].data;
-            const auto & zk_metadata                    = response_exists[response_num++].data;
-            const auto & zk_columns                     = response_exists[response_num++].data;
-            const auto & zk_metadata_version            = response_exists[response_num++].data;
-            const auto & zk_min_unprocessed_insert_time = response_exists[response_num++].data;
-            const auto & zk_max_processed_insert_time   = response_exists[response_num++].data;
-            const auto & zk_mutation_pointer            = response_exists[response_num++].data;
-
-            if (zk_host.empty() &&
-                zk_log_pointer.empty() &&
-                zk_queue.empty() &&
-                zk_parts.empty() &&
-                zk_flags.empty() &&
-                (zk_is_lost == "0" || zk_is_lost == "1") &&
-                zk_metadata == local_metadata &&
-                zk_columns == local_columns &&
-                zk_metadata_version == local_metadata_version &&
-                zk_mutation_pointer.empty() &&
-                zk_min_unprocessed_insert_time.empty() &&
-                zk_max_processed_insert_time.empty() &&
-                zk_mutation_pointer.empty())
-            {
-                LOG_DEBUG(log, "Empty replica {} exists, will use it", replica_path);
-                return;
-            }
+            LOG_DEBUG(log, "Empty replica {} exists, will use it", replica_path);
+            return;
         }
-
-        throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Replica {} already exists", replica_path);
     }
 
     Coordination::Error code;
@@ -983,6 +984,9 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/max_processed_insert_time", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
+            zkutil::CreateMode::Persistent));
+
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_uuid", creator_uuid,
             zkutil::CreateMode::Persistent));
 
         /// Check version of /replicas to see if there are any replicas created at the same moment of time.
