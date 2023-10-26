@@ -34,6 +34,8 @@ public:
 
     Statistics visit(MergingAggregatedStep & step) override;
 
+    Statistics visit(CreatingSetsStep & step) override;
+
     Statistics visit(SortingStep & step) override;
 
     Statistics visit(LimitStep & step) override;

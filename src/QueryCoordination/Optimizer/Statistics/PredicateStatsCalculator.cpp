@@ -202,11 +202,18 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
     uniq_left_stats = uniq_left_stats->clone();
 
     chassert(set->column != nullptr);
-    size_t num_value_in_column{};
+    Float64 num_value_in_column{};
+
+    if (uniq_left_stats->isUnKnown())
+    {
+        node_stats.set(left, uniq_left_stats);
+        node_stats.selectivity = 0.1; /// TODO add to settings
+        return node_stats;
+    }
 
     ColumnPtr set_data_column;
 
-    /// For const set: in (1, 2)
+    /// For constant set: in (1, 2)
     if (auto column_const = dynamic_cast<const ColumnConst *>(set->column.get()))
     {
         chassert(column_const->getDataColumnPtr() != nullptr);
@@ -214,7 +221,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
         {
             chassert(column_set->getData() != nullptr);
             auto set_ptr = column_set->getData()->get();
-            set_data_column = set_ptr->getSetElements()[0];
+            set_data_column = set_ptr->getSetElements()[0]; /// TODO multi-column
         }
     }
     /// For subquery set: in (select * from t)
@@ -222,7 +229,8 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
     {
         chassert(column_set->getData() != nullptr);
         auto set_ptr = column_set->getData()->get();
-        set_data_column = set_ptr->getSetElements()[0];
+        if (set_ptr)
+            set_data_column = set_ptr->getSetElements()[0];
     }
 
     if (set_data_column)
@@ -265,9 +273,11 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
         if (find_max_value)
             uniq_left_stats->setMaxValue(max_value);
     }
+    /// subquery not executed yet
     else
     {
-        num_value_in_column = 0;
+        /// filtering happens later at CreatingSetsStep
+        num_value_in_column = uniq_left_stats->getNdv();
     }
 
     node_stats.set(left, uniq_left_stats);
@@ -277,7 +287,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
 }
 
 ActionNodeStatistics
-PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context)
+PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ColumnStatistics::OP_TYPE op_type, ContextType & context)
 {
     chassert(node->children.size() == 2);
 
@@ -289,7 +299,7 @@ PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * 
     auto left_stats = ExpressionStatsCalculator::calculateStatistics(left, context);
     auto right_stats = ExpressionStatsCalculator::calculateStatistics(right, context);
 
-    auto handle_variable_and_const = [&node_stats](
+    auto handle_variable_and_const = [&node_stats, &op_type](
          ActionNodeStatistics & var_stats,
          const ActionsDAG::Node * const & var_node,
          ActionNodeStatistics & const_stats,
@@ -303,9 +313,10 @@ PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * 
 
         /// calculate selectivity
         auto cloned = uniq_input_node_stats->clone();
-        auto selectivity = cloned->calculateByValue(ColumnStatistics::EQUAL, *const_stats.value);
-
-        node_stats.selectivity = selectivity;
+        if (cloned->isUnKnown())
+            node_stats.selectivity = 0.1; /// TODO add to settings
+        else
+            node_stats.selectivity = cloned->calculateByValue(op_type, *const_stats.value);
         node_stats.input_node_stats[input_nodes[0]] = cloned;
     };
 
@@ -322,7 +333,7 @@ PredicateNodeVisitor::calculateBinaryPredicateFunction(const ActionsDAG::Node * 
     /// col1 = col2
     else if (!isConstColumn(left) && !isConstColumn(right))
     {
-        node_stats.selectivity = 0.5; /// TODO add to settings
+        node_stats.selectivity = 0.1; /// TODO add to settings
 
         for (auto & [child_input_node, stats] : context[left].input_node_stats)
             node_stats.set(child_input_node, stats->clone());
@@ -349,32 +360,32 @@ PredicateNodeVisitor::calculateUnaryPredicateFunction(const ActionsDAG::Node * /
 
 ActionNodeStatistics PredicateNodeVisitor::visitEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, context);
+    return calculateBinaryPredicateFunction(node, ColumnStatistics::EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitNotEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, context);
+    return calculateBinaryPredicateFunction(node, ColumnStatistics::NOT_EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitGreater(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, context);
+    return calculateBinaryPredicateFunction(node, ColumnStatistics::GREATER, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitGreaterOrEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, context);
+    return calculateBinaryPredicateFunction(node, ColumnStatistics::GREATER_OR_EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitLess(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, context);
+    return calculateBinaryPredicateFunction(node, ColumnStatistics::LESS, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitLessOrEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, context);
+    return calculateBinaryPredicateFunction(node, ColumnStatistics::LESS_OR_EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitAlias(const ActionsDAG::Node * node, ContextType & context)

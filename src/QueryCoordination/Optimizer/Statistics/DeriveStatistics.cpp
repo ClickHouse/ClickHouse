@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 Statistics DeriveStatistics::visit(QueryPlanStepPtr step)
 {
-    LOG_TRACE(log, "collect statistics for step {}", step->getName());
+    LOG_TRACE(log, "Collecting statistics for step {}", step->getName());
     return Base::visit(step);
 }
 
@@ -228,8 +228,12 @@ Statistics DeriveStatistics::visit(AggregatingStep & step)
     for (auto & aggregate : step.getParams().aggregates)
     {
         auto * output_column = step.getOutputStream().header.findByName(aggregate.column_name);
-        auto output_column_stats = statistics.getColumnStatistics(aggregate.column_name);
 
+        /// Input stream of aggregating step may has 0 header column, such as: 'select count() from t'.
+        if (!statistics.containsColumnStatistics(aggregate.column_name))
+            statistics.addColumnStatistics(aggregate.column_name, ColumnStatistics::unknown());
+
+        auto output_column_stats = statistics.getColumnStatistics(aggregate.column_name);
         chassert(output_column && output_column_stats);
         output_column_stats->setDataType(output_column->type);
     }
@@ -261,6 +265,42 @@ Statistics DeriveStatistics::visit(SortingStep & step)
     return visitDefault(step);
 }
 
+Statistics DeriveStatistics::visit(CreatingSetsStep & step)
+{
+    auto output_columns = step.getOutputStream().header.getNames();
+
+    Statistics statistics;
+    chassert(input_statistics.size() == step.getInputStreams().size());
+
+    /// Just find in input statistics by output column name,
+    // if not found (step may change input columns) make unknown column statistics
+    for (const auto & output_column : output_columns)
+    {
+        ColumnStatisticsPtr output_column_stats;
+        for (size_t i = 0; i < input_statistics.size(); i++)
+        {
+            if (input_statistics[i].containsColumnStatistics(output_column))
+            {
+                output_column_stats = input_statistics[i].getColumnStatistics(output_column);
+                break;
+            }
+        }
+        if (output_column_stats)
+            statistics.addColumnStatistics(output_column, output_column_stats->clone());
+        else
+            statistics.addColumnStatistics(output_column, ColumnStatistics::unknown());
+    }
+
+    /// Calculate output row count
+    Float64 row_count = 0.0;
+    for (size_t i = 0; i < input_statistics.size(); i++)
+    {
+        row_count += input_statistics[i].getOutputRowSize(); /// TODO handle different cases.
+    }
+
+    statistics.setOutputRowSize(std::max(1.0, row_count));
+    return statistics;
+}
 
 Statistics DeriveStatistics::visit(LimitStep & step)
 {

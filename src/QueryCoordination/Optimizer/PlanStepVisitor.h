@@ -95,6 +95,10 @@ public:
         {
             return visit(*creating_set_step);
         }
+        else if (auto * creating_sets_step = typeid_cast<CreatingSetsStep *>(step.get()))
+        {
+            return visit(*creating_sets_step);
+        }
         else if (auto * extremes_Step = typeid_cast<ExtremesStep *>(step.get()))
         {
             return visit(*extremes_Step);
@@ -144,6 +148,8 @@ public:
     virtual R visit(ExchangeDataStep & step) { return visitDefault(step); }
 
     virtual R visit(CreatingSetStep & step) { return visitDefault(step); }
+
+    virtual R visit(CreatingSetsStep & step) { return visitDefault(step); }
 
     virtual R visit(ExtremesStep & step) { return visitDefault(step); }
 
