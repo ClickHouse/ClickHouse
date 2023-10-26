@@ -2403,6 +2403,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
+
+Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+Default value: `0`.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
