@@ -609,6 +609,18 @@ Result:
 └──────────────────┴────────┴─────────────┘
 ```
 
+## SHOW SETTING
+
+``` sql
+SHOW SETTING <name>
+```
+
+Outputs setting value for specified setting name.
+
+**See Also**
+- [system.settings](../../operations/system-tables/settings.md) table
+
+
 ## SHOW FILESYSTEM CACHES
 
 ```sql
