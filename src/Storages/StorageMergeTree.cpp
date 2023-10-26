@@ -208,9 +208,7 @@ void StorageMergeTree::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (!query_info.parallel_replicas_disabled &&
-        local_context->canUseParallelReplicasOnInitiator() &&
-        local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
+    if (local_context->canUseParallelReplicasOnInitiator() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
     {
         auto table_id = getStorageID();
 
@@ -246,10 +244,7 @@ void StorageMergeTree::read(
     }
     else
     {
-        const bool enable_parallel_reading =
-            !query_info.parallel_replicas_disabled &&
-            local_context->canUseParallelReplicasOnFollower() &&
-            local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
 
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
@@ -704,6 +699,33 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     }
 
     result.is_done = true;
+    return result;
+}
+
+std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommands() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    std::vector<PartVersionWithName> part_versions_with_names;
+    auto data_parts = getDataPartsVectorForInternalUsage();
+    part_versions_with_names.reserve(data_parts.size());
+    for (const auto & part : data_parts)
+        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
+    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+
+    std::map<std::string, MutationCommands> result;
+
+    for (const auto & kv : current_mutations_by_version)
+    {
+        Int64 mutation_version = kv.first;
+        const MergeTreeMutationEntry & entry = kv.second;
+        const PartVersionWithName needle{mutation_version, ""};
+        auto versions_it = std::lower_bound(
+            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+
+        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        if (parts_to_do > 0)
+            result.emplace(entry.file_name, entry.commands);
+    }
     return result;
 }
 
@@ -1384,26 +1406,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
 
     return scheduled;
-}
-
-size_t StorageMergeTree::getNumberOfUnfinishedMutations() const
-{
-    std::unique_lock lock(currently_processing_in_background_mutex);
-
-    size_t count = 0;
-    for (const auto & [version, _] : current_mutations_by_version | std::views::reverse)
-    {
-        auto status = getIncompleteMutationsStatusUnlocked(version, lock, nullptr, true);
-        if (!status)
-            continue;
-
-        if (status->is_done)
-            break;
-
-        ++count;
-    }
-
-    return count;
 }
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(

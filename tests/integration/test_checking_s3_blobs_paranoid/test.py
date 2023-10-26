@@ -19,6 +19,7 @@ def cluster():
             ],
             user_configs=[
                 "configs/setting.xml",
+                "configs/s3_retries.xml",
             ],
             with_minio=True,
         )

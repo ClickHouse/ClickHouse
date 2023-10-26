@@ -4708,18 +4708,6 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
-## partial_result_update_duration_ms
-
-Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
-
-:::note
-It's an experimental feature. Enable `allow_experimental_partial_result` setting first to use it.
-:::
-
-## max_rows_in_partial_result
-
-Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
-
 ## validate_tcp_client_information {#validate-tcp-client-information}
 
 Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
@@ -4767,4 +4755,19 @@ a	Tuple(
     ),
     l Nullable(String)
 )
+```
+
+## dictionary_use_async_executor {#dictionary_use_async_executor}
+
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+
+You may specify it in `SETTINGS` section of dictionary definition:
+
+```sql
+CREATE DICTIONARY t1_dict ( key String, attr UInt64 )
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY `SELECT key, attr FROM t1 GROUP BY key`))
+LIFETIME(MIN 0 MAX 3600)
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```
