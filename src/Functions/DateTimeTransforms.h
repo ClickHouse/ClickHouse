@@ -107,7 +107,7 @@ struct ToDateImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (t < 0 || t > DATE_LUT_MAX_DAY_NUM)
+            if (t < 0 || t > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
         }
         return static_cast<UInt16>(t);
