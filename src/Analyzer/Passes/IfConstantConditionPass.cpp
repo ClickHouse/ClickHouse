@@ -44,19 +44,14 @@ public:
         else
             return;
 
+        QueryTreeNodePtr argument_node;
         if (condition_boolean_value)
-            node = function_node->getArguments().getNodes()[1];
+            argument_node = function_node->getArguments().getNodes()[1];
         else
-            node = function_node->getArguments().getNodes()[2];
-    }
+            argument_node = function_node->getArguments().getNodes()[2];
 
-    void leaveImpl(QueryTreeNodePtr & node)
-    {
-        auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        rerunFunctionResolve(function_node, getContext());
+        if (node->getResultType()->equals(*argument_node->getResultType()))
+            node = argument_node;
     }
 };
 

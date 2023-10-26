@@ -195,7 +195,9 @@ private:
             size_t index = 0;
             for (auto & argument : table_function_node->getArguments())
             {
-                if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), index) == unresolved_indexes.end())
+                if (std::find(unresolved_indexes.begin(),
+                              unresolved_indexes.end(),
+                              index) == unresolved_indexes.end())
                     visit(argument);
                 ++index;
             }
