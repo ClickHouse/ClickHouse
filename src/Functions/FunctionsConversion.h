@@ -454,7 +454,7 @@ struct ToDateTimeImpl
             {
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
                     return dt64 < 0 ? 0 : std::numeric_limits<UInt32>::max();
-                else [[unlikely]]
+                else
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", dt64);
             }
             else
