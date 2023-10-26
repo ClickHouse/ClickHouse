@@ -35,10 +35,11 @@ SELECT dateTime64ToSnowflake(dt64_0),
 WITH now64(0, 'UTC') AS dt64_0,
      now64(1, 'UTC') AS dt64_1,
      now64(2, 'UTC') AS dt64_2,
-     now64(3, 'UTC') AS dt64_3,
-     now64(4, 'UTC') AS dt64_4
-SELECT snowflakeToDateTime64(dateTime64ToSnowflake(dt64_0)) == dt64_0,
-       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_1)) == dt64_1,
-       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_2)) == dt64_2,
-       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_3)) == dt64_3,
-       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_4)) == dt64_4;
+     now64(3, 'UTC') AS dt64_3
+SELECT snowflakeToDateTime64(dateTime64ToSnowflake(dt64_0), 'UTC') == dt64_0,
+       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_1), 'UTC') == dt64_1,
+       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_2), 'UTC') == dt64_2,
+       snowflakeToDateTime64(dateTime64ToSnowflake(dt64_3), 'UTC') == dt64_3;
+
+WITH toDateTime64('2023-11-11 11:11:11.1231', 4, 'UTC') AS dt64_4
+SELECT dt64_4, snowflakeToDateTime64(dateTime64ToSnowflake(dt64_4), 'UTC'); -- not idempotent
