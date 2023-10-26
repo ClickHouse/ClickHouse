@@ -17,11 +17,11 @@ namespace ErrorCodes
 
 namespace
 {
-    bool getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(
+    bool isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(
         const Poco::Util::AbstractConfiguration & configuration
     )
     {
-        return configuration.getBool("proxy.use_tunneling_for_https_requests_over_http_proxy", true);
+        return configuration.getBool("proxy.disable_tunneling_for_https_requests_over_http_proxy", false);
     }
 
     std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
@@ -51,7 +51,7 @@ namespace
         return std::make_shared<RemoteProxyConfigurationResolver>(
             server_configuration,
             request_protocol,
-            getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(configuration)
+            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration)
         );
     }
 
@@ -91,7 +91,7 @@ namespace
 
         return uris.empty()
             ? nullptr
-            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(configuration));
+            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -155,7 +155,7 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
 
     return std::make_shared<EnvironmentProxyConfigurationResolver>(
         request_protocol,
-        getUseTunnelingForHTTPSRequestsOverHTTPProxySetting(configuration)
+        isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration)
     );
 }
 

@@ -61,22 +61,22 @@ TEST(EnvironmentProxyConfigurationResolver, TestHTTPsNoEnv)
     ASSERT_EQ(configuration.port, 0u);
 }
 
-TEST(EnvironmentProxyConfigurationResolver, TestHTTPsUseTunnelingOff)
+TEST(EnvironmentProxyConfigurationResolver, TestHTTPsOverHTTPTunnelingDisabled)
 {
     // use http proxy for https, this would use connect protocol by default
     EnvironmentProxySetter setter({}, http_proxy_server);
 
-    bool use_tunneling_for_https_requests_over_http_proxy = false;
+    bool disable_tunneling_for_https_requests_over_http_proxy = true;
 
     EnvironmentProxyConfigurationResolver resolver(
-        ProxyConfiguration::Protocol::HTTPS, use_tunneling_for_https_requests_over_http_proxy);
+        ProxyConfiguration::Protocol::HTTPS, disable_tunneling_for_https_requests_over_http_proxy);
 
     auto configuration = resolver.resolve();
 
     ASSERT_EQ(configuration.host, http_proxy_server.getHost());
     ASSERT_EQ(configuration.port, http_proxy_server.getPort());
     ASSERT_EQ(configuration.protocol, ProxyConfiguration::protocolFromString(http_proxy_server.getScheme()));
-    ASSERT_EQ(configuration.use_tunneling_for_https_requests_over_http_proxy, use_tunneling_for_https_requests_over_http_proxy);
+    ASSERT_EQ(configuration.tunneling, false);
 }
 
 }

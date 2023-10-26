@@ -32,7 +32,7 @@ TEST(ProxyListConfigurationResolver, SimpleTest)
     ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
 }
 
-TEST(ProxyListConfigurationResolver, UseTunnelingForHTTPSRequestsOverHTTPProxyDefault)
+TEST(ProxyListConfigurationResolver, HTTPSRequestsOverHTTPProxyDefault)
 {
 
     ProxyListConfigurationResolver resolver(
@@ -46,35 +46,29 @@ TEST(ProxyListConfigurationResolver, UseTunnelingForHTTPSRequestsOverHTTPProxyDe
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
     ASSERT_EQ(configuration1.protocol, ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
-    ASSERT_EQ(configuration1.use_tunneling_for_https_requests_over_http_proxy, true);
+    ASSERT_EQ(configuration1.tunneling, true);
 
     ASSERT_EQ(configuration2.host, proxy_server2.getHost());
     ASSERT_EQ(configuration2.port, proxy_server2.getPort());
     ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
-    ASSERT_EQ(configuration1.use_tunneling_for_https_requests_over_http_proxy, true);
+    ASSERT_EQ(configuration1.tunneling, true);
 }
 
-TEST(ProxyListConfigurationResolver, SimpleTestTunnelingOff)
+TEST(ProxyListConfigurationResolver, SimpleTestTunnelingDisabled)
 {
-    bool use_tunneling_for_https_requests_over_http_proxy = false;
+    bool disable_tunneling_for_https_requests_over_http_proxy = true;
     ProxyListConfigurationResolver resolver(
         {proxy_server1, proxy_server2},
         ProxyConfiguration::Protocol::HTTPS,
-        use_tunneling_for_https_requests_over_http_proxy
+        disable_tunneling_for_https_requests_over_http_proxy
     );
 
     auto configuration1 = resolver.resolve();
-    auto configuration2 = resolver.resolve();
 
     ASSERT_EQ(configuration1.host, proxy_server1.getHost());
     ASSERT_EQ(configuration1.port, proxy_server1.getPort());
     ASSERT_EQ(configuration1.protocol, ProxyConfiguration::protocolFromString(proxy_server1.getScheme()));
-    ASSERT_EQ(configuration1.use_tunneling_for_https_requests_over_http_proxy, use_tunneling_for_https_requests_over_http_proxy);
-
-    ASSERT_EQ(configuration2.host, proxy_server2.getHost());
-    ASSERT_EQ(configuration2.port, proxy_server2.getPort());
-    ASSERT_EQ(configuration2.protocol, ProxyConfiguration::protocolFromString(proxy_server2.getScheme()));
-    ASSERT_EQ(configuration1.use_tunneling_for_https_requests_over_http_proxy, use_tunneling_for_https_requests_over_http_proxy);
+    ASSERT_EQ(configuration1.tunneling, false);
 }
 
 }

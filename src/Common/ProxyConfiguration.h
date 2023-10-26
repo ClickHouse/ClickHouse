@@ -47,7 +47,7 @@ struct ProxyConfiguration
     std::string host;
     Protocol protocol;
     uint16_t port;
-    bool use_tunneling_for_https_requests_over_http_proxy = true;
+    bool tunneling;
     Protocol original_request_protocol;
 };
 
