@@ -36,11 +36,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 
     WriteBufferFromOwnString progress_string_writer;
 
-    writeCString("{", progress_string_writer);
-    accumulated_progress.writeJSON(progress_string_writer, false);
-    writeCString(",\"peak_memory_usage\":\"", progress_string_writer);
-    writeText(peak_memory_usage, progress_string_writer);
-    writeCString("\"}", progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer);
 
     if (response_header_ostr)
         *response_header_ostr << header_name << progress_string_writer.str() << "\r\n" << std::flush;
@@ -152,7 +148,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 }
 
 
-void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Int64 peak_memory_usage_)
+void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 {
     std::lock_guard lock(mutex);
 
@@ -161,7 +157,6 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, In
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-    peak_memory_usage = peak_memory_usage_;
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
         progress_watch.restart();
