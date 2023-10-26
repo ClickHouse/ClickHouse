@@ -261,7 +261,7 @@ private:
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
 
     template <typename RequestType>
-    void setAdditionalHeaders(const RequestType & request) const;
+    void addAdditionalAMZHeadersToCanonicalHeadersList(const RequestType & request) const;
 
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
