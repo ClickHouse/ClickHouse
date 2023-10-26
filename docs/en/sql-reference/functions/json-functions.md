@@ -4,7 +4,7 @@ sidebar_position: 105
 sidebar_label: JSON
 ---
 
-There are two sets of functions to parse JSON. 
+There are two sets of functions to parse JSON.
    - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
    - `JSONExtract*` is made to parse normal JSON.
 
@@ -367,7 +367,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
 SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
-:::note    
+:::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
 :::
 
@@ -394,7 +394,7 @@ Result:
 [2]
 String
 ```
-:::note    
+:::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
 :::
 
@@ -424,7 +424,7 @@ world
 String
 ```
 
-:::note    
+:::note
 Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
 :::
 
@@ -513,7 +513,7 @@ SELECT
 
 ## jsonMergePatch
 
-Return the merged JSON object string which is formed by merging multiple JSON objects.
+Returns the merged JSON object string which is formed by merging multiple JSON objects.
 
 **Syntax**
 
