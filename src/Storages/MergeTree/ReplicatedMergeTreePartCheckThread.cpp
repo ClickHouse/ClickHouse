@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
@@ -425,6 +426,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & p
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
     ReplicatedCheckResult result = checkPartImpl(part_name);
+    last_check_finish_time = std::chrono::steady_clock::now();
     switch (result.action)
     {
         case ReplicatedCheckResult::None: UNREACHABLE();
@@ -532,6 +534,80 @@ bool ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
 }
 
 
+void ReplicatedMergeTreePartCheckThread::choosePartAndCheck()
+{
+    if (last_randomly_checked_part != MergeTreePartInfo{})
+    {
+        const auto time_since_last_check = std::chrono::steady_clock::now() - last_check_finish_time;
+        if (duration_cast<std::chrono::seconds>(time_since_last_check).count() < 10)
+            return;
+    }
+
+    MergeTreePartInfo part_to_check;
+    {
+        auto parts_lock = storage.lockParts();
+        auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
+        if (active_parts.empty())
+        {
+            LOG_DEBUG(log, "Background part check: no active parts");
+            return;
+        }
+
+        LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
+
+        if (last_randomly_checked_part == MergeTreePartInfo{})
+        {
+            const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
+            std::mt19937_64 gen;
+            std::uniform_int_distribution<size_t> dist(0, active_parts_size - 1);
+
+            size_t i = dist(gen);
+            chassert(i < active_parts_size);
+
+            const auto & part = *(active_parts.advance_begin(i).begin());
+            part_to_check = part->info;
+
+            LOG_DEBUG(log, "Background part check: first part to check {}", part_to_check.getPartNameV1());
+        }
+        else
+        {
+            auto next_it = storage.data_parts_by_state_and_info.upper_bound(
+                MergeTreeData::DataPartStateAndInfo{MergeTreeDataPartState::Active, last_randomly_checked_part});
+            if (next_it == storage.data_parts_by_state_and_info.end())
+                next_it = storage.data_parts_by_state_and_info.begin();
+
+            const auto & part = *next_it;
+            part_to_check = part->info;
+        }
+    }
+
+    LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check.getPartNameV1());
+
+    const String part_name_to_check = part_to_check.getPartNameV1();
+    last_randomly_checked_part = part_to_check;
+    auto check_start = std::chrono::steady_clock::now();
+    auto result = checkPartImpl(part_name_to_check);
+    last_check_finish_time = std::chrono::steady_clock::now();
+    auto elapsed_time = last_check_finish_time - check_start;
+
+    LOG_DEBUG(log, "Background part check took {} ms", duration_cast<std::chrono::milliseconds>(elapsed_time).count());
+
+    if (result.status.success)
+    {
+        LOG_DEBUG(log, "Background part check succeeded: part={} path={}", part_name_to_check, result.status.fs_path);
+    }
+    else
+    {
+        LOG_WARNING(
+            log,
+            "Background part check is failed: part={} path={} message={}",
+            part_name_to_check,
+            result.status.fs_path,
+            result.status.failure_message);
+    }
+}
+
+
 void ReplicatedMergeTreePartCheckThread::run()
 {
     if (need_stop)
@@ -558,7 +634,11 @@ void ReplicatedMergeTreePartCheckThread::run()
                 return elem.second <= current_time;
             });
             if (selected == parts_queue.end())
+            {
+                choosePartAndCheck();
+                task->scheduleAfter(1000);
                 return;
+            }
 
             /// Move selected part to the end of the queue
             parts_queue.splice(parts_queue.end(), parts_queue, selected);

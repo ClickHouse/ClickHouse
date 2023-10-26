@@ -76,6 +76,7 @@ public:
 
 private:
     void run();
+    void choosePartAndCheck();
 
     bool onPartIsLostForever(const String & part_name);
 
@@ -105,6 +106,8 @@ private:
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
     BackgroundSchedulePool::TaskHolder task;
+    MergeTreePartInfo last_randomly_checked_part;
+    std::chrono::time_point<std::chrono::steady_clock> last_check_finish_time;
 };
 
 }
