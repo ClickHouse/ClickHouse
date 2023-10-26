@@ -159,7 +159,7 @@ def generate_random_files(
         values_csv = (
             "\n".join((",".join(map(str, row)) for row in rand_values)) + "\n"
         ).encode()
-        print(f"File {filename}, content: {total_values}")
+        print(f"File {filename}, content: {rand_values}")
         put_s3_file_content(started_cluster, filename, values_csv)
     return total_values
 
