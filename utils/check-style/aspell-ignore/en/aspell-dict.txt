@@ -1685,6 +1685,7 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
+jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
