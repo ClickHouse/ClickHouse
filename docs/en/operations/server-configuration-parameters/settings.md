@@ -2744,4 +2744,4 @@ This also allows a mix of resolver types can be used.
 
 ### disable_tunnelings_for_https_requests_over_http_proxy {#disable_tunnelings_for_https_requests_over_http_proxy}
 
-By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can bse used to disable it.
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
