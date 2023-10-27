@@ -1,6 +1,6 @@
 <clickhouse>
     <zookeeper>
-        <compressed_protocol>true</compressed_protocol>
+        <use_compression>true</use_compression>
         <node index="1">
             <host>node1</host>
             <port>9181</port>

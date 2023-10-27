@@ -350,7 +350,7 @@ ZooKeeper::ZooKeeper(
 
     try
     {
-        use_compression = args.compressed_protocol;
+        use_compression = args.use_compression;
         connect(nodes, args.connection_timeout_ms * 1000);
     }
     catch (...)

@@ -214,9 +214,9 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 .max_sec = config.getUInt(config_name + "." + key + ".max"),
             };
         }
-        else if (key == "compressed_protocol")
+        else if (key == "use_compression")
         {
-            compressed_protocol = config.getBool(config_name + "." + key);
+            use_compression = config.getBool(config_name + "." + key);
         }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
