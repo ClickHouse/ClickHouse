@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/AsyncLoader.h>
+#include <Common/AsyncLoaderPoolId.h>
 #include <Common/ThreadPool_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
@@ -75,12 +76,17 @@ private:
     Tables tables;
     Tables::iterator it;
 
+    // Tasks to wait before returning a table
+    using Tasks = std::unordered_map<String, LoadTaskPtr>;
+    Tasks tasks;
+
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
+        std::swap(tasks, other.tasks);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
@@ -103,7 +109,17 @@ public:
 
     const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override { return it->second; }
+    const StoragePtr & table() const override
+    {
+        if (auto task = tasks.find(it->first); task != tasks.end())
+            waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), task->second);
+        return it->second;
+    }
+
+    void setLoadTasks(const Tasks & tasks_)
+    {
+        tasks = tasks_;
+    }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;

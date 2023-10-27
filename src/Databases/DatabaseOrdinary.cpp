@@ -253,9 +253,13 @@ void DatabaseOrdinary::waitDatabaseStarted() const
     waitLoad(currentPoolOr(AsyncLoaderPoolId::Foreground), startup_database_task);
 }
 
-// TODO(serxa): implement
-// DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
-// }
+DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
+{
+    auto result = DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name);
+    std::scoped_lock lock(mutex);
+    typeid_cast<DatabaseTablesSnapshotIterator &>(*result).setLoadTasks(startup_table);
+    return result;
+}
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
