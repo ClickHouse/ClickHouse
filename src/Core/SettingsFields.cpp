@@ -176,8 +176,6 @@ namespace
         {
             str.resize(str.size() - auto_suffix.size());
             str.erase(0, auto_prefix.size());
-
-            std::cout << "new string " << str << std::endl;
         }
 
         UInt64 result = 0;
