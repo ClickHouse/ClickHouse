@@ -1285,7 +1285,7 @@ namespace
         void setResultingSchema(const ColumnsDescription & columns) override
         {
             if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure
-                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
                 return;
 
             auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
