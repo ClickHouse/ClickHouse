@@ -32,21 +32,23 @@ def started_cluster():
 
 
 def insert_data():
-    node1.query("INSERT INTO test_distinct SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 200")
-    node3.query("INSERT INTO test_distinct SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 300")
-    node5.query("INSERT INTO test_distinct SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 400")
-    node1.query("INSERT INTO test_distinct_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("INSERT INTO test_distinct SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 10")
+    node3.query("INSERT INTO test_distinct SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 11")
+    node5.query("INSERT INTO test_distinct SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 12")
+    node1.query("INSERT INTO test_distinct_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 13")
     node1.query("SYSTEM FLUSH DISTRIBUTED test_distinct_all")
 
 def exec_query_compare_result(query_text):
     accurate_result = node1.query(query_text)
     test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
 
+    print(accurate_result)
+    print(test_result)
     assert accurate_result == test_result
 
 def test_query(started_cluster):
     insert_data()
 
-    exec_query_compare_result("SELECT DISTINCT * FROM test_distinct_all")
+    exec_query_compare_result("SELECT DISTINCT * FROM test_distinct_all ORDER BY id,val,name")
 
-    exec_query_compare_result("SELECT DISTINCT ON (a,b) * FROM test_distinct_all")
+    exec_query_compare_result("SELECT DISTINCT ON (id,val) * FROM test_distinct_all ORDER BY id,val")

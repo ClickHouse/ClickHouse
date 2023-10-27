@@ -724,6 +724,9 @@ void Connection::sendExchangeData(const ExchangeDataRequest & request)
     writeVarUInt(static_cast<bool>(compression), *out);
 
     out->next();
+
+    maybe_compressed_out.reset();
+    block_out.reset();
 }
 
 void Connection::sendFragments(
