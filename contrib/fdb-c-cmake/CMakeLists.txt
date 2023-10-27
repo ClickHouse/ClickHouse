@@ -70,6 +70,7 @@ if(OS_LINUX)
         BUILD_BYPRODUCTS <BINARY_DIR>/lib/libfdb_c.so
         LOG_CONFIGURE ON
         LOG_BUILD ON
+        LOG_OUTPUT_ON_FAILURE ON
     )
     ExternalProject_Add_StepDependencies(foundationdb_ep patch ${FOUNDATIONDB_SOURCE_PATCHS} ${FOUNDATIONDB_C_EXTENSION_SOURCE})
 
