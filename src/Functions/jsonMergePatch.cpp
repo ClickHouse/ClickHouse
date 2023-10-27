@@ -20,11 +20,13 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_JSON_OBJECT_FORMAT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -42,7 +44,6 @@ namespace
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionjsonMergePatch>(); }
 
         String getName() const override { return name; }
-
         bool isVariadic() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -54,20 +55,25 @@ namespace
             if (arguments.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
+            for (const auto & arg : arguments)
+                if (!isString(arg.type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires string arguments", getName());
+
             return std::make_shared<DataTypeString>();
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
-            rapidjson::Document merged_json;
-            merged_json.SetObject();
-            rapidjson::Document::AllocatorType& allocator = merged_json.GetAllocator();
+            chassert(!arguments.empty());
 
-            std::function<void(rapidjson::Value&, const rapidjson::Value&)> mergeObjects;
-            mergeObjects = [&mergeObjects, &allocator](rapidjson::Value& dest, const rapidjson::Value& src) -> void
+            rapidjson::Document::AllocatorType allocator;
+            std::function<void(rapidjson::Value &, const rapidjson::Value &)> merge_objects;
+
+            merge_objects = [&merge_objects, &allocator](rapidjson::Value & dest, const rapidjson::Value & src) -> void
             {
                 if (!src.IsObject())
                     return;
+
                 for (auto it = src.MemberBegin(); it != src.MemberEnd(); ++it)
                 {
                     rapidjson::Value key(it->name, allocator);
@@ -75,7 +81,7 @@ namespace
                     if (dest.HasMember(key))
                     {
                         if (dest[key].IsObject() && value.IsObject())
-                            mergeObjects(dest[key], value);
+                            merge_objects(dest[key], value);
                         else
                             dest[key] = value;
                     }
@@ -86,34 +92,57 @@ namespace
                 }
             };
 
-            for (const auto & arg : arguments)
+            auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
-                const ColumnPtr column = arg.column;
-                const ColumnString * col = typeid_cast<const ColumnString *>(column.get());
-                if (!col)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be string", getName());
+                auto str_ref = column.getDataAt(i);
+                const char * json = str_ref.data;
+
+                document.Parse(json);
+                if (document.HasParseError() || !document.IsObject())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
+            };
+
+            const auto * first_string = typeid_cast<const ColumnString *>(arguments[0].column.get());
+            if (!first_string)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
+
+            std::vector<rapidjson::Document> merged_jsons;
+            merged_jsons.reserve(input_rows_count);
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                auto & merged_json = merged_jsons.emplace_back(rapidjson::Type::kObjectType, &allocator);
+                parse_json_document(*first_string, merged_json, i);
+            }
+
+            for (size_t col_idx = 1; col_idx < arguments.size(); ++col_idx)
+            {
+                const auto * column_string = typeid_cast<const ColumnString *>(arguments[col_idx].column.get());
+                if (!column_string)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    auto str_ref = col->getDataAt(i);
-                    const char* json = str_ref.data;
-                    rapidjson::Document document;
-                    document.Parse(json);
-                    if (!document.IsObject())
-                        throw Exception(ErrorCodes::ILLEGAL_JSON_OBJECT_FORMAT, "Wrong input Json object format");
-                    mergeObjects(merged_json, document);
+                    rapidjson::Document document(&allocator);
+                    parse_json_document(*column_string, document, i);
+                    merge_objects(merged_jsons[i], document);
                 }
             }
 
-            rapidjson::StringBuffer buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-            merged_json.Accept(writer);
-            std::string json_string = buffer.GetString();
+            auto result = ColumnString::create();
+            auto & result_string = assert_cast<ColumnString &>(*result);
+            rapidjson::CrtAllocator buffer_allocator;
 
-            auto res = ColumnString::create();
-            res->insertData(json_string.c_str(), json_string.size());
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                rapidjson::StringBuffer buffer(&buffer_allocator);
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 
-            return res;
+                merged_jsons[i].Accept(writer);
+                result_string.insertData(buffer.GetString(), buffer.GetSize());
+            }
+
+            return result;
         }
     };
 
@@ -122,7 +151,7 @@ namespace
 REGISTER_FUNCTION(jsonMergePatch)
 {
     factory.registerFunction<FunctionjsonMergePatch>(FunctionDocumentation{
-        .description="Return the merged JSON object string, which is formed by merging multiple JSON objects."});
+        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects."});
 }
 
 }
