@@ -493,6 +493,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         "Parquet",
         format_settings.parquet.allow_missing_columns,
         format_settings.null_as_default,
+        format_settings.date_time_overflow_behavior,
         format_settings.parquet.case_insensitive_column_matching);
 }
 

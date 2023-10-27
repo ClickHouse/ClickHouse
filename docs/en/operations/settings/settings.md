@@ -2403,6 +2403,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
+
+Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+Default value: `0`.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
@@ -4143,6 +4154,18 @@ Possible values:
 - 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
 
 Default value: `0`.
+
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+
+Possible values:
+
+- `ignore` — Silently ignore overflows. The result is random.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+Default value: `ignore`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
