@@ -110,7 +110,7 @@ public:
 
     std::optional<CheckResult> checkNext() const
     {
-        if (!table || !check_data_tasks)
+        if (isFinished())
             return {};
 
         fiu_do_on(FailPoints::check_table_query_delay_for_part,
@@ -144,6 +144,7 @@ private:
     mutable std::atomic_bool is_finished{false};
 };
 
+/// Sends TableCheckTask to workers
 class TableCheckSource : public ISource
 {
 public:
@@ -167,7 +168,7 @@ public:
 protected:
     std::optional<Chunk> tryGenerate() override
     {
-        std::shared_ptr<TableCheckTask> current_check_task = getTableToCheck();
+        auto current_check_task = getTableCheckTask();
         if (!current_check_task)
             return {};
 
@@ -182,65 +183,78 @@ protected:
     }
 
 private:
-    std::shared_ptr<TableCheckTask> getTableToCheck()
+    std::shared_ptr<TableCheckTask> getTableCheckTask()
     {
         if (table_check_task && !table_check_task->isFinished())
             return table_check_task;
 
-        const auto & database_catalog = DatabaseCatalog::instance();
-
+        /// Advance iterator
         if (current_table_it && current_table_it->isValid())
             current_table_it->next();
 
-        while ((current_table_it && current_table_it->isValid()) || !databases.empty())
+        /// Find next table to check in current or next database
+        while (true)
         {
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Context is not set");
-
-            while (current_table_it && current_table_it->isValid())
+            /// Try to get next table from current database
+            auto table = getValidTable();
+            if (table)
             {
-                /// Try to get next table from current database
-                StoragePtr table = current_table_it->table();
-                if (table && table->isMergeTree())
-                {
-                    table_check_task = std::make_shared<TableCheckTask>(table, context);
-                    LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
-                    return table_check_task;
-                }
-                LOG_TRACE(log, "Skip checking table '{}.{}' because it is not {}",
-                    current_database->getDatabaseName(), current_table_it->name(), table ? "MergeTree" : "found");
-                current_table_it->next();
+                table_check_task = std::make_shared<TableCheckTask>(table, context);
+                LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
+                return table_check_task;
             }
 
-            /// No more tables in current database, try to get next database
-            if (!databases.empty())
+            /// Move to next database
+            auto database = getNextDatabase();
+            if (!database)
+                break;
+            current_table_it = database->getTablesIterator(context);
+        }
+
+        return {};
+    }
+
+    StoragePtr getValidTable()
+    {
+        while (current_table_it && current_table_it->isValid())
+        {
+            /// Try to get next table from current database
+            StoragePtr table = current_table_it->table();
+            if (table && table->isMergeTree())
+                return table;
+
+            LOG_TRACE(log, "Skip checking table '{}.{}' because it is not {}",
+                current_table_it->databaseName(), current_table_it->name(), table ? "MergeTree" : "found");
+
+            current_table_it->next();
+        }
+        return {};
+    }
+
+    DatabasePtr getNextDatabase()
+    {
+        const auto & database_catalog = DatabaseCatalog::instance();
+
+        while (!databases.empty())
+        {
+            auto database_name = std::move(databases.back());
+            databases.pop_back();
+            auto current_database = database_catalog.tryGetDatabase(database_name);
+            if (current_database)
             {
-                auto database_name = std::move(databases.back());
-                databases.pop_back();
-                current_database = database_catalog.tryGetDatabase(database_name);
-                if (current_database)
-                {
-                    LOG_DEBUG(log, "Checking '{}' database", database_name);
-                    current_table_it = current_database->getTablesIterator(context);
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
-                }
+                LOG_DEBUG(log, "Checking '{}' database", database_name);
+                return current_database;
             }
             else
             {
-                /// No more databases, we are done
-                return {};
+                LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
             }
         }
         return {};
     }
 
     Strings databases;
-    DatabasePtr current_database = nullptr;
     DatabaseTablesIteratorPtr current_table_it = nullptr;
-
     std::shared_ptr<TableCheckTask> table_check_task = nullptr;
 
     ContextPtr context;
@@ -248,6 +262,7 @@ private:
     Poco::Logger * log;
 };
 
+/// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
 class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
@@ -261,7 +276,7 @@ public:
     String getName() const override { return "TableCheckWorkerProcessor"; }
 
 protected:
-    virtual void transform(Chunk & chunk) override
+    void transform(Chunk & chunk) override
     {
         auto table_check_task = std::dynamic_pointer_cast<const TableCheckTask>(chunk.getChunkInfo());
         auto check_result = table_check_task->checkNext();
@@ -289,15 +304,19 @@ protected:
     }
 
 private:
+    /// If true, then output will contain columns with database and table names
     bool with_table_name;
 
     Poco::Logger * log;
 };
 
+/// Accumulates all results and returns single value
+/// Used when settings.check_query_single_value_result is true
 class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
-    TableCheckResultEmitter(Block input_header) : IAccumulatingTransform(input_header, getSingleValueBlock(1).cloneEmpty())
+    explicit TableCheckResultEmitter(Block input_header)
+        : IAccumulatingTransform(input_header, getSingleValueBlock(1).cloneEmpty())
     {
         column_position_to_check = input_header.getPositionByName("is_passed");
     }
@@ -369,7 +388,7 @@ BlockIO InterpreterCheckQuery::execute()
     const auto & settings = context->getSettingsRef();
     auto processors = std::make_shared<Processors>();
     std::shared_ptr<TableCheckSource> worker_source;
-    bool with_table_name = false;
+    bool is_table_name_in_output = false;
     if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
     {
         /// Check specific table
@@ -380,7 +399,7 @@ BlockIO InterpreterCheckQuery::execute()
     }
     else if (query_ptr->as<ASTCheckAllTablesQuery>())
     {
-        with_table_name = true;
+        is_table_name_in_output = true;
         /// Check all tables in all databases
         auto databases = getAllDatabases(context);
         LOG_DEBUG(log, "Checking {} databases", databases.size());
@@ -407,7 +426,7 @@ BlockIO InterpreterCheckQuery::execute()
         auto & resize_outputs = resize_processor->getOutputs();
         for (auto & resize_output : resize_outputs)
         {
-            auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(with_table_name, log);
+            auto worker_processor = std::make_shared<TableCheckWorkerProcessor>(is_table_name_in_output, log);
             worker_ports.emplace_back(&worker_processor->getOutputPort());
             connect(resize_output, worker_processor->getInputPort());
             processors->emplace_back(std::move(worker_processor));
