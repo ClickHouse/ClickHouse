@@ -897,9 +897,9 @@ Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
 
 Disabled by default.
 
-### input_format_csv_crlf_end_of_line {#input_format_csv_crlf_end_of_line}
+### input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
 
-Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
+If it is set true, CR(\\r) will be allowed at end of line not followed by LF(\\n)
 
 Disabled by default.
 
