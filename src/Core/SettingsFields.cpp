@@ -164,10 +164,21 @@ template struct SettingAutoWrapper<SettingFieldNumber<double>>;
 
 namespace
 {
-    UInt64 stringToMaxThreads(const String & str)
+    UInt64 stringToMaxThreads(String str)
     {
-        if (startsWith(str, "auto"))
+        if (str == "auto" || str.empty())
             return 0;
+
+        /// In this case we would like to parse the number out of string like 'auto(16)'
+        static const std::string_view auto_prefix{"'auto("};
+        static const std::string_view auto_suffix{")'"};
+        if (str.starts_with(auto_prefix) && str.ends_with(auto_suffix))
+        {
+            str.resize(str.size() - auto_suffix.size());
+            str.erase(0, auto_prefix.size());
+
+            std::cout << "new string " << str << std::endl;
+        }
 
         UInt64 result = 0;
         ReadBufferFromString in{str};
