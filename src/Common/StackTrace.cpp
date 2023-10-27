@@ -8,6 +8,7 @@
 #include <Common/Elf.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
+#include <Common/logger_useful.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -281,9 +282,55 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
 }
 
+static void logErrorIfNeeded(int rv, uintptr_t ip)
+{
+    if (rv != UNW_EBADFRAME || ip == 0)
+        return;
+
+    /// This error usually indicates broken unwind information in the executable.
+    /// Occasionally log it, in case we want to investigate where the bad info comes from.
+    /// See also: isPointerValid() in contrib/libunwind/src/DwarfInstructions.hpp
+
+    static std::array<std::atomic<uintptr_t>, 8> logged_ips {};
+    for (std::atomic<uintptr_t> & logged_ip : logged_ips)
+    {
+        uintptr_t p = logged_ip.load();
+        if (p == 0)
+        {
+            logged_ip.store(ip);
+            LOG_DEBUG(&Poco::Logger::get("StackTrace"),
+                "Unwind failed at instruction pointer 0x{:x}", ip);
+            break;
+        }
+
+        if (std::abs(static_cast<int64_t>(ip - p)) < 1024)
+            break;
+    }
+}
+
 void StackTrace::tryCapture()
 {
-    size = unw_backtrace(frame_pointers.data(), capacity);
+    unw_context_t context;
+    unw_cursor_t cursor;
+    if (unw_getcontext(&context) || unw_init_local(&cursor, &context))
+        return;
+
+    uintptr_t ip = 0;
+    while (true)
+    {
+        int rv = unw_step(&cursor);
+        if (rv <= 0)
+        {
+            logErrorIfNeeded(rv, ip);
+            break;
+        }
+
+        if (size >= capacity || unw_get_reg(&cursor, UNW_REG_IP, &ip))
+            break;
+
+        frame_pointers[size++] = reinterpret_cast<void *>(ip);
+    }
+
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
