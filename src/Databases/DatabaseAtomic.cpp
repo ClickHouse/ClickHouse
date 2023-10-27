@@ -91,7 +91,6 @@ void DatabaseAtomic::drop(ContextPtr)
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
-    waitDatabaseStarted();
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
@@ -104,7 +103,6 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
-    waitDatabaseStarted();
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
     auto table = DatabaseOrdinary::detachTableUnlocked(name);
