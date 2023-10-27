@@ -140,10 +140,12 @@ class FileBlockBase:
     def convert_request(sql):
         if sql.startswith("CREATE TABLE"):
             result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
-            pk_token = sqlglot.parse_one(result, read="clickhouse").find(PrimaryKeyColumnConstraint)
+            pk_token = sqlglot.parse_one(result, read="clickhouse").find(
+                PrimaryKeyColumnConstraint
+            )
             pk_string = "tuple()"
             if pk_token is not None:
-                pk_string = str(pk_token.find_ancestor(ColumnDef).args['this'])
+                pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
 
             result += " ENGINE = MergeTree() ORDER BY " + pk_string
             return result
@@ -184,7 +186,7 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
-                if parser.dbms_name == 'ClickHouse':
+                if parser.dbms_name == "ClickHouse":
                     request = FileBlockBase.convert_request(request)
                 assert last_line == end
                 line = last_line
