@@ -194,4 +194,8 @@ IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default", SchemaInferenceMode::DEFAULT},
      {"union", SchemaInferenceMode::UNION}})
 
+IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
+     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
+     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 }

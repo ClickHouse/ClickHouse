@@ -1480,6 +1480,8 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
+formatQuery
+formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
