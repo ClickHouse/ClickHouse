@@ -14,3 +14,8 @@ services:
             LDAP_PORT_NUMBER: ${LDAP_INTERNAL_PORT:-1389}
         ports:
             - ${LDAP_EXTERNAL_PORT:-1389}:${LDAP_INTERNAL_PORT:-1389}
+        healthcheck:
+            test: "ldapsearch -x -b dc=example,dc=org cn > /dev/null"
+            interval: 10s
+            retries: 10
+            timeout: 2s
