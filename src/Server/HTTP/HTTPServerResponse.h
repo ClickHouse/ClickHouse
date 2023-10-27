@@ -86,14 +86,12 @@ public:
 
     void setChunked(size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
     {
-        next();
         chunked = true;
         resizeIfNeeded(buf_size);
     }
 
     void setFixedLength(size_t length)
     {
-        next();
         chunked = false;
         fixed_length = length;
         count_length = 0;
@@ -102,7 +100,6 @@ public:
 
     void setPlain(size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
     {
-        next();
         chunked = false;
         fixed_length = 0;
         count_length = 0;
@@ -159,11 +156,11 @@ protected:
         if (!buf_size)
             return;
 
-        if (buf_size > memory.size())
-            memory = Memory<>(buf_size);
-        else
-            memory.resize(buf_size);
-        set(memory.data(), memory.size());
+        auto data_size = offset();
+        assert(data_size <= buf_size);
+
+        memory.resize(buf_size);
+        set(memory.data(), memory.size(), data_size);
     }
 private:
     bool chunked = false;
