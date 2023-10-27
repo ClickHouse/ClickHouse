@@ -1193,6 +1193,16 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
         return true;
     }
 
+    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+    {
+        /// Save name and values of substitution in dictionary.
+        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+        if (receive_params.contains(parameter_name))
+            context->setQueryParameter(parameter_name, value);
+        return true;
+    }
+
     return false;
 }
 

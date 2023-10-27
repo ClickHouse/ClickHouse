@@ -6,9 +6,11 @@ namespace DB
 {
 
 /** SharedLockGuard provide RAII-style locking mechanism for acquiring shared ownership of the implementation
-  * of the SharedLockable concept (for example std::shared_mutex) supplied as the constructor argument.
+  * of the SharedLockable concept (for example std::shared_mutex or ContextSharedMutex) supplied as the
+  * constructor argument. Think of it as std::lock_guard which locks shared.
+  *
   * On construction it acquires shared ownership using `lock_shared` method.
-  * On desruction shared ownership is released using `unlock_shared` method.
+  * On destruction shared ownership is released using `unlock_shared` method.
   */
 template <typename Mutex>
 class TSA_SCOPED_LOCKABLE SharedLockGuard

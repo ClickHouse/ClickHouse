@@ -1479,6 +1479,8 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
+formatQuery
+formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
@@ -1685,6 +1687,7 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
+jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
