@@ -2448,7 +2448,22 @@ Result:
 
 ## Npy {#data-format-npy}
 
-This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. It stores all the top-level dimension objects as a separate column.
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
+| Npy type | ClickHouse type |
+|:--------:|:---------------:|
+| b1       |    Int8         |
+| i1       |    Int8         |
+| i2       |    Int16        |
+| i4       |    Int32        |
+| i8       |    Int64        |
+| u1       |    UInt8        |
+| u2       |    UInt16       |
+| u4       |    UInt32       |
+| u8       |    UInt64       |
+| f4       |    Float32      |
+| f8       |    Float64      |
+| S        |    String       |
+| U        |    String       |
 
 **Example**
 
