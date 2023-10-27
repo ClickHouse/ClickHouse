@@ -151,7 +151,6 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     static constexpr int MAX_LENGTH = 316;
 
     ReadBufferFromMemory * buf_from_memory = dynamic_cast<ReadBufferFromMemory *>(&buf);
-
     /// Fast path (avoid copying) if the buffer have at least MAX_LENGTH bytes or buf is ReadBufferFromMemory
     if (likely(!buf.eof() && (buf_from_memory || buf.position() + MAX_LENGTH <= buf.buffer().end())))
     {
