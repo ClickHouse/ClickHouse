@@ -183,23 +183,27 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const CurrentMetrics::Metric & read_metric_, const CurrentMetrics::Metric & write_metric_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
+    , read_metric(read_metric_)
+    , write_metric(write_metric_)
     , server_display_name(std::move(server_display_name_))
 {
 }
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const CurrentMetrics::Metric & read_metric_, const CurrentMetrics::Metric & write_metric_)
 : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("TCPHandler"))
     , forwarded_for(stack_data.forwarded_for)
     , certificate(stack_data.certificate)
+    , read_metric(read_metric_)
+    , write_metric(write_metric_)
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
 {
@@ -232,8 +236,8 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_metric);
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_metric);
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())

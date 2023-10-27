@@ -20,7 +20,9 @@ public:
         HTTPRequestHandlerFactoryPtr factory,
         Poco::ThreadPool & thread_pool,
         Poco::Net::ServerSocket & socket,
-        Poco::Net::HTTPServerParams::Ptr params);
+        Poco::Net::HTTPServerParams::Ptr params,
+        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
+        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
 
     ~HTTPServer() override;
 

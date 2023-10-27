@@ -11,8 +11,10 @@ HTTPServerConnection::HTTPServerConnection(
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
-    HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(std::move(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
+    HTTPRequestHandlerFactoryPtr factory_,
+    const CurrentMetrics::Metric & read_metric_,
+    const CurrentMetrics::Metric & write_metric_)
+    : TCPServerConnection(socket), context(std::move(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), read_metric(read_metric_), write_metric(write_metric_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -30,7 +32,7 @@ void HTTPServerConnection::run()
             if (!stopped && tcp_server.isOpen() && session.connected())
             {
                 HTTPServerResponse response(session);
-                HTTPServerRequest request(context, response, session);
+                HTTPServerRequest request(context, response, session, read_metric);
 
                 Poco::Timestamp now;
 
@@ -65,7 +67,7 @@ void HTTPServerConnection::run()
                         if (request.getExpectContinue() && response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
                             response.sendContinue();
 
-                        handler->handleRequest(request, response);
+                        handler->handleRequest(request, response, write_metric);
                         session.setKeepAlive(params->getKeepAlive() && response.getKeepAlive() && session.canKeepAlive());
                     }
                     else

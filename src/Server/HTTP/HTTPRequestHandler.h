@@ -13,7 +13,7 @@ class HTTPRequestHandler : private boost::noncopyable
 public:
     virtual ~HTTPRequestHandler() = default;
 
-    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
+    virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & write_metric = CurrentMetrics::end()) = 0;
 };
 
 }

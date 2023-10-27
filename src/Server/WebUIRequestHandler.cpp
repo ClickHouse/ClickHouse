@@ -35,7 +35,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 }
 
 
-void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
 {
     auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
@@ -49,7 +49,7 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     if (request.getURI().starts_with("/play"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
+        response.send()->write(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
     }
     else if (request.getURI().starts_with("/dashboard"))
     {
@@ -65,17 +65,17 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
         RE2::Replace(&html, uplot_url, "/js/uplot.js");
 
-        *response.send() << html;
+        response.send()->write(html);
     }
     else if (request.getURI() == "/js/uplot.js")
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
+        response.send()->write(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
     }
     else
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
+        response.send()->writeln("Not found.");
     }
 }
 

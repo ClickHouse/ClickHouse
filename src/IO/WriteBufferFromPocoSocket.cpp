@@ -34,6 +34,47 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ssize_t WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)
+{
+    ssize_t res = 0;
+
+    /// If async_callback is specified, set socket to non-blocking mode
+    /// and try to write data to it, if socket is not ready for writing,
+    /// run async_callback and try again later.
+    /// It is expected that file descriptor may be polled externally.
+    /// Note that send timeout is not checked here. External code should check it while polling.
+    if (async_callback)
+    {
+        socket.setBlocking(false);
+        /// Set socket to blocking mode at the end.
+        SCOPE_EXIT(socket.setBlocking(true));
+        bool secure = socket.secure();
+        res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
+
+        /// Check EAGAIN and ERR_SSL_WANT_WRITE/ERR_SSL_WANT_READ for secure socket (writing to secure socket can read too).
+        while (res < 0 && (errno == EAGAIN || (secure && (checkSSLWantRead(res) || checkSSLWantWrite(res)))))
+        {
+            /// In case of ERR_SSL_WANT_READ we should wait for socket to be ready for reading, otherwise - for writing.
+            if (secure && checkSSLWantRead(res))
+                async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+            else
+                async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
+
+            /// Try to write again.
+            res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
+        }
+    }
+    else
+    {
+        res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
+    }
+
+    if (res > 0 && write_metric != CurrentMetrics::end())
+        CurrentMetrics::add(write_metric, res);
+
+    return res;
+}
+
 void WriteBufferFromPocoSocket::nextImpl()
 {
     if (!offset())
@@ -60,36 +101,7 @@ void WriteBufferFromPocoSocket::nextImpl()
             if (size > INT_MAX)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
-            /// If async_callback is specified, set socket to non-blocking mode
-            /// and try to write data to it, if socket is not ready for writing,
-            /// run async_callback and try again later.
-            /// It is expected that file descriptor may be polled externally.
-            /// Note that send timeout is not checked here. External code should check it while polling.
-            if (async_callback)
-            {
-                socket.setBlocking(false);
-                /// Set socket to blocking mode at the end.
-                SCOPE_EXIT(socket.setBlocking(true));
-                bool secure = socket.secure();
-                res = socket.impl()->sendBytes(pos, static_cast<int>(size));
-
-                /// Check EAGAIN and ERR_SSL_WANT_WRITE/ERR_SSL_WANT_READ for secure socket (writing to secure socket can read too).
-                while (res < 0 && (errno == EAGAIN || (secure && (checkSSLWantRead(res) || checkSSLWantWrite(res)))))
-                {
-                    /// In case of ERR_SSL_WANT_READ we should wait for socket to be ready for reading, otherwise - for writing.
-                    if (secure && checkSSLWantRead(res))
-                        async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
-                    else
-                        async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
-
-                    /// Try to write again.
-                    res = socket.impl()->sendBytes(pos, static_cast<int>(size));
-                }
-            }
-            else
-            {
-                res = socket.impl()->sendBytes(pos, static_cast<int>(size));
-            }
+            res = socketSendBytes(pos, size);
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -123,6 +135,12 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     , our_address(socket.address())
     , socket_description("socket (" + peer_address.toString() + ")")
 {
+}
+
+WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, const CurrentMetrics::Metric & write_metric_, size_t buf_size)
+    : WriteBufferFromPocoSocket(socket_, buf_size)
+{
+    write_metric = write_metric_;
 }
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()

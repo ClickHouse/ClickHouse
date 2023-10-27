@@ -5,9 +5,11 @@
 namespace DB
 {
 
-PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_)
+PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_, const CurrentMetrics::Metric & read_metric_, const CurrentMetrics::Metric & write_metric_)
     : server(server_)
     , log(&Poco::Logger::get("PostgreSQLHandlerFactory"))
+    , read_metric(read_metric_)
+    , write_metric(write_metric_)
 {
     auth_methods =
     {
@@ -20,7 +22,7 @@ Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnection(cons
 {
     Int32 connection_id = last_connection_id++;
     LOG_TRACE(log, "PostgreSQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
-    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, connection_id, auth_methods);
+    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, connection_id, auth_methods, read_metric, write_metric);
 }
 
 }

@@ -29,7 +29,7 @@ namespace
 }
 
 
-void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
@@ -38,7 +38,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            response.send()->writeln(message);
         LOG_WARNING(log, fmt::runtime(message));
     };
 

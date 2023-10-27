@@ -13,33 +13,14 @@ namespace ErrorCodes
 }
 
 
-class BrotliWriteBuffer::BrotliStateWrapper
+BrotliWriteBuffer::BrotliStateWrapper::BrotliStateWrapper()
+: state(BrotliEncoderCreateInstance(nullptr, nullptr, nullptr))
 {
-public:
-    BrotliStateWrapper()
-    : state(BrotliEncoderCreateInstance(nullptr, nullptr, nullptr))
-    {
-    }
+}
 
-    ~BrotliStateWrapper()
-    {
-        BrotliEncoderDestroyInstance(state);
-    }
-
-    BrotliEncoderState * state;
-};
-
-BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
-    , brotli(std::make_unique<BrotliStateWrapper>())
-    , in_available(0)
-    , in_data(nullptr)
-    , out_capacity(0)
-    , out_data(nullptr)
+BrotliWriteBuffer::BrotliStateWrapper::~BrotliStateWrapper()
 {
-    BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_QUALITY, static_cast<uint32_t>(compression_level));
-    // Set LZ77 window size. According to brotli sources default value is 24 (c/tools/brotli.c:81)
-    BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_LGWIN, 24);
+    BrotliEncoderDestroyInstance(state);
 }
 
 BrotliWriteBuffer::~BrotliWriteBuffer() = default;

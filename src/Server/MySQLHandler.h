@@ -42,7 +42,9 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
-        uint32_t connection_id_);
+        uint32_t connection_id_,
+        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
+        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
 
     void run() final;
 
@@ -102,6 +104,9 @@ protected:
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     bool secure_connection = false;
+
+    CurrentMetrics::Metric read_metric;
+    CurrentMetrics::Metric write_metric;
 };
 
 #if USE_SSL
@@ -115,7 +120,9 @@ public:
         bool ssl_enabled,
         uint32_t connection_id_,
         RSA & public_key_,
-        RSA & private_key_);
+        RSA & private_key_,
+        const CurrentMetrics::Metric & read_metric_ = CurrentMetrics::end(),
+        const CurrentMetrics::Metric & write_metric_ = CurrentMetrics::end());
 
 private:
     void authPluginSSL() override;

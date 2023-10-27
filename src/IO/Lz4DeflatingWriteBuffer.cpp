@@ -9,13 +9,7 @@ namespace ErrorCodes
     extern const int LZ4_ENCODER_FAILED;
 }
 
-Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
-    , in_data(nullptr)
-    , out_data(nullptr)
-    , in_capacity(0)
-    , out_capacity(0)
+void Lz4DeflatingWriteBuffer::initialize(int compression_level)
 {
     kPrefs = {
         {LZ4F_max256KB,

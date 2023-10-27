@@ -99,6 +99,9 @@ bool ReadBufferFromPocoSocket::nextImpl()
     if (bytes_read < 0)
         throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", peer_address.toString());
 
+    if (read_metric != CurrentMetrics::end())
+        CurrentMetrics::add(read_metric, bytes_read);
+
     if (bytes_read)
         working_buffer.resize(bytes_read);
     else
@@ -111,8 +114,15 @@ ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, 
     : BufferWithOwnMemory<ReadBuffer>(buf_size)
     , socket(socket_)
     , peer_address(socket.peerAddress())
+    , read_metric(CurrentMetrics::end())
     , socket_description("socket (" + peer_address.toString() + ")")
 {
+}
+
+ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, const CurrentMetrics::Metric & read_metric_, size_t buf_size)
+    : ReadBufferFromPocoSocket(socket_, buf_size)
+{
+    read_metric = read_metric_;
 }
 
 bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const

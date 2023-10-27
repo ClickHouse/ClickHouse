@@ -142,6 +142,18 @@ namespace CurrentMetrics
     extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
+    extern const Metric InterfaceNativeSendBytes;
+    extern const Metric InterfaceNativeReceiveBytes;
+    extern const Metric InterfaceHTTPSendBytes;
+    extern const Metric InterfaceHTTPReceiveBytes;
+    extern const Metric InterfacePrometheusSendBytes;
+    extern const Metric InterfacePrometheusReceiveBytes;
+    extern const Metric InterfaceInterserverSendBytes;
+    extern const Metric InterfaceInterserverReceiveBytes;
+    extern const Metric InterfaceMySQLSendBytes;
+    extern const Metric InterfaceMySQLReceiveBytes;
+    extern const Metric InterfacePostgreSQLSendBytes;
+    extern const Metric InterfacePostgreSQLReceiveBytes;
 }
 
 namespace ProfileEvents
@@ -1964,7 +1976,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, CurrentMetrics::InterfaceNativeReceiveBytes, CurrentMetrics::InterfaceNativeSendBytes));
 
         if (type == "tls")
 #if USE_SSL
@@ -1976,20 +1988,20 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, CurrentMetrics::InterfaceMySQLReceiveBytes, CurrentMetrics::InterfaceMySQLSendBytes));
         if (type == "postgres")
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, CurrentMetrics::InterfacePostgreSQLReceiveBytes, CurrentMetrics::InterfacePostgreSQLSendBytes));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), CurrentMetrics::InterfaceHTTPReceiveBytes, CurrentMetrics::InterfaceHTTPSendBytes)
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), CurrentMetrics::InterfacePrometheusReceiveBytes, CurrentMetrics::InterfacePrometheusSendBytes)
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), CurrentMetrics::InterfaceInterserverReceiveBytes, CurrentMetrics::InterfaceInterserverSendBytes)
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -2123,7 +2135,7 @@ void Server::createServers(
                     port_name,
                     "http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, CurrentMetrics::InterfaceHTTPReceiveBytes, CurrentMetrics::InterfaceHTTPSendBytes));
             });
         }
 
@@ -2143,7 +2155,7 @@ void Server::createServers(
                     port_name,
                     "https://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, CurrentMetrics::InterfaceHTTPReceiveBytes, CurrentMetrics::InterfaceHTTPSendBytes));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
@@ -2166,7 +2178,7 @@ void Server::createServers(
                     port_name,
                     "native protocol (tcp): " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
+                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, CurrentMetrics::InterfaceNativeReceiveBytes, CurrentMetrics::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2188,7 +2200,7 @@ void Server::createServers(
                     port_name,
                     "native protocol (tcp) with PROXY: " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
+                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, CurrentMetrics::InterfaceNativeReceiveBytes, CurrentMetrics::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2211,7 +2223,7 @@ void Server::createServers(
                     port_name,
                     "secure native protocol (tcp_secure): " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
+                        new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, CurrentMetrics::InterfaceNativeReceiveBytes, CurrentMetrics::InterfaceNativeSendBytes),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2235,7 +2247,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "MySQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, CurrentMetrics::InterfaceMySQLReceiveBytes, CurrentMetrics::InterfaceMySQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 
@@ -2252,7 +2264,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, CurrentMetrics::InterfacePostgreSQLReceiveBytes, CurrentMetrics::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 
@@ -2286,7 +2298,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, CurrentMetrics::InterfacePrometheusReceiveBytes, CurrentMetrics::InterfacePrometheusSendBytes));
             });
         }
     }
@@ -2333,7 +2345,9 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http_params,
+                        CurrentMetrics::InterfaceInterserverReceiveBytes,
+                        CurrentMetrics::InterfaceInterserverSendBytes));
             });
         }
 
@@ -2356,7 +2370,9 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http_params,
+                        CurrentMetrics::InterfaceInterserverReceiveBytes,
+                        CurrentMetrics::InterfaceInterserverSendBytes));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");

@@ -8,9 +8,7 @@ namespace ErrorCodes
     extern const int ZSTD_ENCODER_FAILED;
 }
 
-ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+void ZstdDeflatingWriteBuffer::initialize(int compression_level)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)

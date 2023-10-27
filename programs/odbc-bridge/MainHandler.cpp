@@ -46,12 +46,12 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 {
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
-        *response.send() << message << std::endl;
+        response.send()->writeln(message);
     LOG_WARNING(log, fmt::runtime(message));
 }
 
 
-void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const CurrentMetrics::Metric & /*write_metric*/)
 {
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());

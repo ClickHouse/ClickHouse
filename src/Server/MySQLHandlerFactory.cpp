@@ -21,9 +21,11 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
+MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const CurrentMetrics::Metric & read_metric_, const CurrentMetrics::Metric & write_metric_)
     : server(server_)
     , log(&Poco::Logger::get("MySQLHandlerFactory"))
+    , read_metric(read_metric_)
+    , write_metric(write_metric_)
 {
 #if USE_SSL
     try
