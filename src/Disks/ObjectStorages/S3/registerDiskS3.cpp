@@ -117,8 +117,6 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);
 
-        BlobStorageLogWriter blob_storage_log(context->getBlobStorageLog());
-        blob_storage_log.disk_name = name;
         if (type == "s3_plain")
         {
             /// send_metadata changes the filenames (includes revision), while
@@ -132,8 +130,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             s3_storage = std::make_shared<S3PlainObjectStorage>(
                 std::move(client), std::move(settings),
                 uri.version_id, s3_capabilities,
-                uri.bucket, uri.endpoint,
-                std::move(blob_storage_log));
+                uri.bucket, uri.endpoint, name);
             metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(s3_storage, uri.key);
         }
         else
@@ -141,8 +138,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             s3_storage = std::make_shared<S3ObjectStorage>(
                 std::move(client), std::move(settings),
                 uri.version_id, s3_capabilities,
-                uri.bucket, uri.endpoint,
-                std::move(blob_storage_log));
+                uri.bucket, uri.endpoint, name);
 
             auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
             metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);

@@ -61,13 +61,13 @@ private:
         const S3Capabilities & s3_capabilities_,
         String bucket_,
         String connection_string,
-        BlobStorageLogWriter blob_storage_log_)
+        const String & disk_name_)
         : bucket(bucket_)
+        , disk_name(disk_name_)
         , clients(std::make_unique<Clients>(std::move(client_), *s3_settings_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
-        , blob_storage_log(std::move(blob_storage_log_))
     {
         data_source_description.type = DataSourceType::S3;
         data_source_description.description = connection_string;
@@ -179,7 +179,10 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
+    BlobStorageLogWriter & getBlobStorageLog();
+
     std::string bucket;
+    std::string disk_name;
 
     MultiVersion<Clients> clients;
     MultiVersion<S3ObjectStorageSettings> s3_settings;

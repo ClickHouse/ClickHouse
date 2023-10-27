@@ -525,8 +525,11 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         }
 
-        blob_log.addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite, bucket, key, {},
-                          outcome.IsSuccess() ? nullptr : &outcome.GetError());
+        blob_log.addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
+            /* bucket = */ bucket,
+            /* remote_path = */ key,
+            /* local_path = */ {},
+            outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
         multipart_tags[part_number-1] = outcome.GetResult().GetETag();
 

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDate.h>
 #include <base/getThreadId.h>
 #include <IO/S3/Client.h>
@@ -13,7 +14,6 @@ namespace DB
 
 NamesAndTypesList BlobStorageLogElement::getNamesAndTypes()
 {
-
     auto event_enum_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values{
             {"Upload", static_cast<Int8>(EventType::Upload)},
@@ -30,10 +30,11 @@ NamesAndTypesList BlobStorageLogElement::getNamesAndTypes()
         {"query_id", std::make_shared<DataTypeString>()},
         {"thread_id", std::make_shared<DataTypeUInt64>()},
 
-        {"disk_name", std::make_shared<DataTypeString>()},
+        {"disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"bucket", std::make_shared<DataTypeString>()},
         {"remote_path", std::make_shared<DataTypeString>()},
         {"referring_local_path", std::make_shared<DataTypeString>()},
+        {"data_size", std::make_shared<DataTypeUInt32>()},
 
         {"error_msg", std::make_shared<DataTypeString>()},
 
@@ -45,30 +46,43 @@ NamesAndTypesList BlobStorageLogElement::getNamesAndTypes()
 
 void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
 {
+#ifndef NDEBUG
+    auto coulumn_names = BlobStorageLogElement::getNamesAndTypes().getNames();
+#endif
+
     size_t i = 0;
 
+    assert(coulumn_names.at(i) == "event_type");
     columns[i++]->insert(static_cast<Int8>(event_type));
 
+    assert(coulumn_names.at(i) == "query_id");
     columns[i++]->insert(query_id);
+    assert(coulumn_names.at(i) == "thread_id");
     columns[i++]->insert(thread_id);
 
+    assert(coulumn_names.at(i) == "disk_name");
     columns[i++]->insert(disk_name);
+    assert(coulumn_names.at(i) == "bucket");
     columns[i++]->insert(bucket);
+    assert(coulumn_names.at(i) == "remote_path");
     columns[i++]->insert(remote_path);
+    assert(coulumn_names.at(i) == "referring_local_path");
     columns[i++]->insert(referring_local_path);
+    assert(coulumn_names.at(i) == "data_size");
+    columns[i++]->insert(data_size);
 
+    assert(coulumn_names.at(i) == "error_msg");
     columns[i++]->insert(error_msg);
 
     auto event_time_seconds = timeInSeconds(event_time);
+    assert(coulumn_names.at(i) == "event_date");
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
+    assert(coulumn_names.at(i) == "event_time");
     columns[i++]->insert(event_time_seconds);
+    assert(coulumn_names.at(i) == "event_time_microseconds");
     columns[i++]->insert(timeInMicroseconds(event_time));
 
-    assert([&i]()
-    {
-        size_t total_colums = BlobStorageLogElement::getNamesAndTypes().size();
-        return i == total_colums;
-    }());
+    assert(i == coulumn_names.size() && columns.size() == coulumn_names.size());
 }
 
 
@@ -77,6 +91,7 @@ void BlobStorageLogWriter::addEvent(
     const String & bucket,
     const String & remote_path,
     const String & local_path,
+    size_t data_size,
     const Aws::S3::S3Error * error,
     BlobStorageLogElement::EvenTime time_now)
 {
@@ -97,6 +112,11 @@ void BlobStorageLogWriter::addEvent(
     element.bucket = bucket;
     element.remote_path = remote_path;
     element.referring_local_path = local_path.empty() ? referring_local_path : local_path;
+
+    if (data_size > std::numeric_limits<decltype(element.data_size)>::max())
+        element.data_size = std::numeric_limits<decltype(element.data_size)>::max();
+    else
+        element.data_size = data_size;
 
     if (error)
     {

@@ -1,5 +1,5 @@
 import gzip
-import json
+import uuid
 import logging
 import os
 import io
@@ -54,6 +54,7 @@ def started_cluster():
                 "configs/defaultS3.xml",
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
+                "configs/blob_log.xml",
             ],
             user_configs=[
                 "configs/access.xml",
@@ -104,11 +105,10 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_query(instance, query, stdin=None, settings=None):
-    # type: (ClickHouseInstance, str, object, dict) -> str
+def run_query(instance, query, *args, **kwargs):
 
     logging.info("Running query '{}'...".format(query))
-    result = instance.query(query, stdin=stdin, settings=settings)
+    result = instance.query(query, *args, **kwargs)
     logging.info("Query finished")
 
     return result
@@ -496,7 +496,7 @@ def test_put_get_with_globs(started_cluster):
     ],
 )
 def test_multipart(started_cluster, maybe_auth, positive):
-    # type: (ClickHouseCluster) -> None
+    # type: (ClickHouseCluster, str, bool) -> None
 
     bucket = (
         started_cluster.minio_bucket
@@ -529,7 +529,7 @@ def test_multipart(started_cluster, maybe_auth, positive):
         maybe_auth,
         table_format,
     )
-
+    put_query_id = uuid.uuid4().hex
     try:
         run_query(
             instance,
@@ -539,6 +539,7 @@ def test_multipart(started_cluster, maybe_auth, positive):
                 "s3_min_upload_part_size": min_part_size_bytes,
                 "s3_max_single_part_upload_size": 0,
             },
+            query_id=put_query_id,
         )
     except helpers.client.QueryRuntimeException:
         if positive:
@@ -582,6 +583,24 @@ def test_multipart(started_cluster, maybe_auth, positive):
             select_result
             == "\t".join(map(str, [total_rows, total_rows * 2, total_rows * 3])) + "\n"
         )
+
+    if positive:
+        instance.query("SYSTEM FLUSH LOGS")
+        blob_storage_log = instance.query(f"SELECT * FROM system.blob_storage_log")
+
+        result = instance.query(
+            f"""SELECT
+                countIf(event_type == 'MultiPartUploadCreate'),
+                countIf(event_type == 'MultiPartUploadWrite'),
+                countIf(event_type == 'MultiPartUploadComplete'),
+                count()
+            FROM system.blob_storage_log WHERE query_id = '{put_query_id}'"""
+        )
+        r = result.strip().split("\t")
+        assert int(r[0]) == 1, blob_storage_log
+        assert int(r[1]) >= 1, blob_storage_log
+        assert int(r[2]) == 1, blob_storage_log
+        assert int(r[0]) + int(r[1]) + int(r[2]) == int(r[3]), blob_storage_log
 
 
 def test_remote_host_filter(started_cluster):

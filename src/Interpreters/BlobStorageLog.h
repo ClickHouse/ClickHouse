@@ -37,6 +37,8 @@ struct BlobStorageLogElement
     String remote_path;
     String referring_local_path;
 
+    UInt32 data_size;
+
     Int32 error_code = -1; /// negative if no error
     String error_msg;
 
@@ -60,27 +62,14 @@ class BlobStorageLog : public SystemLog<BlobStorageLogElement>
 using BlobStorageLogPtr = std::shared_ptr<BlobStorageLog>;
 
 /// Writes events to BlobStorageLog
-/// May contains some context information
+/// Can additionaly hold some context information
 class BlobStorageLogWriter
 {
-    BlobStorageLogPtr log;
-
 public:
     BlobStorageLogWriter() = default;
 
-    BlobStorageLogWriter(BlobStorageLogPtr log_)
+    explicit BlobStorageLogWriter(BlobStorageLogPtr log_)
         : log(std::move(log_))
-    {}
-
-    explicit BlobStorageLogWriter(
-        BlobStorageLogPtr log_,
-        const String & disk_name_,
-        const String & query_id_,
-        const String & referring_local_path_)
-        : log(std::move(log_))
-        , disk_name(disk_name_)
-        , query_id(query_id_)
-        , referring_local_path(referring_local_path_)
     {}
 
     void addEvent(
@@ -91,10 +80,15 @@ public:
         const Aws::S3::S3Error * error,
         BlobStorageLogElement::EvenTime time_now = {});
 
+    bool isInitialized() const { return log != nullptr; }
+
     /// Optional context information
     String disk_name;
     String query_id;
     String referring_local_path;
+
+private:
+    BlobStorageLogPtr log;
 };
 
 }

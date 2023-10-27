@@ -3634,7 +3634,16 @@ std::shared_ptr<BackupLog> Context::getBackupLog() const
 
 std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
 {
+    bool is_configured [[maybe_unused]] = false;
+
+#ifndef NDEBUG
+    /// if getConfigRefWithLock accepted SharedLockGuard instead of std::lock_guard,
+    /// we could place this call under `assert` below
+    is_configured = shared->getConfigRef().has("blob_storage_log");
+#endif
+
     SharedLockGuard lock(shared->mutex);
+    chassert(!is_configured || (shared->system_logs && shared->system_logs->blob_storage_log));
 
     if (!shared->system_logs)
         return {};
