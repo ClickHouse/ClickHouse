@@ -235,9 +235,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag async_loader_initialized;
     mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
 
-    mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
-    mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader;
-
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries TSA_GUARDED_BY(embedded_dictionaries_mutex);    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader TSA_GUARDED_BY(external_dictionaries_mutex);
 
@@ -2941,7 +2938,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         "startup ddl worker",
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
-            auto lock2 = getGlobalSharedLock();
+            std::lock_guard lock2(shared->mutex);
             shared->ddl_worker->startup();
         });
 
