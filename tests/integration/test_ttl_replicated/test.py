@@ -17,7 +17,7 @@ node4 = cluster.add_instance(
     "node4",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.12.4.5",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
@@ -30,7 +30,7 @@ node5 = cluster.add_instance(
     "node5",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.12.4.5",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[
@@ -42,7 +42,7 @@ node6 = cluster.add_instance(
     "node6",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.12.4.5",
+    tag="20.8.11.17",
     stay_alive=True,
     with_installed_binary=True,
     main_configs=[

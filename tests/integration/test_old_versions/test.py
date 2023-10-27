@@ -55,7 +55,7 @@ node19_13 = cluster.add_instance(
 node19_16 = cluster.add_instance(
     "node19_16",
     image="yandex/clickhouse-server",
-    tag="19.16.2.2",
+    tag="19.16.9.37",
     with_installed_binary=True,
     main_configs=["configs/config.d/test_cluster.xml"],
     allow_analyzer=False,

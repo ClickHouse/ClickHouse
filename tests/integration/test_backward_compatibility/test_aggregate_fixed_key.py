@@ -7,7 +7,7 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="21.3",
+    tag="20.8.11.17",
     with_installed_binary=True,
     allow_analyzer=False,
 )
