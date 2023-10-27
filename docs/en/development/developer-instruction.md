@@ -221,15 +221,19 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 **CLion (recommended)**
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on macOS.
+If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/). CLion is commercial software but it offers a 30 day free trial. It is also free of charge for students. CLion can be used on both Linux and macOS.
 
-Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
+A few things to know when using CLion to develop ClickHouse:
+
+- CLion creates a `build` path on its own and automatically selects `debug` for the build type
+- It uses a version of CMake that is defined in CLion and not the one installed by you
+- CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
 
 **Other alternatives**
 
-KDevelop and QTCreator are other great alternative IDEs for developing ClickHouse. While KDevelop is a great IDE, it is sometimes unstable. If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop, should be fine to work with.
+[KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse. While KDevelop is a great IDE, it is sometimes unstable. If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files. After doing so, KDevelop should be fine to work with.
 
-Other IDEs you can use are Sublime Text, Visual Studio Code, or Kate (all of which are available on Linux). If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
+Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux). If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
 
 ## Writing Code {#writing-code}
 
