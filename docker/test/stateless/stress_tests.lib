@@ -72,7 +72,7 @@ function configure()
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
 
-    randomize_config_boolean_value compressed_protocol zookeeper
+    randomize_config_boolean_value use_compression zookeeper
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
