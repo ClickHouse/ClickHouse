@@ -196,10 +196,7 @@ public:
 
     /// next should be changed only once: from nullptr to some value.
     /// NOTE: It is not true in MergeListElement
-    void setParent(MemoryTracker * elem)
-    {
-        parent.store(elem, std::memory_order_relaxed);
-    }
+    void setParent(MemoryTracker * elem);
 
     MemoryTracker * getParent()
     {
