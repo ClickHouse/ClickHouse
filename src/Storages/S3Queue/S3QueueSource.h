@@ -93,8 +93,10 @@ private:
     using ReaderHolder = StorageS3Source::ReaderHolder;
     ReaderHolder reader;
     std::future<ReaderHolder> reader_future;
+    std::atomic<bool> initialized{false};
     size_t processed_rows_from_file = 0;
 
+    void lazyInitialize();
     void applyActionAfterProcessing(const String & path);
     void appendLogElement(const std::string & filename, S3QueueFilesMetadata::FileStatus & file_status_, size_t processed_rows, bool processed);
 };
