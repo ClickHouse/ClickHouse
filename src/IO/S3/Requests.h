@@ -67,36 +67,10 @@ public:
         api_mode = api_mode_;
     }
 
-    void AddAdditionalCustomHeader(const Aws::String & header_name, const Aws::String & header_value) const
-    {
-        additional_custom_headers.emplace(header_name, header_value);
-    }
-
-    /*
-     * Hackish as F!
-     * DB::S3::Client has access to custom headers. Normally, they are set inside `DB::S3::PocoHTTPClient::makeRequestInternalImpl`.
-     * The problem is that any `x-amz-*` needs to be signed and that happens before `DB::S3::PocoHTTPClient::makeRequestInternalImpl`.
-     * In order not to break const-ness and leverage this existing workaround, the methods `AddAdditionalCustomHeader` and `GetAdditionalCustomHeaders`
-     * are being added, so they can be called prior to signing.
-     *
-     * This method adds base headers to the additional headers. It's also hackish, and it's that way because the base class method returns
-     * a const reference to a private member, which does not allow a temporary object to be returned.
-     * */
-    const Aws::Http::HeaderValueCollection& GetAdditionalCustomHeaders() const override
-    {
-        auto & base_headers = BaseRequest::GetAdditionalCustomHeaders();
-
-        for (const auto & header : base_headers)
-            additional_custom_headers.emplace(header.first, header.second);
-
-        return additional_custom_headers;
-    }
-
 protected:
     mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
-    mutable Aws::Http::HeaderValueCollection additional_custom_headers;
 };
 
 class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>

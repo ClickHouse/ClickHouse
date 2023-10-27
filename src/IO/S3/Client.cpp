@@ -269,13 +269,13 @@ void Client::setKMSHeaders(RequestType & request) const
 
 
 template <typename RequestType>
-void Client::addAdditionalAMZHeadersToCanonicalHeadersList(const RequestType & request) const
+void Client::addAdditionalAMZHeadersToCanonicalHeadersList(RequestType & request) const
 {
     for (const auto & [name, value] : client_configuration.extra_headers)
     {
         if (name.starts_with("x-amz-"))
         {
-            request.AddAdditionalCustomHeader(name, value);
+            request.SetAdditionalCustomHeaderValue(name, value);
         }
     }
 }
@@ -285,7 +285,7 @@ template void Client::setKMSHeaders<CreateMultipartUploadRequest>(CreateMultipar
 template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & request) const;
 template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
 
-Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
+Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
@@ -368,36 +368,36 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
 
-Model::ListObjectsV2Outcome Client::ListObjectsV2(const ListObjectsV2Request & request) const
+Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
         request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
-Model::ListObjectsOutcome Client::ListObjects(const ListObjectsRequest & request) const
+Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
         request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
-Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) const
+Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
 }
 
-Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
+Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
-Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
+Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
-Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
+Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
@@ -427,43 +427,43 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const Comp
     return outcome;
 }
 
-Model::CopyObjectOutcome Client::CopyObject(const CopyObjectRequest & request) const
+Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
-Model::PutObjectOutcome Client::PutObject(const PutObjectRequest & request) const
+Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
-Model::UploadPartOutcome Client::UploadPart(const UploadPartRequest & request) const
+Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
-Model::UploadPartCopyOutcome Client::UploadPartCopy(const UploadPartCopyRequest & request) const
+Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
-Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & request) const
+Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
-Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
+Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
 }
 
-Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & request) const
+Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
 {
     auto request_fn = [this](const ComposeObjectRequest & req)
     {
@@ -495,7 +495,7 @@ Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & 
 
 template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
-Client::doRequest(const RequestType & request, RequestFn request_fn) const
+Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
     addAdditionalAMZHeadersToCanonicalHeadersList(request);
     const auto & bucket = request.GetBucket();
@@ -574,7 +574,7 @@ Client::doRequest(const RequestType & request, RequestFn request_fn) const
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
-Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const
+Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
     addAdditionalAMZHeadersToCanonicalHeadersList(request);
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
