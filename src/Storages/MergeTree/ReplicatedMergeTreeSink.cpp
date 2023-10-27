@@ -816,6 +816,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                     NameSet unused;
                     /// if we found part in deduplication hashes part must exists on some replica
                     storage.checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, existing_part_name, unused);
+
+                    /// We have to check that the block_id still exists to avoid a race condition with DROP_RANGE
+                    block_unlock_op_idx = ops.size();
+                    ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/blocks/" + block_id, -1));
                 }
                 catch (const zkutil::KeeperException &)
                 {
