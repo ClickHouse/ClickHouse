@@ -210,7 +210,7 @@ detach
 quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" &
+    gdb -batch -command script.gdb -p $server_pid &
     sleep 5
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
@@ -219,13 +219,12 @@ quit
     # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
     for _ in {1..180}
     do
-        sleep 1
         if clickhouse-client --query "select 1"
         then
             break
         fi
+        sleep 1
     done
-    clickhouse-client --query "select 1" # This checks that the server is responding
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
     echo 'Server started and responded'
 
@@ -337,8 +336,8 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { rg --text -o "Found error:.*" fuzzer.log \
-            || rg --text -ao "Exception:.*" fuzzer.log \
+        { rg -ao "Found error:.*" fuzzer.log \
+            || rg -ao "Exception:.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

@@ -238,4 +238,32 @@ class FourLetterWordCommand : public IKeeperClientCommand
     String getHelpMessage() const override { return "{} <command> -- Executes four-letter-word command"; }
 };
 
+class GetDirectChildrenNumberCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "get_direct_children_number"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} [path] -- Get numbers of direct children nodes under a specific path";
+    }
+};
+
+class GetAllChildrenNumberCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "get_all_children_number"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} [path] -- Get all numbers of children nodes under a specific path";
+    }
+};
+
 }

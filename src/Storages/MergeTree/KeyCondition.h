@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <Core/SortDescription.h>
+#include <Core/Range.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -12,6 +13,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+
 
 namespace DB
 {
@@ -24,187 +26,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 
-/** A field, that can be stored in two representations:
-  * - A standalone field.
-  * - A field with reference to its position in a block.
-  *   It's needed for execution of functions on ranges during
-  *   index analysis. If function was executed once for field,
-  *   its result would be cached for whole block for which field's reference points to.
-  */
-struct FieldRef : public Field
-{
-    FieldRef() = default;
-
-    /// Create as explicit field without block.
-    template <typename T>
-    FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
-
-    /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
-          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
-
-    bool isExplicit() const { return columns == nullptr; }
-
-    ColumnsWithTypeAndName * columns = nullptr;
-    size_t row_idx = 0;
-    size_t column_idx = 0;
-};
-
-/** Range with open or closed ends; possibly unbounded.
-  */
-struct Range
-{
-private:
-    static bool equals(const Field & lhs, const Field & rhs);
-    static bool less(const Field & lhs, const Field & rhs);
-
-public:
-    FieldRef left;        /// the left border
-    FieldRef right;       /// the right border
-    bool left_included;   /// includes the left border
-    bool right_included;  /// includes the right border
-
-    /// One point.
-    Range(const FieldRef & point) /// NOLINT
-        : left(point), right(point), left_included(true), right_included(true) {}
-
-    /// A bounded two-sided range.
-    Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
-        : left(left_)
-        , right(right_)
-        , left_included(left_included_)
-        , right_included(right_included_)
-    {
-        shrinkToIncludedIfPossible();
-    }
-
-    static Range createWholeUniverse()
-    {
-        return Range(NEGATIVE_INFINITY, true, POSITIVE_INFINITY, true);
-    }
-
-    static Range createWholeUniverseWithoutNull()
-    {
-        return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
-    }
-
-    static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false)
-    {
-        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-        r.right = right_point;
-        r.right_included = right_included;
-        r.shrinkToIncludedIfPossible();
-        // Special case for [-Inf, -Inf]
-        if (r.right.isNegativeInfinity() && right_included)
-            r.left_included = true;
-        return r;
-    }
-
-    static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false)
-    {
-        Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
-        r.left = left_point;
-        r.left_included = left_included;
-        r.shrinkToIncludedIfPossible();
-        // Special case for [+Inf, +Inf]
-        if (r.left.isPositiveInfinity() && left_included)
-            r.right_included = true;
-        return r;
-    }
-
-    /** Optimize the range. If it has an open boundary and the Field type is "loose"
-      * - then convert it to closed, narrowing by one.
-      * That is, for example, turn (0,2) into [1].
-      */
-    void shrinkToIncludedIfPossible()
-    {
-        if (left.isExplicit() && !left_included)
-        {
-            if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
-            {
-                ++left.get<UInt64 &>();
-                left_included = true;
-            }
-            if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
-            {
-                ++left.get<Int64 &>();
-                left_included = true;
-            }
-        }
-        if (right.isExplicit() && !right_included)
-        {
-            if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
-            {
-                --right.get<UInt64 &>();
-                right_included = true;
-            }
-            if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
-            {
-                --right.get<Int64 &>();
-                right_included = true;
-            }
-        }
-    }
-
-    bool empty() const { return less(right, left) || ((!left_included || !right_included) && !less(left, right)); }
-
-    /// x contained in the range
-    bool contains(const FieldRef & x) const
-    {
-        return !leftThan(x) && !rightThan(x);
-    }
-
-    /// x is to the left
-    bool rightThan(const FieldRef & x) const
-    {
-        return less(left, x) || (left_included && equals(x, left));
-    }
-
-    /// x is to the right
-    bool leftThan(const FieldRef & x) const
-    {
-        return less(x, right) || (right_included && equals(x, right));
-    }
-
-    bool intersectsRange(const Range & r) const
-    {
-        /// r to the left of me.
-        if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
-            return false;
-
-        /// r to the right of me.
-        if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
-            return false;
-
-        return true;
-    }
-
-    bool containsRange(const Range & r) const
-    {
-        /// r starts to the left of me.
-        if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
-            return false;
-
-        /// r ends right of me.
-        if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
-            return false;
-
-        return true;
-    }
-
-    void invert()
-    {
-        std::swap(left, right);
-        if (left.isPositiveInfinity())
-            left = NEGATIVE_INFINITY;
-        if (right.isNegativeInfinity())
-            right = POSITIVE_INFINITY;
-        std::swap(left_included, right_included);
-    }
-
-    String toString() const;
-};
 
 /** Condition on the index.
   *
@@ -253,7 +74,7 @@ public:
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
-        const std::vector<Range> & hyperrectangle,
+        const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
@@ -339,7 +160,6 @@ public:
 
     bool matchesExactContinuousRange() const;
 
-private:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
@@ -386,10 +206,11 @@ private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
 
-
-public:
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
     static const AtomMap atom_map;
+
+    const RPN & getRPN() const { return rpn; }
+    const ColumnIndices & getKeyColumns() const { return key_columns; }
 
 private:
     BoolMask checkInRange(
