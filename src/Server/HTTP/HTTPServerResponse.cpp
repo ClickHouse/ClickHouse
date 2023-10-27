@@ -84,7 +84,7 @@ std::pair<std::shared_ptr<WriteBufferFromPocoSocket>, std::shared_ptr<WriteBuffe
     }
 
     // Write header to buffer
-    std::stringstream header;
+    std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
     beginWrite(header);
     // Send header
     auto str = header.str();

@@ -57,7 +57,7 @@ protected:
     {
         if (count_length >= fixed_length || offset() == 0)
             return;
-        
+
         if (count_length + offset() > fixed_length)
             pos -= offset() - (fixed_length - count_length);
 
@@ -132,7 +132,7 @@ protected:
     {
         if (count_length >= fixed_length || offset() == 0)
             return;
-        
+
         if (count_length + offset() > fixed_length)
             pos -= offset() - (fixed_length - count_length);
 

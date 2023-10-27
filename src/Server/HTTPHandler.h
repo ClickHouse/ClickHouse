@@ -65,7 +65,7 @@ private:
 
         /// Holds original response buffer
         std::shared_ptr<WriteBufferFromHTTPServerResponse> out_holder;
-        /// If HTTP comression is enabled holds compression wrapper over original response buffer
+        /// If HTTP compression is enabled holds compression wrapper over original response buffer
         std::shared_ptr<WriteBuffer> wrap_compressed_holder;
         /// Points either to out_holder or to wrap_compressed_holder
         std::shared_ptr<WriteBuffer> out;

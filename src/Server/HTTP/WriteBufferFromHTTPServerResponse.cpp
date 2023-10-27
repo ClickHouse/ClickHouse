@@ -25,7 +25,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
-        std::stringstream header;
+        std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
         response.beginWrite(header);
         auto header_str = header.str();
         socketSendBytes(header_str.data(), header_str.size());
