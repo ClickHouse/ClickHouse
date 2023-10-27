@@ -593,7 +593,7 @@ bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 void MemoryTracker::setParent(MemoryTracker * elem)
 {
     /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the thread was attached
-    /// to a query thread group or a user group, bacause this memory will be (🤞) freed outside of these scopes.
+    /// to a query thread group or a user group, because this memory will be (🤞) freed outside of these scopes.
     if (level == VariableContext::Thread && DB::current_thread)
         DB::current_thread->flushUntrackedMemory();
 
