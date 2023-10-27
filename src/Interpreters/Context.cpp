@@ -487,7 +487,11 @@ struct ContextSharedPart : boost::noncopyable
         shutdown_called = true;
 
         /// Stop background table statistics refreshing task.
-        statistics_storage->shutdown();
+        if (statistics_storage)
+        {
+            statistics_storage->shutdown();
+            statistics_storage.reset();
+        }
 
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
