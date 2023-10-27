@@ -1400,9 +1400,7 @@ const Block & Context::getScalar(const String & name) const
     auto it = scalars.find(name);
     if (scalars.end() == it)
     {
-        // This should be a logical error, but it fails the sql_fuzz test too
-        // often, so 'bad arguments' for now.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
     return it->second;
 }
