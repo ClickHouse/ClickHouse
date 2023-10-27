@@ -20,7 +20,8 @@ RUN apt-get update --yes \
 RUN pip3 install \
     numpy \
     pyodbc \
-    deepdiff
+    deepdiff \
+    sqlglot
 
 ARG odbc_repo="https://github.com/ClickHouse/clickhouse-odbc.git"
 

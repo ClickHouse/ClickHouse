@@ -8,6 +8,8 @@ from itertools import chain
 from enum import Enum
 from hashlib import md5
 from functools import reduce
+import sqlglot
+from sqlglot.expressions import PrimaryKeyColumnConstraint, ColumnDef
 
 from exceptions import (
     Error,
@@ -135,6 +137,19 @@ class FileBlockBase:
         return result, result_end
 
     @staticmethod
+    def convert_request(sql):
+        if sql.startswith("CREATE TABLE"):
+            result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
+            pk_token = sqlglot.parse_one(result, read="clickhouse").find(PrimaryKeyColumnConstraint)
+            pk_string = "tuple()"
+            if pk_token is not None:
+                pk_string = str(pk_token.find_ancestor(ColumnDef).args['this'])
+
+            result += " ENGINE = MergeTree() ORDER BY " + pk_string
+            return result
+        return sql
+
+    @staticmethod
     def parse_block(parser, start, end):
         file_pos = FileAndPos(parser.get_test_name(), start + 1)
         logger.debug("%s start %s end %s", file_pos, start, end)
@@ -169,6 +184,8 @@ class FileBlockBase:
                 request, last_line = FileBlockBase.__parse_request(
                     parser, line + 1, end
                 )
+                if parser.dbms_name == 'ClickHouse':
+                    request = FileBlockBase.convert_request(request)
                 assert last_line == end
                 line = last_line
 
@@ -325,10 +342,11 @@ class TestFileParser:
 
     DEFAULT_HASH_THRESHOLD = 8
 
-    def __init__(self, stream, test_name, test_file):
+    def __init__(self, stream, test_name, test_file, dbms_name):
         self._stream = stream
         self._test_name = test_name
         self._test_file = test_file
+        self.dbms_name = dbms_name
 
         self._lines = []
         self._raw_tokens = []
@@ -499,7 +517,7 @@ class QueryResult:
                 elif t == "I":
                     try:
                         res_row.append(str(int(c)))
-                    except ValueError as ex:
+                    except (ValueError, OverflowError) as ex:
                         raise QueryExecutionError(
                             f"Got non-integer result '{c}' for I type."
                         )
