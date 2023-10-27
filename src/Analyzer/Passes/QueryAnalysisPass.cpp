@@ -970,7 +970,7 @@ private:
         if (!node->hasAlias())
             return;
 
-        // We don't should not resolve expressions to WindowNode
+        // We should not resolve expressions to WindowNode
         if (node->getNodeType() == QueryTreeNodeType::WINDOW)
             return;
 
