@@ -146,17 +146,17 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    if (!is_http_method_head)
-        HTTPWriteBuffer::finalizeImpl();
-
     std::lock_guard lock(mutex);
 
-    if (headers_finished_sending)
-        return;
+    if (!headers_finished_sending)
+    {
+        /// If no body data just send header
+        startSendHeaders();
+        finishSendHeaders();
+    }
 
-    /// If no body data just send header
-    startSendHeaders();
-    finishSendHeaders();
+    if (!is_http_method_head)
+        HTTPWriteBuffer::finalizeImpl();
 }
 
 
