@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/FailPoint.h>
+#include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -26,7 +27,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/IStorage.h>
-
 
 namespace DB
 {
@@ -115,7 +115,7 @@ public:
 
         fiu_do_on(FailPoints::check_table_query_delay_for_part,
         {
-            std::chrono::milliseconds sleep_time{rand() % 1000};
+            std::chrono::milliseconds sleep_time{thread_local_rng() % 1000};
             std::this_thread::sleep_for(sleep_time);
         });
 
@@ -207,9 +207,9 @@ private:
                     LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
                     return table_check_task;
                 }
-                current_table_it->next();
                 LOG_TRACE(log, "Skip checking table '{}.{}' because it is not {}",
                     current_database->getDatabaseName(), current_table_it->name(), table ? "MergeTree" : "found");
+                current_table_it->next();
             }
 
             /// No more tables in current database, try to get next database
