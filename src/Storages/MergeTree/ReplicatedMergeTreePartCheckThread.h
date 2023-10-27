@@ -67,8 +67,6 @@ public:
     /// Check part by name
     CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr);
 
-    ReplicatedCheckResult checkPartImpl(const String & part_name);
-
     std::unique_lock<std::mutex> pausePartsCheck();
 
     /// Can be called only while holding a lock returned from pausePartsCheck()
@@ -76,7 +74,12 @@ public:
 
 private:
     void run();
-    void choosePartAndCheck();
+    void chooseActivePartAndCheck();
+    MergeTreeDataPartPtr choosePartForBackgroundCheck();
+
+    ReplicatedCheckResult checkPartImpl(const String & part_name);
+    ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
+    void checkPartInZookeeper(MergeTreeDataPartPtr part, ReplicatedCheckResult & result);
 
     bool onPartIsLostForever(const String & part_name);
 

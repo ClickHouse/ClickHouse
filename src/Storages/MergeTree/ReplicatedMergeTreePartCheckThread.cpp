@@ -275,6 +275,68 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     return std::make_pair(exists_in_zookeeper, part);
 }
 
+
+void ReplicatedMergeTreePartCheckThread::checkPartInZookeeper(MergeTreeDataPartPtr part, ReplicatedCheckResult & result)
+{
+    auto zookeeper = storage.getZooKeeper();
+    auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums);
+    const String part_name = part->name;
+    LOG_INFO(log, "Checking data of part {}.", part_name);
+
+    /// The double get scheme is needed to retain compatibility with very old parts that were created
+    /// before the ReplicatedMergeTreePartHeader was introduced.
+    String part_path = storage.replica_path + "/parts/" + part_name;
+    String part_znode = zookeeper->get(part_path);
+
+    try
+    {
+        ReplicatedMergeTreePartHeader zk_part_header;
+        if (!part_znode.empty())
+            zk_part_header = ReplicatedMergeTreePartHeader::fromString(part_znode);
+        else
+        {
+            String columns_znode = zookeeper->get(part_path + "/columns");
+            String checksums_znode = zookeeper->get(part_path + "/checksums");
+            zk_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(columns_znode, checksums_znode);
+        }
+
+        if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
+            throw Exception(ErrorCodes::TABLE_DIFFERS_TOO_MUCH, "Columns of local part {} are different from ZooKeeper", part_name);
+
+        zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
+
+        checkDataPart(part, true, [this] { return need_stop.load(); });
+
+        if (need_stop)
+        {
+            result.status = {part_name, false, "Checking part was cancelled"};
+            result.action = ReplicatedCheckResult::Cancelled;
+            return;
+        }
+
+        LOG_INFO(log, "Part {} looks good.", part_name);
+        result.status = {part_name, true, ""};
+        result.action = ReplicatedCheckResult::DoNothing;
+        return;
+    }
+    catch (...)
+    {
+        if (isRetryableException(std::current_exception()))
+            throw;
+
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        auto message = PreformattedMessage::create("Part {} looks broken. Removing it and will try to fetch.", part_name);
+        LOG_ERROR(log, message);
+
+        /// Part is broken, let's try to find it and fetch.
+        result.status = {part_name, false, message};
+        result.action = ReplicatedCheckResult::TryFetchMissing;
+        return;
+    }
+}
+
+
 ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const String & part_name)
 {
     ReplicatedCheckResult result;
@@ -329,71 +391,11 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
     auto zookeeper = storage.getZooKeeper();
     auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
-    auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-        part->getColumns(), part->checksums);
-
-
     /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
     if (exists_in_zookeeper)
     {
-        LOG_INFO(log, "Checking data of part {}.", part_name);
-
-        /// The double get scheme is needed to retain compatibility with very old parts that were created
-        /// before the ReplicatedMergeTreePartHeader was introduced.
-        String part_path = storage.replica_path + "/parts/" + part_name;
-        String part_znode = zookeeper->get(part_path);
-
-        try
-        {
-            ReplicatedMergeTreePartHeader zk_part_header;
-            if (!part_znode.empty())
-                zk_part_header = ReplicatedMergeTreePartHeader::fromString(part_znode);
-            else
-            {
-                String columns_znode = zookeeper->get(part_path + "/columns");
-                String checksums_znode = zookeeper->get(part_path + "/checksums");
-                zk_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
-                    columns_znode, checksums_znode);
-            }
-
-            if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
-                throw Exception(ErrorCodes::TABLE_DIFFERS_TOO_MUCH, "Columns of local part {} are different from ZooKeeper", part_name);
-
-            zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
-
-            checkDataPart(
-                part,
-                true,
-                [this] { return need_stop.load(); });
-
-            if (need_stop)
-            {
-                result.status = {part_name, false, "Checking part was cancelled"};
-                result.action = ReplicatedCheckResult::Cancelled;
-                return result;
-            }
-
-            LOG_INFO(log, "Part {} looks good.", part_name);
-            result.status = {part_name, true, ""};
-            result.action = ReplicatedCheckResult::DoNothing;
-            return result;
-        }
-        catch (...)
-        {
-            if (isRetryableException(std::current_exception()))
-                throw;
-
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-            auto message = PreformattedMessage::create("Part {} looks broken. Removing it and will try to fetch.", part_name);
-            LOG_ERROR(log, message);
-
-            /// Part is broken, let's try to find it and fetch.
-            result.status = {part_name, false, message};
-            result.action = ReplicatedCheckResult::TryFetchMissing;
-            return result;
-
-        }
+        checkPartInZookeeper(part, result);
+        return result;
     }
     else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < current_time)
     {
@@ -417,6 +419,26 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
         result.action = ReplicatedCheckResult::RecheckLater;
         return result;
     }
+}
+
+
+ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkActivePart(MergeTreeDataPartPtr part)
+{
+    ReplicatedCheckResult result;
+    auto zookeeper = storage.getZooKeeper();
+    const String part_path = storage.replica_path + "/parts/" + part->name;
+    bool exists_in_zookeeper = zookeeper->exists(part_path);
+    result.exists_in_zookeeper = exists_in_zookeeper;
+    result.part = part;
+
+    if (!exists_in_zookeeper)
+    {
+        result.status = {part->name, false, "Part doesn't exist in Zookeeper"};
+        return result;
+    }
+
+    checkPartInZookeeper(part, result);
+    return result;
 }
 
 
@@ -534,27 +556,21 @@ bool ReplicatedMergeTreePartCheckThread::onPartIsLostForever(const String & part
 }
 
 
-void ReplicatedMergeTreePartCheckThread::choosePartAndCheck()
+MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackgroundCheck()
 {
-    if (last_randomly_checked_part != MergeTreePartInfo{})
+    auto parts_lock = storage.lockParts();
+    auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
+    if (active_parts.empty())
     {
-        const auto time_since_last_check = std::chrono::steady_clock::now() - last_check_finish_time;
-        if (duration_cast<std::chrono::seconds>(time_since_last_check).count() < 10)
-            return;
+        LOG_DEBUG(log, "Background part check: no active parts");
+        return nullptr;
     }
+    LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
 
-    MergeTreePartInfo part_to_check;
+    MergeTreeDataPartPtr part;
+    MergeTreeDataPartPtr covering_part;
+    do
     {
-        auto parts_lock = storage.lockParts();
-        auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
-        if (active_parts.empty())
-        {
-            LOG_DEBUG(log, "Background part check: no active parts");
-            return;
-        }
-
-        LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
-
         if (last_randomly_checked_part == MergeTreePartInfo{})
         {
             const size_t active_parts_size = std::distance(active_parts.begin(), active_parts.end());
@@ -564,10 +580,9 @@ void ReplicatedMergeTreePartCheckThread::choosePartAndCheck()
             size_t i = dist(gen);
             chassert(i < active_parts_size);
 
-            const auto & part = *(active_parts.advance_begin(i).begin());
-            part_to_check = part->info;
+            part = *(active_parts.advance_begin(i).begin());
 
-            LOG_DEBUG(log, "Background part check: first part to check {}", part_to_check.getPartNameV1());
+            LOG_DEBUG(log, "Background part check: first part to check {}", part->name);
         }
         else
         {
@@ -576,17 +591,40 @@ void ReplicatedMergeTreePartCheckThread::choosePartAndCheck()
             if (next_it == storage.data_parts_by_state_and_info.end())
                 next_it = storage.data_parts_by_state_and_info.begin();
 
-            const auto & part = *next_it;
-            part_to_check = part->info;
+            part = *next_it;
         }
+
+        covering_part = storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock);
+    }
+    while(covering_part != part);
+
+    return part;
+}
+
+
+void ReplicatedMergeTreePartCheckThread::chooseActivePartAndCheck()
+{
+    if (last_randomly_checked_part != MergeTreePartInfo{})
+    {
+        const auto time_since_last_check = std::chrono::steady_clock::now() - last_check_finish_time;
+        if (duration_cast<std::chrono::seconds>(time_since_last_check).count() < 10)
+            return;
     }
 
-    LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check.getPartNameV1());
+    auto part_to_check = choosePartForBackgroundCheck();
+    if (!part_to_check)
+    {
+        LOG_DEBUG(log, "Background part check: no part was chosen");
+        return;
+    }
 
-    const String part_name_to_check = part_to_check.getPartNameV1();
-    last_randomly_checked_part = part_to_check;
+    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
+
+    LOG_DEBUG(log, "Background part check: going to check part {}", part_to_check->name);
+
+    last_randomly_checked_part = part_to_check->info;
     auto check_start = std::chrono::steady_clock::now();
-    auto result = checkPartImpl(part_name_to_check);
+    auto result = checkActivePart(part_to_check);
     last_check_finish_time = std::chrono::steady_clock::now();
     auto elapsed_time = last_check_finish_time - check_start;
 
@@ -594,14 +632,14 @@ void ReplicatedMergeTreePartCheckThread::choosePartAndCheck()
 
     if (result.status.success)
     {
-        LOG_DEBUG(log, "Background part check succeeded: part={} path={}", part_name_to_check, result.status.fs_path);
+        LOG_DEBUG(log, "Background part check succeeded: part={} path={}", part_to_check->name, result.status.fs_path);
     }
     else
     {
         LOG_WARNING(
             log,
             "Background part check is failed: part={} path={} message={}",
-            part_name_to_check,
+            part_to_check->name,
             result.status.fs_path,
             result.status.failure_message);
     }
@@ -635,7 +673,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             });
             if (selected == parts_queue.end())
             {
-                choosePartAndCheck();
+                chooseActivePartAndCheck();
                 task->scheduleAfter(1000);
                 return;
             }
