@@ -655,6 +655,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -693,10 +694,13 @@ public:
         return 0;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
+        if (arguments.size() == 2 && isColumnConst(*arguments[0].column) && !isColumnConst(*arguments[1].column))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Scale argument should be a constant when input constant");
+        }
+
         const ColumnWithTypeAndName & column = arguments[0];
         const bool has_one_scale = arguments.size() == 1 || (arguments.size() == 2 && (isColumnConst(*arguments[1].column) || arguments[1].column->size() == 1));
 

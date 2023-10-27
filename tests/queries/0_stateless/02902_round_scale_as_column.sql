@@ -113,3 +113,8 @@ INSERT INTO tround2 SELECT 10, 8, log10(d32), log10(d64), log10(d128), log10(d25
 SELECT id, round(d32, scale), round(d64, scale), round(d128, scale), round(d256, scale) FROM tround2 ORDER BY id;
 
 DROP TABLE IF EXISTS tround2;
+
+SELECT round(1, 1);
+SELECT round(materialize(1), materialize(1));
+SELECT round(1, materialize(1)); --{serverError 44}
+SELECT round(materialize(1), 1);
