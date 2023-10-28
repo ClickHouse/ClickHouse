@@ -3,7 +3,6 @@
 #include <Disks/DiskSelector.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <cstdint>
 #include <memory>
 
@@ -54,6 +53,8 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    std::string getRunningAvailabilityZone() const;
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -89,6 +90,8 @@ private:
 
     KeeperFeatureFlags feature_flags;
     KeeperDispatcher * dispatcher{nullptr};
+
+    std::string running_availability_zone;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

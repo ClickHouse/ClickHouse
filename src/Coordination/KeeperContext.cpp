@@ -9,6 +9,13 @@
 #include <Coordination/KeeperFeatureFlags.h>
 #include <boost/algorithm/string.hpp>
 
+#if USE_AWS_S3
+
+#include <IO/S3/Credentials.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/client/ClientConfiguration.h>
+#endif
+
 namespace DB
 {
 
@@ -30,6 +37,11 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+
+    #if USE_AWS_S3
+    auto metadata_client = S3::InitEC2MetadataClient(Aws::Client::ClientConfiguration{});
+    running_availability_zone = metadata_client->getCurrentAvailabilityZone();
+    #endif
 }
 
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
@@ -202,6 +214,11 @@ DiskPtr KeeperContext::getStateFileDisk() const
 void KeeperContext::setStateFileDisk(DiskPtr disk)
 {
     state_file_storage = std::move(disk);
+}
+
+std::string KeeperContext::getRunningAvailabilityZone() const
+{
+    return running_availability_zone;
 }
 
 const std::unordered_map<std::string, std::string> & KeeperContext::getSystemNodesWithData() const

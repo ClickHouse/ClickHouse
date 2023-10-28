@@ -1097,6 +1097,14 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
+        /// AZ node information is a special case not persisted in the storage, so we handle it first.
+        if (request.path == "/keeper/availbility-zone")
+        {
+            response.data = storage.keeper_context->getRunningAvailabilityZone();
+            response.error = Coordination::Error::ZOK;
+            return response_ptr;
+        }
+
         if constexpr (!local)
         {
             if (const auto result = storage.commit(zxid); result != Coordination::Error::ZOK)

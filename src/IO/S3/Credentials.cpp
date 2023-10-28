@@ -704,6 +704,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
+            // Code that we want to copy.
             auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
