@@ -1,5 +1,6 @@
 #include "WebUIRequestHandler.h"
 #include "IServer.h"
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -49,7 +50,7 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     if (request.getURI().starts_with("/play"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        response.send()->write(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
     }
     else if (request.getURI().starts_with("/dashboard"))
     {
@@ -65,12 +66,12 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
         RE2::Replace(&html, uplot_url, "/js/uplot.js");
 
-        response.send()->write(html);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html);
     }
     else if (request.getURI() == "/js/uplot.js")
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        response.send()->write(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
     }
     else
     {

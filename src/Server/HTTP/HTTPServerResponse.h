@@ -90,6 +90,11 @@ public:
         resizeIfNeeded(buf_size);
     }
 
+    bool isChunked()
+    {
+        return chunked;
+    }
+
     void setFixedLength(size_t length)
     {
         chunked = false;
@@ -98,12 +103,22 @@ public:
         resizeIfNeeded(length);
     }
 
+    size_t isFixedLength()
+    {
+        return chunked ? 0 : fixed_length;
+    }
+
     void setPlain(size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
     {
         chunked = false;
         fixed_length = 0;
         count_length = 0;
         resizeIfNeeded(buf_size);
+    }
+
+    bool isPlain()
+    {
+        return !(isChunked() || isFixedLength());
     }
 
 protected:

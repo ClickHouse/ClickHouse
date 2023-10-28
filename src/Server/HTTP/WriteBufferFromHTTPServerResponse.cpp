@@ -146,10 +146,9 @@ WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    std::lock_guard lock(mutex);
-
     if (!headers_finished_sending)
     {
+        std::lock_guard lock(mutex);
         /// If no body data just send header
         startSendHeaders();
         finishSendHeaders();
