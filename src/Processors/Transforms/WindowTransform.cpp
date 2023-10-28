@@ -888,9 +888,13 @@ void WindowTransform::advanceFrameEndSession()
 
         if (next == partition_end)
         {
-            // This happens after the frame end was at the provisional
-            // partition end, but it was unknown that the partition has
-            // ended. By now we should know that it did end.
+            // This happens after the frame end advanced to the current end of input
+            // (given by partition_end pointer when partition_ended is false) on
+            // the previous invocation of the WindowTransform, and on this invocation
+            // we confirmed that it was the end of partition (partition_end unchanged,
+            // partition_ended becomes true). Otherwise the partition_end would
+            // have advanced further beyond `next`, hence the assertion. The
+            // most usual case when this sequence happens is the total end of input.
             assert(partition_ended);
             frame_ended = true;
             return;
@@ -911,7 +915,8 @@ void WindowTransform::advanceFrameEndSession()
         const auto * reference_column = inputAt(frame_end)[order_by_indices[0]].get();
         const auto * compared_column = inputAt(next)[order_by_indices[0]].get();
 
-        // The condition is: current_row + session window threshold <= next_row
+        // The condition to continue the frame is:
+        // current value + session window threshold <= next value.
         // When the direction is DESC, the comparison result changes sign,
         // and the window threshold changes sign (governed by "offset_is_preceding").
         if (compare_values_with_offset(compared_column, next.row,
