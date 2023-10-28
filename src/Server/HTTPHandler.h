@@ -78,7 +78,7 @@ private:
         /// If output should be delayed holds cascade buffer
         std::unique_ptr<CascadeWriteBuffer> out_delayed_and_compressed_holder;
         /// Points to out_maybe_compressed or to CascadeWriteBuffer.
-        WriteBuffer * out_maybe_delayed_and_compressed;
+        WriteBuffer * out_maybe_delayed_and_compressed = nullptr;
 
         bool finalized = false;
 
