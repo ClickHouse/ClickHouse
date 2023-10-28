@@ -37,7 +37,7 @@ The computed value is the following for each row:
 
 This frame includes all rows separated by no more than a given timeout.
 
-FIXME add some proper docs
+add some proper docs
 
 ## References
 
