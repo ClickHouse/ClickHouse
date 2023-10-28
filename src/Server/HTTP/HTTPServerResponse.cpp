@@ -37,7 +37,7 @@ std::shared_ptr<WriteBufferFromPocoSocket> HTTPServerResponse::send()
         // Send header
         Poco::Net::HTTPHeaderOutputStream hs(session);
         write(hs);
-        // Don't create stream - it's a header-only response
+        stream = std::make_shared<WriteBufferFromPocoSocket>(session.socket(), write_metric);
     }
     else if (getChunkedTransferEncoding())
     {

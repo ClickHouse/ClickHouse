@@ -913,7 +913,7 @@ try
 {
     /// In case data has already been sent, like progress headers, try using the output buffer to
     /// set the exception code since it will be able to append it if it hasn't finished writing headers
-    if (response.sent() && used_output.out)
+    if (response.sent() && used_output.out_holder)
         used_output.out_holder->setExceptionCode(exception_code);
     else
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
