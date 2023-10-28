@@ -136,7 +136,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 Также есть возможность установить пакеты вручную, скачав отсюда: https://packages.clickhouse.com/rpm/stable.
 
-### Из Tgz архивов {#from-tgz-archives}
+### Из tgz-архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz`-архивов для всех дистрибутивов, где невозможна установка `deb`- и `rpm`- пакетов.
 
@@ -243,7 +243,7 @@ sudo ./clickhouse install
     Client: programs/clickhouse-client
     Server: programs/clickhouse-server
 
-Для работы собранного вручную сервера необходимо создать каталоги для данных и метаданных, а также сделать сменить их владельца на желаемого пользователя ( `chown`). Пути к этим каталогам могут быть изменены в конфигурационном файле сервера (src/programs/server/config.xml), по умолчанию используются следующие:
+Для работы собранного вручную сервера необходимо создать каталоги для данных и метаданных, а также сделать сменить их владельца на желаемого пользователя (`chown`). Пути к этим каталогам могут быть изменены в конфигурационном файле сервера (src/programs/server/config.xml), по умолчанию используются следующие:
 
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/
@@ -252,13 +252,13 @@ sudo ./clickhouse install
 
 ## Запуск {#zapusk}
 
-Для запуска сервера в качестве демона, выполните:
+Для запуска сервера в режиме демона, выполните:
 
 ``` bash
 sudo service clickhouse-server start
 ```
 
-Смотрите журналы в директории `/var/log/clickhouse-server/`.
+Смотрите журналы в каталоге `/var/log/clickhouse-server/`.
 
 Если сервер не стартует, проверьте корректность конфигурации в файле `/etc/clickhouse-server/config.xml`
 
