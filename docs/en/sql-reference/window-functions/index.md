@@ -33,6 +33,12 @@ The computed value is the following for each row:
 - `0` for 1st row,
 - ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
 
+### SESSION frame
+
+This frame includes all rows separated by no more than a given timeout.
+
+FIXME add some proper docs
+
 ## References
 
 ### GitHub Issues
