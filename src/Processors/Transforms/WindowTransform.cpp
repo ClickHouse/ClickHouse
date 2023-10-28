@@ -128,8 +128,9 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     else
     {
         // No overflow, compare normally.
-        return compared_value < reference_value ? -1
+        auto result = compared_value < reference_value ? -1
             : compared_value == reference_value ? 0 : 1;
+        return result;
     }
 }
 
@@ -281,11 +282,12 @@ WindowTransform::WindowTransform(const Block & input_header_,
 
     // Choose a row comparison function for RANGE OFFSET frame based on the
     // type of the ORDER BY column.
-    if (window_description.frame.type == WindowFrame::FrameType::RANGE
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION ||
+        (window_description.frame.type == WindowFrame::FrameType::RANGE
         && (window_description.frame.begin_type
                 == WindowFrame::BoundaryType::Offset
             || window_description.frame.end_type
-                == WindowFrame::BoundaryType::Offset))
+                == WindowFrame::BoundaryType::Offset)))
     {
         assert(order_by_indices.size() == 1);
         const auto & entry = input_header.getByPosition(order_by_indices[0]);
@@ -607,13 +609,29 @@ void WindowTransform::advanceFrameStart()
             frame_started = true;
             break;
         case WindowFrame::BoundaryType::Current:
-            // CURRENT ROW differs between frame types only in how the peer
-            // groups are accounted.
-            assert(partition_start <= peer_group_start);
-            assert(peer_group_start < partition_end);
-            assert(peer_group_start <= current_row);
-            frame_start = peer_group_start;
-            frame_started = true;
+            if (window_description.frame.type == WindowFrame::FrameType::SESSION)
+            {
+                // FIXME in this draft the SESSION frames have Current frame begin.
+                //
+                // The SESSION frames are disjoint, so if the current row
+                // went out of the current frame, the next frame has to start
+                // with the current row. Otherwise, the frame doesn't change.
+                if (current_row >= prev_frame_end)
+                {
+                    frame_start = current_row;
+                }
+                frame_started = true;
+            }
+            else
+            {
+                // CURRENT ROW differs between frame types only in how the peer
+                // groups are accounted.
+                assert(partition_start <= peer_group_start);
+                assert(peer_group_start < partition_end);
+                assert(peer_group_start <= current_row);
+                frame_start = peer_group_start;
+                frame_started = true;
+            }
             break;
         case WindowFrame::BoundaryType::Offset:
             switch (window_description.frame.type)
@@ -672,7 +690,8 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
     }
 
     // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
-    assert(window_description.frame.type == WindowFrame::FrameType::RANGE);
+    assert(window_description.frame.type == WindowFrame::FrameType::RANGE
+        || window_description.frame.type == WindowFrame::FrameType::SESSION);
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -827,6 +846,72 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition_ended;
 }
 
+void WindowTransform::advanceFrameEndSession()
+{
+    if (current_row < prev_frame_end)
+    {
+        // The SESSION frames are disjoint, so if we found a frame once, all
+        // rows that constitute the frame will also have it as their window
+        // function frame. Note that the prev_frame_end is a past-the-end
+        // pointer that is initialized to start of partition, and this initial
+        // value can't compare "greater" than any row in partition. So this
+        // comparison can only be true if we have already found a frame, no
+        // additional checks needed.
+        frame_ended = true;
+        // No reason for the frame end to advance in this case.
+        assert(prev_frame_end == frame_end);
+        return;
+    }
+
+    const int direction = window_description.order_by[0].direction;
+    for (;;)
+    {
+        RowNumber next = frame_end;
+
+        if (next == partition_end)
+        {
+            // This happens after the frame end was at the provisional
+            // partition end, but it was unknown that the partition has
+            // ended. By now we should know that it did end.
+            assert(partition_ended);
+            frame_ended = true;
+            return;
+        }
+        assert(next < partition_end);
+
+        advanceRowNumber(next);
+
+        if (next == partition_end)
+        {
+            // Got to the current partition end.
+            frame_end = partition_end;
+            frame_ended = partition_ended;
+            return;
+        }
+        assert(next < partition_end);
+
+        const auto * reference_column = inputAt(frame_end)[order_by_indices[0]].get();
+        const auto * compared_column = inputAt(next)[order_by_indices[0]].get();
+
+        // The condition is: current_row + session window threshold <= next_row
+        // When the direction is DESC, the comparison result changes sign,
+        // and the window threshold changes sign (governed by "offset_is_preceding").
+        if (compare_values_with_offset(compared_column, next.row,
+            reference_column, frame_end.row,
+            window_description.frame.end_offset,
+            /* offset_is_preceding = */ direction < 0) * direction > 0)
+        {
+            frame_end = next;
+            frame_ended = true;
+            return;
+        }
+
+        frame_end = next;
+    }
+
+    assert(false);
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -850,6 +935,9 @@ void WindowTransform::advanceFrameEnd()
                     break;
                 case WindowFrame::FrameType::RANGE:
                     advanceFrameEndRangeOffset();
+                    break;
+                case WindowFrame::FrameType::SESSION:
+                    advanceFrameEndSession();
                     break;
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

@@ -396,6 +396,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_rows("ROWS");
     ParserKeyword keyword_groups("GROUPS");
     ParserKeyword keyword_range("RANGE");
+    ParserKeyword keyword_session("SESSION");
 
     node->frame_is_default = false;
     if (keyword_rows.ignore(pos, expected))
@@ -409,6 +410,14 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     else if (keyword_range.ignore(pos, expected))
     {
         node->frame_type = WindowFrame::FrameType::RANGE;
+    }
+    else if (keyword_session.ignore(pos, expected))
+    {
+        node->frame_type = WindowFrame::FrameType::SESSION;
+        node->frame_begin_type = WindowFrame::BoundaryType::Current;
+        node->frame_end_type = WindowFrame::BoundaryType::Offset;
+        ParserExpression parser_expression;
+        return parser_expression.parse(pos, node->frame_end_offset, expected);
     }
     else
     {

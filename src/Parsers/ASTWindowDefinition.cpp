@@ -98,6 +98,13 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
             settings.ostr << " ";
         }
 
+        if (frame_type == WindowFrame::FrameType::SESSION)
+        {
+            settings.ostr << frame_type << " ";
+            frame_end_offset->formatImpl(settings, state, format_frame);
+            return;
+        }
+
         settings.ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)
         {

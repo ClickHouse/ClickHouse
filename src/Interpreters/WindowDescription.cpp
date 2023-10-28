@@ -194,9 +194,9 @@ void WindowDescription::checkValid() const
     frame.checkValid();
 
     // RANGE OFFSET requires exactly one ORDER BY column.
-    if (frame.type == WindowFrame::FrameType::RANGE
+    if ((frame.type == WindowFrame::FrameType::SESSION || (frame.type == WindowFrame::FrameType::RANGE
         && (frame.begin_type == WindowFrame::BoundaryType::Offset
-            || frame.end_type == WindowFrame::BoundaryType::Offset)
+            || frame.end_type == WindowFrame::BoundaryType::Offset)))
         && order_by.size() != 1)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
