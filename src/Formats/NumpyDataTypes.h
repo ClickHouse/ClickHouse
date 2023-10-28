@@ -1,5 +1,11 @@
+#pragma once
 #include <cstddef>
 #include <Storages/NamedCollectionsHelpers.h>
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 enum class NumpyDataTypeIndex
 {
@@ -20,41 +26,45 @@ enum class NumpyDataTypeIndex
 class NumpyDataType
 {
 public:
-    enum Endianness
+    enum Endianess
     {
         LITTLE,
         BIG,
         NONE,
     };
+    NumpyDataTypeIndex type_index;
 
-    explicit NumpyDataType(Endianness endianess_) : endianess(endianess_) {}
+    explicit NumpyDataType(Endianess endianess_) : endianess(endianess_) {}
     virtual ~NumpyDataType() = default;
 
-    Endianness getEndianness() const { return endianess; }
+    Endianess getEndianness() const { return endianess; }
 
-    virtual NumpyDataTypeIndex getTypeIndex() const = 0;
     virtual size_t getSize() const = 0;
+    virtual NumpyDataTypeIndex getTypeIndex() const = 0;
 
 private:
-    Endianness endianess;
+    Endianess endianess;
 };
 
 class NumpyDataTypeInt : public NumpyDataType
 {
 public:
-    NumpyDataTypeInt(Endianness endianess, size_t size_, bool is_signed_) : NumpyDataType(endianess), size(size_), is_signed(is_signed_) {}
-
-    NumpyDataTypeIndex getTypeIndex() const override
+    NumpyDataTypeInt(Endianess endianess, size_t size_, bool is_signed_) : NumpyDataType(endianess), size(size_), is_signed(is_signed_)
     {
         switch (size)
         {
-            case 1: return is_signed ? NumpyDataTypeIndex::Int8 : NumpyDataTypeIndex::UInt8;
-            case 2: return is_signed ? NumpyDataTypeIndex::Int16 : NumpyDataTypeIndex::UInt16;
-            case 4: return is_signed ? NumpyDataTypeIndex::Int32 : NumpyDataTypeIndex::UInt32;
-            case 8: return is_signed ? NumpyDataTypeIndex::Int64 : NumpyDataTypeIndex::UInt64;
+            case 1: type_index = is_signed ? NumpyDataTypeIndex::Int8 : NumpyDataTypeIndex::UInt8; break;
+            case 2: type_index = is_signed ? NumpyDataTypeIndex::Int16 : NumpyDataTypeIndex::UInt16; break;
+            case 4: type_index = is_signed ? NumpyDataTypeIndex::Int32 : NumpyDataTypeIndex::UInt32; break;
+            case 8: type_index = is_signed ? NumpyDataTypeIndex::Int64 : NumpyDataTypeIndex::UInt64; break;
             default:
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Incorrect int type with size {}", size);
         }
+    }
+
+    NumpyDataTypeIndex getTypeIndex() const override
+    {
+        return type_index;
     }
     size_t getSize() const override { return size; }
     bool isSigned() const { return is_signed; }
@@ -67,17 +77,20 @@ private:
 class NumpyDataTypeFloat : public NumpyDataType
 {
 public:
-    NumpyDataTypeFloat(Endianness endianess, size_t size_) : NumpyDataType(endianess), size(size_) {}
-
-    NumpyDataTypeIndex getTypeIndex() const override
+    NumpyDataTypeFloat(Endianess endianess, size_t size_) : NumpyDataType(endianess), size(size_)
     {
         switch (size)
         {
-            case 4: return NumpyDataTypeIndex::Float32;
-            case 8: return NumpyDataTypeIndex::Float64;
+            case 4: type_index = NumpyDataTypeIndex::Float32; break;
+            case 8: type_index = NumpyDataTypeIndex::Float64; break;
             default:
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Incorrect float type with size {}", size);
         }
+    }
+
+    NumpyDataTypeIndex getTypeIndex() const override
+    {
+        return type_index;
     }
     size_t getSize() const override { return size; }
 
@@ -88,9 +101,12 @@ private:
 class NumpyDataTypeString : public NumpyDataType
 {
 public:
-    NumpyDataTypeString(Endianness endianess, size_t size_) : NumpyDataType(endianess), size(size_) {}
+    NumpyDataTypeString(Endianess endianess, size_t size_) : NumpyDataType(endianess), size(size_)
+    {
+        type_index = NumpyDataTypeIndex::String;
+    }
 
-    NumpyDataTypeIndex getTypeIndex() const override { return NumpyDataTypeIndex::String; }
+    NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
     size_t getSize() const override { return size; }
 private:
     size_t size;
@@ -99,10 +115,13 @@ private:
 class NumpyDataTypeUnicode : public NumpyDataType
 {
 public:
-    NumpyDataTypeUnicode(Endianness endianess, size_t size_) : NumpyDataType(endianess), size(size_) {}
+    NumpyDataTypeUnicode(Endianess endianess, size_t size_) : NumpyDataType(endianess), size(size_)
+    {
+        type_index = NumpyDataTypeIndex::Unicode;
+    }
 
-    NumpyDataTypeIndex getTypeIndex() const override { return NumpyDataTypeIndex::Unicode; }
-    size_t getSize() const override { return size; }
+    NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
+    size_t getSize() const override { return size * 4; }
 private:
     size_t size;
 };
