@@ -26,7 +26,7 @@ enum class NumpyDataTypeIndex
 class NumpyDataType
 {
 public:
-    enum Endianess
+    enum Endianness
     {
         LITTLE,
         BIG,
@@ -34,22 +34,22 @@ public:
     };
     NumpyDataTypeIndex type_index;
 
-    explicit NumpyDataType(Endianess endianess_) : endianess(endianess_) {}
+    explicit NumpyDataType(Endianness endianness_) : endianness(endianness_) {}
     virtual ~NumpyDataType() = default;
 
-    Endianess getEndianness() const { return endianess; }
+    Endianness getEndianness() const { return endianness; }
 
     virtual size_t getSize() const = 0;
     virtual NumpyDataTypeIndex getTypeIndex() const = 0;
 
 private:
-    Endianess endianess;
+    Endianness endianness;
 };
 
 class NumpyDataTypeInt : public NumpyDataType
 {
 public:
-    NumpyDataTypeInt(Endianess endianess, size_t size_, bool is_signed_) : NumpyDataType(endianess), size(size_), is_signed(is_signed_)
+    NumpyDataTypeInt(Endianness endianness, size_t size_, bool is_signed_) : NumpyDataType(endianness), size(size_), is_signed(is_signed_)
     {
         switch (size)
         {
@@ -77,7 +77,7 @@ private:
 class NumpyDataTypeFloat : public NumpyDataType
 {
 public:
-    NumpyDataTypeFloat(Endianess endianess, size_t size_) : NumpyDataType(endianess), size(size_)
+    NumpyDataTypeFloat(Endianness endianness, size_t size_) : NumpyDataType(endianness), size(size_)
     {
         switch (size)
         {
@@ -101,7 +101,7 @@ private:
 class NumpyDataTypeString : public NumpyDataType
 {
 public:
-    NumpyDataTypeString(Endianess endianess, size_t size_) : NumpyDataType(endianess), size(size_)
+    NumpyDataTypeString(Endianness endianness, size_t size_) : NumpyDataType(endianness), size(size_)
     {
         type_index = NumpyDataTypeIndex::String;
     }
@@ -115,7 +115,7 @@ private:
 class NumpyDataTypeUnicode : public NumpyDataType
 {
 public:
-    NumpyDataTypeUnicode(Endianess endianess, size_t size_) : NumpyDataType(endianess), size(size_)
+    NumpyDataTypeUnicode(Endianness endianness, size_t size_) : NumpyDataType(endianness), size(size_)
     {
         type_index = NumpyDataTypeIndex::Unicode;
     }

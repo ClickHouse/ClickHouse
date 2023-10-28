@@ -112,30 +112,30 @@ size_t parseTypeSize(const std::string & size_str)
 
 std::shared_ptr<NumpyDataType> parseType(String type)
 {
-    /// Parse endianess
-    NumpyDataType::Endianess endianess;
+    /// Parse endianness
+    NumpyDataType::Endianness endianness;
     if (type[0] == '<')
-        endianess = NumpyDataType::Endianess::LITTLE;
+        endianness = NumpyDataType::Endianness::LITTLE;
     else if (type[1] == '>')
-        endianess = NumpyDataType::Endianess::BIG;
+        endianness = NumpyDataType::Endianness::BIG;
     else if (type[0] == '|')
-        endianess = NumpyDataType::Endianess::NONE;
+        endianness = NumpyDataType::Endianness::NONE;
     else
       throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong header data");
 
     /// Parse type
     if (type[1] == 'i')
-        return std::make_shared<NumpyDataTypeInt>(endianess, parseTypeSize(type.substr(2)), true);
+        return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), true);
     else if (type[1] == 'b')
-        return std::make_shared<NumpyDataTypeInt>(endianess, parseTypeSize(type.substr(2)), false);
+        return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
     else if (type[1] == 'u')
-        return std::make_shared<NumpyDataTypeInt>(endianess, parseTypeSize(type.substr(2)), false);
+        return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
     else if (type[1] == 'f')
-        return std::make_shared<NumpyDataTypeFloat>(endianess, parseTypeSize(type.substr(2)));
+        return std::make_shared<NumpyDataTypeFloat>(endianness, parseTypeSize(type.substr(2)));
     else if (type[1] == 'S')
-        return std::make_shared<NumpyDataTypeString>(endianess, parseTypeSize(type.substr(2)));
+        return std::make_shared<NumpyDataTypeString>(endianness, parseTypeSize(type.substr(2)));
     else if (type[1] == 'U')
-        return std::make_shared<NumpyDataTypeUnicode>(endianess, parseTypeSize(type.substr(2)));
+        return std::make_shared<NumpyDataTypeUnicode>(endianness, parseTypeSize(type.substr(2)));
     else if (type[1] == 'c')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
     else if (type[1] == 'O')
@@ -292,10 +292,10 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params par
 }
 
 template <typename ColumnValue, typename DataValue>
-void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianess endianess)
+void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness)
 {
     DataValue value;
-    if (endianess == NumpyDataType::Endianess::BIG)
+    if (endianness == NumpyDataType::Endianness::BIG)
         readBinaryBigEndian(value, *in);
     else
         readBinaryLittleEndian(value, *in);
