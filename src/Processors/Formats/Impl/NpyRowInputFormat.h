@@ -51,15 +51,12 @@ private:
     void readAndInsertString(MutableColumnPtr column, const DataTypePtr & data_type, const NumpyDataType & npy_type, bool is_fixed);
 
     template <typename ColumnValue, typename DataValue>
-    void readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianess);
-
-    void readStringBinaryAndInsert(MutableColumnPtr column, size_t size, bool is_fixed);
+    void readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianess endianess);
 
     void readRows(MutableColumns & columns);
 
-    void chooseType(IColumn * column);
+    void readValue(IColumn * column);
 
-    std::shared_ptr<NumpyDataType> dataType;
     DataTypePtr nested_type;
     NumpyHeader header;
 };
@@ -69,12 +66,8 @@ class NpySchemaReader : public ISchemaReader
 public:
     explicit NpySchemaReader(ReadBuffer & in_);
 
-    std::unordered_map<String, String> getHeader();
-
 private:
     NamesAndTypesList readSchema() override;
-
-    bool first_row = true;
 };
 
 }
