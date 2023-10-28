@@ -622,25 +622,15 @@ void HTTPHandler::processQuery(
 
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
-    /// Settings can be overridden in the query.
-    /// Some parameters (database, default_format, everything used in the code above) do not
-    /// belong to the Settings class.
-
-    /// 'readonly' setting values mean:
-    /// readonly = 0 - any query is allowed, client can change any setting.
-    /// readonly = 1 - only readonly queries are allowed, client can't change settings.
-    /// readonly = 2 - only readonly queries are allowed, client can change any setting except 'readonly'.
-
-    /// In theory if initially readonly = 0, the client can change any setting and then set readonly
-    /// to some other value.
-    const auto & settings = context->getSettingsRef();
+    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef().enable_http_compression);
+    Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
 
     used_output.out_holder = std::make_shared<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_metric);
 
-    if (client_supports_http_compression && settings.enable_http_compression)
+    if (client_supports_http_compression && enable_http_compression)
     {
         response.set("Content-Encoding", toContentEncodingName(http_response_compression_method));
-        used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(used_output.out_holder.get(), http_response_compression_method, static_cast<int>(settings.http_zlib_compression_level));
+        used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(used_output.out_holder.get(), http_response_compression_method, static_cast<int>(http_zlib_compression_level));
         used_output.out = used_output.wrap_compressed_holder;
     }
     else
@@ -741,6 +731,19 @@ void HTTPHandler::processQuery(
 
         return false;
     };
+
+    /// Settings can be overridden in the query.
+    /// Some parameters (database, default_format, everything used in the code above) do not
+    /// belong to the Settings class.
+
+    /// 'readonly' setting values mean:
+    /// readonly = 0 - any query is allowed, client can change any setting.
+    /// readonly = 1 - only readonly queries are allowed, client can't change settings.
+    /// readonly = 2 - only readonly queries are allowed, client can change any setting except 'readonly'.
+
+    /// In theory if initially readonly = 0, the client can change any setting and then set readonly
+    /// to some other value.
+    const auto & settings = context->getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
