@@ -942,7 +942,7 @@ try
     if (!response.sent() && !used_output.out_maybe_compressed && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        response.send()->writeln(s);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT).writeln(s);
     }
     else if (used_output.out_maybe_compressed)
     {
