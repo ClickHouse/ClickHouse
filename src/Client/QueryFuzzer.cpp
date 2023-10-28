@@ -394,6 +394,12 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
             def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
                 : r == 1 ? WindowFrame::FrameType::RANGE
                     : WindowFrame::FrameType::GROUPS;
+            if (def.frame_type == WindowFrame::FrameType::SESSION)
+            {
+                // Have to initialize the window threshold when switching to
+                // SESSION frame, so that the formatting doesn't segfault.
+                def.session_window_threshold = std::make_shared<ASTLiteral>(getRandomField(0));
+            }
             break;
         }
         case 1:

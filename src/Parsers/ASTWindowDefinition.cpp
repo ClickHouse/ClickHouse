@@ -44,6 +44,12 @@ ASTPtr ASTWindowDefinition::clone() const
         result->children.push_back(result->frame_end_offset);
     }
 
+    if (session_window_threshold)
+    {
+        result->session_window_threshold = session_window_threshold->clone();
+        result->children.push_back(result->session_window_threshold);
+    }
+
     return result;
 }
 
@@ -101,7 +107,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         if (frame_type == WindowFrame::FrameType::SESSION)
         {
             settings.ostr << frame_type << " ";
-            frame_end_offset->formatImpl(settings, state, format_frame);
+            session_window_threshold->formatImpl(settings, state, format_frame);
             return;
         }
 

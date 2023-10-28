@@ -717,6 +717,13 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
+
+    if (definition.frame_type == WindowFrame::FrameType::SESSION)
+    {
+        auto [value, _] = evaluateConstantExpression(definition.session_window_threshold,
+                context_.shared_from_this());
+        desc.frame.session_window_threshold = value;
+    }
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)

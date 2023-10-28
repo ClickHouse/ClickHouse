@@ -414,10 +414,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     else if (keyword_session.ignore(pos, expected))
     {
         node->frame_type = WindowFrame::FrameType::SESSION;
-        node->frame_begin_type = WindowFrame::BoundaryType::Current;
-        node->frame_end_type = WindowFrame::BoundaryType::Offset;
         ParserExpression parser_expression;
-        return parser_expression.parse(pos, node->frame_end_offset, expected);
+        return parser_expression.parse(pos, node->session_window_threshold, expected);
     }
     else
     {

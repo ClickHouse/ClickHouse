@@ -55,6 +55,8 @@ struct WindowFrame
     Field end_offset = 0;
     bool end_preceding = false;
 
+    // Threshold for SESSION frame.
+    Field session_window_threshold = 0;
 
     // Throws BAD_ARGUMENTS exception if the frame definition is incorrect, e.g.
     // the frame start comes later than the frame end.
