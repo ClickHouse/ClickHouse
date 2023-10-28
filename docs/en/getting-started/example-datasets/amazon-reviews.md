@@ -5,7 +5,7 @@ sidebar_label: Amazon customer reviews
 
 # Amazon customer reviews dataset
 
-This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3. Let's walk through the steps to insert it into ClickHouse.
+This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3 that total 49GB in size (compressed). Let's walk through the steps to insert it into ClickHouse.
 
 :::note
 The queries below were executed on a **Production** instance of [ClickHouse Cloud](https://clickhouse.cloud).
@@ -76,20 +76,22 @@ FROM s3Cluster(
 ```
 
 :::tip
-In ClickHouse Cloud, the name of the is `default`. Change `default` to the name of your cluster...or use the `s3` table function (instead of `s3Cluster`) if you do not have a cluster.
+In ClickHouse Cloud, the name of the cluster is `default`. Change `default` to the name of your cluster...or use the `s3` table function (instead of `s3Cluster`) if you do not have a cluster.
 :::
 
-5. That query doesn't take long - within 5 minutes or so you should see all the rows inserted:
+5. That query doesn't take long - averaging about 300,000 rows per second. within 5 minutes or so you should see all the rows inserted:
 
 ```sql
 SELECT formatReadableQuantity(count())
-FROM amazon_reviews
+FROM amazon_reviews;
 ```
 
 ```response
 ┌─formatReadableQuantity(count())─┐
 │ 150.96 million                  │
 └─────────────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
 ```
 
 6. Let's see how much space our data is using:
@@ -111,11 +113,11 @@ The original data was about 70G, but compressed in ClickHouse it takes up about 
 
 ```response
 ┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬──────rows─┬─part_count─┐
-│ s3disk    │ 30.00 GiB  │ 70.61 GiB    │       2.35 │ 150957260 │          9 │
+│ s3disk    │ 30.05 GiB  │ 70.47 GiB    │       2.35 │ 150957260 │         14 │
 └───────────┴────────────┴──────────────┴────────────┴───────────┴────────────┘
 ```
 
-7. Let's run some queries...here are the top 10 most-helpful reviews on Amazon:
+7. Let's run some queries...here are the top 10 most-helpful reviews in the dataaset:
 
 ```sql
 SELECT
@@ -126,7 +128,7 @@ ORDER BY helpful_votes DESC
 LIMIT 10;
 ```
 
-Notice the query has to process all 151M rows, and it takes about 17 seconds:
+Notice the query has to process all 151M rows, but takes less than one second!
 
 ```response
 ┌─product_title────────────────────────────────────────────────────────────────────────────┬─review_headline───────────────────────────────────────────────────────┐
@@ -142,7 +144,7 @@ Notice the query has to process all 151M rows, and it takes about 17 seconds:
 │ Tuscan Dairy Whole Vitamin D Milk, Gallon, 128 oz                                        │ Make this your only stock and store                                   │
 └──────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
 
-10 rows in set. Elapsed: 17.595 sec. Processed 150.96 million rows, 15.36 GB (8.58 million rows/s., 872.89 MB/s.)
+10 rows in set. Elapsed: 0.897 sec. Processed 150.96 million rows, 15.36 GB (168.36 million rows/s., 17.13 GB/s.)
 ```
 
 8. Here are the top 10 products in Amazon with the most reviews:
@@ -171,7 +173,7 @@ LIMIT 10;
 │ Crossy Road                                   │   28111 │
 └───────────────────────────────────────────────┴─────────┘
 
-10 rows in set. Elapsed: 16.684 sec. Processed 195.05 million rows, 20.86 GB (11.69 million rows/s., 1.25 GB/s.)
+10 rows in set. Elapsed: 20.059 sec. Processed 150.96 million rows, 12.78 GB (7.53 million rows/s., 637.25 MB/s.)
 ```
 
 9. Here are the average review ratings per month for each product (an actual [Amazon job interview question](https://datalemur.com/questions/sql-avg-review-ratings)!):
@@ -217,7 +219,8 @@ It calculates all the monthly averages for each product, but we only returned 20
 │ 2015-08-01 │ The Birds of West Africa (Collins Field Guides)                                         │         4 │
 └────────────┴─────────────────────────────────────────────────────────────────────────────────────────┴───────────┘
 
-20 rows in set. Elapsed: 52.827 sec. Processed 251.46 million rows, 35.26 GB (4.76 million rows/s., 667.55 MB/s.)
+20 rows in set. Elapsed: 43.055 sec. Processed 150.96 million rows, 13.24 GB (3.51 million rows/s., 307.41 MB/s.)
+Peak memory usage: 41.73 GiB.
 ```
 
 10. Here are the total number of votes per product category. This query is fast because `product_category` is in the primary key:
@@ -228,7 +231,8 @@ SELECT
     product_category
 FROM amazon_reviews
 GROUP BY product_category
-ORDER BY 1 DESC;
+ORDER BY 1 DESC
+FORMAT PrettyCompactMonoBlock;
 ```
 
 ```response
@@ -278,7 +282,7 @@ ORDER BY 1 DESC;
 │            72970 │ Gift Card                │
 └──────────────────┴──────────────────────────┘
 
-43 rows in set. Elapsed: 0.423 sec. Processed 150.96 million rows, 756.20 MB (356.70 million rows/s., 1.79 GB/s.)
+43 rows in set. Elapsed: 0.201 sec. Processed 150.96 million rows, 754.79 MB (750.85 million rows/s., 3.75 GB/s.)
 ```
 
 11. Let's find the products with the word **"awful"** occurring most frequently in the review. This is a big task - over 151M strings have to be parsed looking for a single word:
@@ -296,7 +300,7 @@ ORDER BY count DESC
 LIMIT 50;
 ```
 
-The query takes a couple of minutes, but the results are a fun read:
+The query only takes 4 seconds - which is impressive - and the results are a fun read:
 
 ```response
 
@@ -319,41 +323,42 @@ The query takes a couple of minutes, but the results are a fun read:
 │ B00N28818A │ Amazon Prime Video                                                                       │ 1.4305555555555556 │    72 │
 │ B007FTE2VW │ SimCity - Limited Edition                                                                │ 1.2794117647058822 │    68 │
 │ 0439023513 │ Mockingjay (The Hunger Games)                                                            │ 2.6417910447761193 │    67 │
-│ B00178630A │ Diablo III - PC/Mac                                                                      │           1.671875 │    64 │
 │ B000OCEWGW │ Liquid Ass                                                                               │             4.8125 │    64 │
+│ B00178630A │ Diablo III - PC/Mac                                                                      │           1.671875 │    64 │
 │ B005ZOBNOI │ The Fault in Our Stars                                                                   │  4.316666666666666 │    60 │
 │ B00L9B7IKE │ The Girl on the Train: A Novel                                                           │ 2.0677966101694913 │    59 │
-│ B007S6Y6VS │ Garden of Life Raw Organic Meal                                                          │ 2.8793103448275863 │    58 │
-│ B0064X7B4A │ Words With Friends                                                                       │ 2.2413793103448274 │    58 │
 │ B003WUYPPG │ Unbroken: A World War II Story of Survival, Resilience, and Redemption                   │  4.620689655172414 │    58 │
-│ B00006HBUJ │ Star Wars: Episode II - Attack of the Clones (Widescreen Edition)                        │ 2.2982456140350878 │    57 │
+│ B0064X7B4A │ Words With Friends                                                                       │ 2.2413793103448274 │    58 │
+│ B007S6Y6VS │ Garden of Life Raw Organic Meal                                                          │ 2.8793103448275863 │    58 │
 │ B000XUBFE2 │ The Book Thief                                                                           │  4.526315789473684 │    57 │
+│ B00006HBUJ │ Star Wars: Episode II - Attack of the Clones (Widescreen Edition)                        │ 2.2982456140350878 │    57 │
 │ B0006399FS │ How to Dismantle an Atomic Bomb                                                          │ 1.9821428571428572 │    56 │
 │ B003ZSJ212 │ Star Wars: The Complete Saga (Episodes I-VI) (Packaging May Vary) [Blu-ray]              │  2.309090909090909 │    55 │
 │ 193700788X │ Dead Ever After (Sookie Stackhouse/True Blood)                                           │ 1.5185185185185186 │    54 │
 │ B004FYEZMQ │ Mass Effect 3                                                                            │  2.056603773584906 │    53 │
 │ B000CFYAMC │ The Room                                                                                 │ 3.9615384615384617 │    52 │
-│ B0031JK95S │ Garden of Life Raw Organic Meal                                                          │ 3.3137254901960786 │    51 │
 │ B0012JY4G4 │ Color Oops Hair Color Remover Extra Strength 1 Each                                      │ 3.9019607843137254 │    51 │
-│ B007VTVRFA │ SimCity - Limited Edition                                                                │ 1.2040816326530612 │    49 │
+│ B0031JK95S │ Garden of Life Raw Organic Meal                                                          │ 3.3137254901960786 │    51 │
 │ B00CE18P0K │ Pilot                                                                                    │ 1.7142857142857142 │    49 │
+│ B007VTVRFA │ SimCity - Limited Edition                                                                │ 1.2040816326530612 │    49 │
 │ 0316015849 │ Twilight (The Twilight Saga, Book 1)                                                     │ 1.8979591836734695 │    49 │
 │ B00DR0PDNE │ Google Chromecast HDMI Streaming Media Player                                            │ 2.5416666666666665 │    48 │
 │ B000056OWC │ The First Years: 4-Stage Bath System                                                     │ 1.2127659574468086 │    47 │
 │ B007IXWKUK │ Fifty Shades Darker (Fifty Shades, Book 2)                                               │ 1.6304347826086956 │    46 │
 │ 1892112000 │ To Train Up a Child                                                                      │ 1.4130434782608696 │    46 │
 │ 043935806X │ Harry Potter and the Order of the Phoenix (Book 5)                                       │  3.977272727272727 │    44 │
-│ B00BGO0Q9O │ Fitbit Flex Wireless Wristband with Sleep Function, Black                                │ 1.9318181818181819 │    44 │
 │ B003XF1XOQ │ Mockingjay (Hunger Games Trilogy, Book 3)                                                │  2.772727272727273 │    44 │
-│ B00DD2B52Y │ Spring Breakers                                                                          │ 1.2093023255813953 │    43 │
+│ B00BGO0Q9O │ Fitbit Flex Wireless Wristband with Sleep Function, Black                                │ 1.9318181818181819 │    44 │
 │ B0064X7FVE │ The Weather Channel: Forecast, Radar & Alerts                                            │ 1.5116279069767442 │    43 │
 │ B0083PWAPW │ Kindle Fire HD 7", Dolby Audio, Dual-Band Wi-Fi                                          │  2.627906976744186 │    43 │
+│ B00DD2B52Y │ Spring Breakers                                                                          │ 1.2093023255813953 │    43 │
 │ B00192KCQ0 │ Death Magnetic                                                                           │ 3.5714285714285716 │    42 │
-│ B007S6Y74O │ Garden of Life Raw Organic Meal                                                          │  3.292682926829268 │    41 │
+│ B004CFA9RS │ Divergent (Divergent Trilogy, Book 1)                                                    │ 3.1219512195121952 │    41 │
 │ B0052QYLUM │ Infant Optics DXR-5 Portable Video Baby Monitor                                          │ 2.1463414634146343 │    41 │
 └────────────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
 
-50 rows in set. Elapsed: 60.052 sec. Processed 150.96 million rows, 68.93 GB (2.51 million rows/s., 1.15 GB/s.)
+50 rows in set. Elapsed: 4.072 sec. Processed 150.96 million rows, 68.93 GB (37.07 million rows/s., 16.93 GB/s.)
+Peak memory usage: 1.82 GiB.
 ```
 
 12. We can run the same query again, except this time we search for **awesome** in the reviews:
@@ -370,8 +375,6 @@ GROUP BY product_id
 ORDER BY count DESC
 LIMIT 50;
 ```
-
-It runs quite a bit faster - which means the cache is helping us out here:
 
 ```response
 
@@ -405,8 +408,8 @@ It runs quite a bit faster - which means the cache is helping us out here:
 │ B008JK6W5K │ Logo Quiz                                                             │  4.782106782106782 │   693 │
 │ B00EDTSKLU │ Geometry Dash                                                         │  4.942028985507246 │   690 │
 │ B00CSR2J9I │ Hill Climb Racing                                                     │  4.880059970014993 │   667 │
-│ B005ZXWMUS │ Netflix                                                               │  4.722306525037936 │   659 │
 │ B00CRFAAYC │ Fab Tattoo Artist FREE                                                │  4.907435508345979 │   659 │
+│ B005ZXWMUS │ Netflix                                                               │  4.722306525037936 │   659 │
 │ B00DHQHQCE │ Battle Beach                                                          │  4.863287250384024 │   651 │
 │ B00BGA9WK2 │ PlayStation 4 500GB Console [Old Model]                               │  4.688751926040061 │   649 │
 │ B008Y7SMQU │ Logo Quiz - Fun Plus Free                                             │             4.7888 │   625 │
@@ -428,5 +431,6 @@ It runs quite a bit faster - which means the cache is helping us out here:
 │ B00G6ZTM3Y │ Terraria                                                              │  4.728421052631579 │   475 │
 └────────────┴───────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
 
-50 rows in set. Elapsed: 33.954 sec. Processed 150.96 million rows, 68.95 GB (4.45 million rows/s., 2.03 GB/s.)
+50 rows in set. Elapsed: 4.079 sec. Processed 150.96 million rows, 68.95 GB (37.01 million rows/s., 16.90 GB/s.)
+Peak memory usage: 2.18 GiB.
 ```
