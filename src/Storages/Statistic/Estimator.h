@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistic/TDigestStatistic.h>
 
 namespace DB
 {
@@ -89,7 +89,7 @@ private:
     };
 
     std::map<String, ColumnEstimator> column_estimators;
-    std::optional<std::string> extractSingleColumn(const RPNBuilderTreeNode & node) const;
+    /// std::optional<std::string> extractSingleColumn(const RPNBuilderTreeNode & node) const;
     std::pair<std::string, Float64> extractBinaryOp(const RPNBuilderTreeNode & node, const std::string & column_name) const;
 
 public:

@@ -61,6 +61,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && comment == other.comment
+        && stat == other.stat
         && ast_to_str(codec) == ast_to_str(other.codec)
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }

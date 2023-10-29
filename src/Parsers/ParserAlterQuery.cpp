@@ -352,7 +352,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::DROP_STATISTIC;
-                command->detach = false;
             }
             else if (s_clear_statistic.ignore(pos, expected))
             {

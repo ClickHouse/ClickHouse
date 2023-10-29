@@ -3,6 +3,7 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/Statistic/Statistic.h>
+#include <Storages/Statistic/TDigestStatistic.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/Exception.h>
@@ -17,16 +18,17 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTIC;
 }
 
-void TDigestStatistic::update(const ColumnPtr & column)
+void MergeTreeStatisticFactory::registerCreator(StatisticType stat_type, Creator creator)
 {
-    size_t size = column->size();
+    if (!creators.emplace(stat_type, std::move(creator)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticFactory: the statistic creator type {} is not unique", stat_type);
+}
 
-    for (size_t i = 0; i < size; ++i)
-    {
-        /// TODO: support more types.
-        Float64 value = column->getFloat64(i);
-        data.add(value, 1);
-    }
+void MergeTreeStatisticFactory::registerValidator(StatisticType stat_type, Validator validator)
+{
+    if (!validators.emplace(stat_type, std::move(validator)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticFactory: the statistic validator type {} is not unique", stat_type);
+
 }
 
 StatisticPtr TDigestCreator(const StatisticDescription & stat)
@@ -41,18 +43,6 @@ void TDigestValidator(const StatisticDescription &, DataTypePtr data_type)
         throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "TDigest does not support type {}", data_type->getName());
 }
 
-void MergeTreeStatisticFactory::registerCreator(StatisticType stat_type, Creator creator)
-{
-    if (!creators.emplace(stat_type, std::move(creator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticFactory: the statistic creator type {} is not unique", stat_type);
-}
-
-void MergeTreeStatisticFactory::registerValidator(StatisticType stat_type, Validator validator)
-{
-    if (!validators.emplace(stat_type, std::move(validator)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeStatisticFactory: the statistic validator type {} is not unique", stat_type);
-
-}
 
 MergeTreeStatisticFactory::MergeTreeStatisticFactory()
 {

@@ -1370,11 +1370,11 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
-We can also manipulate statistics with `ATLER` statements.
+We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ATLER TABLE example_table ADD STATISTIC b TYPE tdigest;
-ATLER TABLE example_table DROP STATISTIC a TYPE tdigest;
+ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
+ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns.

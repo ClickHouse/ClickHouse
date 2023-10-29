@@ -597,7 +597,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: this column is not found", statistic_column_name, statistic_type);
             }
-            if (metadata.columns.get(statistic_column_name).stat)
+            if (!if_exists && metadata.columns.get(statistic_column_name).stat)
                 throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Cannot add statistic {} with type {}: statistic on this column with this type already exists", statistic_column_name, statistic_type);
         }
 

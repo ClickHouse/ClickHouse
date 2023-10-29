@@ -459,15 +459,11 @@ ConditionEstimator MergeTreeData::getConditionEstimatorByPredicate(const SelectQ
     }
 
     ASTPtr expression_ast;
-    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
-    //
-    // Generate valid expressions for filtering
-    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
 
     ConditionEstimator result;
     PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
 
-    if (partition_pruner.isUseless() && !valid)
+    if (partition_pruner.isUseless())
     {
         /// Read all partitions.
         for (const auto & part : parts)

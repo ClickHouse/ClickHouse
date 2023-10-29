@@ -28,6 +28,11 @@ struct StatisticDescription
 
     StatisticDescription() = default;
 
+    bool operator==(const StatisticDescription & other) const
+    {
+        return type == other.type && column_name == other.column_name;
+    }
+
     static StatisticDescription getStatisticFromColumnDeclaration(const ASTColumnDeclaration & column);
 
     static std::vector<StatisticDescription> getStatisticsFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);

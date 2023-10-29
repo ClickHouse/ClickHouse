@@ -3,14 +3,16 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+
+#include <boost/core/noncopyable.hpp>
+
 #include <AggregateFunctions/QuantileTDigest.h>
 #include <Core/Block.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
-#include <Common/logger_useful.h>
 
-#include <boost/core/noncopyable.hpp>
 
 /// this is for user-defined statistic.
 constexpr auto STAT_FILE_PREFIX = "statistic_";
@@ -57,38 +59,6 @@ protected:
 
     StatisticDescription stat;
 
-};
-
-/// TDigestStatistic is a kind of histogram.
-class TDigestStatistic : public IStatistic
-{
-    QuantileTDigest<Float64> data;
-public:
-    explicit TDigestStatistic(const StatisticDescription & stat_) : IStatistic(stat_)
-    {
-    }
-
-    Float64 estimateLess(Float64 val) const
-    {
-        return data.getCountLessThan(val);
-    }
-
-    void serialize(WriteBuffer & buf) override
-    {
-        data.serialize(buf);
-    }
-
-    void deserialize(ReadBuffer & buf) override
-    {
-        data.deserialize(buf);
-    }
-
-    void update(const ColumnPtr & column) override;
-
-    UInt64 count() override
-    {
-        return static_cast<UInt64>(data.count);
-    }
 };
 
 class ColumnsDescription;
