@@ -1,5 +1,8 @@
 #pragma once
 
+#include <span>
+#include <cstdint>
+
 /// Flush coverage report to file, depending on coverage system
 /// proposed by compiler (llvm for clang and gcov for gcc).
 ///
@@ -7,3 +10,6 @@
 /// Thread safe (use exclusive lock).
 /// Idempotent, may be called multiple times.
 void dumpCoverageReportIfPossible();
+
+std::span<uintptr_t> getCoverage();
+void resetCoverage();

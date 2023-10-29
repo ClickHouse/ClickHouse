@@ -58,3 +58,21 @@ if (SANITIZE)
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
     endif ()
 endif()
+
+# Default coverage instrumentation (dumping the coverage map on exit)
+option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
+
+if (WITH_COVERAGE)
+    message (INFORMATION "Enabled instrumentation for code coverage")
+    set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
+endif()
+
+option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
+
+if (SANITIZE_COVERAGE)
+    message (INFORMATION "Enabled instrumentation for code coverage")
+    add_definitions(-DSANITIZE_COVERAGE=1)
+    set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard")
+endif()
+
+set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard")

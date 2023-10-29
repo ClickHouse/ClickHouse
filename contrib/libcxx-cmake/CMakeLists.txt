@@ -1,5 +1,3 @@
-include(CheckCXXCompilerFlag)
-
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
 
 set(SRCS
