@@ -1183,7 +1183,7 @@ class TestCase:
 
             coverage = clickhouse_execute(
                 args,
-                f"SELECT length(coverage())",
+                "SELECT length(coverage())",
                 retry_error_codes=True,
             ).decode()
 
@@ -2373,6 +2373,12 @@ def main(args):
                     coverage Array(UInt64)
                 ) ENGINE = MergeTree ORDER BY test_name;
             """,
+        )
+
+        # Coverage collected at the system startup before running any tests:
+        clickhouse_execute(
+            args,
+            "INSERT INTO system.coverage SELECT '', coverage()",
         )
 
     total_tests_run = 0
