@@ -1173,6 +1173,16 @@ class TestCase:
             description_full += result.reason.value
 
         description_full += result.description
+
+        if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+            coverage = clickhouse_execute(
+                args,
+                f"SELECT length(coverage())",
+                retry_error_codes=True,
+            ).decode()
+
+            description_full += f" Coverage: {coverage}"
+
         description_full += "\n"
 
         if result.status == TestStatus.FAIL and self.testcase_args:
@@ -1872,6 +1882,7 @@ class BuildFlags:
     UNDEFINED = "ubsan"
     MEMORY = "msan"
     DEBUG = "debug"
+    SANITIZE_COVERAGE = "sanitize-coverage"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
@@ -1891,6 +1902,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.UNDEFINED)
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+    elif b"-DSANITIZE_COVERAGE=1" in value:
+        result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -2072,6 +2085,8 @@ def reportCoverageFor(args, what, query, permissive=False):
     return True
 
 
+# This is high-level coverage on per-component basis (functions, data types, etc.)
+# Don't be confused with the code coverage.
 def reportCoverage(args):
     clickhouse_execute(args, "SYSTEM FLUSH LOGS")
 
