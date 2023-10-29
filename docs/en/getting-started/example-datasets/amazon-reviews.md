@@ -23,7 +23,6 @@ LIMIT 10
 The rows look like:
 
 ```response
-
 ┌─review_date─┬─marketplace─┬─customer_id─┬─review_id──────┬─product_id─┬─product_parent─┬─product_title────────────────────────────────────────────────┬─product_category───────┬─star_rating─┬─helpful_votes─┬─total_votes─┬─vine──┬─verified_purchase─┬─review_headline─────────────────────────────────────────────────────────────┬─review_body────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │       16452 │ US          │    21080196 │ R17NMVYCQXEEFW │ B00RSI5DJA │      904397429 │ Pilot                                                        │ Digital_Video_Download │           5 │             0 │           0 │ false │ false             │ yes indeed                                                                  │ OMG- i totally see myself get hook on that show if it happen- love it                                                                                                                                                                                      │
 │       16452 │ US          │    44158214 │ R3MAPJVO9D0ERG │ B00RSI61PU │      475013967 │ Salem Rogers: Model of the Year 1998                         │ Digital_Video_Download │           5 │             0 │           0 │ false │ false             │ Halarious show!!                                                            │ Loved this pilot episode!! Please pick this up Amazon!!!                                                                                                                                                                                                   │
@@ -117,7 +116,7 @@ The original data was about 70G, but compressed in ClickHouse it takes up about 
 └───────────┴────────────┴──────────────┴────────────┴───────────┴────────────┘
 ```
 
-7. Let's run some queries...here are the top 10 most-helpful reviews in the dataaset:
+7. Let's run some queries...here are the top 10 most-helpful reviews in the dataset:
 
 ```sql
 SELECT
