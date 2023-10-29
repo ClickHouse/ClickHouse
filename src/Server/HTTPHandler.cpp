@@ -42,7 +42,6 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/MemoryStream.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
@@ -503,7 +502,7 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request);
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
