@@ -59,6 +59,9 @@ private:
 
     size_t out_capacity;
     uint8_t * out_data;
+
+protected:
+    size_t total_out = 0;
 };
 
 }

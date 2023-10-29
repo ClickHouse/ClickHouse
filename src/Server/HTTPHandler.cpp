@@ -629,7 +629,7 @@ void HTTPHandler::processQuery(
 
     if (client_supports_http_compression && enable_http_compression)
     {
-        response.set("Content-Encoding", toContentEncodingName(http_response_compression_method));
+        used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(used_output.out_holder.get(), http_response_compression_method, static_cast<int>(http_zlib_compression_level));
         used_output.out = used_output.wrap_compressed_holder;
     }

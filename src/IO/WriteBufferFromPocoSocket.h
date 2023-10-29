@@ -35,6 +35,14 @@ protected:
     void nextImpl() override;
 
     ssize_t socketSendBytes(const char * ptr, size_t size);
+    ssize_t socketSendStr(const std::string & str)
+    {
+        return socketSendBytes(str.data(), str.size());
+    }
+    ssize_t socketSendStr(const char * ptr)
+    {
+        return socketSendBytes(ptr, strlen(ptr));
+    }
 
     Poco::Net::Socket & socket;
 

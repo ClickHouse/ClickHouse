@@ -50,7 +50,7 @@ void BrotliWriteBuffer::nextImpl()
                     &in_data,
                     &out_capacity,
                     &out_data,
-                    nullptr);
+                    &total_out);
 
             out->position() = out->buffer().end() - out_capacity;
 
@@ -73,6 +73,10 @@ void BrotliWriteBuffer::finalizeBefore()
 {
     next();
 
+    /// Don't write out if no data was ever compressed
+    if (total_out == 0)
+        return;
+
     while (true)
     {
         out->nextIfAtEnd();
@@ -86,7 +90,7 @@ void BrotliWriteBuffer::finalizeBefore()
                 &in_data,
                 &out_capacity,
                 &out_data,
-                nullptr);
+                &total_out);
 
         out->position() = out->buffer().end() - out_capacity;
 

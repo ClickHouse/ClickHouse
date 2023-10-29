@@ -151,6 +151,10 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
         std::lock_guard lock(mutex);
         /// If no body data just send header
         startSendHeaders();
+
+        if (!initialized && offset() && compression_method != CompressionMethod::None)
+            socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
+
         finishSendHeaders();
     }
 

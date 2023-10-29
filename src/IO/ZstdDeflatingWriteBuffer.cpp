@@ -42,6 +42,7 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 
     try
     {
+        size_t out_offset = out->offset();
         bool ended = false;
         do
         {
@@ -65,6 +66,8 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 
             ended = everything_was_compressed && everything_was_flushed;
         } while (!ended);
+
+        total_out += out->offset() - out_offset;
     }
     catch (...)
     {
@@ -82,6 +85,9 @@ void ZstdDeflatingWriteBuffer::nextImpl()
 
 void ZstdDeflatingWriteBuffer::finalizeBefore()
 {
+    /// Don't write out if no data was ever compressed
+    if (total_out == 0)
+        return;
     flush(ZSTD_e_end);
 }
 

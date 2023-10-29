@@ -52,6 +52,10 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
+    /// Don't write out if no data was ever compressed
+    if (zstr.total_out == 0)
+        return;
+
     /// https://github.com/zlib-ng/zlib-ng/issues/494
     do
     {

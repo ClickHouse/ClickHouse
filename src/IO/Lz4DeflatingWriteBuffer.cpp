@@ -127,6 +127,10 @@ void Lz4DeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
+    /// Don't write out if no data was ever compressed
+    if (first_time)
+        return;
+
     out_capacity = out->buffer().end() - out->position();
     out_data = reinterpret_cast<void *>(out->position());
 

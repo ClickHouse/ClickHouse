@@ -54,6 +54,12 @@ public:
         send_progress_interval_ms = send_progress_interval_ms_;
     }
 
+    /// Content-Encoding header will be set on first data package
+    void setCompressionMethodHeader(const CompressionMethod & compression_method_)
+    {
+        compression_method = compression_method_;
+    }
+
     void setExceptionCode(int exception_code_) { exception_code = exception_code_; }
 
 private:
@@ -97,6 +103,8 @@ private:
     bool send_progress = false;
     size_t send_progress_interval_ms = 100;
     Stopwatch progress_watch;
+
+    CompressionMethod compression_method;
 
     int exception_code = 0;
 

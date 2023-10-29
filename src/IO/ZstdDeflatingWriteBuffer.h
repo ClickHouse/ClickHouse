@@ -49,6 +49,8 @@ private:
     ZSTD_CCtx * cctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
+
+    size_t total_out = 0;
 };
 
 }
