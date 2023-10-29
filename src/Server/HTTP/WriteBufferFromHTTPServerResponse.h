@@ -104,7 +104,7 @@ private:
     size_t send_progress_interval_ms = 100;
     Stopwatch progress_watch;
 
-    CompressionMethod compression_method;
+    CompressionMethod compression_method = CompressionMethod::None;
 
     int exception_code = 0;
 
