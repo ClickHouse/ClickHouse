@@ -271,7 +271,7 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
                 ++index;
             }
 
-            RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), size, reverse, res.data());
+            RadixSort<RadixSortTraits<NativeT>>::executeLSD(pairs.data(), size, reverse, begin);
             return;
         }
 

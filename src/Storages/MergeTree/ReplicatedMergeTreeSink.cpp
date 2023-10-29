@@ -167,6 +167,16 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
         {
             zookeeper->setKeeper(storage.getZooKeeper());
 
+            /// Stop retries if in shutdown, note that we need to check
+            /// shutdown_prepared_called, not shutdown_called, since the table
+            /// will be marked as readonly after calling
+            /// StorageReplicatedMergeTree::flushAndPrepareForShutdown(), and
+            /// the final shutdown() can not be called if you have Buffer table
+            /// that writes to this replicated table, until all the retries
+            /// will be made.
+            if (storage.is_readonly && storage.shutdown_prepared_called)
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+
             quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
             Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
@@ -321,8 +331,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         if constexpr (async_insert)
         {
-            block_id = AsyncInsertBlockInfo::getHashesForBlocks(unmerged_block.has_value() ? *unmerged_block : current_block, temp_part.part->info.partition_id);
-            LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(current_block.offsets), current_block.offsets.size());
+            auto get_block_id = [&](BlockWithPartition & block_)
+            {
+                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part.part->info.partition_id);
+                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part.part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
+            };
+            get_block_id(unmerged_block ? *unmerged_block : current_block);
         }
         else
         {
@@ -461,7 +475,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
             LOG_DEBUG(log, "Found duplicate block IDs: {}, retry times {}", toString(conflict_block_ids), retry_times);
             /// partition clean conflict
             partition.filterBlockDuplicate(conflict_block_ids, false);
-            if (partition.block_id.empty())
+            if (partition.block_with_partition.block.rows() == 0)
                 break;
             partition.block_with_partition.partition = std::move(partition.temp_part.part->partition.value);
             /// partition.temp_part is already finalized, no need to call cancel
@@ -560,7 +574,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
-            if (storage.shutdown_called)
+            if (storage.shutdown_prepared_called)
                 throw Exception(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 

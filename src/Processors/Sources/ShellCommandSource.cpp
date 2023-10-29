@@ -347,51 +347,64 @@ namespace
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
         {
-            for (auto && send_data_task : send_data_tasks)
+            try
             {
-                send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
+                for (auto && send_data_task : send_data_tasks)
                 {
-                    try
+                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
                     {
-                        task();
-                    }
-                    catch (...)
-                    {
-                        std::lock_guard lock(send_data_lock);
-                        exception_during_send_data = std::current_exception();
+                        try
+                        {
+                            task();
+                        }
+                        catch (...)
+                        {
+                            std::lock_guard lock(send_data_lock);
+                            exception_during_send_data = std::current_exception();
 
-                        /// task should be reset inside catch block or else it breaks d'tor
-                        /// invariants such as in ~WriteBuffer.
-                        task = {};
-                    }
-                });
-            }
+                            /// task should be reset inside catch block or else it breaks d'tor
+                            /// invariants such as in ~WriteBuffer.
+                            task = {};
+                        }
+                    });
+                }
+                size_t max_block_size = configuration.max_block_size;
 
-            size_t max_block_size = configuration.max_block_size;
-
-            if (configuration.read_fixed_number_of_rows)
-            {
-                /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                  * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                  */
-                auto context_for_reading = Context::createCopy(context);
-                context_for_reading->setSetting("input_format_parallel_parsing", false);
-                context = context_for_reading;
-
-                if (configuration.read_number_of_rows_from_process_output)
+                if (configuration.read_fixed_number_of_rows)
                 {
-                    /// Initialize executor in generate
-                    return;
+                    /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+                    * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+                    */
+                    auto context_for_reading = Context::createCopy(context);
+                    context_for_reading->setSetting("input_format_parallel_parsing", false);
+                    context = context_for_reading;
+
+                    if (configuration.read_number_of_rows_from_process_output)
+                    {
+                        /// Initialize executor in generate
+                        return;
+                    }
+
+                    max_block_size = configuration.number_of_rows_to_read;
                 }
 
-                max_block_size = configuration.number_of_rows_to_read;
+                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
-
-            pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
-            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+            catch (...)
+            {
+                cleanup();
+                throw;
+            }
         }
 
         ~ShellCommandSource() override
+        {
+            cleanup();
+        }
+
+    protected:
+        void cleanup()
         {
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
@@ -410,8 +423,6 @@ namespace
                 process_pool->returnObject(std::move(command_holder));
             }
         }
-
-    protected:
 
         Chunk generate() override
         {
