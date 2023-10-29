@@ -1175,6 +1175,12 @@ class TestCase:
         description_full += result.description
 
         if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+            clickhouse_execute(
+                args,
+                f"INSERT INTO system.coverage SELECT '{self.case}', coverage()",
+                retry_error_codes=True,
+            )
+
             coverage = clickhouse_execute(
                 args,
                 f"SELECT length(coverage())",
@@ -1239,6 +1245,14 @@ class TestCase:
             pattern = (
                 "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
                 + pattern
+            )
+
+        # We want to calculate per-test code coverage. That's why we reset it before each test.
+        if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+            clickhouse_execute(
+                args,
+                "SYSTEM RESET COVERAGE",
+                retry_error_codes=True,
             )
 
         command = pattern.format(**params)
@@ -2348,6 +2362,18 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
+
+    if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
+        clickhouse_execute(
+            args,
+            """
+                CREATE TABLE IF NOT EXISTS system.coverage
+                (
+                    test_name String,
+                    coverage Array(UInt64)
+                ) ENGINE = MergeTree ORDER BY test_name;
+            """,
+        )
 
     total_tests_run = 0
 
