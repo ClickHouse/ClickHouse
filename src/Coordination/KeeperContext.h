@@ -23,7 +23,7 @@ public:
         SHUTDOWN
     };
 
-    void initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_);
+    void initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, std::string availability_zone);
 
     Phase getServerState() const;
     void setServerState(Phase server_state_);

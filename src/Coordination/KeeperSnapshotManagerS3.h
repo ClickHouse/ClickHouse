@@ -9,6 +9,7 @@
 #include <Coordination/KeeperSnapshotManager.h>
 
 #if USE_AWS_S3
+#include <IO/S3/PocoHTTPClient.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 
@@ -28,6 +29,8 @@ public:
     /// 'macros' are used to substitute macros in endpoint of disks
     void updateS3Configuration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void uploadSnapshot(const SnapshotFileInfo & file_info, bool async_upload = true);
+
+    std::string getAvaibilityZone() const { return avaibility_zone; }
 
     /// 'macros' are used to substitute macros in endpoint of disks
     void startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
@@ -50,6 +53,7 @@ private:
     UUID uuid;
 
     std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
+    std::string avaibility_zone;
 
     void uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info);
 
@@ -64,6 +68,8 @@ public:
 
     void updateS3Configuration(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
     void uploadSnapshot(const SnapshotFileInfo &, [[maybe_unused]] bool async_upload = true) {}
+
+    std::string getAvaibilityZone() const { return ""; }
 
     void startup(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
 

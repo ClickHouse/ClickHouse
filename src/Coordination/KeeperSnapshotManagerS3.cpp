@@ -98,6 +98,8 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
+        avaibility_zone = S3::determineAvailabilityZone(client_configuration);
+
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             new_uri.is_virtual_hosted_style,

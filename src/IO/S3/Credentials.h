@@ -166,6 +166,9 @@ struct CredentialsConfiguration
     bool no_sign_request = false;
 };
 
+
+std::string determineAvailabilityZone(const DB::S3::PocoHTTPClientConfiguration & configuration);
+
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:

@@ -9,13 +9,6 @@
 #include <Coordination/KeeperFeatureFlags.h>
 #include <boost/algorithm/string.hpp>
 
-#if USE_AWS_S3
-
-#include <IO/S3/Credentials.h>
-#include <aws/core/auth/AWSCredentials.h>
-#include <aws/core/client/ClientConfiguration.h>
-#endif
-
 namespace DB
 {
 
@@ -37,16 +30,15 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
-
-    #if USE_AWS_S3
-    auto metadata_client = S3::InitEC2MetadataClient(Aws::Client::ClientConfiguration{});
-    running_availability_zone = metadata_client->getCurrentAvailabilityZone();
-    #endif
 }
 
-void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
+void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, std::string availability_zone)
 {
     dispatcher = dispatcher_;
+
+    running_availability_zone = availability_zone;
+    LOG_INFO(&Poco::Logger::get("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'. ", running_availability_zone);
+
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 

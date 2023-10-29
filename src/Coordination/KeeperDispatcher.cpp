@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include "IO/S3/Credentials.h"
 
 #include <atomic>
 #include <future>
@@ -368,9 +369,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     snapshot_s3.startup(config, macros);
-
     keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
-    keeper_context->initialize(config, this);
+    keeper_context->initialize(config, this, snapshot_s3.getAvaibilityZone());
 
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,
