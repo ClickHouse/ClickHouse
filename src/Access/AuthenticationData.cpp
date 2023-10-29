@@ -105,7 +105,8 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
     return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash)
         && (lhs.ldap_server_name == rhs.ldap_server_name) && (lhs.kerberos_realm == rhs.kerberos_realm)
         && (lhs.ssl_certificate_common_names == rhs.ssl_certificate_common_names)
-        && (lhs.ssh_keys == rhs.ssh_keys);
+        && (lhs.ssh_keys == rhs.ssh_keys) && (lhs.http_auth_scheme == rhs.http_auth_scheme)
+        && (lhs.http_auth_server_name == rhs.http_auth_server_name);
 }
 
 
@@ -128,6 +129,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
+        case AuthenticationType::HTTP:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -232,6 +234,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::KERBEROS:
         case AuthenticationType::SSL_CERTIFICATE:
         case AuthenticationType::SSH_KEY:
+        case AuthenticationType::HTTP:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot specify password binary hash for authentication type {}", toString(type));
 
         case AuthenticationType::MAX:
@@ -325,6 +328,12 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without OpenSSL");
 #endif
+        }
+        case AuthenticationType::HTTP:
+        {
+            node->children.push_back(std::make_shared<ASTLiteral>(getHTTPAuthenticationServerName()));
+            node->children.push_back(std::make_shared<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
+            break;
         }
 
         case AuthenticationType::NO_PASSWORD: [[fallthrough]];
@@ -483,6 +492,17 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             common_names.insert(checkAndGetLiteralArgument<String>(arg, "common_name"));
 
         auth_data.setSSLCertificateCommonNames(std::move(common_names));
+    }
+    else if (query.type == AuthenticationType::HTTP)
+    {
+        String server = checkAndGetLiteralArgument<String>(args[0], "http_auth_server_name");
+        auto scheme = HTTPAuthenticationScheme::BASIC;  // Default scheme
+
+        if (args_size > 1)
+            scheme = parseHTTPAuthenticationScheme(checkAndGetLiteralArgument<String>(args[1], "scheme"));
+
+        auth_data.setHTTPAuthenticationServerName(server);
+        auth_data.setHTTPAuthenticationScheme(scheme);
     }
     else
     {

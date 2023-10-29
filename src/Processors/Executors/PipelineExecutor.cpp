@@ -33,9 +33,8 @@ namespace ErrorCodes
 }
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, UInt64 partial_result_duration_ms_)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
     : process_list_element(std::move(elem))
-    , partial_result_duration_ms(partial_result_duration_ms_)
 {
     if (process_list_element)
     {
@@ -329,7 +328,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get(), partial_result_duration_ms);
+    tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue);
 
     if (num_threads > 1)
