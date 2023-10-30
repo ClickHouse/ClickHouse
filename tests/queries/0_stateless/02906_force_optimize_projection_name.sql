@@ -16,4 +16,4 @@ SELECT name FROM test GROUP BY name SETTINGS force_optimize_projection_name='pro
 
 SELECT name FROM test GROUP BY name SETTINGS force_optimize_projection_name='non_existing_projection'; -- { serverError 117 }
 
-SELECT name FROM test SETTINGS force_optimize_projection_name='non_existing_projection'; -- { serverError 117 }
+SELECT name FROM test SETTINGS force_optimize_projection_name='projection_name'; -- { serverError 117 }
