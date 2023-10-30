@@ -1585,7 +1585,7 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
     return part_found;
 }
 
-bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(zkutil::ZooKeeperPtr & zookeeper,
+bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper,
     const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
     Coordination::Requests & ops, size_t & num_check_ops)
 {
@@ -1594,10 +1594,10 @@ bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(zkutil::Zoo
     NameSet absent_part_paths_on_replicas;
 
     size_t prev_ops_size = ops.size();
-    getLockSharedDataOps(*part, std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), replace_zero_copy_lock, hardlinked_files, ops);
+    getLockSharedDataOps(*part, zookeeper, replace_zero_copy_lock, hardlinked_files, ops);
 
     /// Checksums are checked here and `ops` is filled. In fact, the part is added to ZK just below, when executing `multi`.
-    bool part_found = checkPartChecksumsAndAddCommitOps(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), part, ops, part->name, absent_part_paths_on_replicas);
+    bool part_found = checkPartChecksumsAndAddCommitOps(zookeeper, part, ops, part->name, absent_part_paths_on_replicas);
 
     num_check_ops = 2 * absent_part_paths_on_replicas.size() + (ops.size() - prev_ops_size);
 
@@ -1627,7 +1627,16 @@ bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(zkutil::Zoo
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
     const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock)
 {
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(getZooKeeper());
+
+    if (transaction.isEmpty())
+    {
+        /// Do not commit if the part is obsolete, but check it's checksums just in case. It may throw if checksums mismatch
+        Coordination::Requests ops;
+        size_t num_check_ops;
+        getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
+        return {};
+    }
 
     while (true)
     {
@@ -1635,16 +1644,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         size_t num_check_ops;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
 
-        /// Do not commit if the part is obsolete, we have just briefly checked its checksums
-        if (transaction.isEmpty())
-            return {};
-
         Coordination::Responses responses;
         Coordination::Error e;
         {
 
             Coordination::SimpleFaultInjection fault(getSettings()->fault_probability_before_part_commit,
                                                      getSettings()->fault_probability_after_part_commit, "part commit");
+            ThreadFuzzer::maybeInjectSleep();
             e = zookeeper->tryMulti(ops, responses);
         }
         if (e == Coordination::Error::ZOK)
@@ -9736,12 +9742,11 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 }
             }
 
-            /// Two replicas may try to commit an empty part simultaneusly,
-            /// so some lost part may be counter twice in lost_part_count. Avoid that by using the part name as deduplication id.
-            /// There's a small chance that the empty part will be lost again. In this case we will have to wait for the block id
-            ///  to be cleaned up before replacing it again (see replicated_deduplication_window, replicated_deduplication_window_seconds)
+            /// Two replicas may try to commit an empty part simultaneously, so some lost part may be counter twice in lost_part_count.
+            /// Ensure that we are the first replica who commits tha part.
             size_t num_check_ops_unused;
-            bool part_found = getOpsToCheckPartChecksumsAndCommit(zookeeper, new_data_part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true, ops, num_check_ops_unused);
+            bool part_found = getOpsToCheckPartChecksumsAndCommit(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper),
+                new_data_part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true, ops, num_check_ops_unused);
             if (part_found)
                 throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Found part on another replica, probably it was already replaced");
 
@@ -9759,8 +9764,11 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 ops.emplace_back(zkutil::makeCreateRequest(lost_part_count_path, "1", zkutil::CreateMode::Persistent));
             }
 
+            ThreadFuzzer::maybeInjectSleep();
+
             Coordination::Responses responses;
-            if (auto code = zookeeper->tryMulti(ops, responses); code == Coordination::Error::ZOK)
+            auto code = zookeeper->tryMulti(ops, responses);
+            if (code == Coordination::Error::ZOK)
             {
                 transaction.commit();
                 break;
