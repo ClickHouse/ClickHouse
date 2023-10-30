@@ -158,7 +158,8 @@ void ArrowBlockInputFormat::prepareReader()
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
-        format_settings.arrow.case_insensitive_column_matching);
+        format_settings.arrow.case_insensitive_column_matching,
+        stream);
 
     if (stream)
         record_batch_total = -1;

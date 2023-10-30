@@ -1,7 +1,7 @@
-#include <AggregateFunctions/AggregateFunctionMerge.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include "AggregateFunctionMerge.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
