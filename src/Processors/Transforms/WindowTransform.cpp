@@ -203,7 +203,7 @@ APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
 else \
 { \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
-        "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", \
+        "The offset-based frames for '{}' ORDER BY column are not implemented", \
         demangle(typeid(*column).name())); \
 }
 
