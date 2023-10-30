@@ -612,8 +612,8 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
         }
 
         covering_part = storage.getActiveContainingPart(part->info, MergeTreeDataPartState::Active, parts_lock);
-    }
-    while(covering_part != part);
+
+    } while (covering_part != part);
 
     return part;
 }
