@@ -49,6 +49,9 @@ struct PartitionCommand
     String from_table;
     bool replace = true;
 
+    /// to distinguish REPLACE PARTITION AND trigger materialized view of alter table
+    bool trigger_view = false;
+
     /// For MOVE PARTITION
     String to_database;
     String to_table;

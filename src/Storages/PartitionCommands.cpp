@@ -81,6 +81,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.replace = command_ast->replace;
         res.from_database = command_ast->from_database;
         res.from_table = command_ast->from_table;
+        res.trigger_view = command_ast->trigger_view;
         return res;
     }
     else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)

@@ -839,6 +839,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_alter_table("ALTER TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
+    ParserKeyword s_trigger_view("AND TRIGGER VIEW");
 
     ASTAlterQuery::AlterObjectType alter_object_type;
 
@@ -889,6 +890,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (query->table)
         query->children.push_back(query->table);
+
+    if (s_trigger_view.ignore(pos, expected)) {
+        query->need_trigger_view = true;
+        return true;
+    }
 
     return true;
 }
