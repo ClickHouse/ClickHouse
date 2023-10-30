@@ -3697,6 +3697,8 @@ class ClickHouseInstance:
             method = "POST" if data else "GET"
 
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        # Force encoding to UTF-8
+        r.encoding = "UTF-8"
 
         if r.ok:
             return (r.content if content else r.text, None)
