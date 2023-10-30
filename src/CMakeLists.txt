@@ -104,6 +104,7 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/DataLakes)
+add_headers_and_sources(dbms Storages/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -591,8 +592,8 @@ if (ENABLE_TESTS)
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
-        ch_contrib::gtest_all
         ch_contrib::gmock_all
+        ch_contrib::gtest
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers
