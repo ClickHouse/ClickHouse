@@ -2181,7 +2181,7 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
         clickhouse_node.query(
             "SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV"
         )
-        == "2\n"
+        == "1\n"
     )
 
     clickhouse_node.query("DROP DATABASE test_database")
