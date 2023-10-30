@@ -18,26 +18,28 @@ namespace DB
 namespace
 {
 
+enum class Kind
+{
+    Current,
+    All
+};
+
 /** If ClickHouse is build with coverage instrumentation, returns an array
-  * of currently accumulated unique code addresses.
+  * of currently accumulated (`coverage`) / all possible (`coverageAll`) unique code addresses.
   */
 class FunctionCoverage : public IFunction
 {
-public:
-    static constexpr auto name = "coverage";
+private:
+    Kind kind;
 
+public:
     String getName() const override
     {
-        return name;
+        return kind == Kind::Current ? "coverage" : "coverageAll";
     }
 
-    explicit FunctionCoverage()
+    explicit FunctionCoverage(Kind kind_) : kind(kind_)
     {
-    }
-
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionCoverage>();
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -62,7 +64,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto coverage_table = getCoverage();
+        auto coverage_table = kind == Kind::Current ? getCoverage() : getAllInstrumentedAddresses();
 
         auto column_addresses = ColumnUInt64::create();
         auto & data = column_addresses->getData();
@@ -83,7 +85,8 @@ public:
 
 REGISTER_FUNCTION(Coverage)
 {
-    factory.registerFunction<FunctionCoverage>();
+    factory.registerFunction("coverage", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Current)); });
+    factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::All)); });
 }
 
 }

@@ -46,13 +46,17 @@ void dumpCoverageReportIfPossible()
 
 namespace
 {
-    bool initialized = false;
+    bool pc_guards_initialized = false;
+    bool pc_table_initialized = false;
 
     uint32_t * guards_start = nullptr;
     uint32_t * guards_end = nullptr;
-    size_t coverage_array_size = 0;
 
     uintptr_t * coverage_array = nullptr;
+    size_t coverage_array_size = 0;
+
+    uintptr_t * all_addresses_array = nullptr;
+    size_t all_addresses_array_size = 0;
 }
 
 extern "C"
@@ -62,9 +66,9 @@ extern "C"
 /// But we will use it only for the main DSO.
 void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
 {
-    if (initialized)
+    if (pc_guards_initialized)
         return;
-    initialized = true;
+    pc_guards_initialized = true;
 
     /// The function can be called multiple times, but we need to initialize only once.
     if (start == stop || *start)
@@ -78,6 +82,23 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
     coverage_array = static_cast<uintptr_t*>(malloc(sizeof(uintptr_t) * coverage_array_size));
 
     resetCoverage();
+}
+
+/// This is called at least once for every DSO for initialization
+/// and provides information about all instrumented addresses.
+void __sanitizer_cov_pcs_init(const uintptr_t * pcs_begin, const uintptr_t * pcs_end)
+{
+    if (pc_table_initialized)
+        return;
+    pc_table_initialized = true;
+
+    all_addresses_array = static_cast<uintptr_t*>(malloc(sizeof(uintptr_t) * coverage_array_size));
+    all_addresses_array_size = pcs_end - pcs_begin;
+
+    /// They are not a real pointers, but also contain a flag in the most significant bit,
+    /// in which we are not interested for now. Reset it.
+    for (size_t i = 0; i < all_addresses_array_size; ++i)
+        all_addresses_array[i] = pcs_begin[i] & 0x7FFFFFFFFFFFFFFFULL;
 }
 
 /// This is called at every basic block / edge, etc.
@@ -101,12 +122,20 @@ void __sanitizer_cov_trace_pc_guard(uint32_t * guard)
 
 }
 
-__attribute__((no_sanitize("coverage"))) std::span<uintptr_t> getCoverage()
+__attribute__((no_sanitize("coverage")))
+std::span<const uintptr_t> getCoverage()
 {
     return {coverage_array, coverage_array_size};
 }
 
-__attribute__((no_sanitize("coverage"))) void resetCoverage()
+__attribute__((no_sanitize("coverage")))
+std::span<const uintptr_t> getAllInstrumentedAddresses()
+{
+    return {all_addresses_array, all_addresses_array_size};
+}
+
+__attribute__((no_sanitize("coverage")))
+void resetCoverage()
 {
     memset(coverage_array, 0, coverage_array_size * sizeof(*coverage_array));
 
@@ -120,6 +149,11 @@ __attribute__((no_sanitize("coverage"))) void resetCoverage()
 #else
 
 std::span<uintptr_t> getCoverage()
+{
+    return {};
+}
+
+std::span<const uintptr_t> getAllInstrumentedAddresses()
 {
     return {};
 }
