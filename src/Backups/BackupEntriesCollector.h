@@ -43,6 +43,7 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
