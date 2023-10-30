@@ -641,7 +641,7 @@ private:
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
-    bool getOpsToCheckPartChecksumsAndCommit(zkutil::ZooKeeperPtr & zookeeper, const MutableDataPartPtr & part,
+    bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
                                              std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
                                              Coordination::Requests & ops, size_t & num_check_ops);
 
