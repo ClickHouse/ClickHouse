@@ -9742,8 +9742,8 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                 }
             }
 
-            /// Two replicas may try to commit an empty part simultaneously, so some lost part may be counter twice in lost_part_count.
-            /// Ensure that we are the first replica who commits tha part.
+            /// Two replicas may try to commit an empty part simultaneously, so some lost part may be counted twice in lost_part_count.
+            /// Ensure that we are the first replica who commits that part.
             size_t num_check_ops_unused;
             bool part_found = getOpsToCheckPartChecksumsAndCommit(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper),
                 new_data_part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true, ops, num_check_ops_unused);
