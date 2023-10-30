@@ -22,13 +22,15 @@ public:
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
-        size_t alignment = 0)
+        size_t alignment = 0,
+        bool compress_empty_ = true)
     : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
     , brotli(std::make_unique<BrotliStateWrapper>())
     , in_available(0)
     , in_data(nullptr)
     , out_capacity(0)
     , out_data(nullptr)
+    , compress_empty(compress_empty_)
     {
         BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_QUALITY, static_cast<uint32_t>(compression_level));
         // Set LZ77 window size. According to brotli sources default value is 24 (c/tools/brotli.c:81)
@@ -62,6 +64,7 @@ private:
 
 protected:
     size_t total_out = 0;
+    bool compress_empty = true;
 };
 
 }

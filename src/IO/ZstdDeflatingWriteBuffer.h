@@ -20,8 +20,9 @@ public:
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
-        size_t alignment = 0)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+        size_t alignment = 0,
+        bool compress_empty_ = true)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), compress_empty(compress_empty_)
     {
         initialize(compression_level);
     }
@@ -51,6 +52,7 @@ private:
     ZSTD_outBuffer output;
 
     size_t total_out = 0;
+    bool compress_empty = true;
 };
 
 }

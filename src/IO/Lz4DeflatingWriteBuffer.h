@@ -20,12 +20,14 @@ public:
         int compression_level,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
-        size_t alignment = 0)
+        size_t alignment = 0,
+        bool compress_empty_ = true)
     : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
     , in_data(nullptr)
     , out_data(nullptr)
     , in_capacity(0)
     , out_capacity(0)
+    , compress_empty(compress_empty_)
     {
         initialize(compression_level);
     }
@@ -50,5 +52,6 @@ private:
     size_t out_capacity;
 
     bool first_time = true;
+    bool compress_empty = true;
 };
 }

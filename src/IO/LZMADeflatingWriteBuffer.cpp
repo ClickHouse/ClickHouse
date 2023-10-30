@@ -93,7 +93,7 @@ void LZMADeflatingWriteBuffer::finalizeBefore()
     next();
 
     /// Don't write out if no data was ever compressed
-    if (lstr.total_out)
+    if (!compress_empty && lstr.total_out == 0)
         return;
 
     do

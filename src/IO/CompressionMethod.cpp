@@ -172,27 +172,27 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, size_t buf_size, char * existing_memory, size_t alignment)
+    WriteBufferT && nested, CompressionMethod method, int level, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
-        return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment);
+        return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
 
 #if USE_BROTLI
     if (method == DB::CompressionMethod::Brotli)
-        return std::make_unique<BrotliWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<BrotliWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 #endif
     if (method == CompressionMethod::Xz)
-        return std::make_unique<LZMADeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<LZMADeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 
     if (method == CompressionMethod::Zstd)
-        return std::make_unique<ZstdDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<ZstdDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 
     if (method == CompressionMethod::Lz4)
-        return std::make_unique<Lz4DeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<Lz4DeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 
 #if USE_BZIP2
     if (method == CompressionMethod::Bzip2)
-        return std::make_unique<Bzip2WriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment);
+        return std::make_unique<Bzip2WriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
@@ -209,11 +209,12 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     int level,
     size_t buf_size,
     char * existing_memory,
-    size_t alignment)
+    size_t alignment,
+    bool compress_empty)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, buf_size, existing_memory, alignment);
+    return createWriteCompressedWrapper(nested, method, level, buf_size, existing_memory, alignment, compress_empty);
 }
 
 
@@ -223,10 +224,11 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     int level,
     size_t buf_size,
     char * existing_memory,
-    size_t alignment)
+    size_t alignment,
+    bool compress_empty)
 {
     assert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, buf_size, existing_memory, alignment);
+    return createWriteCompressedWrapper(nested, method, level, buf_size, existing_memory, alignment, compress_empty);
 }
 
 }

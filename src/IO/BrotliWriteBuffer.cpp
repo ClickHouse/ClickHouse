@@ -74,7 +74,7 @@ void BrotliWriteBuffer::finalizeBefore()
     next();
 
     /// Don't write out if no data was ever compressed
-    if (total_out == 0)
+    if (!compress_empty && total_out == 0)
         return;
 
     while (true)
