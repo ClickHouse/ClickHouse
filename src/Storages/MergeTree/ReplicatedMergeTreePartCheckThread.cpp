@@ -581,7 +581,7 @@ MergeTreeDataPartPtr ReplicatedMergeTreePartCheckThread::choosePartForBackground
     auto active_parts = storage.getDataPartsStateRange(MergeTreeDataPartState::Active);
     if (active_parts.empty())
     {
-        LOG_DEBUG(log, "Background part check: no active parts");
+        // LOG_DEBUG(log, "Background part check: no active parts");
         return nullptr;
     }
     LOG_DEBUG(log, "Background part check: active parts {}", std::distance(active_parts.begin(), active_parts.end()));
@@ -628,17 +628,14 @@ std::optional<time_t> ReplicatedMergeTreePartCheckThread::enqueueBackgroundCheck
     // check if background check is already scheduled
     auto part_to_check = choosePartForBackgroundCheck();
     if (!part_to_check)
-    {
-        LOG_DEBUG(log, "Background part check: no part was chosen");
         return {};
-    }
 
     const auto current_time = time(nullptr);
     if (last_randomly_checked_part == MergeTreePartInfo{})
     {
-        enqueuePart(part_to_check->name, background_part_check_delay, true);
+        enqueuePart(part_to_check->name, 0, true);
         // todo: randomize first check
-        return current_time + background_part_check_delay;
+        return current_time;
     }
 
     auto check_duration = duration_cast<std::chrono::milliseconds>(last_check_duration).count();
@@ -734,7 +731,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             parts_queue.splice(parts_queue.end(), parts_queue, selected);
         }
 
-        if (!selected->background)
+        if (selected->background)
         {
             doBackgroundPartCheck(selected->name);
             task->schedule();

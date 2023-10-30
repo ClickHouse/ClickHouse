@@ -123,9 +123,10 @@ private:
     std::mt19937_64 gen;
     MergeTreePartInfo last_randomly_checked_part;
     std::chrono::time_point<std::chrono::steady_clock> last_check_finish_time;
+    std::chrono::time_point<std::chrono::steady_clock> last_time_to_create_background_check;
     std::chrono::duration<float> last_check_duration;
     double background_part_check_time_to_total_time_ratio = 0.01;
-    time_t background_part_check_delay = 10;
+    time_t background_part_check_delay_seconds = 10;
 };
 
 }
