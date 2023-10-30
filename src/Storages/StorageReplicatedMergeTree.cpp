@@ -427,7 +427,22 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
-    loadDataParts(skip_sanity_checks);
+    ActiveDataPartSet data_parts_on_other_replicas(format_version);
+    if (current_zookeeper)
+    {
+        auto replicas = current_zookeeper->getChildren(zookeeper_path);
+        for (const auto & child : replicas)
+        {
+            auto one_of_replicas_path = fs::path(zookeeper_path) / "replicas" / child;
+            if (one_of_replicas_path == replica_path)
+                continue;
+
+            for (const auto & part : one_of_replicas_path)
+                data_parts_on_other_replicas.add(part);
+        }
+    }
+
+    loadDataParts(skip_sanity_checks, data_parts_on_other_replicas);
 
     if (attach)
     {

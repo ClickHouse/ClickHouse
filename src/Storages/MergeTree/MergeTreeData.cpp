@@ -1592,7 +1592,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
 }
 
 
-void MergeTreeData::loadDataParts(bool skip_sanity_checks)
+void MergeTreeData::loadDataParts(bool skip_sanity_checks, const ActiveDataPartSet & parts_can_be_restored)
 {
     LOG_DEBUG(log, "Loading data parts");
 
@@ -1716,6 +1716,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     size_t suspicious_broken_parts = 0;
     size_t suspicious_broken_parts_bytes = 0;
+    size_t suspicious_broken_restorable_parts = 0;
+    size_t suspicious_broken_restorable_parts_bytes = 0;
     bool have_adaptive_parts = false;
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
@@ -1732,9 +1734,19 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             if (res.is_broken)
             {
                 broken_parts_to_detach.push_back(res.part);
-                ++suspicious_broken_parts;
+                bool can_be_restored = !parts_can_be_restored.getContainingPart(res.part->info).empty();
+                if (can_be_restored)
+                    ++suspicious_broken_restorable_parts;
+                else
+                    ++suspicious_broken_parts;
+
                 if (res.size_of_part)
-                    suspicious_broken_parts_bytes += *res.size_of_part;
+                {
+                    if (can_be_restored)
+                        ++suspicious_broken_restorable_parts_bytes;
+                    else
+                        ++suspicious_broken_parts_bytes;
+                }
             }
             else if (res.part->is_duplicate)
             {
@@ -1768,23 +1780,43 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     has_lightweight_delete_parts = have_lightweight_in_parts;
     transactions_enabled = have_parts_with_version_metadata;
 
-    if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
-        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-                        "Suspiciously many ({} parts, {} in total) broken parts "
-                        "to remove while maximum allowed broken parts count is {}. You can change the maximum value "
-                        "with merge tree setting 'max_suspicious_broken_parts' "
-                        "in <merge_tree> configuration section or in table settings in .sql file "
-                        "(don't forget to return setting back to default value)",
-                        suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-                        settings->max_suspicious_broken_parts);
+    if (!skip_sanity_checks)
+    {
+        if (settings->strict_suspicious_broken_parts_check_on_start)
+        {
+            suspicious_broken_parts += suspicious_broken_restorable_parts;
+            suspicious_broken_restorable_parts_bytes += suspicious_broken_restorable_parts_bytes;
+        }
 
-    if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
-        throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously big size ({} parts, {} in total) of all broken parts to remove while maximum allowed broken parts size is {}. "
-            "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
-            "section or in table settings in .sql file (don't forget to return setting back to default value)",
-            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-            formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
+        if (suspicious_broken_parts > settings->max_suspicious_broken_parts)
+            throw Exception(
+                ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+                "Suspiciously many ({} parts, {} in total) broken parts "
+                "to remove while maximum allowed broken parts count is {}. You can "
+                "change the maximum value "
+                "with merge tree setting 'max_suspicious_broken_parts' "
+                "in <merge_tree> configuration section or in table settings in "
+                ".sql file "
+                "(don't forget to return setting back to default value)",
+                suspicious_broken_parts,
+                formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                settings->max_suspicious_broken_parts);
+
+        if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes)
+            throw Exception(
+                ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+                "Suspiciously big size ({} parts, {} in total) of all broken "
+                "parts to remove while maximum allowed broken parts size is {}. "
+                "You can change the maximum value with merge tree setting "
+                "'max_suspicious_broken_parts_bytes' in <merge_tree> "
+                "configuration "
+                "section or in table settings in .sql file (don't forget to "
+                "return setting back to default value)",
+                suspicious_broken_parts,
+                formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
+    }
+
 
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
