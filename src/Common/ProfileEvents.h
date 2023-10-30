@@ -41,6 +41,7 @@ namespace ProfileEvents
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
         void end();
+        UInt64 get();
 
     private:
         Counters & counters;

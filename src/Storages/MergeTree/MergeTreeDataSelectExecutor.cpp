@@ -474,7 +474,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
-        query_info.storage_limits);
+        query_info,
+        context);
     plan->addStep(std::move(step));
     plan->addInterpreterContext(query_info.projection->context);
     return plan;
@@ -1335,6 +1336,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
+    /// Do not keep data parts in snapshot.
+    /// They are stored separately, and some could be released after PK analysis.
+    auto storage_snapshot_copy = storage_snapshot->clone(std::make_unique<MergeTreeData::SnapshotData>());
+
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         std::move(alter_conversions),
@@ -1342,7 +1347,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         virt_column_names,
         data,
         query_info,
-        storage_snapshot,
+        storage_snapshot_copy,
         context,
         max_block_size,
         num_streams,
@@ -1671,7 +1676,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                granule = reader.read();
+                reader.read(granule);
 
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
@@ -1789,7 +1794,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    granules[i] = readers[i]->read();
+                    readers[i]->read(granules[i]);
                     granules_filled = true;
                 }
             }
