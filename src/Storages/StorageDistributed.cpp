@@ -582,7 +582,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     }
 
     // GROUP BY
-    if (query_node.hasGroupBy())
+    if (query_info.has_aggregates || query_node.hasGroupBy())
     {
         if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
             return {};
