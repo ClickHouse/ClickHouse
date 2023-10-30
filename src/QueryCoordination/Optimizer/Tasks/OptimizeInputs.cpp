@@ -146,11 +146,24 @@ Cost OptimizeInputs::enforceGroupNode(
         /// Because the ordering of data may be changed after adding Exchange in a distributed manner, we need to retain the order of data during exchange if there is a requirement for data sorting.
     if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream && output_prop.sort_prop.sort_scope == DataStream::SortScope::Stream)
     {
-        exchange_step = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size, required_prop.sort_prop.sort_description, true);
+        exchange_step = std::make_shared<ExchangeDataStep>(
+            required_prop.distribution,
+            group_node->getStep()->getOutputStream(),
+            max_block_size,
+            required_prop.sort_prop.sort_description,
+            DataStream::SortScope::Stream,
+            true);
     }
     else if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Global)
     {
-        exchange_step = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size, required_prop.sort_prop.sort_description, true, true);
+        exchange_step = std::make_shared<ExchangeDataStep>(
+            required_prop.distribution,
+            group_node->getStep()->getOutputStream(),
+            max_block_size,
+            required_prop.sort_prop.sort_description,
+            DataStream::SortScope::Global,
+            true,
+            true);
     }
     else
     {

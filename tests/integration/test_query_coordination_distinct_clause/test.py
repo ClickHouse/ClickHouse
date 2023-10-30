@@ -39,8 +39,8 @@ def insert_data():
     node1.query("SYSTEM FLUSH DISTRIBUTED test_distinct_all")
 
 def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+    accurate_result = node1.query(query_text + " SETTINGS use_index_for_in_with_subqueries = 0")
+    test_result = node1.query(query_text + " SETTINGS use_index_for_in_with_subqueries = 0, allow_experimental_query_coordination = 1")
 
     print(accurate_result)
     print(test_result)

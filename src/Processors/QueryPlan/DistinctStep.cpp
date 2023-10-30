@@ -135,11 +135,10 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         });
 }
 
-const SortDescription DistinctStep::getSortDescription() const
+SortDescription DistinctStep::getSortDescription() const
 {
     const auto & input_stream = input_streams.back();
-    const SortDescription distinct_sort_desc = DB::getSortDescription(input_stream.sort_description, columns);
-    return distinct_sort_desc;
+    return DB::getSortDescription(input_stream.sort_description, columns);
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const

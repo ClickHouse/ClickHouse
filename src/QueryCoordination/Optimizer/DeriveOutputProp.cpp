@@ -112,7 +112,11 @@ PhysicalProperties DeriveOutputProp::visit(SortingStep & step)
 
 PhysicalProperties DeriveOutputProp::visit(ExchangeDataStep & step)
 {
-    return {.distribution = step.getDistribution()};
+    PhysicalProperties res;
+    res.distribution = step.getDistribution();
+    res.sort_prop.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+    return res;
 }
 
 PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)

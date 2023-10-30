@@ -31,7 +31,7 @@ public:
 
     bool optimizeDistinctInOrder() const { return optimize_distinct_in_order; }
 
-    const SortDescription getSortDescription() const;
+    SortDescription getSortDescription() const;
 
 private:
     void updateOutputStream() override;

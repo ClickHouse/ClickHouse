@@ -16,6 +16,7 @@ public:
         const DataStream & data_stream,
         size_t max_block_size_,
         SortDescription sort_description_ = {},
+        DataStream::SortScope sort_scope_ = DataStream::SortScope::None,
         bool exchange_sink_merge = false,
         bool exchange_source_merge = false)
         : ISourceStep(data_stream)
@@ -26,6 +27,9 @@ public:
         , source_merge(exchange_source_merge)
     {
         setStepDescription(PhysicalProperties::distributionType(distribution.type));
+
+        output_stream->sort_description = sort_description;
+        output_stream->sort_scope = sort_scope_;
     }
 
     String getName() const override { return "ExchangeData"; }
