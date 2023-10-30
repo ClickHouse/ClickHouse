@@ -27,6 +27,7 @@ public:
         size_t max_array_size;
         bool require_nonempty;
         DictionaryLifetime dict_lifetime;
+        bool use_async_executor = false;
     };
 
     FlatDictionary(

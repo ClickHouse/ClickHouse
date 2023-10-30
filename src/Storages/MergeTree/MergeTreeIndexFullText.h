@@ -25,8 +25,8 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
-    String index_name;
-    BloomFilterParameters params;
+    const String index_name;
+    const BloomFilterParameters params;
 
     std::vector<BloomFilter> bloom_filters;
     bool has_elems;

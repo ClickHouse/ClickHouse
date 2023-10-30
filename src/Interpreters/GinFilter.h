@@ -8,13 +8,16 @@ namespace DB
 {
 
 static inline constexpr auto INVERTED_INDEX_NAME = "inverted";
+static inline constexpr UInt64 UNLIMITED_ROWS_PER_POSTINGS_LIST = 0;
+static inline constexpr UInt64 MIN_ROWS_PER_POSTINGS_LIST = 8 * 1024;
+static inline constexpr UInt64 DEFAULT_MAX_ROWS_PER_POSTINGS_LIST = 64 * 1024;
 
 struct GinFilterParameters
 {
-    GinFilterParameters(size_t ngrams_, Float64 density_);
+    GinFilterParameters(size_t ngrams_, UInt64 max_rows_per_postings_list_);
 
     size_t ngrams;
-    Float64 density;
+    UInt64 max_rows_per_postings_list;
 };
 
 struct GinSegmentWithRowIdRange
@@ -42,7 +45,7 @@ public:
 
     /// Add term (located at 'data' with length 'len') and its row ID to the postings list builder
     /// for building inverted index for the given store.
-    void add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store, UInt64 limit) const;
+    void add(const char * data, size_t len, UInt32 rowID, GinIndexStorePtr & store) const;
 
     /// Accumulate (segmentID, RowIDStart, RowIDEnd) for building skipping index
     void addRowRangeToGinFilter(UInt32 segmentID, UInt32 rowIDStart, UInt32 rowIDEnd);

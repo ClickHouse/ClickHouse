@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <Common/logger_useful.h>
 
@@ -161,7 +163,7 @@ DictionaryPtr createLayout(const std::string & ,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
                            DictionarySourcePtr source_ptr,
-                           ContextPtr /* global_context */,
+                           ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
     const String database = config.getString(config_prefix + ".database", "");
@@ -219,11 +221,16 @@ DictionaryPtr createLayout(const std::string & ,
     config.keys(layout_prefix, keys);
     const auto & dict_prefix = layout_prefix + "." + keys.front();
 
+    ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+    const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+
     IPolygonDictionary::Configuration configuration
     {
         .input_type = input_type,
         .point_type = point_type,
-        .store_polygon_key_column = config.getBool(dict_prefix + ".store_polygon_key_column", false)
+        .store_polygon_key_column = config.getBool(dict_prefix + ".store_polygon_key_column", false),
+        .use_async_executor = use_async_executor,
     };
 
     if (dict_struct.range_min || dict_struct.range_max)

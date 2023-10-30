@@ -167,6 +167,9 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 
 DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
+    if (entries_to_skip.contains(entry_name))
+        return {};
+
     String node_data;
     String entry_path = fs::path(queue_dir) / entry_name;
 
@@ -186,6 +189,12 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         zookeeper->tryCreate(fs::path(entry_path) / "finished" / host_id, status.serializeText(), zkutil::CreateMode::Persistent);
     };
 
+    auto add_to_skip_set = [&]()
+    {
+        entries_to_skip.insert(entry_name);
+        return nullptr;
+    };
+
     try
     {
         /// Stage 1: parse entry
@@ -198,7 +207,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
         out_reason = "Incorrect task format";
         write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
-        return {};
+        return add_to_skip_set();
     }
 
     /// Stage 2: resolve host_id and check if we should execute query or not
@@ -207,7 +216,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     if (!task->findCurrentHostID(context, log))
     {
         out_reason = "There is no a local address in host list";
-        return {};
+        return add_to_skip_set();
     }
 
     try
@@ -223,13 +232,13 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         out_reason = "Cannot parse query or obtain cluster info";
         write_error_status(task->host_id_str, ExecutionStatus::fromCurrentException(), out_reason);
-        return {};
+        return add_to_skip_set();
     }
 
     if (zookeeper->exists(task->getFinishedNodePath()))
     {
         out_reason = TASK_PROCESSED_OUT_REASON;
-        return {};
+        return add_to_skip_set();
     }
 
     /// Now task is ready for execution
@@ -955,6 +964,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 continue;
             }
             zkutil::KeeperMultiException::check(rm_entry_res, ops, res);
+            entries_to_skip.remove(node_name);
         }
         catch (...)
         {
