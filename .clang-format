@@ -53,7 +53,6 @@ ReflowComments: false
 AlignEscapedNewlinesLeft: false
 AlignEscapedNewlines: DontAlign
 AlignTrailingComments: false
-InsertBraces: WrapLikely
 
 # Not changed:
 AccessModifierOffset: -4
