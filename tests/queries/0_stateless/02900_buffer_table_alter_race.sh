@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT -q "insert into 02900_buffer (k, v) select 2, 'bobr'"
 wait
 
 # The data produced by the long-running INSERT after the ALTER is not visible until flushed.
-$CLICKHOUSE_CLIENT -q "select k, any(v) from 02900_buffer group by k order by k"
+$CLICKHOUSE_CLIENT -q "select * from 02900_buffer where k != 1 order by k"
 
 $CLICKHOUSE_CLIENT -q "optimize table 02900_buffer"
 $CLICKHOUSE_CLIENT -q "select * from 02900_buffer order by k"
