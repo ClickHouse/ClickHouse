@@ -18,8 +18,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
-#include <AggregateFunctions/AggregateFunctionArray.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <IO/Operators.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
