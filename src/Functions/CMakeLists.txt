@@ -43,6 +43,7 @@ list (APPEND PRIVATE_LIBS
         boost::filesystem
         divide_impl
         ch_contrib::xxHash
+        ch_contrib::pocketfft
 )
 
 if (TARGET ch_rust::blake3)
