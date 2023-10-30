@@ -598,7 +598,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
                 ++istr.position();
 
             /// Consume leading zeroes - we don't want any funny octal business
-            while (*istr.position() == '0')
+            while (!istr.eof() && *istr.position() == '0')
                 ++istr.position();
 
             static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
