@@ -1,7 +1,5 @@
-#include <AggregateFunctions/AggregateFunctionResample.h>
-
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-
+#include "AggregateFunctionResample.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
 namespace DB
 {

@@ -1,8 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <base/sort.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -14,16 +13,16 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "DataTypes/Serializations/ISerialization.h"
 #include <base/IPv4andIPv6.h>
-#include "base/types.h"
-#include <Common/formatIPv6.h>
+#include <base/sort.h>
+#include <base/types.h>
 #include <Common/Arena.h>
-#include "AggregateFunctions/AggregateFunctionFactory.h"
+#include <Common/formatIPv6.h>
 
 namespace DB
 {
