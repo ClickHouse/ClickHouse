@@ -234,6 +234,10 @@ Materializes or updates a column with an expression for a default value (`DEFAUL
 It is used if it is necessary to add or update a column with a complicated expression, because evaluating such an expression directly on `SELECT` executing turns out to be expensive. 
 Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
+:::warning
+Column materialization will overwrite all past values in the column.
+:::
+
 Syntax:
 
 ```sql
