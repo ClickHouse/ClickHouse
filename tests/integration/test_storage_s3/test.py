@@ -865,13 +865,33 @@ def test_storage_s3_put_uncompressed(started_cluster):
             name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename
         ),
     )
-
-    run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
+    insert_query_id = uuid.uuid4().hex
+    data_sep = "),("
+    run_query(
+        instance,
+        "INSERT INTO {} VALUES ({})".format(name, data_sep.join(data)),
+        query_id=insert_query_id,
+    )
 
     run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["753"]
 
     uncompressed_content = get_s3_file_content(started_cluster, bucket, filename)
     assert sum([int(i.split(",")[1]) for i in uncompressed_content.splitlines()]) == 753
+
+    instance.query("SYSTEM FLUSH LOGS")
+    blob_storage_log = instance.query(f"SELECT * FROM system.blob_storage_log")
+
+    result = instance.query(
+        f"""SELECT
+            countIf(event_type == 'Upload'),
+            countIf(remote_path == {filename}),
+            countIf(bucket == {bucket}),
+            count()
+        FROM system.blob_storage_log WHERE query_id = '{insert_query_id}'"""
+    )
+    r = result.strip().split("\t")
+    assert int(r[0]) >= 1, blob_storage_log
+    assert all(col == r[0] for col in r), blob_storage_log
 
 
 @pytest.mark.parametrize(

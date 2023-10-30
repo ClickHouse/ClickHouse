@@ -1252,7 +1252,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     const auto * response_error = response.IsSuccess() ? nullptr : &response.GetError();
     auto time_now = std::chrono::system_clock::now();
     for (const auto & key : query_configuration.keys)
-        blob_storage_log.addEvent(BlobStorageLogElement::EventType::Delete, query_configuration.url.bucket, key, {}, response_error, time_now);
+        blob_storage_log.addEvent(BlobStorageLogElement::EventType::Delete, query_configuration.url.bucket, key, {}, 0, response_error, time_now);
 
     if (!response.IsSuccess())
     {

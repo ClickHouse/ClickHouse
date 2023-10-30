@@ -248,7 +248,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     auto clients_ = clients.get();
 
     BlobStorageLogWriter blob_storage_log_writer = getBlobStorageLog();
-    blob_storage_log_writer.referring_local_path = object.local_path;
+    blob_storage_log_writer.local_path = object.local_path;
 
     return std::make_unique<WriteBufferFromS3>(
         clients_->client,
@@ -325,7 +325,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
     request.SetKey(object.remote_path);
     auto outcome = client_ptr->DeleteObject(request);
     getBlobStorageLog().addEvent(BlobStorageLogElement::EventType::Delete,
-                              bucket, object.remote_path, object.local_path,
+                              bucket, object.remote_path, object.local_path, 0,
                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     throwIfUnexpectedError(outcome, if_exists);
@@ -351,7 +351,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
         size_t current_position = 0;
 
-        auto & blob_storage_log_writer = getBlobStorageLog();
+        auto blob_storage_log_writer = getBlobStorageLog();
         while (current_position < objects.size())
         {
             std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
@@ -382,7 +382,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
             for (const auto & object : objects)
             {
                 blob_storage_log_writer.addEvent(BlobStorageLogElement::EventType::Delete,
-                                          bucket, object.remote_path, object.local_path,
+                                          bucket, object.remote_path, object.local_path, 0,
                                           outcome_error, time_now);
             }
 
@@ -548,7 +548,7 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
         endpoint, disk_name);
 }
 
-BlobStorageLogWriter & S3ObjectStorage::getBlobStorageLog()
+BlobStorageLogWriter S3ObjectStorage::getBlobStorageLog()
 {
     /// We try to set blob_storage_log at first attempt to access
     /// because during disk startup system logs are not yet initalized
@@ -558,7 +558,13 @@ BlobStorageLogWriter & S3ObjectStorage::getBlobStorageLog()
         blob_storage_log.disk_name = disk_name;
     }
 
-    return blob_storage_log;
+    /// Make a copy with local properies like query_id, object path, etc
+    BlobStorageLogWriter blob_storage_log_copy(blob_storage_log);
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+        blob_storage_log_copy.query_id = CurrentThread::getQueryId();
+
+    return blob_storage_log_copy;
+
 }
 
 S3ObjectStorage::Clients::Clients(std::shared_ptr<S3::Client> client_, const S3ObjectStorageSettings & settings)

@@ -25,6 +25,10 @@ NamesAndTypesList BlobStorageLogElement::getNamesAndTypes()
         });
 
     return {
+        {"event_date", std::make_shared<DataTypeDate>()},
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+
         {"event_type", event_enum_type},
 
         {"query_id", std::make_shared<DataTypeString>()},
@@ -33,14 +37,10 @@ NamesAndTypesList BlobStorageLogElement::getNamesAndTypes()
         {"disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"bucket", std::make_shared<DataTypeString>()},
         {"remote_path", std::make_shared<DataTypeString>()},
-        {"referring_local_path", std::make_shared<DataTypeString>()},
+        {"local_path", std::make_shared<DataTypeString>()},
         {"data_size", std::make_shared<DataTypeUInt32>()},
 
         {"error_msg", std::make_shared<DataTypeString>()},
-
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
     };
 }
 
@@ -51,6 +51,14 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
 #endif
 
     size_t i = 0;
+
+    auto event_time_seconds = timeInSeconds(event_time);
+    assert(coulumn_names.at(i) == "event_date");
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
+    assert(coulumn_names.at(i) == "event_time");
+    columns[i++]->insert(event_time_seconds);
+    assert(coulumn_names.at(i) == "event_time_microseconds");
+    columns[i++]->insert(timeInMicroseconds(event_time));
 
     assert(coulumn_names.at(i) == "event_type");
     columns[i++]->insert(static_cast<Int8>(event_type));
@@ -66,21 +74,13 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(bucket);
     assert(coulumn_names.at(i) == "remote_path");
     columns[i++]->insert(remote_path);
-    assert(coulumn_names.at(i) == "referring_local_path");
-    columns[i++]->insert(referring_local_path);
+    assert(coulumn_names.at(i) == "local_path");
+    columns[i++]->insert(local_path);
     assert(coulumn_names.at(i) == "data_size");
     columns[i++]->insert(data_size);
 
     assert(coulumn_names.at(i) == "error_msg");
     columns[i++]->insert(error_msg);
-
-    auto event_time_seconds = timeInSeconds(event_time);
-    assert(coulumn_names.at(i) == "event_date");
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
-    assert(coulumn_names.at(i) == "event_time");
-    columns[i++]->insert(event_time_seconds);
-    assert(coulumn_names.at(i) == "event_time_microseconds");
-    columns[i++]->insert(timeInMicroseconds(event_time));
 
     assert(i == coulumn_names.size() && columns.size() == coulumn_names.size());
 }
@@ -90,7 +90,7 @@ void BlobStorageLogWriter::addEvent(
     BlobStorageLogElement::EventType event_type,
     const String & bucket,
     const String & remote_path,
-    const String & local_path,
+    const String & local_path_,
     size_t data_size,
     const Aws::S3::S3Error * error,
     BlobStorageLogElement::EvenTime time_now)
@@ -111,12 +111,12 @@ void BlobStorageLogWriter::addEvent(
     element.disk_name = disk_name;
     element.bucket = bucket;
     element.remote_path = remote_path;
-    element.referring_local_path = local_path.empty() ? referring_local_path : local_path;
+    element.local_path = local_path_.empty() ? local_path : local_path_;
 
     if (data_size > std::numeric_limits<decltype(element.data_size)>::max())
         element.data_size = std::numeric_limits<decltype(element.data_size)>::max();
     else
-        element.data_size = data_size;
+        element.data_size = static_cast<decltype(element.data_size)>(data_size);
 
     if (error)
     {
@@ -127,6 +127,14 @@ void BlobStorageLogWriter::addEvent(
     element.event_time = time_now;
 
     log->add(element);
+}
+
+bool BlobStorageLogWriter::operator==(const BlobStorageLogWriter & other) const
+{
+    return log.get() == other.log.get()
+        && disk_name == other.disk_name
+        && query_id == other.query_id
+        && local_path == other.local_path;
 }
 
 }

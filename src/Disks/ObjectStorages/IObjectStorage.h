@@ -191,10 +191,6 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
-    virtual ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & /* path */) const { return settings; }
-
-    virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
-
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;

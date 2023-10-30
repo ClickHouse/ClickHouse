@@ -519,7 +519,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     return object_storage->readObjects(
         storage_objects,
-        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
+        updateResourceLink(settings, getReadResourceName()),
         read_hint,
         file_size);
 }
@@ -532,12 +532,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
+    WriteSettings write_settings = updateResourceLink(settings, getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(
-        path,
-        buf_size,
-        mode,
-        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getWriteResourceName()), path));
+    return transaction->writeFile(path, buf_size, mode, write_settings);
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const

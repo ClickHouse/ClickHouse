@@ -1,6 +1,7 @@
 import logging
 import time
 import os
+import uuid
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -9,7 +10,6 @@ from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
 from helpers.wait_for_helpers import wait_for_merges
-
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -24,6 +24,7 @@ def cluster():
                 "configs/config.xml",
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
+                "configs/config.d/blob_log.xml",
             ],
             user_configs=[
                 "configs/config.d/users.xml",
@@ -37,6 +38,7 @@ def cluster():
             main_configs=[
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
+                "configs/config.d/blob_log.xml",
             ],
             with_minio=True,
             tmpfs=[
@@ -173,9 +175,34 @@ def test_simple_insert_select(
     minio = cluster.minio_client
 
     values1 = generate_values("2020-01-03", 4096)
-    node.query("INSERT INTO s3_test VALUES {}".format(values1))
+    insert_query_id = uuid.uuid4().hex
+
+    node.query(
+        "INSERT INTO s3_test VALUES {}".format(values1), query_id=insert_query_id
+    )
     assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values") == values1
     assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD + files_per_part
+
+    node.query("SYSTEM FLUSH LOGS")
+    blob_storage_log = node.query(
+        f"SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+    )
+
+    result = node.query(
+        f"""SELECT
+            count()
+            , countIf(event_type == 'Upload')
+            , countIf(bucket == 'root')
+            , countIf(remote_path != '')
+            , countIf(local_path != '')
+            , countIf(data_size > 0)
+        FROM system.blob_storage_log
+        WHERE query_id = '{insert_query_id}' AND error_msg == ''
+        """
+    )
+    r = result.strip().split("\t")
+    assert int(r[0]) >= 1, blob_storage_log
+    assert all(col == r[0] for col in r), blob_storage_log
 
     values2 = generate_values("2020-01-04", 4096)
     node.query("INSERT INTO s3_test VALUES {}".format(values2))

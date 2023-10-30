@@ -179,7 +179,7 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-    BlobStorageLogWriter & getBlobStorageLog();
+    BlobStorageLogWriter getBlobStorageLog();
 
     std::string bucket;
     std::string disk_name;

@@ -18,13 +18,21 @@ struct StoredObject
 
     StoredObject() = default;
 
+    StoredObject(
+        const std::string & remote_path_,
+        const std::string & local_path_)
+        : remote_path(remote_path_)
+        , local_path(local_path_)
+    {}
+
     explicit StoredObject(
         const std::string & remote_path_,
         uint64_t bytes_size_ = 0,
         const std::string & local_path_ = "")
-    : remote_path(remote_path_)
-    , local_path(local_path_)
-    , bytes_size(bytes_size_) {}
+        : remote_path(remote_path_)
+        , local_path(local_path_)
+        , bytes_size(bytes_size_)
+    {}
 };
 
 using StoredObjects = std::vector<StoredObject>;

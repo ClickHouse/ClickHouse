@@ -35,7 +35,7 @@ struct BlobStorageLogElement
     String disk_name;
     String bucket;
     String remote_path;
-    String referring_local_path;
+    String local_path;
 
     UInt32 data_size;
 
@@ -77,6 +77,7 @@ public:
         const String & bucket,
         const String & remote_path,
         const String & local_path,
+        size_t data_size,
         const Aws::S3::S3Error * error,
         BlobStorageLogElement::EvenTime time_now = {});
 
@@ -85,7 +86,9 @@ public:
     /// Optional context information
     String disk_name;
     String query_id;
-    String referring_local_path;
+    String local_path;
+
+    bool operator==(const BlobStorageLogWriter & other) const;
 
 private:
     BlobStorageLogPtr log;

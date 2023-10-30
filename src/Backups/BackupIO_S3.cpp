@@ -308,7 +308,7 @@ void BackupWriterS3::removeFile(const String & file_name)
 
     blob_storage_log.addEvent(
         BlobStorageLogElement::EventType::Delete,
-        s3_uri.bucket, key, {},
+        s3_uri.bucket, key, {}, 0,
         outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
     if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
@@ -373,7 +373,7 @@ void BackupWriterS3::removeFilesBatch(const Strings & file_names)
         auto * error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
         auto time_now = std::chrono::system_clock::now();
         for (const auto & objid : current_chunk)
-            blob_storage_log.addEvent(BlobStorageLogElement::EventType::Delete, s3_uri.bucket, objid.GetKey(), {}, error, time_now);
+            blob_storage_log.addEvent(BlobStorageLogElement::EventType::Delete, s3_uri.bucket, objid.GetKey(), {}, 0, error, time_now);
 
         if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());

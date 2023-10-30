@@ -677,7 +677,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name, path);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
@@ -766,7 +766,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
         blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
     }
 
-    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto object = StoredObject(fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name, path);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
     operations_to_execute.emplace_back(std::move(write_operation));
