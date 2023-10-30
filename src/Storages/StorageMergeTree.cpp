@@ -112,7 +112,8 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
 
-    loadDataParts(has_force_restore_data_flag);
+    ActiveDataPartSet dummy(format_version);
+    loadDataParts(has_force_restore_data_flag, dummy);
 
     if (!attach && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
         throw Exception(ErrorCodes::INCORRECT_DATA,
