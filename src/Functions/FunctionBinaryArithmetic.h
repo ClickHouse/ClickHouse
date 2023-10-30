@@ -812,6 +812,7 @@ class FunctionBinaryArithmetic : public IFunction
         const DataTypePtr & type_time = first_arg_is_date_or_datetime_or_string ? type0 : type1;
         const DataTypePtr & type_interval = first_arg_is_date_or_datetime_or_string ? type1 : type0;
 
+        bool first_or_second_arg_is_string = isString(type0) || isString(type1);
         bool interval_is_number = isNumber(type_interval);
 
         const DataTypeInterval * interval_data_type = nullptr;
@@ -821,6 +822,10 @@ class FunctionBinaryArithmetic : public IFunction
 
             if (!interval_data_type)
                 return {};
+        }
+        else if (first_or_second_arg_is_string)
+        {
+            return {};
         }
 
         if (second_arg_is_date_or_datetime_or_string && is_minus)
