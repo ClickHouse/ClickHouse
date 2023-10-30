@@ -275,7 +275,7 @@ struct ArrayElementStringImpl
 
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
-        size_t total_result_byts = 0;
+        size_t total_result_bytes = 0;
         std::vector<std::pair<UInt64, Int64>> selected_offsets;
         selected_offsets.reserve(size);
         for (size_t i = 0; i < size; ++i)
@@ -302,16 +302,16 @@ struct ArrayElementStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
 
-                total_result_byts += string_size;
+                total_result_bytes += string_size;
                 selected_offsets.emplace_back(string_pos, string_size);
-                result_offsets[i] = total_result_byts;
+                result_offsets[i] = total_result_bytes;
             }
             else
             {
                 /// Insert an empty row.
-                total_result_byts += 1;
+                total_result_bytes += 1;
                 selected_offsets.emplace_back(0, -1);
-                result_offsets[i] = total_result_byts;
+                result_offsets[i] = total_result_bytes;
 
                 if constexpr (used_builder)
                     builder.update();
@@ -321,7 +321,7 @@ struct ArrayElementStringImpl
         }
 
         ColumnArray::Offset current_result_offset = 0;
-        result_data.resize(total_result_byts);
+        result_data.resize(total_result_bytes);
         for (const auto & offset : selected_offsets)
         {
             if (offset.second == -1)
@@ -352,7 +352,7 @@ struct ArrayElementStringImpl
 
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
-        size_t total_result_byts = 0;
+        size_t total_result_bytes = 0;
         std::vector<std::pair<UInt64, Int64>> selected_offsets;
         selected_offsets.reserve(size);
         for (size_t i = 0; i < size; ++i)
@@ -381,17 +381,17 @@ struct ArrayElementStringImpl
                     : string_offsets[current_offset + adjusted_index - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + adjusted_index] - string_pos;
-                total_result_byts += string_size;
+                total_result_bytes += string_size;
                 selected_offsets.emplace_back(string_pos, string_size);
 
-                result_offsets[i] = total_result_byts;
+                result_offsets[i] = total_result_bytes;
             }
             else
             {
                 /// Insert empty string
-                total_result_byts += 1;
+                total_result_bytes += 1;
                 selected_offsets.emplace_back(0, -1);
-                result_offsets[i] = total_result_byts;
+                result_offsets[i] = total_result_bytes;
 
                 if constexpr (used_builder)
                     builder.update();
@@ -401,7 +401,7 @@ struct ArrayElementStringImpl
         }
 
         ColumnArray::Offset current_result_offset = 0;
-        result_data.resize(total_result_byts);
+        result_data.resize(total_result_bytes);
         for (const auto & offset : selected_offsets)
         {
             if (offset.second > 0)
