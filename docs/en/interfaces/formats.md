@@ -2465,7 +2465,16 @@ This function is designed to load a NumPy array from a .npy file into ClickHouse
 | S        |    String       |
 | U        |    String       |
 
-**Example**
+**Example of saving an array in .npy format using Python**
+
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+**Example of reading a NumPy file in ClickHouse**
 
 Query:
 ```sql
