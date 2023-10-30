@@ -391,6 +391,9 @@ namespace
     private:
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const std::vector<StorageHDFS::PathWithInfo> & paths_with_info_)
         {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_hdfs)
+                return std::nullopt;
+
             auto & schema_cache = StorageHDFS::getSchemaCache(getContext());
             for (const auto & path_with_info : paths_with_info_)
             {
