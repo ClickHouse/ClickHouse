@@ -1,7 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunctionCombinator.h>
-
+#include "IAggregateFunctionCombinator.h"
 
 #include <string>
 #include <unordered_map>

@@ -1,5 +1,5 @@
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include <AggregateFunctions/AggregateFunctionSimpleState.h>
+#include "AggregateFunctionCombinatorFactory.h"
+#include "AggregateFunctionSimpleState.h"
 
 namespace DB
 {
