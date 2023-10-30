@@ -992,8 +992,11 @@ activerecord
 addDate
 addDays
 addHours
+addMicroseconds
+addMilliseconds
 addMinutes
 addMonths
+addNanoseconds
 addQuarters
 addSeconds
 addWeeks
@@ -1476,6 +1479,8 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
+formatQuery
+formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
@@ -1516,7 +1521,6 @@ geohashesInBox
 geoip
 geospatial
 getMacro
-getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1682,6 +1686,7 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
+jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
@@ -2315,8 +2320,11 @@ substrings
 subtitiles
 subtractDays
 subtractHours
+subtractMicroseconds
+subtractMilliseconds
 subtractMinutes
 subtractMonths
+subtractNanoseconds
 subtractQuarters
 subtractSeconds
 subtractWeeks

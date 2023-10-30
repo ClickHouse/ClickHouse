@@ -21,7 +21,8 @@ CREATE DICTIONARY hashed_array_dictionary_simple_key_simple_attributes
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_simple_attributes_source_table'))
 LAYOUT(HASHED_ARRAY())
-LIFETIME(MIN 1 MAX 1000);
+LIFETIME(MIN 1 MAX 1000)
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 
 SELECT 'Dictionary hashed_array_dictionary_simple_key_simple_attributes';
 SELECT 'dictGet existing value';

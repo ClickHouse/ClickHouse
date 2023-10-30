@@ -34,3 +34,27 @@ SELECT accurateCast(0xFFFFFFFF + 1, 'Date');   -- { serverError CANNOT_CONVERT_T
 SELECT accurateCast('1xxx', 'Date');   -- { serverError CANNOT_PARSE_DATE }
 SELECT accurateCast('2023-05-30', 'Date');
 SELECT accurateCast(19, 'Date');
+
+select accurateCast('test', 'Nullable(Bool)');
+select accurateCast('test', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
+select accurateCast('truex', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
+select accurateCast('xfalse', 'Bool');   -- { serverError CANNOT_PARSE_BOOL }
+select accurateCast('true', 'Bool');
+select accurateCast('false', 'Bool');
+select accurateCast('1', 'Bool');
+select accurateCast('0', 'Bool');
+select accurateCast(1, 'Bool');
+select accurateCast(0, 'Bool');
+
+select accurateCast('test', 'Nullable(IPv4)');
+select accurateCast('test', 'IPv4');   -- { serverError CANNOT_PARSE_IPV4 }
+select accurateCast('2001:db8::1', 'IPv4');   -- { serverError CANNOT_PARSE_IPV4 }
+select accurateCast('::ffff:192.0.2.1', 'IPv4');   -- { serverError CANNOT_PARSE_IPV4 }
+select accurateCast('192.0.2.1', 'IPv4');
+select accurateCast('192.0.2.1x', 'IPv4');   -- { serverError CANNOT_PARSE_IPV4 }
+
+select accurateCast('test', 'Nullable(IPv6)');
+select accurateCast('test', 'IPv6');   -- { serverError CANNOT_PARSE_IPV6 }
+select accurateCast('192.0.2.1', 'IPv6');
+select accurateCast('2001:db8::1', 'IPv6');
+select accurateCast('2001:db8::1x', 'IPv6');   -- { serverError CANNOT_PARSE_IPV6 }
