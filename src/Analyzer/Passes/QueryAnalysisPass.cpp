@@ -970,6 +970,10 @@ private:
         if (!node->hasAlias())
             return;
 
+        // We should not resolve expressions to WindowNode
+        if (node->getNodeType() == QueryTreeNodeType::WINDOW)
+            return;
+
         const auto & alias = node->getAlias();
 
         if (is_lambda_node)
