@@ -74,8 +74,10 @@ public:
 
 private:
     void run();
-    void chooseActivePartAndCheck();
+    std::optional<time_t> enqueueBackgroundCheckIfNeeded();
     MergeTreeDataPartPtr choosePartForBackgroundCheck();
+    void doBackgroundPartCheck(const String & part_name);
+    void enqueuePart(const String & name, time_t delay_to_check_seconds, bool background_check);
 
     ReplicatedCheckResult checkPartImpl(const String & part_name);
     ReplicatedCheckResult checkActivePart(MergeTreeDataPartPtr part);
@@ -94,8 +96,15 @@ private:
     Poco::Logger * log;
 
     using StringSet = std::set<String>;
-    using PartToCheck = std::pair<String, time_t>;    /// The name of the part and the minimum time to check (or zero, if not important).
+    struct PartToCheck
+    {
+        String name;
+        time_t time;
+        bool background = false;
+    };
     using PartsToCheckQueue = std::list<PartToCheck>;
+
+    void enqueuePart(PartToCheck part_to_check);
 
     /** Parts for which you want to check one of two:
       *  - If we have the part, check, its data with its checksums, and them with ZooKeeper.
@@ -109,8 +118,14 @@ private:
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
     BackgroundSchedulePool::TaskHolder task;
+
+    // background part check
+    std::mt19937_64 gen;
     MergeTreePartInfo last_randomly_checked_part;
     std::chrono::time_point<std::chrono::steady_clock> last_check_finish_time;
+    std::chrono::duration<float> last_check_duration;
+    double background_part_check_time_to_total_time_ratio = 0.01;
+    time_t background_part_check_delay = 10;
 };
 
 }
