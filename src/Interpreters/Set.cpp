@@ -324,11 +324,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (!transform_null_in && data_types[i]->canBeInsideNullable())
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
         else
         {
-            result = castColumnAccurate(column_to_cast, data_types[i]);
+            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
         materialized_columns.emplace_back() = result;

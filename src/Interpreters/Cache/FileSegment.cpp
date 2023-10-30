@@ -44,6 +44,7 @@ FileSegment::FileSegment(
         size_t size_,
         State download_state_,
         const CreateFileSegmentSettings & settings,
+        bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
         Priority::Iterator queue_iterator_)
@@ -51,6 +52,7 @@ FileSegment::FileSegment(
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
+    , background_download_enabled(background_download_enabled_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
     , queue_iterator(queue_iterator_)
@@ -506,7 +508,8 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
     if (is_unbound && is_file_segment_size_exceeded)
-        segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
+        /// Note: segment_range.right is inclusive.
+        segment_range.right = range().left + expected_downloaded_size + size_to_reserve - 1;
 
     /// if reserve_stat is not passed then use dummy stat and discard the result.
     FileCacheReserveStat dummy_stat;
@@ -537,6 +540,12 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPathInLocalCache()) == downloaded_size);
+}
+
+void FileSegment::setDownloadFailed()
+{
+    auto lock = lockFileSegment();
+    setDownloadFailedUnlocked(lock);
 }
 
 void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
@@ -652,7 +661,7 @@ void FileSegment::complete()
 
             if (is_last_holder)
             {
-                if (remote_file_reader)
+                if (background_download_enabled && remote_file_reader)
                 {
                     LOG_TEST(
                         log, "Submitting file segment for background download "
