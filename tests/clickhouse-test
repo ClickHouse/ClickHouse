@@ -1177,7 +1177,7 @@ class TestCase:
         if BuildFlags.SANITIZE_COVERAGE in args.build_flags:
             clickhouse_execute(
                 args,
-                f"INSERT INTO system.coverage SELECT '{self.case}', coverage()",
+                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
                 retry_error_codes=True,
             )
 
@@ -2369,6 +2369,7 @@ def main(args):
             """
                 CREATE TABLE IF NOT EXISTS system.coverage
                 (
+                    time DateTime,
                     test_name String,
                     coverage Array(UInt64)
                 ) ENGINE = MergeTree ORDER BY test_name;
@@ -2378,7 +2379,7 @@ def main(args):
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage SELECT '', coverage()",
+            "INSERT INTO system.coverage SELECT now(), '', coverage()",
         )
 
     total_tests_run = 0
