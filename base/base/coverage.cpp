@@ -148,7 +148,7 @@ void resetCoverage()
 
 #else
 
-std::span<uintptr_t> getCoverage()
+std::span<const uintptr_t> getCoverage()
 {
     return {};
 }
