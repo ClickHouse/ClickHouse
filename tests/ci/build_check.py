@@ -234,7 +234,15 @@ def main():
     version = get_version_from_repo(git=Git(True))
     release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
 
-    s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
+    # FIXME: # ./artifact-digester.sh is to be sourced before calling this script
+    import os
+
+    build_digest = os.getenv("BUILD_DIGEST")
+    s3_path_prefix = "/".join(("PRs/storage", build_digest, build_name))
+    # s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
+
+    logging.info(f"s3_path_prefix: {s3_path_prefix}, build_digest: {build_digest}")
+
     # FIXME performance
     s3_performance_path = "/".join(
         (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
