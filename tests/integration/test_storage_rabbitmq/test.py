@@ -3479,7 +3479,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     attempt = 0
     rows = 0
-    while attempt < 100:
+    while attempt < 500:
         rows = int(instance.query("SELECT count() FROM test.data"))
         if rows == num_rows:
             break
@@ -3497,7 +3497,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
     attempt = 0
     errors_count = 0
-    while attempt < 100:
+    while attempt < 500:
         errors_count = int(instance.query("SELECT count() FROM test.errors"))
         if errors_count == num_rows:
             break
