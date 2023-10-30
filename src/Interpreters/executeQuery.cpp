@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -1131,7 +1132,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             }
         }
-        // Here we check if our our projections contain force_optimize_projection_name 
+        // Here we check if our our projections contain force_optimize_projection_name
         if (!settings.force_optimize_projection_name.value.empty())
         {
             bool found = false;
@@ -1153,7 +1154,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} used in settings, "
                                 "should be used in query at least once", settings.force_optimize_projection_name.value);
         }
-    
+
         if (process_list_entry)
         {
             /// Query was killed before execution
