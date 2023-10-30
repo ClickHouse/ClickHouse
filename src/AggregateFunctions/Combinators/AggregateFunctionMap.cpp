@@ -1,6 +1,7 @@
 #include "AggregateFunctionMap.h"
-#include "AggregateFunctions/AggregateFunctionCombinatorFactory.h"
-#include "Functions/FunctionHelpers.h"
+#include "AggregateFunctionCombinatorFactory.h"
+
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {

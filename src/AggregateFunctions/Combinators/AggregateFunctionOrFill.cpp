@@ -1,7 +1,5 @@
-#include <AggregateFunctions/AggregateFunctionOrFill.h>
-
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-
+#include "AggregateFunctionOrFill.h"
+#include "AggregateFunctionCombinatorFactory.h"
 
 namespace DB
 {
