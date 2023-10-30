@@ -97,6 +97,9 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         /// next() should not be called anymore.
         initialized = true;
 
+        if (compression_method != CompressionMethod::None)
+            response.set("Content-Encoding", toContentEncodingName(compression_method));
+
         startSendHeaders();
         finishSendHeaders();
     }
@@ -137,6 +140,15 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         startSendHeaders();
         writeHeaderProgress();
     }
+}
+
+void WriteBufferFromHTTPServerResponse::setExceptionCode(int exception_code_)
+{
+    std::lock_guard lock(mutex);
+    if (headers_started_sending)
+        exception_code = exception_code_;
+    else
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 }
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()

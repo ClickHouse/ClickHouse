@@ -65,6 +65,8 @@ void Bzip2WriteBuffer::nextImpl()
 
         }
         while (bz->stream.avail_in > 0);
+
+        total_in += offset();
     }
     catch (...)
     {
@@ -79,7 +81,7 @@ void Bzip2WriteBuffer::finalizeBefore()
     next();
 
     /// Don't write out if no data was ever compressed
-    if (!compress_empty && bz->stream.total_out_hi32 == 0 && bz->stream.total_out_lo32 == 0)
+    if (!compress_empty && total_in == 0)
         return;
 
     out->nextIfAtEnd();

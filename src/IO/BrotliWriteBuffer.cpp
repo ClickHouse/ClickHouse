@@ -39,18 +39,20 @@ void BrotliWriteBuffer::nextImpl()
     {
         do
         {
+            auto in_data_ptr = in_data;
             out->nextIfAtEnd();
             out_data = reinterpret_cast<unsigned char *>(out->position());
             out_capacity = out->buffer().end() - out->position();
 
             int result = BrotliEncoderCompressStream(
                     brotli->state,
-                    in_available ? BROTLI_OPERATION_PROCESS : BROTLI_OPERATION_FINISH,
+                    BROTLI_OPERATION_PROCESS,
                     &in_available,
                     &in_data,
                     &out_capacity,
                     &out_data,
-                    &total_out);
+                    nullptr);
+            total_in += in_data - in_data_ptr;
 
             out->position() = out->buffer().end() - out_capacity;
 
@@ -74,7 +76,7 @@ void BrotliWriteBuffer::finalizeBefore()
     next();
 
     /// Don't write out if no data was ever compressed
-    if (!compress_empty && total_out == 0)
+    if (!compress_empty && total_in == 0)
         return;
 
     while (true)
@@ -90,7 +92,7 @@ void BrotliWriteBuffer::finalizeBefore()
                 &in_data,
                 &out_capacity,
                 &out_data,
-                &total_out);
+                nullptr);
 
         out->position() = out->buffer().end() - out_capacity;
 

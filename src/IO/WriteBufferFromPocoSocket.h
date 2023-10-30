@@ -34,12 +34,12 @@ public:
 protected:
     void nextImpl() override;
 
-    ssize_t socketSendBytes(const char * ptr, size_t size);
-    ssize_t socketSendStr(const std::string & str)
+    void socketSendBytes(const char * ptr, size_t size);
+    void socketSendStr(const std::string & str)
     {
         return socketSendBytes(str.data(), str.size());
     }
-    ssize_t socketSendStr(const char * ptr)
+    void socketSendStr(const char * ptr)
     {
         return socketSendBytes(ptr, strlen(ptr));
     }
@@ -58,6 +58,8 @@ protected:
 private:
     AsyncCallback async_callback;
     std::string socket_description;
+
+    ssize_t socketSendBytesImpl(const char * ptr, size_t size);
 };
 
 }

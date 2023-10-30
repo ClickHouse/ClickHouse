@@ -626,6 +626,8 @@ void HTTPHandler::processQuery(
     Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
 
     used_output.out_holder = std::make_shared<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_metric);
+    used_output.out = used_output.out_holder;
+    used_output.out_maybe_compressed = used_output.out_holder;
 
     if (client_supports_http_compression && enable_http_compression)
     {
@@ -638,8 +640,6 @@ void HTTPHandler::processQuery(
                 DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
         used_output.out = used_output.wrap_compressed_holder;
     }
-    else
-        used_output.out = used_output.out_holder;
 
     if (internal_compression)
     {
@@ -916,9 +916,7 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    /// In case data has already been sent, like progress headers, try using the output buffer to
-    /// set the exception code since it will be able to append it if it hasn't finished writing headers
-    if (response.sent() && used_output.out_holder)
+    if (used_output.out_holder)
         used_output.out_holder->setExceptionCode(exception_code);
     else
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
@@ -944,7 +942,7 @@ try
         response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
     }
 
-    if (!response.sent() && !used_output.out_maybe_compressed && !used_output.exception_is_written)
+    if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
         WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT).writeln(s);

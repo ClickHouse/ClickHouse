@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ssize_t WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)
+ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t size)
 {
     ssize_t res = 0;
 
@@ -75,6 +75,57 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size
     return res;
 }
 
+void WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)
+{
+    if (!size)
+        return;
+
+    Stopwatch watch;
+    size_t bytes_written = 0;
+
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
+    });
+
+    while (bytes_written < size)
+    {
+        ssize_t res = 0;
+
+        /// Add more details to exceptions.
+        try
+        {
+            CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkSend);
+            if (size > INT_MAX)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
+
+            res = socketSendBytesImpl(ptr + bytes_written, size - bytes_written);
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
+                               our_address.toString(), peer_address.toString());
+        }
+        catch (const Poco::TimeoutException &)
+        {
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
+                peer_address.toString(),
+                socket.impl()->getSendTimeout().totalMilliseconds());
+        }
+        catch (const Poco::IOException & e)
+        {
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
+                               our_address.toString(), peer_address.toString());
+        }
+
+        if (res < 0)
+            throw NetException(ErrorCodes::CANNOT_WRITE_TO_SOCKET, "Cannot write to socket ({} -> {})",
+                               our_address.toString(), peer_address.toString());
+
+        bytes_written += res;
+    }
+}
+
 void WriteBufferFromPocoSocket::nextImpl()
 {
     if (!offset())
@@ -101,7 +152,7 @@ void WriteBufferFromPocoSocket::nextImpl()
             if (size > INT_MAX)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
-            res = socketSendBytes(pos, size);
+            res = socketSendBytesImpl(pos, size);
         }
         catch (const Poco::Net::NetException & e)
         {

@@ -46,6 +46,7 @@ private:
 
     std::unique_ptr<Bzip2StateWrapper> bz;
     bool compress_empty = true;
+    UInt64 total_in = 0;
 };
 
 }

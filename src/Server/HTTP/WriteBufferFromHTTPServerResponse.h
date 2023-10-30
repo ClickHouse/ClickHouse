@@ -60,7 +60,7 @@ public:
         compression_method = compression_method_;
     }
 
-    void setExceptionCode(int exception_code_) { exception_code = exception_code_; }
+    void setExceptionCode(int exception_code_);
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.

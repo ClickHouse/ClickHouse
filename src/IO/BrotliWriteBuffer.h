@@ -63,7 +63,7 @@ private:
     uint8_t * out_data;
 
 protected:
-    size_t total_out = 0;
+    UInt64 total_in = 0;
     bool compress_empty = true;
 };
 
