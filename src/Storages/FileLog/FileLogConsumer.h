@@ -56,8 +56,6 @@ private:
     size_t stream_number;
     size_t max_streams_number;
 
-    bool allowed = true;
-
     using RecordData = std::string;
     struct Record
     {
