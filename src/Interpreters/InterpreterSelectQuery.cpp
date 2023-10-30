@@ -39,6 +39,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -422,6 +423,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         RewriteCountDistinctFunctionMatcher::Data data_rewrite_countdistinct;
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
+    }
+
+    if (settings.optimize_uniq_to_count)
+    {
+        RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
+        RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
     }
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
