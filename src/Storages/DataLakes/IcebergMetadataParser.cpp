@@ -214,6 +214,7 @@ struct IcebergMetadataParser<Configuration, MetadataReadHelper>::Impl
         {
             auto buffer = MetadataReadHelper::createReadBuffer(manifest_file, context, configuration);
             auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
+
             avro::NodePtr root_node = file_reader->dataSchema().root();
             size_t leaves_num = root_node->leaves();
             size_t expected_min_num = metadata.format_version == 1 ? 3 : 2;
