@@ -339,9 +339,9 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
 {
     size_t size;
     if (npy_type.getTypeIndex() == NumpyDataTypeIndex::String)
-        size = npy_type.getSize();
+        size = assert_cast<const NumpyDataTypeString &>(npy_type).getSize();
     else if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
-        size = npy_type.getSize();
+        size = assert_cast<const NumpyDataTypeUnicode &>(npy_type).getSize();
     else
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert data type into column with type {}",
                         data_type->getName());

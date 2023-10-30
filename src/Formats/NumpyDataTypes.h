@@ -39,7 +39,6 @@ public:
 
     Endianness getEndianness() const { return endianness; }
 
-    virtual size_t getSize() const = 0;
     virtual NumpyDataTypeIndex getTypeIndex() const = 0;
 
 private:
@@ -66,7 +65,6 @@ public:
     {
         return type_index;
     }
-    size_t getSize() const override { return size; }
     bool isSigned() const { return is_signed; }
 
 private:
@@ -92,8 +90,6 @@ public:
     {
         return type_index;
     }
-    size_t getSize() const override { return size; }
-
 private:
     size_t size;
 };
@@ -107,7 +103,7 @@ public:
     }
 
     NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    size_t getSize() const override { return size; }
+    size_t getSize() const { return size; }
 private:
     size_t size;
 };
@@ -121,7 +117,7 @@ public:
     }
 
     NumpyDataTypeIndex getTypeIndex() const override { return type_index; }
-    size_t getSize() const override { return size * 4; }
+    size_t getSize() const { return size * 4; }
 private:
     size_t size;
 };
