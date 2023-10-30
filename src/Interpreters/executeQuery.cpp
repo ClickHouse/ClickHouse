@@ -1131,7 +1131,29 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             }
         }
+        // Here we check if our our projections contain force_optimize_projection_name 
+        if (!settings.force_optimize_projection_name.value.empty())
+        {
+            bool found = false;
+            std::set<std::string> projections = context->getQueryAccessInfo().projections;
+            if (projections.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "No projections found but setting force_optimize_projection_name is enabled");
 
+            for (const auto &projection : projections)
+            {
+                // projection value has structure like: <db_name>.<table_name>.<projection_name>
+                // We need to get only the projection name
+                size_t last_dot_pos = projection.find_last_of('.');
+                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
+                if (settings.force_optimize_projection_name.value == projection_name)
+                    found = true;
+            }
+
+            if (!found)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} used in settings, "
+                                "should be used in query at least once", settings.force_optimize_projection_name.value);
+        }
+    
         if (process_list_entry)
         {
             /// Query was killed before execution

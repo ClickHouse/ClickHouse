@@ -1,0 +1,17 @@
+CREATE TABLE test
+(
+   `id` UInt64,
+   `name` String,
+   PROJECTION projection_name
+   (
+       SELECT sum(id) GROUP BY id, name
+   )
+)
+ENGINE = MergeTree()
+ORDER BY id;
+
+INSERT INTO test SELECT number, 'test' FROM numbers(1, 100);
+
+SELECT name FROM test WHERE id > 50 AND id < 150 GROUP BY name SETTINGS force_optimize_projection_name='projection_name';
+
+SELECT name FROM test WHERE id > 50 AND id < 150 GROUP BY name SETTINGS force_optimize_projection_name='non_existing_projection'; -- { serverError 117 }
