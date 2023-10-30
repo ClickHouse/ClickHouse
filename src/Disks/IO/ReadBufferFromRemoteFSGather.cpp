@@ -25,9 +25,7 @@ bool withFileCache(const ReadSettings & settings)
 }
 bool withPageCache(const ReadSettings & settings, bool with_file_cache)
 {
-    return settings.page_cache && (with_file_cache
-        ? settings.use_page_cache_for_disks_with_file_cache
-        : settings.use_page_cache_for_disks_without_file_cache);
+    return settings.page_cache && !with_file_cache && settings.use_page_cache_for_disks_without_file_cache;
 }
 }
 
@@ -104,13 +102,14 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     }
 #endif
 
-    if (with_page_cache)
+    /// Can't wrap CachedOnDiskReadBufferFromFile in CachedInMemoryReadBufferFromFile because the
+    /// former doesn't support seeks.
+    if (with_page_cache && !buf)
     {
-        if (!buf)
-            buf = read_buffer_creator(/* restricted_seek */false, object_path);
+        auto inner = read_buffer_creator(/* restricted_seek */false, object_path);
         auto cache_key = FileChunkAddress { .path = cache_path_prefix + object_path };
         buf = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_key, settings.page_cache, std::move(buf), settings);
+            cache_key, settings.page_cache, std::move(inner), settings);
     }
 
     if (!buf)

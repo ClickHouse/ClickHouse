@@ -2687,7 +2687,7 @@ void Context::clearUncompressedCache() const
 
 void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
 {
-    auto lock = getGlobalLock();
+    std::lock_guard lock(shared->mutex);
 
     if (shared->page_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
@@ -2697,7 +2697,7 @@ void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t
 
 PageCachePtr Context::getPageCache() const
 {
-    auto lock = getGlobalSharedLock();
+    SharedLockGuard lock(shared->mutex);
     return shared->page_cache;
 }
 
@@ -2705,7 +2705,7 @@ void Context::dropPageCache() const
 {
     PageCachePtr cache;
     {
-        auto lock = getGlobalSharedLock();
+        SharedLockGuard lock(shared->mutex);
         cache = shared->page_cache;
     }
     if (cache)
@@ -5129,7 +5129,6 @@ ReadSettings Context::getReadSettings() const
 
     res.page_cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings.use_page_cache_for_disks_without_file_cache;
-    res.use_page_cache_for_disks_with_file_cache = settings.use_page_cache_for_disks_with_file_cache;
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings.read_from_page_cache_if_exists_otherwise_bypass_cache;
     res.page_cache_inject_eviction = settings.page_cache_inject_eviction;
 

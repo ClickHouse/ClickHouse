@@ -152,7 +152,7 @@ TEST(PageCache, Stress)
         if (threads_finished == num_threads)
             break;
         if (poll % 100 == 0)
-            std::cout << fmt::format("{:.3f}%", progress.load() * 100. / (num_keys * passes * num_threads / step)) << std::endl;
+            std::cout << fmt::format("{:.3f}%", progress.load() * 100. / num_keys / passes / num_threads * step) << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     for (std::thread & t : threads)

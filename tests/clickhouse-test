@@ -700,7 +700,6 @@ class SettingsRandomizer:
             ]
         ),
         "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
-        "use_page_cache_for_disks_with_file_cache": lambda: random.random() < 0.3,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
     }
 

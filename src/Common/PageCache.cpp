@@ -415,7 +415,7 @@ static void logUnexpectedSyscallError(std::string name)
     chassert(false);
 }
 
-void PageCache::sendChunkToLimbo(PageChunk * chunk, std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
+void PageCache::sendChunkToLimbo(PageChunk * chunk [[maybe_unused]], std::unique_lock<std::mutex> & /* chunk_mutex */) const noexcept
 {
 #ifdef MADV_FREE // if we're not on a very old version of Linux
     chassert(chunk->size == bytes_per_page * pages_per_chunk);
