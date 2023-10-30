@@ -3944,6 +3944,16 @@ Possible values:
 
 Default value: `0`.
 
+## force_optimize_projection_name {#force-optimize-projection_name}
+
+If it is set to a non-empty string, check that this projection is used in the query at least once.
+
+Possible values:
+
+- string: name of projection that used in a query
+
+Default value: `''`.
+
 ## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
