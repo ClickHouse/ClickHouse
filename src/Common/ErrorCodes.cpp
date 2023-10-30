@@ -609,7 +609,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1002;
+    constexpr ErrorCode END = 1103;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
