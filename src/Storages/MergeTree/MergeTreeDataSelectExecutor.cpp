@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int PROJECTION_NOT_USED;
 }
 
 
@@ -178,11 +177,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read,
             query_info.merge_tree_select_result_ptr,
             enable_parallel_reading);
-
-        if (!step && settings.optimize_use_projections && settings.force_optimize_projection
-            && !metadata_for_reading->projections.empty() && !settings.query_plan_optimize_projection)
-            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
-                            "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
 
         auto plan = std::make_unique<QueryPlan>();
         if (step)
@@ -480,7 +474,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
-        query_info.storage_limits);
+        query_info,
+        context);
     plan->addStep(std::move(step));
     plan->addInterpreterContext(query_info.projection->context);
     return plan;
@@ -629,7 +624,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
         RelativeSize size_of_universum = 0;
         const auto & sampling_key = metadata_snapshot->getSamplingKey();
-        DataTypePtr sampling_column_type = sampling_key.data_types[0];
+        DataTypePtr sampling_column_type = sampling_key.data_types.at(0);
 
         if (sampling_key.data_types.size() == 1)
         {
@@ -1681,7 +1676,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                granule = reader.read();
+                reader.read(granule);
 
             auto ann_condition = std::dynamic_pointer_cast<IMergeTreeIndexConditionApproximateNearestNeighbor>(condition);
             if (ann_condition != nullptr)
@@ -1799,7 +1794,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    granules[i] = readers[i]->read();
+                    readers[i]->read(granules[i]);
                     granules_filled = true;
                 }
             }
