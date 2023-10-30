@@ -25,7 +25,32 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(storage_limits);
 
+    if (source_merge)
+    {
+        pipeline.init(std::move(pipe));
+        mergingSorted(pipeline, sort_description, 0);
+    }
+
     pipeline.init(std::move(pipe));
+}
+
+void ExchangeDataStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_)
+{
+    /// If there are several streams, then we merge them into one
+    if (pipeline.getNumStreams() > 1)
+    {
+        auto transform = std::make_shared<MergingSortedTransform>(
+            pipeline.getHeader(),
+            pipeline.getNumStreams(),
+            result_sort_desc,
+            max_block_size,
+            /*max_block_size_bytes=*/0,
+            SortingQueueStrategy::Batch,
+            limit_,
+            true);
+
+        pipeline.addTransform(std::move(transform));
+    }
 }
 
 }

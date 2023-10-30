@@ -29,8 +29,8 @@ PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & step)
     auto * transforming_step = dynamic_cast<ITransformingStep *>(group_node->getStep().get());
     if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
     {
-        if (transforming_step->getOutputStream().sort_scope == DataStream::SortScope::Global)
-            res.sort_description = transforming_step->getOutputStream().sort_description;
+        res.sort_prop.sort_description = step.getOutputStream().sort_description;
+        res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
     }
     return res;
 }
@@ -44,8 +44,15 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
 
 PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 {
+    PhysicalProperties res;
+    res.sort_prop.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+
     if (!context->getSettings().optimize_query_coordination_sharding_key)
-        return PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+    {
+        res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        return res;
+    }
 
     const auto & meta_info = context->getQueryCoordinationMetaInfo();
     const auto & storage_id = step.getStorageID();
@@ -60,7 +67,10 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
     const String & sharding_key = meta_info.sharding_keys[table_idx];
 
     if (sharding_key.empty())
-        return PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+    {
+        res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        return res;
+    }
 
     const char * begin = sharding_key.data();
     const char * end = begin + sharding_key.size();
@@ -70,17 +80,22 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
     ExpressionActionsPtr sharding_key_expr = buildShardingKeyExpression(expression, context, step.getStorageMetadata()->columns.getAllPhysical(), false);
 
     if (sharding_key_expr->getRequiredColumns().empty())
-        return PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+    {
+        res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+        return res;
+    }
 
     /// Suppose the columns is combined hash
     const auto & output_names = step.getOutputStream().header.getNames();
     for (const auto & key : sharding_key_expr->getRequiredColumns())
     {
         if (std::count(output_names.begin(), output_names.end(), key) != 1)
-            return PhysicalProperties{.distribution = {.type = PhysicalProperties::DistributionType::Any}};
+        {
+            res.distribution = {.type = PhysicalProperties::DistributionType::Any};
+            return res;
+        }
     }
 
-    PhysicalProperties res;
     res.distribution.type = PhysicalProperties::DistributionType::Hashed;
     res.distribution.keys = sharding_key_expr->getRequiredColumns();
     return res;
@@ -88,7 +103,11 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
 
 PhysicalProperties DeriveOutputProp::visit(SortingStep & step)
 {
-    return {.distribution = children_prop[0].distribution, .sort_description = step.getSortDescription()};
+    PhysicalProperties res;
+    res.distribution = children_prop[0].distribution;
+    res.sort_prop.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+    return res;
 }
 
 PhysicalProperties DeriveOutputProp::visit(ExchangeDataStep & step)
@@ -122,8 +141,8 @@ PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
         }
     }
 
-    if (step.getOutputStream().sort_scope == DataStream::SortScope::Global)
-        res.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
 
 //    CalculateSortProp sort_prop_calculator(step.getExpression(), children_prop[0].sort_prop);
 //    res.sort_prop = sort_prop_calculator.calcSortProp();

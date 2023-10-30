@@ -104,16 +104,52 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(TopNStep & step)
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(SortingStep & step)
 {
-    std::vector<PhysicalProperties> required_child_prop;
+    PhysicalProperties required_child_prop;
+    if (step.getType() == SortingStep::Type::FinishSorting)
+    {
+        required_child_prop.sort_prop.sort_scope = DataStream::SortScope::Stream;
+        required_child_prop.sort_prop.sort_description = step.getPrefixDescription();
+    }
+    else if (step.getType() == SortingStep::Type::MergingSorted)
+    {
+        required_child_prop.sort_prop.sort_scope = DataStream::SortScope::Stream;
+        required_child_prop.sort_prop.sort_description = step.getSortDescription();
+    }
     if (step.getPhase() == SortingStep::Phase::Preliminary)
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
     }
     else
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
     }
-    return {required_child_prop};
+    return {{required_child_prop}};
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(DistinctStep & step)
+{
+    PhysicalProperties required_child_prop;
+    if (step.optimizeDistinctInOrder())
+    {
+        const SortDescription distinct_sort_desc = step.getSortDescription();
+        if (!distinct_sort_desc.empty())
+        {
+            required_child_prop.sort_prop.sort_scope = DataStream::SortScope::Stream;
+            required_child_prop.sort_prop.sort_description = distinct_sort_desc;
+        }
+    }
+
+    required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+
+//    if (step.isPreliminary())
+//    {
+//        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
+//    }
+//    else
+//    {
+//        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
+//    }
+    return {{required_child_prop}};
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(LimitStep & step)

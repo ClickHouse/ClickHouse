@@ -2,7 +2,9 @@
 #include <QueryCoordination/PlanNode.h>
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <Common/JSONBuilder.h>
+#include <Core/SortCursor.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Interpreters/Context.h>
@@ -246,8 +248,6 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
     auto builder = buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
-    QueryPipeline pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
     if (hasDestFragment())
     {
         String query_id;
@@ -262,13 +262,32 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
 
         auto * exchange_data_step = typeid_cast<ExchangeDataStep *>(dest_exchange_node->step.get());
 
+        if (exchange_data_step->sinkMerge() && builder->getNumStreams() > 1)
+        {
+            auto transform = std::make_shared<MergingSortedTransform>(
+                builder->getHeader(),
+                builder->getNumStreams(),
+                exchange_data_step->getSortDescription(),
+                context->getSettings().max_block_size,
+                /*max_block_size_bytes=*/0,
+                SortingQueueStrategy::Batch,
+                0,
+                true);
+
+            builder->addTransform(transform);
+        }
+
+        QueryPipeline pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+
         auto sink = std::make_shared<ExchangeDataSink>(
             pipeline.getHeader(), channels, exchange_data_step->getDistribution(), local_host, query_id, getDestFragmentID(), dest_exchange_node->plan_id);
 
         pipeline.complete(sink);
+
+        return pipeline;
     }
 
-    return pipeline;
+    return QueryPipelineBuilder::getPipeline(std::move(*builder));
 }
 
 static void explainStep(

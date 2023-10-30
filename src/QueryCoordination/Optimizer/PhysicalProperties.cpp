@@ -5,10 +5,13 @@ namespace DB
 
 bool PhysicalProperties::operator==(const PhysicalProperties & other) const
 {
-    if (sort_description.size() != other.sort_description.size())
+    if (sort_prop.sort_description.size() != other.sort_prop.sort_description.size())
         return false;
 
-    if (sort_description.size() != commonPrefix(sort_description, other.sort_description).size())
+    if (sort_prop.sort_description.size() != commonPrefix(sort_prop.sort_description, other.sort_prop.sort_description).size())
+        return false;
+
+    if (sort_prop.sort_scope != other.sort_prop.sort_scope)
         return false;
 
     if (other.distribution.keys.size() != distribution.keys.size())
@@ -28,11 +31,30 @@ bool PhysicalProperties::operator==(const PhysicalProperties & other) const
 
 bool PhysicalProperties::satisfy(const PhysicalProperties & required) const
 {
-    bool sort_satisfy = required.sort_description.size() == commonPrefix(sort_description, required.sort_description).size();
+    bool satisfy_sort = satisfySort(required);
+    bool satisfy_distribute = satisfyDistribute(required);
 
-    if (!sort_satisfy)
+    return satisfy_sort && satisfy_distribute;
+}
+
+bool PhysicalProperties::satisfySort(const PhysicalProperties & required) const
+{
+    bool sort_description_satisfy = required.sort_prop.sort_description.size()
+        == commonPrefix(sort_prop.sort_description, required.sort_prop.sort_description).size();
+
+    if (!sort_description_satisfy)
         return false;
 
+    bool sort_scope_satisfy = sort_prop.sort_scope >= required.sort_prop.sort_scope;
+
+    if (!sort_scope_satisfy)
+        return false;
+
+    return true;
+}
+
+bool PhysicalProperties::satisfyDistribute(const PhysicalProperties & required) const
+{
     if (required.distribution.type == DistributionType::Any)
         return true;
 

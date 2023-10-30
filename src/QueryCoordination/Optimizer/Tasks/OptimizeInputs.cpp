@@ -116,7 +116,11 @@ void OptimizeInputs::execute()
                     frame->total_cost.toString());
             }
 
-            if (!output_prop.satisfy(required_prop))
+            /// Currently, it only deals with distributed cases
+            if (!output_prop.satisfySort(required_prop))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Sort property not satisfied");
+
+            if (!output_prop.satisfyDistribute(required_prop))
             {
                 frame->total_cost = enforceGroupNode(required_prop, output_prop);
             }
@@ -136,8 +140,22 @@ Cost OptimizeInputs::enforceGroupNode(
     const PhysicalProperties & required_prop,
     const PhysicalProperties & output_prop)
 {
-    std::shared_ptr<ExchangeDataStep> exchange_step
-        = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream());
+    std::shared_ptr<ExchangeDataStep> exchange_step;
+
+    size_t max_block_size = task_context->getQueryContext()->getSettings().max_block_size;
+        /// Because the ordering of data may be changed after adding Exchange in a distributed manner, we need to retain the order of data during exchange if there is a requirement for data sorting.
+    if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream && output_prop.sort_prop.sort_scope == DataStream::SortScope::Stream)
+    {
+        exchange_step = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size, required_prop.sort_prop.sort_description, true);
+    }
+    else if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Global)
+    {
+        exchange_step = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size, required_prop.sort_prop.sort_description, true, true);
+    }
+    else
+    {
+        exchange_step = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size);
+    }
 
     auto & group = task_context->getCurrentGroup();
 

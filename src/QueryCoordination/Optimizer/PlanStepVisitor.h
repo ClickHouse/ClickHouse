@@ -115,6 +115,10 @@ public:
         {
             return visit(*totals_having_step);
         }
+        else if (auto * distinct_step = typeid_cast<DistinctStep *>(step.get()))
+        {
+            return visit(*distinct_step);
+        }
         else
         {
             return visitDefault(*step);
@@ -160,6 +164,8 @@ public:
     virtual R visit(TotalsHavingStep & step) { return visitDefault(step); }
 
     virtual R visit(TopNStep & step) { return visitDefault(step); }
+
+    virtual R visit(DistinctStep & step) { return visitDefault(step); }
 };
 
 }

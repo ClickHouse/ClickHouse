@@ -112,6 +112,11 @@ public:
         }
     }
 
+    const SortDescription & getPrefixDescription() const
+    {
+        return prefix_description;
+    }
+
 private:
     void updateOutputStream() override;
 

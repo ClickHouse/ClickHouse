@@ -38,6 +38,8 @@ public:
 
     AlternativeChildrenProp visit(TopNStep & step) override;
 
+    AlternativeChildrenProp visit(DistinctStep & step) override;
+
 private:
     GroupNodePtr group_node;
 };

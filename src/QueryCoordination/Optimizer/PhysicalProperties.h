@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Common/SipHash.h>
+#include <QueryCoordination/Optimizer/SortProp.h>
 
 namespace DB
 {
@@ -54,7 +55,7 @@ public:
                 hash.update(key);
             }
 
-            for (const auto & sort : properties.sort_description)
+            for (const auto & sort : properties.sort_prop.sort_description)
             {
                 hash.update(sort.dump());
             }
@@ -64,11 +65,15 @@ public:
 
     bool satisfy(const PhysicalProperties & required) const;
 
+    bool satisfySort(const PhysicalProperties & required) const;
+
+    bool satisfyDistribute(const PhysicalProperties & required) const;
+
     String toString() const;
 
     Distribution distribution;
 
-    SortDescription sort_description;
+    SortProp sort_prop;
 };
 
 }

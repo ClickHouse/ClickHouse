@@ -11,8 +11,19 @@ class ExchangeDataStep final : public ISourceStep
 {
 
 public:
-    ExchangeDataStep(PhysicalProperties::Distribution distribution_, const DataStream & data_stream)
-        : ISourceStep(data_stream), distribution(distribution_)
+    ExchangeDataStep(
+        PhysicalProperties::Distribution distribution_,
+        const DataStream & data_stream,
+        size_t max_block_size_,
+        SortDescription sort_description_ = {},
+        bool exchange_sink_merge = false,
+        bool exchange_source_merge = false)
+        : ISourceStep(data_stream)
+        , distribution(distribution_)
+        , max_block_size(max_block_size_)
+        , sort_description(sort_description_)
+        , sink_merge(exchange_sink_merge)
+        , source_merge(exchange_source_merge)
     {
         setStepDescription(PhysicalProperties::distributionType(distribution.type));
     }
@@ -22,6 +33,8 @@ public:
     StepType stepType() const override { return Exchange; }
 
     void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override;
+
+    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
 
     void setPlanID(UInt32 plan_id_)
     {
@@ -53,6 +66,16 @@ public:
         fragment_id = fragment_id_;
     }
 
+    const SortDescription & getSortDescription() const
+    {
+        return sort_description;
+    }
+
+    bool sinkMerge() const
+    {
+        return sink_merge;
+    }
+
 private:
     UInt32 fragment_id;
 
@@ -63,6 +86,14 @@ private:
     UInt32 plan_id;
 
     PhysicalProperties::Distribution distribution;
+
+    size_t max_block_size;
+
+    SortDescription sort_description;
+
+    bool sink_merge;
+
+    bool source_merge;
 };
 
 }
