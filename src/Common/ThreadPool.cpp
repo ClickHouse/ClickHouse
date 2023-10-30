@@ -1,4 +1,5 @@
 #include <Common/ThreadPool.h>
+#include <Common/CancelToken.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>

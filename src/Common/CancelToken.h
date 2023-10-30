@@ -15,7 +15,7 @@
 namespace DB
 {
 
-// Scoped object, enabling thread cancellation (cannot be nested).
+// Scoped object, enabling thread cancellation.
 // Intended to be used once per cancelable task. It erases any previously held cancellation signal.
 // Note that by default thread is not cancelable.
 struct Cancelable
@@ -51,6 +51,29 @@ public:
         return token;
     }
 
+    // Restores initial state for token to be reused. See `Cancelable` struct.
+    // Intended to be called only by thread associated with this token.
+    void reset()
+    {
+        state.store(0);
+    }
+
+    // Enable thread cancellation. See `NonCancelable` struct.
+    // Intended to be called only by thread associated with this token.
+    void enable()
+    {
+        chassert((state.load() & disabled) == disabled);
+        state.fetch_and(~disabled);
+    }
+
+    // Disable thread cancellation. See `NonCancelable` struct.
+    // Intended to be called only by thread associated with this token.
+    void disable()
+    {
+        chassert((state.load() & disabled) == 0);
+        state.fetch_or(disabled);
+    }
+
     // Cancelable wait on memory address (futex word).
     //   Thread will do atomic compare-and-sleep `*address == value`. Waiting will continue until `notify_one()`
     //   or `notify_all()` will be called with the same `address` or calling thread will be canceled using `signal()`.
@@ -80,37 +103,21 @@ public:
     static void signal(UInt64 tid);
     static void signal(UInt64 tid, int code, const String & message);
 
+    // Checks if current thread has already received cancellation signal.
+    static bool isCanceled();
+
+    // Thread cancellation point.
+    // Throws `DB::Exception` received from `signal()` after last `reset()`, if any.
+    static void throwIfCanceled();
+
     // Flag used to deliver cancellation into memory address to wake a thread.
     // Note that most significant bit at `addresses` to be used with `wait()` is reserved.
     static constexpr UInt32 signaled = 1u << 31u;
 
+    // Token is permanently attached to a single thread. There is one-to-one mapping between threads and tokens.
+    const UInt64 thread_id;
+
 private:
-    friend struct Cancelable;
-    friend struct NonCancelable;
-
-    // Restores initial state for token to be reused. See `Cancelable` struct.
-    // Intended to be called only by thread associated with this token.
-    void reset()
-    {
-        state.store(0);
-    }
-
-    // Enable thread cancellation. See `NonCancelable` struct.
-    // Intended to be called only by thread associated with this token.
-    void enable()
-    {
-        chassert((state.load() & disabled) == disabled);
-        state.fetch_and(~disabled);
-    }
-
-    // Disable thread cancellation. See `NonCancelable` struct.
-    // Intended to be called only by thread associated with this token.
-    void disable()
-    {
-        chassert((state.load() & disabled) == 0);
-        state.fetch_or(disabled);
-    }
-
     // Singleton. Maps thread IDs to tokens.
     struct Registry
     {
@@ -151,9 +158,6 @@ private:
     int exception_code;
     String exception_message;
 
-    // Token is permanently attached to a single thread. There is one-to-one mapping between threads and tokens.
-    const UInt64 thread_id;
-
     // To avoid `Registry` destruction before last `Token` destruction
     const std::shared_ptr<Registry> registry;
 };
@@ -182,7 +186,7 @@ struct NonCancelable
 class CancelToken
 {
 public:
-    CancelToken() = default;
+    CancelToken();
     CancelToken(const CancelToken &) = delete;
     CancelToken(CancelToken &&) = delete;
     CancelToken & operator=(const CancelToken &) = delete;
@@ -198,8 +202,15 @@ public:
     [[noreturn]] void raise();
     static void notifyOne(UInt32 *) {}
     static void notifyAll(UInt32 *) {}
+    void reset() {}
+    void enable() {}
+    void disable() {}
     static void signal(UInt64) {}
     static void signal(UInt64, int, const String &) {}
+    static bool isCanceled() { return false; }
+    static void throwIfCanceled() {}
+
+    const UInt64 thread_id;
 };
 
 }

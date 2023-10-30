@@ -4,7 +4,9 @@
 #include <mutex>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Interpreters/ProcessList.h>
+#include <fmt/core.h>
 
 namespace CurrentMetrics
 {
@@ -31,7 +33,7 @@ OvercommitTracker::OvercommitTracker(DB::ProcessList * process_list_)
     , allow_release(true)
 {}
 
-OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int64 amount)
+OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * exhausted, MemoryTracker * tracker, Int64 amount)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -55,8 +57,11 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     if (max_wait_time == ZERO_MICROSEC)
         return OvercommitResult::DISABLED;
 
-    pickQueryToExclude();
-    assert(cancellation_state != QueryCancellationState::NONE);
+    if (cancellation_state == QueryCancellationState::NONE)
+    {
+        pickQueryToExclude(exhausted);
+        cancellation_state = QueryCancellationState::SELECTED;
+    }
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
@@ -143,72 +148,6 @@ void OvercommitTracker::releaseThreads()
     freed_memory = 0;
     allow_release = false; // To avoid repeating call of this method in OvercommitTracker::needToStopQuery
     cv.notify_all();
-}
-
-UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list_, DB::ProcessListForUser * user_process_list_)
-    : OvercommitTracker(process_list_)
-    , user_process_list(user_process_list_)
-{}
-
-void UserOvercommitTracker::pickQueryToExcludeImpl()
-{
-    MemoryTracker * query_tracker = nullptr;
-    OvercommitRatio current_ratio{0, 0};
-    // At this moment query list must be read only.
-    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
-    auto & queries = user_process_list->queries;
-    for (auto const & query : queries)
-    {
-        if (query.second->isKilled())
-            continue;
-
-        auto * memory_tracker = query.second->getMemoryTracker();
-        if (!memory_tracker)
-            continue;
-
-        auto ratio = memory_tracker->getOvercommitRatio();
-        if (ratio.soft_limit != 0 && current_ratio < ratio)
-        {
-            query_tracker = memory_tracker;
-            current_ratio   = ratio;
-        }
-    }
-    picked_tracker = query_tracker;
-}
-
-GlobalOvercommitTracker::GlobalOvercommitTracker(DB::ProcessList * process_list_)
-    : OvercommitTracker(process_list_)
-{
-}
-
-void GlobalOvercommitTracker::pickQueryToExcludeImpl()
-{
-    MemoryTracker * query_tracker = nullptr;
-    OvercommitRatio current_ratio{0, 0};
-    // At this moment query list must be read only.
-    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
-    for (auto const & query : process_list->processes)
-    {
-        if (query->isKilled())
-            continue;
-
-        Int64 user_soft_limit = 0;
-        if (auto const * user_process_list = query->getUserProcessList())
-            user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
-        if (user_soft_limit == 0)
-            continue;
-
-        auto * memory_tracker = query->getMemoryTracker();
-        if (!memory_tracker)
-            continue;
-        auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
-        if (current_ratio < ratio)
-        {
-            query_tracker = memory_tracker;
-            current_ratio   = ratio;
-        }
-    }
-    picked_tracker = query_tracker;
 }
 
 thread_local size_t OvercommitTrackerBlockerInThread::counter = 0;

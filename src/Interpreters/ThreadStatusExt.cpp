@@ -78,18 +78,28 @@ size_t ThreadGroup::getPeakThreadsUsage() const
 
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
-    std::lock_guard lock(mutex);
-    thread_ids.insert(thread_id);
+    {
+        std::lock_guard lock(mutex);
+        thread_ids.insert(thread_it);
+    }
 
     ++active_thread_count;
     peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
 }
 
-void ThreadGroup::unlinkThread()
+void ThreadGroup::enterGroup()
 {
-    std::lock_guard lock(mutex);
-    chassert(active_thread_count > 0);
-    --active_thread_count;
+    cancel_tokens.enterGroup();
+}
+
+void ThreadGroup::exitGroup()
+{
+    cancel_tokens.exitGroup();
+}
+
+void ThreadGroup::cancelGroup(int code, const String & msg)
+{
+    cancel_tokens.cancelGroup(code, msg);
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -247,6 +257,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     applyGlobalSettings();
     applyQuerySettings();
     initPerformanceCounters();
+
+    // Current thread is now considered as cancelable part of thread group
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->enterGroup(); // Note that it can throw in case thread_group is already cancelled
 }
 
 void ThreadStatus::detachFromGroup()
@@ -268,7 +282,9 @@ void ThreadStatus::detachFromGroup()
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
 
-    thread_group->unlinkThread();
+    // Current thread is not considered as cancelable part of this thread group any longer
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->exitGroup();
 
     thread_group.reset();
 
@@ -493,6 +509,7 @@ void ThreadStatus::finalizeQueryProfiler()
     query_profiler_real.reset();
     query_profiler_cpu.reset();
 }
+
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {

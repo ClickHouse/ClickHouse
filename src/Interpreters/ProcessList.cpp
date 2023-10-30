@@ -8,8 +8,12 @@
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/CancelToken.h>
 #include <Common/logger_useful.h>
 #include <chrono>
 
@@ -28,6 +32,7 @@ namespace ErrorCodes
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -395,18 +400,30 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
 {
     if (is_killed.load())
         return CancellationCode::CancelSent;
 
     is_killed.store(true);
 
+    // Cancel threads to resolve possible deadlocks that can occur due to mutex lock inversions.
+    // Every cancelable wait (e.g. on `CancelableSharedMutex`) will finish and throw an exception.
+    // Any further attempt to wait on any cancelable primitive will also result in exception
+    // (unless waiting is done inside `NonCancelable` scope).
+    // Note that deadlocks are possible in the first place due to non-deterministic locking order.
+    // Example of this is:
+    // T1: OvercommitTracker trying to cancel another query with thread (T2) from an allocation that is done under mutex (M1).
+    // T2: Waiting on the same mutex (M1), so not cancelable.
+    // In such a scenario consider changing mutex (M1) type to be `Cancelable*`
+    thread_group->cancelGroup(code, msg);
+
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
     {
         /// Create a snapshot of executors under a mutex.
         std::lock_guard lock(executors_mutex);
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global); // We do not want this tiny allocation to throw
         executors_snapshot.reserve(executors.size());
         for (const auto & [_, e] : executors)
             executors_snapshot.push_back(e);
@@ -504,7 +521,7 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, int code, const String & msg)
 {
     QueryStatusPtr elem;
 
@@ -528,6 +545,8 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         elem->is_cancelling = true;
     }
 
+    LOG_DEBUG(&Poco::Logger::get("ProcessList"), "Cancel query {} of user {}. Code: {}. {}. ({})", current_query_id, current_user, code, msg, ErrorCodes::getName(code));
+
     SCOPE_EXIT({
         DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -536,9 +555,31 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(kill);
+    return elem->cancelQuery(code, msg);
 }
 
+CancellationCode ProcessList::sendCancelToQuery(const QueryStatusPtr & elem, int code, const String & msg)
+{
+    {
+        auto lock = unsafeLock();
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        auto lock = unsafeLock();
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(code, msg);
+}
+
+void ProcessList::startCancelerThread()
+{
+    canceler.emplace(this);
+}
 
 void ProcessList::killAllQueries()
 {
@@ -562,8 +603,7 @@ void ProcessList::killAllQueries()
     }
 
     for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(true);
-
+        cancelled_process->cancelQuery(ErrorCodes::QUERY_WAS_CANCELLED, "Kill all queries");
 }
 
 
@@ -703,6 +743,148 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+Canceler::Canceler(ProcessList * process_list_)
+    : process_list(process_list_)
+    , thread([this] { threadFunction(); })
+{}
+
+Canceler::~Canceler()
+{
+    stop_flag.store(true);
+    ready_cv.notify_all();
+    cancel_cv.notify_one();
+    thread.join();
+}
+
+void Canceler::cancelQueryDueToMemoryLimitExceeded(const QueryStatusPtr & query, MemoryTracker * exhausted)
+{
+    std::unique_lock lock(mutex);
+    ready_cv.wait(lock, [this] { return query_to_cancel == nullptr || stop_flag.load(); });
+    if (stop_flag)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cancel signal due to memory limit exceeded after shutdown");
+    query_to_cancel = query;
+    code = ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+    description = exhausted ? exhausted->getDescription() : nullptr;
+    memory_current = query_to_cancel->getMemoryTracker()->get();
+    memory_limit = exhausted ? exhausted->getHardLimit() : 0;
+    cancel_cv.notify_one();
+}
+
+void Canceler::threadFunction()
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    setThreadName("Canceler");
+    OvercommitTrackerBlockerInThread blocker;
+    std::unique_lock lock(mutex);
+    while (true)
+    {
+        cancel_cv.wait(lock, [this] { return query_to_cancel != nullptr || stop_flag.load(); });
+        if (stop_flag.load())
+            break;
+
+        try {
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            doCancel(lock);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        query_to_cancel.reset();
+        ready_cv.notify_one();
+    }
+}
+
+void Canceler::doCancel(std::unique_lock<std::mutex> &)
+{
+    if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        process_list->sendCancelToQuery(query_to_cancel, code,
+            fmt::format(
+                "Memory limit{}{} exceeded: "
+                "current: {}, maximum: {}. "
+                "Query was selected to stop by OvercommitTracker.",
+                description ? " " : "",
+                description ? description : "",
+                formatReadableSizeWithBinarySuffix(memory_current),
+                formatReadableSizeWithBinarySuffix(memory_limit)));
+    else
+        process_list->sendCancelToQuery(query_to_cancel, code, "Query was cancelled");
+}
+
+
+UserOvercommitTracker::UserOvercommitTracker(ProcessList * process_list_, ProcessListForUser * user_process_list_)
+    : OvercommitTracker(process_list_)
+    , user_process_list(user_process_list_)
+{}
+
+void UserOvercommitTracker::pickQueryToExclude(MemoryTracker * exhausted)
+{
+    QueryStatusPtr query_to_cancel;
+    MemoryTracker * query_tracker = nullptr;
+    OvercommitRatio current_ratio{0, 0};
+    // At this moment query list must be read only.
+    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
+    auto & queries = user_process_list->queries;
+    for (auto const & [_, query] : queries)
+    {
+        if (query->isKilled())
+            continue;
+
+        auto * memory_tracker = query->getMemoryTracker();
+        if (!memory_tracker)
+            continue;
+
+        auto ratio = memory_tracker->getOvercommitRatio();
+        if (ratio.soft_limit != 0 && current_ratio < ratio)
+        {
+            query_to_cancel = query;
+            query_tracker = memory_tracker;
+            current_ratio = ratio;
+        }
+    }
+    picked_tracker = query_tracker;
+    if (query_to_cancel)
+        process_list->getCanceler().cancelQueryDueToMemoryLimitExceeded(query_to_cancel, exhausted);
+}
+
+GlobalOvercommitTracker::GlobalOvercommitTracker(ProcessList * process_list_)
+    : OvercommitTracker(process_list_)
+{}
+
+void GlobalOvercommitTracker::pickQueryToExclude(MemoryTracker * exhausted)
+{
+    QueryStatusPtr query_to_cancel;
+    MemoryTracker * query_tracker = nullptr;
+    OvercommitRatio current_ratio{0, 0};
+    // At this moment query list must be read only.
+    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
+    for (auto const & query : process_list->processes)
+    {
+        if (query->isKilled())
+            continue;
+
+        Int64 user_soft_limit = 0;
+        if (auto const * user_process_list = query->getUserProcessList())
+            user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
+        if (user_soft_limit == 0)
+            continue;
+
+        auto * memory_tracker = query->getMemoryTracker();
+        if (!memory_tracker)
+            continue;
+        auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
+        if (current_ratio < ratio)
+        {
+            query_to_cancel = query;
+            query_tracker = memory_tracker;
+            current_ratio = ratio;
+        }
+    }
+    picked_tracker = query_tracker;
+    if (query_to_cancel)
+        process_list->getCanceler().cancelQueryDueToMemoryLimitExceeded(query_to_cancel, exhausted);
 }
 
 }

@@ -5,6 +5,7 @@
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CancelTokenGroup.h>
 #include <Common/Stopwatch.h>
 #include <base/StringRef.h>
 
@@ -110,11 +111,17 @@ public:
 
     static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
 
+    /// Involved threads tracking (including, not currently active)
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
 
     void linkThread(UInt64 thread_id);
     void unlinkThread();
+
+    // Active threads management
+    void enterGroup(); // current thread enters this group
+    void exitGroup(); // current thread exits this group
+    void cancelGroup(int code, const String & msg);
 
 private:
     mutable std::mutex mutex;
@@ -124,6 +131,8 @@ private:
 
     /// Set of all thread ids which has been attached to the group
     std::unordered_set<UInt64> thread_ids TSA_GUARDED_BY(mutex);
+    /// Cancel tokens for this thread group
+    CancelTokenGroup cancel_tokens;
 
     /// Count of simultaneously working threads
     size_t active_thread_count TSA_GUARDED_BY(mutex) = 0;

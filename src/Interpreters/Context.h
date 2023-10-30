@@ -741,7 +741,7 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void killCurrentQuery() const;
+    void killCurrentQuery(int code, const String & msg) const;
     bool isCurrentQueryKilled() const;
 
     bool hasInsertionTable() const { return !insertion_table_info.table.empty(); }

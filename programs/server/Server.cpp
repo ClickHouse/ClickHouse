@@ -706,6 +706,8 @@ try
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
+    global_context->getProcessList().startCancelerThread();
+
     getActivePartsLoadingThreadPool().initialize(
         server_settings.max_active_parts_loading_thread_pool_size,
         0, // We don't need any threads once all the parts will be loaded

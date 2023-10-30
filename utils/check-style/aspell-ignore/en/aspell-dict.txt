@@ -1195,6 +1195,9 @@ caConfig
 cacheSessions
 cachesize
 camelCase
+cancelable
+cancelation
+canceled
 capn
 capnproto
 cardinalities

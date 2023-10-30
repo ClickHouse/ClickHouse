@@ -40,6 +40,7 @@ struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
+class ProcessList;
 
 
 /** List of currently executing queries.
@@ -73,6 +74,32 @@ struct QueryStatusInfo
     std::string current_database;
 };
 
+
+/// Global memory overcommit tracker for all processes
+struct GlobalOvercommitTracker : OvercommitTracker
+{
+    explicit GlobalOvercommitTracker(ProcessList * process_list_);
+    ~GlobalOvercommitTracker() override = default;
+
+protected:
+    void pickQueryToExclude(MemoryTracker * exhausted) override;
+};
+
+
+/// Memory overcommit tracker per user
+struct UserOvercommitTracker : OvercommitTracker
+{
+    explicit UserOvercommitTracker(ProcessList * process_list_, ProcessListForUser * user_process_list_);
+    ~UserOvercommitTracker() override = default;
+
+protected:
+    void pickQueryToExclude(MemoryTracker * exhausted) override;
+
+private:
+    ProcessListForUser * user_process_list;
+};
+
+
 /// Query and information about its execution.
 class QueryStatus : public WithContext
 {
@@ -81,7 +108,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
-    friend struct ::GlobalOvercommitTracker;
+    friend struct GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;
@@ -215,7 +242,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill);
+    CancellationCode cancelQuery(int code, const String & msg);
 
     bool isKilled() const { return is_killed; }
 
@@ -289,9 +316,6 @@ struct ProcessListForUser
 };
 
 
-class ProcessList;
-
-
 /// Keeps iterator to process list and removes element in destructor.
 class ProcessListEntry
 {
@@ -330,6 +354,37 @@ protected:
     Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
 };
 
+// Encapsulate a thread that do query cancellations.
+// This is needed to perform cancel of a query from context where allocations are not possible (such as OvercommitTracker).
+class Canceler
+{
+public:
+    explicit Canceler(ProcessList * process_list);
+    ~Canceler();
+
+    // Cancel query asynchronously. Implementation do not allocate memory.
+    void cancelQueryDueToMemoryLimitExceeded(const QueryStatusPtr & query, MemoryTracker * exhausted);
+
+private:
+    void threadFunction();
+    void doCancel(std::unique_lock<std::mutex> &);
+
+    ProcessList * process_list;
+
+    std::mutex mutex;
+    std::condition_variable cancel_cv;
+    std::condition_variable ready_cv;
+    QueryStatusPtr query_to_cancel;
+
+    // Cancel reason and details
+    int code;
+    const char * description;
+    Int64 memory_current;
+    Int64 memory_limit;
+
+    std::atomic<bool> stop_flag = false;
+    ThreadFromGlobalPool thread;
+};
 
 class ProcessList : public ProcessListBase
 {
@@ -351,15 +406,19 @@ public:
 protected:
     friend class ProcessListEntry;
     friend struct ::OvercommitTracker;
-    friend struct ::UserOvercommitTracker;
-    friend struct ::GlobalOvercommitTracker;
+    friend struct UserOvercommitTracker;
+    friend struct GlobalOvercommitTracker;
 
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
     Container processes;
+
     /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
     mutable std::condition_variable cancelled_cv;
+
+    /// Thread for async query cancellation from OvercommitTracker to avoid allocations
+    std::optional<Canceler> canceler;
 
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
@@ -444,7 +503,10 @@ public:
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, int code, const String & msg);
+    CancellationCode sendCancelToQuery(const QueryStatusPtr & elem, int code, const String & msg);
+    void startCancelerThread();
+    Canceler & getCanceler() { return *canceler; }
 
     void killAllQueries();
 };

@@ -24,8 +24,9 @@ struct OvercommitTrackerForTest : BaseTracker
     }
 
 protected:
-    void pickQueryToExcludeImpl() override
+    void pickQueryToExclude(MemoryTracker * exhausted) override
     {
+        UNUSED(exhausted);
         BaseTracker::picked_tracker = tracker;
     }
 
@@ -58,7 +59,7 @@ void free_not_continue_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
+                if (overcommit_tracker.needToStopQuery(nullptr, &trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -115,7 +116,7 @@ void free_continue_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
+                if (overcommit_tracker.needToStopQuery(nullptr, &trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -172,7 +173,7 @@ void free_continue_and_alloc_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
+                if (overcommit_tracker.needToStopQuery(nullptr, &trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -186,7 +187,7 @@ void free_continue_and_alloc_test(T & overcommit_tracker)
             failed.setOvercommitWaitingTime(WAIT_TIME);
             std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
-            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100) != OvercommitResult::MEMORY_FREED;
+            stopped_next = overcommit_tracker.needToStopQuery(nullptr, &failed, 100) != OvercommitResult::MEMORY_FREED;
         }
     ).join();
 
@@ -234,7 +235,7 @@ void free_continue_and_alloc_2_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
+                if (overcommit_tracker.needToStopQuery(nullptr, &trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -248,7 +249,7 @@ void free_continue_and_alloc_2_test(T & overcommit_tracker)
             failed.setOvercommitWaitingTime(WAIT_TIME);
             std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
-            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100) != OvercommitResult::MEMORY_FREED;
+            stopped_next = overcommit_tracker.needToStopQuery(nullptr, &failed, 100) != OvercommitResult::MEMORY_FREED;
         }
     ));
 
@@ -304,7 +305,7 @@ void free_continue_and_alloc_3_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
+                if (overcommit_tracker.needToStopQuery(nullptr, &trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -318,7 +319,7 @@ void free_continue_and_alloc_3_test(T & overcommit_tracker)
             failed.setOvercommitWaitingTime(WAIT_TIME);
             std::this_thread::sleep_for(1000ms);
             overcommit_tracker.tryContinueQueryExecutionAfterFree(5000);
-            stopped_next = overcommit_tracker.needToStopQuery(&failed, 100) != OvercommitResult::MEMORY_FREED;
+            stopped_next = overcommit_tracker.needToStopQuery(nullptr, &failed, 100) != OvercommitResult::MEMORY_FREED;
         }
     ));
 
@@ -374,7 +375,7 @@ void free_continue_2_test(T & overcommit_tracker)
         threads.push_back(std::thread(
             [&, i]()
             {
-                if (overcommit_tracker.needToStopQuery(&trackers[i], 100) != OvercommitResult::MEMORY_FREED)
+                if (overcommit_tracker.needToStopQuery(nullptr, &trackers[i], 100) != OvercommitResult::MEMORY_FREED)
                     ++need_to_stop;
             }
         ));
@@ -425,7 +426,7 @@ void query_stop_not_continue_test(T & overcommit_tracker)
     auto thread = std::thread(
         [&]()
         {
-            if (overcommit_tracker.needToStopQuery(&another, 100) != OvercommitResult::MEMORY_FREED)
+            if (overcommit_tracker.needToStopQuery(nullptr, &another, 100) != OvercommitResult::MEMORY_FREED)
                 ++need_to_stop;
         }
     );
