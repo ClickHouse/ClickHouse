@@ -90,9 +90,10 @@ private:
     Poco::Logger * log;
 
     using StringSet = std::set<String>;
-    struct PartToCheck {
-      String name;
-      time_t time;
+    struct PartToCheck
+    {
+        String name;
+        time_t time;
     };
     using PartsToCheckQueue = std::list<PartToCheck>;
 

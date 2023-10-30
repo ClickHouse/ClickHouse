@@ -559,14 +559,13 @@ void ReplicatedMergeTreePartCheckThread::run()
             });
             if (selected == parts_queue.end())
             {
-                // find next part to check in the queue and schedule the check
-                // otherwise, scheduled for later checks won't be executed until a new check is enqueued (i.e. task is scheduled again)
-                auto next_it =
-                    std::min_element(begin(parts_queue), end(parts_queue),
-                                     [](const auto &l, const auto &r) {
-                                       return l.time < r.time;
-                                     });
-                if (next_it != parts_queue.end()) {
+                // Find next part to check in the queue and schedule the check
+                // Otherwise, scheduled for later checks won't be executed until
+                // a new check is enqueued (i.e. task is scheduled again)
+                auto next_it = std::min_element(
+                    begin(parts_queue), end(parts_queue), [](const auto & l, const auto & r) { return l.time < r.time; });
+                if (next_it != parts_queue.end())
+                {
                     auto delay = next_it->time - current_time;
                     task->scheduleAfter(delay * 1000);
                 }
