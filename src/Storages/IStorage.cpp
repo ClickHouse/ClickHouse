@@ -226,7 +226,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, ContextPtr) const
+ConditionEstimator IStorage::getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const
 {
     return {};
 }
