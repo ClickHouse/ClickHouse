@@ -11,12 +11,20 @@
 #include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
 #include <QueryCoordination/Interpreters/ReplaceDistributedTableNameVisitor.h>
 #include <QueryCoordination/Optimizer/Optimizer.h>
-#include <QueryCoordination/Optimizer/StepTree.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/JSONBuilder.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
+}
 
 InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
@@ -79,12 +87,15 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     {
         context->setDistributedForQueryCoord(true);
     }
+
+    query_coordination_enabled = context->isDistributedForQueryCoord();
 }
 
 bool InterpreterSelectQueryCoordination::checkCompatibleSettings() const
 {
-    if (context->getSettings().use_index_for_in_with_subqueries)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support settings use_index_for_in_with_subqueries");
+    context->getSettings().use_index_for_in_with_subqueries = 0;
+//    if (context->getSettings().use_index_for_in_with_subqueries)
+//        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not support settings use_index_for_in_with_subqueries");
 
     return true;
 }
@@ -102,30 +113,39 @@ static String formattedAST(const ASTPtr & ast)
     return buf.str();
 }
 
-BlockIO InterpreterSelectQueryCoordination::execute()
+void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
 {
-    BlockIO res;
-
-    QueryPlan query_plan;
-
+    if (plan.isInitialized())
+        return;
     if (context->getSettingsRef().allow_experimental_analyzer)
-        query_plan = InterpreterSelectQueryAnalyzer(query_ptr, context, options).extractQueryPlan();
+        plan = InterpreterSelectQueryAnalyzer(query_ptr, context, options).extractQueryPlan();
     else if (query_ptr->as<ASTSelectQuery>())
-        InterpreterSelectQuery(query_ptr, context, options).buildQueryPlan(query_plan);
+        InterpreterSelectQuery(query_ptr, context, options).buildQueryPlan(plan);
     else
-        InterpreterSelectWithUnionQuery(query_ptr, context, options).buildQueryPlan(query_plan);
+        InterpreterSelectWithUnionQuery(query_ptr, context, options).buildQueryPlan(plan);
+}
 
-    query_plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+void InterpreterSelectQueryCoordination::optimize()
+{
+    if (step_tree.isInitialized())
+        return;
 
-    if (context->isDistributedForQueryCoord())
+    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+
+    if (query_coordination_enabled)
     {
         Optimizer optimizer;
-        StepTree step_tree = optimizer.optimize(std::move(query_plan), context);
+        step_tree = optimizer.optimize(std::move(plan), context);
+    }
+}
 
+void InterpreterSelectQueryCoordination::buildFragments()
+{
+    if (query_coordination_enabled)
+    {
         FragmentBuilder builder(step_tree, context);
         FragmentPtr root_fragment = builder.build();
 
-        FragmentPtrs fragments;
         std::queue<FragmentPtr> queue;
         queue.push(root_fragment);
 
@@ -139,10 +159,72 @@ BlockIO InterpreterSelectQueryCoordination::execute()
                 queue.push(child);
             }
         }
+    }
+}
 
-        WriteBufferFromOwnString buffer;
-        fragments.front()->dump(buffer);
-        LOG_INFO(&Poco::Logger::get("InterpreterSelectQueryCoordination"), "Fragment dump: {}", buffer.str());
+void InterpreterSelectQueryCoordination::explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_)
+{
+    if (!query_coordination_enabled)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN FRAGMENT but query coordination is not enabled.");
+
+    buildQueryPlanIfNeeded();
+    optimize();
+    buildFragments();
+
+    if (fragments.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN FRAGMENT but there is no fragments.");
+
+    fragments.front()->dump(buf, options_);
+}
+
+void InterpreterSelectQueryCoordination::explain(
+    WriteBufferFromOwnString & buf, const QueryPlan::ExplainPlanOptions & options_, bool json, bool optimize_)
+{
+    buildQueryPlanIfNeeded();
+
+    if (optimize_)
+        optimize();
+
+    if (json)
+    {
+        /// Add extra layers to make plan look more like from postgres.
+        auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
+
+        if (query_coordination_enabled)
+            plan_map->add("Plan", step_tree.explainPlan(options_));
+        else
+            plan_map->add("Plan", plan.explainPlan(options_));
+        auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
+        plan_array->add(std::move(plan_map));
+
+        auto format_settings = getFormatSettings(getContext());
+        format_settings.json.quote_64bit_integers = false;
+
+        JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
+        JSONBuilder::FormatContext format_context{.out = buf};
+
+        plan_array->format(json_format_settings, format_context);
+    }
+    else
+    {
+        if (query_coordination_enabled)
+            step_tree.explainPlan(buf, options_);
+        else
+            plan.explainPlan(buf, options_);
+    }
+}
+
+
+BlockIO InterpreterSelectQueryCoordination::execute()
+{
+    BlockIO res;
+
+    buildQueryPlanIfNeeded();
+    optimize();
+
+    if (query_coordination_enabled)
+    {
+        buildFragments();
 
         /// save fragments wait for be scheduled
         res.query_coord_state.fragments = fragments;
@@ -165,9 +247,9 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     }
     else
     {
-        LOG_INFO(&Poco::Logger::get("InterpreterSelectQueryCoordination"), "Local query");
+        LOG_INFO(&Poco::Logger::get("InterpreterSelectQueryCoordination"), "disable query_coordination");
 
-        auto builder = query_plan.buildQueryPipeline(
+        auto builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(context),
             BuildQueryPipelineSettings::fromContext(context));
 

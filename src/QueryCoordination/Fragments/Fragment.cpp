@@ -293,7 +293,7 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
 static void explainStep(
     const IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const Fragment::ExplainPlanOptions & options)
+    const Fragment::ExplainFragmentOptions & options)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
@@ -352,16 +352,15 @@ static void explainStep(
         step.describeIndexes(settings);
 }
 
-void Fragment::dump(WriteBufferFromOwnString & buffer)
+void Fragment::dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & settings)
 {
-    Fragment::ExplainPlanOptions settings;
     buffer.write('\n');
     std::string str("Fragment " + std::to_string(fragment_id));
 
     if (dest_exchange_node)
     {
         str += ", Data to:";
-        str += std::to_string(dest_fragment_id) + ", ";
+        str += std::to_string(dest_fragment_id);
     }
     buffer.write(str.c_str(), str.size());
     buffer.write('\n');
@@ -370,11 +369,11 @@ void Fragment::dump(WriteBufferFromOwnString & buffer)
 
     for (const auto & child_fragment : children)
     {
-        child_fragment->dump(buffer);
+        child_fragment->dump(buffer, settings);
     }
 }
 
-void Fragment::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options)
+void Fragment::explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & options)
 {
     IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
 

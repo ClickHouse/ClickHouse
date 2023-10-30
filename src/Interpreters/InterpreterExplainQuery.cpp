@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <QueryCoordination/Interpreters/InterpreterSelectQueryCoordination.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
@@ -205,6 +206,26 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
+
+/// Distributed query plan settings
+struct FragmentSettings
+{
+    Fragment::ExplainFragmentOptions fragment_options;
+
+    constexpr static char name[] = "FRAGMENT";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+            {"header", fragment_options.header},
+            {"description", fragment_options.description},
+            {"actions", fragment_options.actions},
+            {"indexes", fragment_options.indexes},
+            {"sorting", fragment_options.sorting},
+            {"host", fragment_options.host},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -439,6 +460,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
+            if (getContext()->getSettingsRef().allow_experimental_query_coordination)
+            {
+                InterpreterSelectQueryCoordination interpreter(ast.getExplainedQuery(), getContext(), options);
+                interpreter.explain(buf, settings.query_plan_options, settings.json, settings.optimize);
+                if (settings.json)
+                    single_line = true;
+                break;
+            }
             if (getContext()->getSettingsRef().allow_experimental_analyzer)
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
@@ -477,6 +506,19 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 plan.explainPlan(buf, settings.query_plan_options);
             break;
         }
+        case ASTExplainQuery::Fragment:
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN fragment");
+
+            if (!getContext()->getSettingsRef().allow_experimental_query_coordination)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only query with coordination is supported for EXPLAIN fragment");
+
+            {
+                auto settings = checkAndGetSettings<FragmentSettings>(ast.getSettings());
+                InterpreterSelectQueryCoordination interpreter(ast.getExplainedQuery(), getContext(), options);
+                interpreter.explainFragment(buf, settings.fragment_options);
+            }
+            break;
         case ASTExplainQuery::QueryPipeline:
         {
             if (dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))

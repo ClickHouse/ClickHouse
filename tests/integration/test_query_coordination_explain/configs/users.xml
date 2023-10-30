@@ -1,0 +1,7 @@
+<clickhouse>
+<profiles>
+    <default>
+        <use_index_for_in_with_subqueries>0</use_index_for_in_with_subqueries>
+    </default>
+</profiles>
+</clickhouse>

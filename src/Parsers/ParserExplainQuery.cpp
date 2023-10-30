@@ -22,6 +22,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_query_tree("QUERY TREE");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
+    ParserKeyword s_fragment("FRAGMENT");
     ParserKeyword s_estimates("ESTIMATE");
     ParserKeyword s_table_override("TABLE OVERRIDE");
     ParserKeyword s_current_transaction("CURRENT TRANSACTION");
@@ -40,6 +41,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPlan;
+        else if (s_fragment.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::Fragment;
         else if (s_estimates.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryEstimates;
         else if (s_table_override.ignore(pos, expected))

@@ -21,6 +21,7 @@ public:
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
         QueryTree, /// 'EXPLAIN QUERY TREE SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
+        Fragment, /// 'EXPLAIN FRAGMENT SELECT ...'
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
@@ -35,6 +36,7 @@ public:
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
             case QueryTree: return "EXPLAIN QUERY TREE";
             case QueryPlan: return "EXPLAIN";
+            case Fragment: return "EXPLAIN FRAGMENT";
             case QueryPipeline: return "EXPLAIN PIPELINE";
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
@@ -54,6 +56,8 @@ public:
             return QueryTree;
         if (str == "EXPLAIN" || str == "EXPLAIN PLAN")
             return QueryPlan;
+        if (str == "EXPLAIN FRAGMENT")
+            return Fragment;
         if (str == "EXPLAIN PIPELINE")
             return QueryPipeline;
         if (str == "EXPLAIN ESTIMATE")

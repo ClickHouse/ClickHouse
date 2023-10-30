@@ -103,7 +103,7 @@ StepTree Memo::extractPlan()
     StepTree::ExplainPlanOptions settings;
     sub_plan.explainPlan(buffer, settings);
 
-    LOG_INFO(log, "extractPlan dump: {}", buffer.str());
+    LOG_TRACE(log, "CBO optimizer find best plan: {}", buffer.str());
 
     return sub_plan;
 }

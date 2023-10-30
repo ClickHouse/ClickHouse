@@ -20,7 +20,8 @@ public:
     using Node = QueryPlan::Node;
     using Nodes = std::list<Node>;
 
-    struct ExplainPlanOptions
+    /// Explain distributed plan, only work with query coordination
+    struct ExplainFragmentOptions
     {
         /// Add output header to step.
         bool header = false;
@@ -32,6 +33,8 @@ public:
         bool indexes = false;
         /// Add information about sorting
         bool sorting = false;
+        /// Add fragment and host mappings information
+        bool host = false; /// TODO implement
     };
 
     Fragment(UInt32 fragment_id_, ContextMutablePtr context_);
@@ -48,7 +51,7 @@ public:
 
     const Nodes & getNodes() const;
 
-    void dump(WriteBufferFromOwnString & buffer);
+    void dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & settings);
 
     const FragmentPtrs & getChildren() const;
 
@@ -69,7 +72,7 @@ private:
 
     Node makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_ = {});
 
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
+    void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & settings);
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
