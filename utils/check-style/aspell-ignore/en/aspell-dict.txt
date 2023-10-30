@@ -993,8 +993,11 @@ activerecord
 addDate
 addDays
 addHours
+addMicroseconds
+addMilliseconds
 addMinutes
 addMonths
+addNanoseconds
 addQuarters
 addSeconds
 addWeeks
@@ -1401,6 +1404,7 @@ dmesg
 domainWithoutWWW
 dont
 dotProduct
+downsampling
 dplyr
 dragonbox
 dropoff
@@ -1455,6 +1459,7 @@ farmFingerprint
 farmHash
 fastops
 fcoverage
+fibonacci
 fifo
 filesystem
 filesystemAvailable
@@ -1475,6 +1480,8 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
+formatQuery
+formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
@@ -1515,7 +1522,6 @@ geohashesInBox
 geoip
 geospatial
 getMacro
-getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1681,6 +1687,7 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
+jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
@@ -1709,6 +1716,7 @@ kurtsamp
 laion
 lang
 laravel
+largestTriangleThreeBuckets
 latencies
 ldap
 leftPad
@@ -1758,6 +1766,7 @@ london
 lowcardinality
 lowerUTF
 lowercased
+lttb
 lzma
 macOS
 mailrugo
@@ -2145,6 +2154,7 @@ repo
 representable
 requestor
 requireTLSv
+resolvers
 resharding
 reshards
 resultset
@@ -2311,8 +2321,11 @@ substrings
 subtitiles
 subtractDays
 subtractHours
+subtractMicroseconds
+subtractMilliseconds
 subtractMinutes
 subtractMonths
+subtractNanoseconds
 subtractQuarters
 subtractSeconds
 subtractWeeks

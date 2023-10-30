@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -448,20 +449,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (!block)
         return;
 
-    if (block.rows() == 0 && partial_result_mode == PartialResultMode::Active)
-    {
-        partial_result_mode = PartialResultMode::Inactive;
-        if (is_interactive)
-        {
-            progress_indication.clearProgressOutput(*tty_buf);
-            std::cout << "Full result:" << std::endl;
-            progress_indication.writeProgress(*tty_buf);
-        }
-    }
-
-    if (partial_result_mode == PartialResultMode::Inactive)
-        processed_rows += block.rows();
-
+    processed_rows += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
@@ -471,20 +459,13 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (!is_interactive && partial_result_mode == PartialResultMode::Active)
-        return;
-
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput(*tty_buf);
 
     try
     {
-        if (partial_result_mode == PartialResultMode::Active)
-            output_format->writePartialResult(materializeBlock(block));
-        else
-            output_format->write(materializeBlock(block));
-
+        output_format->write(materializeBlock(block));
         written_first_block = true;
     }
     catch (const Exception &)
@@ -548,9 +529,6 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 void ClientBase::initOutputFormat(const Block & block, ASTPtr parsed_query)
 try
 {
-    if (partial_result_mode == PartialResultMode::NotInit)
-        partial_result_mode = PartialResultMode::Active;
-
     if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
@@ -993,14 +971,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     const auto & settings = global_context->getSettingsRef();
     const Int32 signals_before_stop = settings.partial_result_on_first_cancel ? 2 : 1;
-    bool has_partial_result_setting = settings.partial_result_update_duration_ms.totalMilliseconds() > 0;
-
-    if (has_partial_result_setting)
-    {
-        partial_result_mode = PartialResultMode::NotInit;
-        if (is_interactive)
-            std::cout << "Partial result:" << std::endl;
-    }
 
     int retries_left = 10;
     while (retries_left)
@@ -1432,7 +1402,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     }
 
     /// Process the query that requires transferring data blocks to the server.
-    const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+    const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
     {
         const auto & settings = global_context->getSettingsRef();
@@ -1827,7 +1797,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     }
 
     processed_rows = 0;
-    partial_result_mode = PartialResultMode::Inactive;
     written_first_block = false;
     progress_indication.resetProgress();
     profile_events.watch.restart();
@@ -1878,10 +1847,20 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+        bool is_async_insert_with_inlined_data = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
+
+        if (is_async_insert_with_inlined_data)
+        {
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
+            bool have_external_data = have_data_in_stdin || insert->infile;
+
+            if (have_external_data)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
+        }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
+        if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert_with_inlined_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -1939,9 +1918,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (is_interactive)
     {
-        std::cout << std::endl
-            << processed_rows << " row" << (processed_rows == 1 ? "" : "s")
-            << " in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+        std::cout << std::endl;
+        if (!server_exception || processed_rows != 0)
+            std::cout << processed_rows << " row" << (processed_rows == 1 ? "" : "s") << " in set. ";
+        std::cout << "Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
         progress_indication.writeFinalProgress();
         std::cout << std::endl << std::endl;
     }

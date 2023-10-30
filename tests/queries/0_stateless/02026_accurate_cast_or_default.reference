@@ -30,3 +30,24 @@
 0	5
 127	127
 0	5
+\N
+false
+false
+false
+true
+false
+true
+false
+true
+false
+\N
+0.0.0.0
+0.0.0.0
+0.0.0.0
+192.0.2.1
+0.0.0.0
+\N
+::
+::ffff:192.0.2.1
+2001:db8::1
+::
