@@ -31,7 +31,6 @@ FileLogConsumer::FileLogConsumer(
     , max_streams_number(max_streams_number_)
 {
     current = records.begin();
-    allowed = false;
 }
 
 ReadBufferPtr FileLogConsumer::consume()
@@ -54,7 +53,6 @@ ReadBufferPtr FileLogConsumer::consume()
         LOG_TRACE(log, "Polled batch of {} records. ", records.size());
 
         buffer_status = BufferStatus::POLLED_OK;
-        allowed = true;
         return getNextRecord();
     }
 }
