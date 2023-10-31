@@ -338,7 +338,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -507,7 +507,7 @@ AggregationInputOrder buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag, *dag);
+        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
