@@ -115,7 +115,7 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
-    bool empty() const;
+    bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
     {
