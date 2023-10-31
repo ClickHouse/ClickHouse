@@ -165,8 +165,6 @@ private:
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
 
-    CacheMetadata metadata;
-
     FileCachePriorityPtr main_priority;
     mutable CacheGuard cache_guard;
 
