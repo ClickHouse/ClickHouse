@@ -85,7 +85,11 @@ namespace
 }
 
 
-bool Authentication::areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators)
+bool Authentication::areCredentialsValid(
+    const Credentials & credentials,
+    const AuthenticationData & auth_data,
+    const ExternalAuthenticators & external_authenticators,
+    SettingsChanges & settings)
 {
     if (!credentials.isReady())
         return false;
@@ -100,6 +104,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::KERBEROS:
@@ -133,6 +138,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
             case AuthenticationType::KERBEROS:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::SSL_CERTIFICATE:
@@ -177,6 +183,14 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::BCRYPT_PASSWORD:
                 return checkPasswordBcrypt(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
+            case AuthenticationType::HTTP:
+                switch (auth_data.getHTTPAuthenticationScheme())
+                {
+                    case HTTPAuthenticationScheme::BASIC:
+                        return external_authenticators.checkHTTPBasicCredentials(
+                            auth_data.getHTTPAuthenticationServerName(), *basic_credentials, settings);
+                }
+
             case AuthenticationType::MAX:
                 break;
         }
@@ -192,6 +206,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::KERBEROS:
@@ -218,6 +233,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             case AuthenticationType::BCRYPT_PASSWORD:
             case AuthenticationType::LDAP:
+            case AuthenticationType::HTTP:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
             case AuthenticationType::KERBEROS:

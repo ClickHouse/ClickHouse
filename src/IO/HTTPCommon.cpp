@@ -324,6 +324,14 @@ namespace
             auto retry_timeout = timeouts.connection_timeout.totalMilliseconds();
             auto session = pool_ptr->second->get(retry_timeout);
 
+            const auto & session_data = session->sessionData();
+            if (session_data.empty() || !Poco::AnyCast<HTTPSessionReuseTag>(&session_data))
+            {
+                /// Reset session if it is not reusable. See comment for HTTPSessionReuseTag.
+                session->reset();
+            }
+            session->attachSessionData({});
+
             setTimeouts(*session, timeouts);
 
             return session;

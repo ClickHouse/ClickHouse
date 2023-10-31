@@ -282,7 +282,7 @@ Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHous
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
--DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+-DENABLE_LIBRARIES=0
 ```
 
 In case of problems with any of the development options, you are on your own!
