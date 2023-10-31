@@ -351,3 +351,6 @@
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/rpmalloc"]
+	path = contrib/rpmalloc
+	url = https://github.com/mkmkme/rpmalloc.git
