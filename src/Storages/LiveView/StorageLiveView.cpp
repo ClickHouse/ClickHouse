@@ -29,6 +29,7 @@ limitations under the License. */
 #include <Common/SipHash.h>
 #include <base/hex.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
 #include <Storages/LiveView/LiveViewSink.h>
@@ -215,7 +216,8 @@ StorageLiveView::StorageLiveView(
     storage_metadata.setColumns(columns_);
     if (!comment.empty())
         storage_metadata.setComment(comment);
-    storage_metadata.setDefiner(query.sql_security);
+    if (query.sql_security)
+        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
 
     setInMemoryMetadata(storage_metadata);
 
@@ -779,6 +781,16 @@ void StorageLiveView::scheduleNextPeriodicRefresh(const std::lock_guard<std::mut
         periodic_refresh_task->scheduleAfter(static_cast<size_t>(schedule_time.count()));
     }
 }
+
+void StorageLiveView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* local_context */) const
+{
+    for (const auto & command : commands)
+    {
+        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_SQL_SECURITY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+    }
+}
+
 
 void registerStorageLiveView(StorageFactory & factory)
 {

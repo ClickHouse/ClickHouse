@@ -134,7 +134,7 @@ public:
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
-    std::shared_ptr<ASTSQLSecurity> sql_security = nullptr;
+    ASTPtr sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 

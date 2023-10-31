@@ -55,6 +55,10 @@ AS SELECT * FROM $db.test_table;
 CREATE VIEW $db.test_view_9 (s String)
 SQL SECURITY NONE
 AS SELECT * FROM $db.test_table;
+
+CREATE VIEW $db.test_view_10 (s String)
+SQL SECURITY DEFINER
+AS SELECT * FROM $db.test_table;
 EOF
 
 (( $(${CLICKHOUSE_CLIENT} --query "SHOW TABLE $db.test_view_1" 2>&1 | grep -c "DEFINER") >= 1 )) && echo "OK" || echo "UNEXPECTED"
@@ -70,6 +74,7 @@ GRANT SELECT ON $db.test_view_6 TO $user2;
 GRANT SELECT ON $db.test_view_7 TO $user2;
 GRANT SELECT ON $db.test_view_8 TO $user2;
 GRANT SELECT ON $db.test_view_9 TO $user2;
+GRANT SELECT ON $db.test_view_10 TO $user2;
 EOF
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');"
@@ -83,6 +88,10 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_6"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_7"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_8" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_9"
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_view_10"
+
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_view_10 MODIFY SQL SECURITY INVOKER"
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_10" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 
 echo "===== MaterializedView ====="
@@ -115,6 +124,18 @@ ${CLICKHOUSE_CLIENT} --query "
   DEFINER = $user1 SQL SECURITY DEFINER
   AS SELECT * FROM $db.test_table;
 "
+
+${CLICKHOUSE_CLIENT} --query "
+  CREATE MATERIALIZED VIEW $db.test_mv_5 (s String)
+  ENGINE = MergeTree ORDER BY s
+  DEFINER = $user2 SQL SECURITY DEFINER
+  AS SELECT * FROM $db.test_table;
+"
+
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_5 TO $user2"
+
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $db.test_mv_5 MODIFY SQL SECURITY NONE"
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_5"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_1 TO $user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_3 TO $user2"
@@ -170,6 +191,36 @@ ${CLICKHOUSE_CLIENT} --user $user1 --query "
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SET DEFINER ON $user2 TO $user1"
 
+
+echo "===== TestRowPolicy ====="
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.test_row_t (x Int32, y Int32) ENGINE = MergeTree ORDER BY x;
+
+CREATE VIEW $db.test_view_row_1 DEFINER = $user1 SQL SECURITY DEFINER AS SELECT x, y AS z FROM $db.test_row_t;
+CREATE ROW POLICY r1 ON $db.test_row_t FOR SELECT USING x <= y TO $user1;
+CREATE ROW POLICY r2 ON $db.test_view_row_1 FOR SELECT USING x >= z TO $user2;
+
+INSERT INTO $db.test_row_t VALUES (1, 2), (1, 1), (2, 2), (3, 2), (4, 0);
+
+GRANT SELECT ON $db.test_view_row_1 to $user2;
+EOF
+
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_view_row_1"
+
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+CREATE TABLE $db.test_row_t2 (x Int32, y Int32) ENGINE = MergeTree ORDER BY x;
+
+CREATE VIEW $db.test_mv_row_2 DEFINER = $user1 SQL SECURITY DEFINER AS SELECT x, y AS z FROM $db.test_row_t2;
+CREATE ROW POLICY r1 ON $db.test_row_t2 FOR SELECT USING x <= y TO $user1;
+CREATE ROW POLICY r2 ON $db.test_mv_row_2 FOR SELECT USING x >= z TO $user2;
+
+INSERT INTO $db.test_row_t2 VALUES (5, 6), (6, 5), (6, 6), (8, 7), (9, 9);
+
+GRANT SELECT ON $db.test_mv_row_2 to $user2;
+EOF
+
+${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_row_2"
+
+
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS $db;"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";
-

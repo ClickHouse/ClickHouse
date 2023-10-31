@@ -88,15 +88,12 @@ void StorageInMemoryMetadata::setComment(const String & comment_)
     comment = comment_;
 }
 
-void StorageInMemoryMetadata::setDefiner(std::shared_ptr<ASTSQLSecurity> sql_security)
+void StorageInMemoryMetadata::setDefiner(const ASTSQLSecurity & sql_security)
 {
-    if (!sql_security)
-        return;
+    if (sql_security.definer)
+        definer = sql_security.definer->toString();
 
-    if (sql_security->type == ASTSQLSecurity::Type::DEFINER)
-        definer = sql_security->definer->toString();
-
-    sql_security_type = sql_security->type;
+    sql_security_type = sql_security.type;
 }
 
 UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
@@ -113,11 +110,6 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-bool StorageInMemoryMetadata::hasDefiner() const
-{
-    return definer.has_value();
-}
-
 ContextMutablePtr StorageInMemoryMetadata::getDefinerContext(ContextPtr context) const
 {
     auto new_context = Context::createCopy(context);
@@ -127,7 +119,7 @@ ContextMutablePtr StorageInMemoryMetadata::getDefinerContext(ContextPtr context)
 
     if (sql_security_type == ASTSQLSecurity::Type::NONE)
         new_context->resetUser();
-    else if (hasDefiner())
+    else if (sql_security_type == ASTSQLSecurity::Type::DEFINER)
         new_context->setUser(getDefinerID(context));
     return new_context;
 }

@@ -10,6 +10,8 @@ OK
 2
 OK
 2
+2
+OK
 ===== MaterializedView =====
 OK
 0
@@ -23,3 +25,8 @@ OK
 ===== TestGrants =====
 OK
 OK
+===== TestRowPolicy =====
+1	1
+2	2
+6	6
+9	9

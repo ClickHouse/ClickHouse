@@ -38,6 +38,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
+    ParserKeyword s_modify_sql_security("MODIFY SQL SECURITY");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -126,6 +127,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
+    ParserSQLSecurity sql_security_p;
     ParserTTLExpressionList parser_ttl_list;
 
     switch (alter_object)
@@ -755,6 +757,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
+            else if (s_modify_sql_security.ignore(pos, expected))
+            {
+                /// This is a hack so we can reuse parser from create and don't have to write `MODIFY SQL SECURITY SQL SECURITY INVOKER`
+                pos -= 2;
+                if (!sql_security_p.parse(pos, command->sql_security, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
+            }
             else if (s_modify_comment.ignore(pos, expected))
             {
                 if (!parser_string_literal.parse(pos, command->comment, expected))
@@ -803,6 +813,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->settings_changes);
     if (command->select)
         command->children.push_back(command->select);
+    if (command->sql_security)
+        command->children.push_back(command->sql_security);
     if (command->rename_to)
         command->children.push_back(command->rename_to);
 

@@ -75,6 +75,7 @@ public:
         MODIFY_DATABASE_SETTING,
 
         MODIFY_COMMENT,
+        MODIFY_SQL_SECURITY,
     };
 
     Type type = NO_TYPE;
@@ -154,6 +155,9 @@ public:
 
     /// For MODIFY_QUERY
     ASTPtr select;
+
+    /// For MODIFY_SQL_SECURITY
+    ASTPtr sql_security;
 
     /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
      */

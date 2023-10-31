@@ -12,6 +12,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
@@ -114,7 +115,8 @@ StorageView::StorageView(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
-    storage_metadata.setDefiner(query.sql_security);
+    if (query.sql_security)
+        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -274,6 +276,15 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
         if (child.get() == subquery.get())
             child = view_name;
     return subquery->children[0];
+}
+
+void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* local_context */) const
+{
+    for (const auto & command : commands)
+    {
+        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_SQL_SECURITY)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+    }
 }
 
 void registerStorageView(StorageFactory & factory)

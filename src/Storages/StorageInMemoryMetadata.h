@@ -110,9 +110,8 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
 
     /// Sets a definer for the storage.
-    void setDefiner(std::shared_ptr<ASTSQLSecurity> sql_security);
+    void setDefiner(const ASTSQLSecurity & sql_security);
     UUID getDefinerID(ContextPtr context) const;
-    bool hasDefiner() const;
     bool shouldIgnoreSQLSecurity() const { return sql_security_type == ASTSQLSecurity::Type::NONE; }
 
     /// Returns a copy of the context with co

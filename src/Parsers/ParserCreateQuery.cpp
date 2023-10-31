@@ -91,36 +91,45 @@ bool ParserSQLSecurity::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr definer;
     std::optional<ASTSQLSecurity::Type> type;
 
-    if (s_definer.ignore(pos, expected))
+    while (true)
     {
-        s_eq.ignore(pos, expected);
-        if (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected))
-            is_definer_current_user = true;
-        else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
-            return false;
+        if (!definer && s_definer.ignore(pos, expected))
+        {
+            s_eq.ignore(pos, expected);
+            if (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected))
+                is_definer_current_user = true;
+            else if (!ParserUserNameWithHost{}.parse(pos, definer, expected))
+                return false;
 
-        type = ASTSQLSecurity::Type::DEFINER;
+            continue;
+        }
+
+        if (!type && ParserKeyword{"SQL SECURITY"}.ignore(pos, expected))
+        {
+            if (s_definer.ignore(pos, expected))
+                type = ASTSQLSecurity::Type::DEFINER;
+            else if (ParserKeyword{"INVOKER"}.ignore(pos, expected))
+                type = ASTSQLSecurity::Type::INVOKER;
+            else if (ParserKeyword{"NONE"}.ignore(pos, expected))
+                type = ASTSQLSecurity::Type::NONE;
+            else
+                return false;
+
+            continue;
+        }
+
+        break;
     }
 
-    if (ParserKeyword{"SQL SECURITY"}.ignore(pos, expected))
+    if (!type)
     {
-        if (s_definer.ignore(pos, expected))
-        {
+        if (is_definer_current_user || definer)
             type = ASTSQLSecurity::Type::DEFINER;
-
-            if (!definer)
-                is_definer_current_user = true;
-        }
-        else if (ParserKeyword{"INVOKER"}.ignore(pos, expected))
-            type = ASTSQLSecurity::Type::INVOKER;
-        else if (ParserKeyword{"NONE"}.ignore(pos, expected))
-            type = ASTSQLSecurity::Type::NONE;
         else
             return false;
     }
-
-    if (!type.has_value())
-        return false;
+    else if (type == ASTSQLSecurity::Type::DEFINER && !definer)
+        is_definer_current_user = true;
 
     auto result = std::make_shared<ASTSQLSecurity>();
     result->is_definer_current_user = is_definer_current_user;

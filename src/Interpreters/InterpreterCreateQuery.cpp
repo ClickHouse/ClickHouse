@@ -1064,7 +1064,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
-    processSQLSecurityOption(getContext(), create.sql_security, create.attach);
+    if (create.sql_security)
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach);
 
     DDLGuardPtr ddl_guard;
 
@@ -1800,48 +1801,44 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, std::shared_ptr<ASTSQLSecurity> sql_security, bool is_attach)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach)
 {
-    /// sql_security won't be set for any queries, except CREATE VIEW.
-    if (!sql_security)
-        return;
-
-    /// SQL SECURITY/DEFINER options wasn't specified, will use defaults.
-    if (!sql_security->type.has_value())
+    if (!sql_security.type.has_value())
     {
+        /// SQL SECURITY/DEFINER options wasn't specified, will use defaults.
         String default_security = context_->getSettingsRef().default_view_sql_security;
 
         if (default_security == "NONE")
-            sql_security->type = ASTSQLSecurity::Type::NONE;
+            sql_security.type = ASTSQLSecurity::Type::NONE;
         else if (default_security == "INVOKER")
-            sql_security->type = ASTSQLSecurity::Type::INVOKER;
+            sql_security.type = ASTSQLSecurity::Type::INVOKER;
         else if (default_security == "DEFINER")
         {
-            sql_security->type = ASTSQLSecurity::Type::DEFINER;
+            sql_security.type = ASTSQLSecurity::Type::DEFINER;
             String default_definer = context_->getSettingsRef().default_view_definer;
             if (default_definer == "CURRENT_USER")
-                sql_security->is_definer_current_user = true;
+                sql_security.is_definer_current_user = true;
             else
-                sql_security->definer = std::make_shared<ASTUserNameWithHost>(default_definer);
+                sql_security.definer = std::make_shared<ASTUserNameWithHost>(default_definer);
         }
         else
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected default_view_sql_security = <DEFINER | INVOKER | NONE>. Got {}", default_security);
     }
 
     const auto current_user_name = context_->getUserName();
-    if (sql_security->is_definer_current_user)
+    if (sql_security.is_definer_current_user)
     {
         if (current_user_name.empty())
             /// This can happen only when attaching a view for the first time after migration and with `CURRENT_USER` default.
-            sql_security->type = ASTSQLSecurity::Type::NONE;
-        else if (sql_security->definer)
-            sql_security->definer->replace(current_user_name);
+            sql_security.type = ASTSQLSecurity::Type::NONE;
+        else if (sql_security.definer)
+            sql_security.definer->replace(current_user_name);
         else
-            sql_security->definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
+            sql_security.definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
     }
-    else if (sql_security->definer && !is_attach)
+    else if (sql_security.definer && !is_attach)
     {
-        const auto definer_name = sql_security->definer->toString();
+        const auto definer_name = sql_security.definer->toString();
 
         /// Validate that definer exists.
         context_->getAccessControl().getID<User>(definer_name);
@@ -1849,7 +1846,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, std::
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
-    if (sql_security->type == ASTSQLSecurity::Type::NONE && !is_attach)
+    if (sql_security.type == ASTSQLSecurity::Type::NONE && !is_attach)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 

@@ -75,6 +75,9 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
+    /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.
+    static void processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach = false);
+
 private:
     struct TableProperties
     {
@@ -106,9 +109,6 @@ private:
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
-
-    /// Validate definer statement and replace `CURRENT USER` with actual name.
-    static void processSQLSecurityOption(ContextPtr context_, std::shared_ptr<ASTSQLSecurity> sql_security, bool is_attach = false);
 
     ASTPtr query_ptr;
 

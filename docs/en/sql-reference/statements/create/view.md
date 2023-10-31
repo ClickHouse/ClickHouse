@@ -13,8 +13,9 @@ Creates a new view. Views can be [normal](#normal-view), [materialized](#materia
 Syntax:
 
 ``` sql
-CREATE [OR REPLACE] [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
-VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] AS SELECT ...
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] 
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }] 
+AS SELECT ...
 ```
 
 Normal views do not store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
@@ -90,6 +91,42 @@ Note that materialized view is influenced by [optimize_on_insert](../../../opera
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
+
+## SQL security {#sql_security}
+
+`DEFINER` and `SQL SECURITY` allow you to specify which ClickHouse user to use when executing the view's underlying query.
+`SQL SECURITY` has three legal values: `DEFINER`, `INVOKER`, or `NONE`. You can specify any existing user or `CURRENT_USER` in the `DEFINER` clause.
+
+The following table will explain which rights are required for which user in order to select from view. 
+Note that regardless of the SQL security option, in every case it is still required to have `GRANT SELECT ON <view>` in order to read from it.
+
+| SQL security option | View                                                            | Materialized View                                                                                                 |
+|---------------------|-----------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `DEFINER alice`     | `alice` must have a `SELECT` grant for the view's source table. | `alice` must have a `SELECT` grant for the view's source table and an `INSERT` grant for the view's target table. |
+| `INVOKER`           | User must have a `SELECT` grant for the view's source table.    | `SQL SECURITY INVOKER` can't be specified for materialized views.                                                 |
+| `NONE`              | -                                                               | -                                                                                                                 |
+
+:::note
+`SQL SECURITY NONE` is a deprecated option. Any user with the rights to create views with `SQL SECURITY NONE` will be able to execute any arbitrary query.
+Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order to create a view with this option.
+:::
+
+If `DEFINER`/`SQL SECURITY` weren't specified, the default values will be used:
+- `SQL SECURITY`: `DEFINER` ([configurable by settings](../../../operations/settings/settings.md#default_view_sql_security))
+- `DEFINER`: `CURRENT_USER` ([configurable by settings](../../../operations/settings/settings.md#default_view_definer))
+
+### Examples sql security
+```sql
+CREATE test_view
+DEFINER = alice SQL SECURITY DEFINER
+AS SELECT ...
+```
+
+```sql
+CREATE test_view
+SQL SECURITY INVOKER
+AS SELECT ...
+```
 
 ## Live View [Experimental]
 

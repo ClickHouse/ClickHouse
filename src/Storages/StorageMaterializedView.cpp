@@ -69,9 +69,10 @@ StorageMaterializedView::StorageMaterializedView(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setDefiner(query.sql_security);
+    if (query.sql_security)
+        storage_metadata.setDefiner(query.sql_security->as<ASTSQLSecurity &>());
 
-    if (!storage_metadata.hasDefiner() and !storage_metadata.shouldIgnoreSQLSecurity())
+    if (storage_metadata.sql_security_type.has_value() && storage_metadata.sql_security_type == ASTSQLSecurity::Type::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
     if (!query.select)
@@ -319,24 +320,24 @@ void StorageMaterializedView::alter(
 void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    if (settings.allow_experimental_alter_materialized_view_structure)
+
+    for (const auto & command : commands)
     {
-        for (const auto & command : commands)
+        if (command.type == AlterCommand::MODIFY_SQL_SECURITY)
         {
-            if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
+            if (command.sql_security->as<ASTSQLSecurity &>().type == ASTSQLSecurity::Type::INVOKER)
+                throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
+
+            continue;
         }
+        else if ((command.type == AlterCommand::MODIFY_QUERY && settings.allow_experimental_alter_materialized_view_structure) ||
+                command.isCommentAlter())
+            continue;
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                        command.type, getName());
     }
-    else
-    {
-        for (const auto & command : commands)
-        {
-            if (!command.isCommentAlter())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
-        }
-    }
+
 }
 
 void StorageMaterializedView::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
