@@ -564,7 +564,7 @@ WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403)
 </remote_servers>
 ```
 
-Далее. созданим новую локальную таблицу посредством того же запроса `CREATE TABLE`, что использовался для таблицы `hits_v1`, но с другим наименованием:
+Далее создадим новую локальную таблицу с помощью того же запроса `CREATE TABLE`, что использовался для таблицы `hits_v1`, но с другим именем:
 
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
