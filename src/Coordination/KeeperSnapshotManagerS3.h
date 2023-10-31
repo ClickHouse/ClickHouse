@@ -9,7 +9,6 @@
 #include <Coordination/KeeperSnapshotManager.h>
 
 #if USE_AWS_S3
-#include <IO/S3/PocoHTTPClient.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 
@@ -65,8 +64,6 @@ public:
 
     void updateS3Configuration(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
     void uploadSnapshot(const SnapshotFileInfo &, [[maybe_unused]] bool async_upload = true) {}
-
-    std::string getAvaibilityZone() const { return ""; }
 
     void startup(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
 
