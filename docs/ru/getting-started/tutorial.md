@@ -462,7 +462,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
 ```
 
-Эти операторы можно выполнить с использованием интерактивного режима в `clickhouse-client` (лишь запустите его из командной строки не указывая заранее запросы) или воспользоваться каким-либо [альтернативным интерфейсом](../interfaces/index.md) при желании.
+Эти операторы можно выполнить с использованием интерактивного режима в `clickhouse-client` (запустите его из командной строки не указывая заранее запросы) или, при желании, воспользоваться [альтернативным интерфейсом](../interfaces/index.md) .
 
 Как вы можете видеть, `hits_v1` использует [базовый вариант движка MergeTree](../engines/table-engines/mergetree-family/mergetree.md), тогда как `visits_v1` использует вариант [Collapsing](../engines/table-engines/mergetree-family/collapsingmergetree.md).
 
