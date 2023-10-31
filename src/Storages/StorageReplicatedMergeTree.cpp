@@ -1361,7 +1361,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     UInt64 unexpected_parts_rows = 0;
 
     Strings covered_unexpected_parts;
-    Strings uncovered_unexpected_parts;
+    std::unordered_set<String> uncovered_unexpected_parts;
     UInt64 uncovered_unexpected_parts_rows = 0;
 
     for (const auto & part : unexpected_parts)
@@ -1378,7 +1378,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         }
 
         /// Part is unexpected and we don't have covering part: it's suspicious
-        uncovered_unexpected_parts.push_back(part->name);
+        uncovered_unexpected_parts.insert(part->name);
         uncovered_unexpected_parts_rows += part->rows_count;
 
         if (part->info.level > 0)
@@ -1454,8 +1454,9 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Remove extra local parts.
     for (const DataPartPtr & part : unexpected_parts)
     {
-        LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}", part->name, part->name);
-        forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", true);
+        bool restore_covered = uncovered_unexpected_parts.contains(part->name);
+        LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
+        forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
     }
 }
 
