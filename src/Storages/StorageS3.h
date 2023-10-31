@@ -35,6 +35,7 @@ namespace DB
 
 class PullingPipelineExecutor;
 class NamedCollection;
+class StorageS3;
 
 class StorageS3Source : public SourceWithKeyCondition, WithContext
 {
@@ -148,6 +149,7 @@ public:
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
         bool need_only_count_,
+        bool supports_subset_of_subcolumns_,
         std::optional<SelectQueryInfo> query_info);
 
     ~StorageS3Source() override;
@@ -249,6 +251,7 @@ private:
     std::shared_ptr<IIterator> file_iterator;
     size_t max_parsing_threads = 1;
     bool need_only_count;
+    bool supports_subset_of_subcolumns;
 
     Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 
@@ -391,6 +394,7 @@ private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageS3Queue;
+    friend class StorageS3Source;
 
     Configuration configuration;
     std::mutex configuration_update_mutex;
@@ -418,6 +422,7 @@ private:
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
+    bool supportsSubsetOfSubcolumns(const ContextPtr & context) const;
 
     bool prefersLargeBlocks() const override;
 

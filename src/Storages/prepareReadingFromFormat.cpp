@@ -4,7 +4,12 @@
 namespace DB
 {
 
-ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, bool supports_subset_of_columns, const NamesAndTypesList & virtuals)
+ReadFromFormatInfo prepareReadingFromFormat(
+    const Strings & requested_columns,
+    const StorageSnapshotPtr & storage_snapshot,
+    bool supports_subset_of_columns,
+    bool supports_subset_of_subcolumns,
+    const NamesAndTypesList & virtuals)
 {
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
@@ -24,6 +29,7 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
 
         if (!is_virtual)
             columns_to_read.push_back(column_name);
+        std::cout << "columns_to_read: " << column_name << std::endl;
     }
 
     /// Create header for Source that will contain all requested columns including virtual columns at the end
@@ -34,6 +40,8 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
 
     /// Set requested columns that should be read from data.
     info.requested_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), columns_to_read);
+    std::cout << "requested_columns:" << info.requested_columns.toString() << std::endl;
+    std::cout << "supports_subset_of_columns:" << supports_subset_of_columns << std::endl;
 
     if (supports_subset_of_columns)
     {
@@ -42,11 +50,12 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
         {
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
         }
-        /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
-        /// because most formats cannot extract subcolumns on their own.
-        /// All requested subcolumns will be extracted after reading.
-        else
+        else if (!supports_subset_of_subcolumns)
         {
+            /// If format supports reading subset of columns, but doesn't support reading subset of subcolumns,
+            /// We need to replace all subcolumns with their nested columns (e.g `a.b`, `a.b.c`, `x.y` -> `a`, `x`),
+            /// because most formats cannot extract subcolumns on their own.
+            /// All requested subcolumns will be extracted after reading.
             std::unordered_set<String> columns_to_read_set;
             /// Save original order of columns.
             std::vector<String> new_columns_to_read;
@@ -63,10 +72,10 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
         }
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }
-    /// If format doesn't support reading subset of columns, read all columns.
-    /// Requested columns/subcolumns will be extracted after reading.
     else
     {
+        /// If format doesn't support reading subset of columns, read all columns.
+        /// Requested columns/subcolumns will be extracted after reading.
         info.columns_description = storage_snapshot->metadata->getColumns();
     }
 

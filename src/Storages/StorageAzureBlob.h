@@ -108,6 +108,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
+    bool supportsSubsetOfSubcolumns(const ContextPtr & context) const;
 
     bool supportsTrivialCountOptimization() const override { return true; }
 
@@ -248,6 +249,7 @@ public:
 
     StorageAzureBlobSource(
         const ReadFromFormatInfo & info,
+        std::shared_ptr<StorageAzureBlob> storage_,
         const String & format_,
         String name_,
         ContextPtr context_,
@@ -270,6 +272,7 @@ private:
     void addNumRowsToCache(const String & path, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const RelativePathWithMetadata & path_with_metadata);
 
+    std::shared_ptr<StorageAzureBlob> storage;
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     String format;

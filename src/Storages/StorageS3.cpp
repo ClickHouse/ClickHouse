@@ -545,6 +545,7 @@ StorageS3Source::StorageS3Source(
     std::shared_ptr<IIterator> file_iterator_,
     const size_t max_parsing_threads_,
     bool need_only_count_,
+    bool supports_subset_of_subcolumns_,
     std::optional<SelectQueryInfo> query_info_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
@@ -566,6 +567,7 @@ StorageS3Source::StorageS3Source(
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
     , need_only_count(need_only_count_)
+    , supports_subset_of_subcolumns(supports_subset_of_subcolumns_)
     , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
@@ -646,12 +648,14 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
         source = input_format;
     }
 
-    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// If input format do not support subcolumns by itself.
+    /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
-    builder.addSimpleTransform([&](const Block & header)
+    if (!supports_subset_of_subcolumns)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-    });
+        builder.addSimpleTransform([&](const Block & header)
+                                   { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });
+    }
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1074,6 +1078,12 @@ bool StorageS3::supportsSubsetOfColumns(const ContextPtr & context) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
 }
 
+bool StorageS3::supportsSubsetOfSubcolumns(const ContextPtr & context) const
+{
+    return supportsSubsetOfColumns(context)
+        && FormatFactory::instance().checkIfFormatSupportsSubsetOfSubcolumns(configuration.format, context, format_settings);
+}
+
 bool StorageS3::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration.format);
@@ -1110,7 +1120,9 @@ Pipe StorageS3::read(
         /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
         num_streams = 1;
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    bool supports_subset_of_subcolumns = supportsSubsetOfSubcolumns(local_context);
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), supports_subset_of_subcolumns, getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
 
@@ -1137,6 +1149,7 @@ Pipe StorageS3::read(
             iterator_wrapper,
             max_parsing_threads,
             need_only_count,
+            supports_subset_of_subcolumns,
             query_info));
     }
 

@@ -261,6 +261,7 @@ void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credenti
 
 StorageURLSource::StorageURLSource(
     const ReadFromFormatInfo & info,
+    std::shared_ptr<IStorageURLBase> storage_,
     std::shared_ptr<IteratorWrapper> uri_iterator_,
     const std::string & http_method,
     std::function<void(std::ostream &)> callback,
@@ -278,6 +279,7 @@ StorageURLSource::StorageURLSource(
     bool glob_url,
     bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false), WithContext(context_)
+    , storage(std::move(storage_))
     , name(std::move(name_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
@@ -376,12 +378,14 @@ StorageURLSource::StorageURLSource(
             }
         }
 
-        /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+        /// If input format do not support subcolumns by itself.
+        /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
         /// from chunk read by IInputFormat.
-        builder.addSimpleTransform([&](const Block & header)
+        if (storage->supportsSubsetOfSubcolumns(getContext()))
         {
-            return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-        });
+            builder.addSimpleTransform([&](const Block & header)
+                                       { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });
+        }
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -830,6 +834,12 @@ bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool IStorageURLBase::supportsSubsetOfSubcolumns(const ContextPtr & context) const
+{
+    return supportsSubsetOfColumns(context)
+        && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
+}
+
 bool IStorageURLBase::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -854,7 +864,8 @@ Pipe IStorageURLBase::read(
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper{nullptr};
     bool is_url_with_globs = urlWithGlobs(uri);
     size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), supportsSubsetOfSubcolumns(local_context), getVirtuals());
 
     if (distributed_processing)
     {
@@ -907,11 +918,13 @@ Pipe IStorageURLBase::read(
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+    auto this_ptr = std::static_pointer_cast<IStorageURLBase>(shared_from_this());
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageURLSource>(
             read_from_format_info,
+            this_ptr,
             iterator_wrapper,
             getReadMethod(),
             getReadPOSTDataCallback(
@@ -959,13 +972,16 @@ Pipe StorageURLWithFailover::read(
         return uri_options;
     });
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), supportsSubsetOfSubcolumns(local_context), getVirtuals());
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / num_streams);
+    auto this_ptr = std::static_pointer_cast<StorageURLWithFailover>(shared_from_this());
 
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         read_from_format_info,
+        this_ptr,
         iterator_wrapper,
         getReadMethod(),
         getReadPOSTDataCallback(read_from_format_info.columns_description.getNamesOfPhysical(), read_from_format_info.columns_description, query_info, local_context, processed_stage, max_block_size),

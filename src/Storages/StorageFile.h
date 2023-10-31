@@ -76,6 +76,10 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
+    /// Check if the format supports reading only some subcolumns of top columns without reading the whole top column.
+    /// This feature is used to improve reading performance through subcolumn pruning.
+    bool supportsSubsetOfSubcolumns(const ContextPtr & context) const;
+
     bool supportsSubcolumns() const override { return true; }
 
     bool prefersLargeBlocks() const override;

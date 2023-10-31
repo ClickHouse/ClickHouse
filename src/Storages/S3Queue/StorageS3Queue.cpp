@@ -187,6 +187,12 @@ bool StorageS3Queue::supportsSubsetOfColumns(const ContextPtr & context_) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
 }
 
+bool StorageS3Queue::supportsSubsetOfSubcolumns(const ContextPtr & context_) const
+{
+    return supportsSubsetOfColumns(context_)
+        && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context_, format_settings);
+}
+
 Pipe StorageS3Queue::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -225,10 +231,15 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     ContextPtr local_context)
 {
     auto configuration_snapshot = updateConfigurationAndGetCopy(local_context);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), supportsSubsetOfSubcolumns(local_context), getVirtuals());
 
     auto internal_source = std::make_unique<StorageS3Source>(
-        read_from_format_info, configuration.format, getName(), local_context, format_settings,
+        read_from_format_info,
+        configuration.format,
+        getName(),
+        local_context,
+        format_settings,
         max_block_size,
         configuration_snapshot.request_settings,
         configuration_snapshot.compression_method,
@@ -236,7 +247,11 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
         configuration_snapshot.url.bucket,
         configuration_snapshot.url.version_id,
         configuration_snapshot.url.uri.getHost() + std::to_string(configuration_snapshot.url.uri.getPort()),
-        file_iterator, local_context->getSettingsRef().max_download_threads, false, /* query_info */ std::nullopt);
+        file_iterator,
+        local_context->getSettingsRef().max_download_threads,
+        false,
+        supportsSubsetOfSubcolumns(local_context),
+        /* query_info */ std::nullopt);
 
     auto file_deleter = [this, bucket = configuration_snapshot.url.bucket, client = configuration_snapshot.client](const std::string & path)
     {

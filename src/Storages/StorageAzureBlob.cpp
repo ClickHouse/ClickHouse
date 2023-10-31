@@ -699,14 +699,17 @@ Pipe StorageAzureBlob::read(
             query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(local_context), supportsSubsetOfSubcolumns(local_context), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef().optimize_count_from_files;
+    auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageAzureBlobSource>(
             read_from_format_info,
+            this_ptr,
             configuration.format,
             getName(),
             local_context,
@@ -807,6 +810,12 @@ bool StorageAzureBlob::supportsPartitionBy() const
 bool StorageAzureBlob::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
+}
+
+bool StorageAzureBlob::supportsSubsetOfSubcolumns(const ContextPtr & context) const
+{
+    return supportsSubsetOfColumns(context)
+        && FormatFactory::instance().checkIfFormatSupportsSubsetOfSubcolumns(configuration.format, context, format_settings);
 }
 
 bool StorageAzureBlob::prefersLargeBlocks() const
@@ -1054,6 +1063,7 @@ std::optional<size_t> StorageAzureBlobSource::tryGetNumRowsFromCache(const DB::R
 
 StorageAzureBlobSource::StorageAzureBlobSource(
     const ReadFromFormatInfo & info,
+    std::shared_ptr<StorageAzureBlob> storage_,
     const String & format_,
     String name_,
     ContextPtr context_,
@@ -1068,6 +1078,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     const SelectQueryInfo & query_info_)
     :ISource(info.source_header, false)
     , WithContext(context_)
+    , storage(std::move(storage_))
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , format(format_)
@@ -1153,12 +1164,14 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
         source = input_format;
     }
 
-    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// If input format do not support subcolumns by itself.
+    /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
-    builder.addSimpleTransform([&](const Block & header)
+    if (!storage->supportsSubsetOfColumns(getContext()))
     {
-        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-    });
+        builder.addSimpleTransform([&](const Block & header)
+                                   { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });
+    }
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);

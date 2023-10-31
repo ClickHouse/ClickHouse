@@ -616,12 +616,14 @@ bool HDFSSource::initialize()
         }
     }
 
-    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// If input format do not support subcolumns by itself.
+    /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
-    builder.addSimpleTransform([&](const Block & header)
+    if (storage->supportsSubsetOfSubcolumns(getContext()))
     {
-        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
-    });
+        builder.addSimpleTransform([&](const Block & header)
+                                   { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });
+    }
 
     pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -824,6 +826,11 @@ bool StorageHDFS::supportsSubsetOfColumns(const ContextPtr & context_) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context_);
 }
 
+bool StorageHDFS::supportsSubsetOfSubcolumns(const ContextPtr & context_) const
+{
+    return supportsSubsetOfColumns(context_) && FormatFactory::instance().checkIfFormatSupportsSubsetOfSubcolumns(format_name, context_);
+}
+
 Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -859,7 +866,8 @@ Pipe StorageHDFS::read(
         });
     }
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context_), getVirtuals());
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names, storage_snapshot, supportsSubsetOfColumns(context_), supportsSubsetOfColumns(context_), getVirtuals());
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && context_->getSettingsRef().optimize_count_from_files;
 

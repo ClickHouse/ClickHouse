@@ -79,6 +79,7 @@ private:
     void shutdown() override;
     void drop() override;
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
+    bool supportsSubsetOfSubcolumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, ASTPtr query);

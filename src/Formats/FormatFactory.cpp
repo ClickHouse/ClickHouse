@@ -697,12 +697,19 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
     target = true;
 }
 
-
 void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
 {
     auto & target = dict[name].subset_of_columns_support_checker;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns", name);
+    target = [](const FormatSettings &){ return true; };
+}
+
+void FormatFactory::markFormatSupportsSubsetOfSubcolumns(const String & name)
+{
+    auto & target = dict[name].subset_of_subcolumns_support_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of subcolumns", name);
     target = [](const FormatSettings &){ return true; };
 }
 
@@ -712,6 +719,14 @@ void FormatFactory::registerSubsetOfColumnsSupportChecker(const String & name, S
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns", name);
     target = std::move(subset_of_columns_support_checker);
+}
+
+void FormatFactory::registerSubsetOfSubcolumnsSupportChecker(const String & name, SubsetOfSubcolumnsSupportChecker subset_of_subcolumns_support_checker)
+{
+    auto & target = dict[name].subset_of_subcolumns_support_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of subcolumns", name);
+    target = std::move(subset_of_subcolumns_support_checker);
 }
 
 void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
@@ -727,6 +742,13 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const DB::String & name
     const auto & target = getCreators(name);
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     return target.subset_of_columns_support_checker && target.subset_of_columns_support_checker(format_settings);
+}
+
+bool FormatFactory::checkIfFormatSupportsSubsetOfSubcolumns(const DB::String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    const auto & target = getCreators(name);
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return target.subset_of_subcolumns_support_checker && target.subset_of_subcolumns_support_checker(format_settings);
 }
 
 void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
