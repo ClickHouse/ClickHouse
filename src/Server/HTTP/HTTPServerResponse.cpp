@@ -106,6 +106,7 @@ void HTTPServerResponse::sendBuffer(const void * buffer, std::size_t length)
     // Send header
     Poco::Net::HTTPHeaderOutputStream hs(session);
     write(hs);
+    hs.flush();
 
     if (request && request->getMethod() != HTTPRequest::HTTP_HEAD)
         WriteBufferFromPocoSocket(session.socket(), write_metric).write(static_cast<const char *>(buffer), length);
