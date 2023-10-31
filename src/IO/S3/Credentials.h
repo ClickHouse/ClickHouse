@@ -171,7 +171,6 @@ struct CredentialsConfiguration
     bool no_sign_request = false;
 };
 
-
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:

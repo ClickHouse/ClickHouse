@@ -647,40 +647,6 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
     }
 }
 
-Aws::Client::ClientConfiguration getAwsClientConfig(const DB::S3::PocoHTTPClientConfiguration & configuration)
-{
-    DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                    configuration.region,
-                    configuration.remote_host_filter,
-                    configuration.s3_max_redirects,
-                    configuration.s3_retry_attempts,
-                    configuration.enable_s3_requests_logging,
-                    configuration.for_disk_s3,
-                    configuration.get_request_throttler,
-                    configuration.put_request_throttler,
-                    Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
-
-    /// See MakeDefaultHttpResourceClientConfiguration().
-    /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
-    /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
-    aws_client_configuration.maxConnections = 2;
-
-    /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
-    /// in the future.
-    aws_client_configuration.proxyHost = "";
-    aws_client_configuration.proxyUserName = "";
-    aws_client_configuration.proxyPassword = "";
-    aws_client_configuration.proxyPort = 0;
-
-    /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
-    /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
-    aws_client_configuration.connectTimeoutMs = 1000;
-    aws_client_configuration.requestTimeoutMs = 1000;
-
-    aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-    return aws_client_configuration;
-}
-
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
@@ -771,8 +737,36 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         }
         else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
         {
-            auto aws_client_config = getAwsClientConfig(configuration);
-            auto ec2_metadata_client = InitEC2MetadataClient(aws_client_config);
+            DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+                configuration.region,
+                configuration.remote_host_filter,
+                configuration.s3_max_redirects,
+                configuration.s3_retry_attempts,
+                configuration.enable_s3_requests_logging,
+                configuration.for_disk_s3,
+                configuration.get_request_throttler,
+                configuration.put_request_throttler,
+                Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
+
+            /// See MakeDefaultHttpResourceClientConfiguration().
+            /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
+            /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
+            aws_client_configuration.maxConnections = 2;
+
+            /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
+            /// in the future.
+            aws_client_configuration.proxyHost = "";
+            aws_client_configuration.proxyUserName = "";
+            aws_client_configuration.proxyPassword = "";
+            aws_client_configuration.proxyPort = 0;
+
+            /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
+            /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
+            aws_client_configuration.connectTimeoutMs = 1000;
+            aws_client_configuration.requestTimeoutMs = 1000;
+
+            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+            auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
             auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
             AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));

@@ -373,7 +373,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     String availability_zone;
     try{
         availability_zone = DB::S3::getRunningAvailabilityZone();
-    } catch (...)
+    }
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
