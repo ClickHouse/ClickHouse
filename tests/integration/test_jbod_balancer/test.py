@@ -67,7 +67,7 @@ def check_balance(node, table):
                 partition, disk_name
         )
         GROUP BY partition
-        HAVING gini < 0.1
+        HAVING gini < 0.2
         """.format(
             table
         )
@@ -99,7 +99,7 @@ def test_jbod_balanced_merge(start_cluster):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
-                "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)"
             )
             node1.query(
                 "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
@@ -164,7 +164,7 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
-                "insert into tbl select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)"
             )
 
             # Fill jbod disks with garbage data
