@@ -240,7 +240,7 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     return it->second;
 }
 
-bool CacheMetadata::empty() const
+bool CacheMetadata::isEmpty() const
 {
     auto lock = lockMetadata();
     return empty();

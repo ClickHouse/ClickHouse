@@ -816,7 +816,7 @@ void FileCache::loadMetadata()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLoadMetadataMicroseconds);
 
-    if (!metadata.empty())
+    if (!metadata.isEmpty())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
