@@ -245,7 +245,7 @@ public:
         return prewhere_filter_actions;
     }
 
-    void setPrewhereFilterActions(ActionsDAGPtr row_level_filter_actions_value)
+    void setRowLevelFilterActions(ActionsDAGPtr row_level_filter_actions_value)
     {
         row_level_filter_actions = std::move(row_level_filter_actions_value);
     }
@@ -255,7 +255,7 @@ public:
         return row_level_filter_actions;
     }
 
-    void setRowLevelFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
+    void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
     }
