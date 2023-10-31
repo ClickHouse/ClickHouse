@@ -10,8 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
-
-
+#include <cmath>
 
 namespace DB
 {
@@ -54,14 +53,7 @@ public:
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         const IColumn & src_data = array->getData();
-        //const ColumnArray::Offsets & offsets = array->getOffsets();
-
-        /* const ColumnPtr & col = arguments[0].column;
-        const ColumnVector<Int64> * src_col = checkAndGetColumn<ColumnVector<Int64>>(col.get());
-        const PaddedPODArray<Int64> & values = src_col->getData(); */
-
-        
-
+       
         auto res = ColumnFloat64::create(1);
         auto & res_data = res->getData();
 
@@ -135,7 +127,7 @@ public:
 
             auto freq = xfreq[idx];
 
-            period = (1/freq);
+            period = std::round(1/freq);
             return true;
         }
         else
