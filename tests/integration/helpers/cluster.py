@@ -31,7 +31,6 @@ try:
     import pymysql
     import nats
     import ssl
-    import pyspark
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
     )
@@ -516,6 +515,7 @@ class ClickHouseCluster:
         self.spark_session = None
 
         self.with_azurite = False
+        self._azurite_port = 0
 
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
@@ -691,6 +691,8 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
 
         if with_spark:
+            import pyspark
+
             # if you change packages, don't forget to update them in docker/test/integration/runner/dockerd-entrypoint.sh
             (
                 pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -732,6 +734,13 @@ class ClickHouseCluster:
             return self._kerberized_kafka_port
         self._kerberized_kafka_port = get_free_port()
         return self._kerberized_kafka_port
+
+    @property
+    def azurite_port(self):
+        if self._azurite_port:
+            return self._azurite_port
+        self._azurite_port = get_free_port()
+        return self._azurite_port
 
     @property
     def mongo_port(self):
@@ -1435,6 +1444,16 @@ class ClickHouseCluster:
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
+        env_variables["AZURITE_PORT"] = str(self.azurite_port)
+        env_variables[
+            "AZURITE_STORAGE_ACCOUNT_URL"
+        ] = f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        env_variables["AZURITE_CONNECTION_STRING"] = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint={env_variables['AZURITE_STORAGE_ACCOUNT_URL']};"
+        )
+
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
         )
@@ -2523,7 +2542,11 @@ class ClickHouseCluster:
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
-        connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+        connection_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint=http://127.0.0.1:{self.env_variables['AZURITE_PORT']}/devstoreaccount1;"
+        )
         time.sleep(1)
         start = time.time()
         while time.time() - start < timeout:
@@ -3674,6 +3697,8 @@ class ClickHouseInstance:
             method = "POST" if data else "GET"
 
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        # Force encoding to UTF-8
+        r.encoding = "UTF-8"
 
         if r.ok:
             return (r.content if content else r.text, None)
