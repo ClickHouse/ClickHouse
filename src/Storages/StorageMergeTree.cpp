@@ -2080,7 +2080,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
             auto [dst_part, part_lock] =
-                cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, new_partition, min_max_index, clone_params);
+                cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    src_part,
+                    TMP_PREFIX,
+                    dst_part_info,
+                    my_metadata_snapshot,
+                    new_partition,
+                    min_max_index,
+                    clone_params,
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings()
+                );
 
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));

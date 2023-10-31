@@ -845,7 +845,7 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    void sanityCheckASTPartition(const ASTPtr & ast, MergeTreeData::DataPartsLock * acquired_lock = nullptr) const;
+    void sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * acquired_lock = nullptr) const;
 
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
@@ -861,7 +861,8 @@ public:
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-        const IDataPartStorage::ClonePartParams & params);
+        const IDataPartStorage::ClonePartParams & params, const ReadSettings & read_settings,
+        const WriteSettings & write_settings);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 

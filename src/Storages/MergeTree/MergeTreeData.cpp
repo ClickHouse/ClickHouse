@@ -4672,7 +4672,8 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
 
     if (!partition_ast.value)
     {
-        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
+        // todo arthur fix
+        MergeTreePartInfo::validatePartitionID(partition_ast.id->clone(), format_version);
         return;
     }
 
@@ -4683,7 +4684,7 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
     if (partition_ast.fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
-                        partition_ast.fields_count, fields_count);
+                        partition_ast.fields_count.value_or(0), fields_count);
 
 
     // this one does not seem necessary, but well... not sure it's going to be harmful, because it would fail later if there are no arguments
@@ -4691,7 +4692,8 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
     {
         /// Function tuple(...) requires at least one argument, so empty key is a special case
         assert(!partition_ast.fields_count);
-        assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
+        // todo arthur fix
+        assert(typeid_cast<ASTFunction *>(partition_ast.value));
         assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
         assert(partition_ast.value->as<ASTFunction>()->arguments);
         auto args = partition_ast.value->as<ASTFunction>()->arguments;
@@ -4722,7 +4724,7 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
 }
 
 void MergeTreeData::checkAlterPartitionIsPossible(
-    const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
+    const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr) const
 {
     for (const auto & command : commands)
     {
@@ -6961,7 +6963,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-        const IDataPartStorage::ClonePartParams & params)
+        const IDataPartStorage::ClonePartParams & params, const ReadSettings & read_settings,
+        const WriteSettings & write_settings)
 {
     MergeTreeDataPartDistinctPartitionExpressionCloner part_cloner {
         this,
@@ -6969,6 +6972,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         metadata_snapshot,
         dst_part_info,
         tmp_part_prefix,
+        read_settings,
+        write_settings,
         new_partition,
         new_min_max_index,
         false,
