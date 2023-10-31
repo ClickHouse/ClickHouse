@@ -246,10 +246,8 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
     session.sendRequest(request);
 
     std::istream& rs = session.receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK) {
-        throw DB::Exception(ErrorCodes::AWS_ERROR,
-            "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
-    }
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
     Poco::StreamCopier::copyToString(rs, response_data);
     return response_data;
@@ -264,17 +262,14 @@ String getGCPAvailabilityZoneOrException()
     request.set("Metadata-Flavor", "Google");
     session.sendRequest(request);
     std::istream& rs = session.receiveResponse(response);
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK) {
-        throw DB::Exception(ErrorCodes::GCP_ERROR,
-            "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
-    }
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
     Poco::StreamCopier::copyToString(rs, response_data);
     Strings zone_info;
     boost::split(zone_info, response_data, boost::is_any_of("/"));
-    if (zone_info.size() != 4) {
+    if (zone_info.size() != 4)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>, got {}", response_data);
-    }
     return zone_info[3];
 }
 
@@ -287,11 +282,12 @@ std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
     }
     catch (const DB::Exception & aws_ex)
     {
-        try{
+        try
+        {
             auto gcp_zone = getGCPAvailabilityZoneOrException();
             return gcp_zone;
         }
-        catch(const DB::Exception & gcp_ex)
+        catch (const DB::Exception & gcp_ex)
         {
             throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Failed to find the availability zone, tried AWS, GCP. AWS Error {}\n GCP Error {}", aws_ex.displayText(), gcp_ex.displayText());
         }
@@ -786,8 +782,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
 
-
-
 }
+
 }
 #endif

@@ -1,5 +1,4 @@
 #include <IO/S3/Client.h>
-#include <aws/core/http/HttpClientFactory.h>
 
 #if USE_AWS_S3
 
