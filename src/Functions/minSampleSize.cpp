@@ -286,7 +286,7 @@ REGISTER_FUNCTION(MinSampleSize)
 {
     factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>();
     /// Needed for backward compatibility
-    factory.registerAlias("minSampleSizeContinuous", FunctionMinSampleSize<ContinuousImpl>::name);
+    factory.registerAlias("minSampleSizeContinous", FunctionMinSampleSize<ContinuousImpl>::name);
     factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();
 }
 
