@@ -1821,6 +1821,8 @@ mininum
 miniselect
 minmap
 minmax
+minSampleSizeContinuous
+minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
