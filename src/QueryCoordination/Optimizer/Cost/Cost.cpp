@@ -120,7 +120,7 @@ void Cost::reset()
 
 String Cost::toString()
 {
-    return fmt::format("({:.2f}, {:.2f}, {:.2f})", cpu_cost, mem_cost, net_cost);
+    return fmt::format("({}, {}, {})", cpu_cost, mem_cost, net_cost);
 }
 
 }

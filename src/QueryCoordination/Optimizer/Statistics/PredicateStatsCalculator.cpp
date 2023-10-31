@@ -17,25 +17,25 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-namespace
-{
-    /// find action node by node result name
-    ActionsDAG::NodeRawConstPtrs findNodesByColumns(const DB::Names & names, PredicateNodeVisitor::VisitContext context)
-    {
-        ActionsDAG::NodeRawConstPtrs nodes;
-        for (const auto & name : names)
-        {
-            for (auto & entry : context)
-            {
-                if (entry.first->result_name == name)
-                    nodes.push_back(entry.first);
-            }
-            chassert(nodes.size() > 0 && nodes.back()->result_name == name);
-        }
-        return nodes;
-    }
-
-}
+//namespace
+//{
+//    /// find action node by node result name
+//    ActionsDAG::NodeRawConstPtrs findNodesByColumns(const DB::Names & names, PredicateNodeVisitor::VisitContext context)
+//    {
+//        ActionsDAG::NodeRawConstPtrs nodes;
+//        for (const auto & name : names)
+//        {
+//            for (auto & entry : context)
+//            {
+//                if (entry.first->result_name == name)
+//                    nodes.push_back(entry.first);
+//            }
+//            chassert(nodes.size() > 0 && nodes.back()->result_name == name);
+//        }
+//        return nodes;
+//    }
+//
+//}
 
 ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {
@@ -414,7 +414,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Nod
 }
 
 Statistics PredicateStatsCalculator::calculateStatistics(
-    const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input, const Names & output_columns)
+    const ActionsDAGPtr & predicates, const String & filter_node_name, const Statistics & input)
 {
     Statistics statistics;
 
@@ -449,9 +449,7 @@ Statistics PredicateStatsCalculator::calculateStatistics(
     statistics.setOutputRowSize(filter_node_stats.selectivity * input.getOutputRowSize());
 
     /// 4. adjust output node statistics
-    auto real_output_columns = output_columns.empty() ? output_nodes : findNodesByColumns(output_columns, context);
-
-    for (const auto & output_node : real_output_columns)
+    for (const auto & output_node : output_nodes)
     {
         if (output_node == filter_node)
             continue;

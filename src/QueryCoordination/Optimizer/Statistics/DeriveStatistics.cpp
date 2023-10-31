@@ -66,7 +66,6 @@ Statistics DeriveStatistics::visitDefault(IQueryPlanStep & step)
 
 Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
 {
-
     chassert(input_statistics.empty());
 
     auto storage_id = step.getStorageID();
@@ -79,26 +78,36 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         input = std::make_shared<Statistics>();
     }
 
-    Statistics statistics = *input;
-
     /// Final statistics output column names.
     const auto & output_columns = step.getOutputStream().header.getNames();
 
-    /// Remove the additional columns and add missing ones.
-    adjustStatisticsByColumns(statistics, output_columns);
+    /// Add all columns to statistics
+    auto add_column_if_not_exist = [&input](const Names & columns)
+    {
+        for (const auto & column : columns)
+        {
+            if (!input->containsColumnStatistics(column))
+                input->addColumnStatistics(column, ColumnStatistics::unknown());
+        }
+    };
+
+    add_column_if_not_exist(step.getRealColumnNames());
+    add_column_if_not_exist(step.getVirtualColumnNames());
+
+    Statistics statistics = *input;
 
     /// 2. calculate row count
     auto row_count = step.getAnalysisResult().selected_rows * context->getCluster(cluster_name)->getShardCount();
     statistics.setOutputRowSize(row_count);
 
     /// For action_dags in prewhere do not contains all output nodes,
-    /// we should append other nodes to statistics
-    auto append_column_stats = [&output_columns](Statistics & statistics_)
+    /// we should append other nodes to statistics. For example: SELECT a, b from t where a > 1;
+    auto append_column_stats = [&input, &statistics]()
     {
-        for (const auto & column : output_columns)
+        for (const auto & column : input->getColumnNames())
         {
-            if (!statistics_.containsColumnStatistics(column))
-                statistics_.addColumnStatistics(column, ColumnStatistics::unknown());
+            if (!statistics.containsColumnStatistics(column))
+                statistics.addColumnStatistics(column, input->getColumnStatistics(column)->clone());
         }
     };
 
@@ -109,20 +118,20 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
         if (prewhere_info->row_level_filter)
         {
             statistics = PredicateStatsCalculator::calculateStatistics(
-                prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics, output_columns);
+                prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics);
 
             statistics.removeColumnStatistics(prewhere_info->row_level_column_name);
-            append_column_stats(statistics);
+            append_column_stats();
         }
 
         if (prewhere_info->prewhere_actions)
         {
             statistics = PredicateStatsCalculator::calculateStatistics(
-                prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics, output_columns);
+                prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics);
 
             if (prewhere_info->remove_prewhere_column)
                 statistics.removeColumnStatistics(prewhere_info->prewhere_column_name);
-            append_column_stats(statistics);
+            append_column_stats();
         }
     }
 
@@ -131,8 +140,12 @@ Statistics DeriveStatistics::visit(ReadFromMergeTree & step)
     {
         auto & predicate = step.getFilters()[i];
         auto & predicate_node_name = step.getFilterNodes().nodes[i]->result_name;
-        statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics, output_columns);
+        statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics);
+        append_column_stats();
     }
+
+    /// Remove the additional columns and add missing ones.
+    adjustStatisticsByColumns(statistics, output_columns);
 
     statistics.adjustStatistics();
     return statistics;
