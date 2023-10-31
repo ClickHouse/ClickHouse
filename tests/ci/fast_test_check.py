@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import argparse
 import logging
 import subprocess
 import os
@@ -35,11 +35,6 @@ from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
 
 NAME = "Fast test"
-
-# Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
-# though due to cold cache build time can be much longer
-# https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
-FASTTEST_TIMEOUT = os.getenv("FASTTEST_TIMEOUT_MIN", 40)  * 60
 
 # Will help to avoid errors like _csv.Error: field larger than field limit (131072)
 csv.field_size_limit(sys.maxsize)
@@ -95,11 +90,30 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
 
     return state, description, test_results
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="FastTest script",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        # Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
+        # though due to cold cache build time can be much longer
+        # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
+        default=40,
+        help="Timeout in minutes",
+    )
+
+    return parser.parse_args()
 
 def main():
     logging.basicConfig(level=logging.INFO)
-
     stopwatch = Stopwatch()
+
+    args = parse_args()
+    timeout = args.timeout * 60
 
     temp_path = Path(TEMP_PATH)
 
@@ -148,7 +162,7 @@ def main():
     run_log_path = logs_path / "run.log"
     timeout_expired = False
 
-    with TeePopen(run_cmd, run_log_path, timeout=FASTTEST_TIMEOUT) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
             logging.info("Timeout expired for command: %s", run_cmd)
@@ -188,7 +202,7 @@ def main():
         state, description, test_results = process_results(output_path)
 
     if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(FASTTEST_TIMEOUT))
+        test_results.append(TestResult.create_check_timeout_expired(timeout))
         state = "failure"
         description = format_description(test_results[-1].name)
 
