@@ -52,19 +52,19 @@ ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_) : in
 {
 }
 
-uint64_t ORCInputStream::getLength() const
+UInt64 ORCInputStream::getLength() const
 {
     return file_size;
 }
 
-uint64_t ORCInputStream::getNaturalReadSize() const
+UInt64 ORCInputStream::getNaturalReadSize() const
 {
     return 128 * 1024;
 }
 
-void ORCInputStream::read(void * buf, uint64_t length, uint64_t offset)
+void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 {
-    if (offset != static_cast<uint64_t>(in.getPosition()))
+    if (offset != static_cast<UInt64>(in.getPosition()))
         in.seek(offset, SEEK_SET);
 
     in.readStrict(reinterpret_cast<char *>(buf), length);
@@ -102,7 +102,7 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 
 static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool case_insensitive_column_matching)
 {
-    for (uint64_t i = 0; i != schema.getSubtypeCount(); ++i)
+    for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
         if (boost::equals(schema.getFieldName(i), name)
             || (case_insensitive_column_matching && boost::iequals(schema.getFieldName(i), name)))
             return schema.getSubtype(i);
@@ -694,8 +694,8 @@ static void buildORCTypeNameIdMap(
     const orc::Type * orc_type,
     std::vector<std::string> & columns,
     bool case_insensitive_column_matching,
-    std::map<uint64_t, const orc::Type *> & id_type_map,
-    std::map<std::string, uint64_t> & name_id_map)
+    std::map<UInt64, const orc::Type *> & id_type_map,
+    std::map<std::string, UInt64> & name_id_map)
 {
     id_type_map[orc_type->getColumnId()] = orc_type;
     if (orc::STRUCT == orc_type->getKind())
@@ -841,8 +841,8 @@ void NativeORCBlockInputFormat::prepareFileReader()
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
     std::vector<std::string> columns;
-    std::map<uint64_t, const orc::Type *> id_type_map;
-    std::map<std::string, uint64_t> name_id_map;
+    std::map<UInt64, const orc::Type *> id_type_map;
+    std::map<std::string, UInt64> name_id_map;
     buildORCTypeNameIdMap(&file_reader->getType(), columns, ignore_case, id_type_map, name_id_map);
 
     // std::cout << "subtypes:" << file_reader->getType().getSubtypeCount() << std::endl;
@@ -854,7 +854,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         // std::cout << "name:" << k << ", id:" << v << std::endl;
 
     const auto & header = getPort().getHeader();
-    std::unordered_set<UInt64> column_indices;
+    std::unordered_set<UInt64> include_typeids;
     for (const auto & column : header)
     {
         auto name = column.name;
@@ -866,11 +866,11 @@ void NativeORCBlockInputFormat::prepareFileReader()
             auto id = name_id_map[name];
             if (id_type_map.contains(id))
             {
-                updateIncludeIndices(column.type, id_type_map[id], ignore_case, column_indices);
+                updateIncludeIndices(column.type, id_type_map[id], ignore_case, include_typeids);
             }
         }
     }
-    include_indices.assign(column_indices.begin(), column_indices.end());
+    include_indices.assign(include_typeids.begin(), include_typeids.end());
 
     if (format_settings.orc.filter_push_down && key_condition && !sarg)
     {
@@ -895,7 +895,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
         throw Exception(ErrorCodes::INCORRECT_DATA, "ORC stripe {} has no rows", current_stripe);
 
     orc::RowReaderOptions row_reader_options;
-    row_reader_options.include(include_indices);
+    row_reader_options.includeTypes(include_indices);
     row_reader_options.range(current_stripe_info->getOffset(), current_stripe_info->getLength());
     if (format_settings.orc.filter_push_down && sarg)
     {

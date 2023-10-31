@@ -1,7 +1,7 @@
 set engine_file_truncate_on_insert = 1;
 set flatten_nested = 0;
 
-insert into function file('02906.orc')
+insert into function file('02906.orc', 'ORC')
 select
     number::Int64 as int64_column,
     number::String as string_column,
