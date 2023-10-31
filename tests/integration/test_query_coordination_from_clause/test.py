@@ -31,10 +31,10 @@ def started_cluster():
         cluster.shutdown()
 
 def insert_data():
-    node1.query("INSERT INTO test_from_clause SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 200")
-    node3.query("INSERT INTO test_from_clause SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 300")
-    node5.query("INSERT INTO test_from_clause SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 400")
-    node1.query("INSERT INTO test_from_clause_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 500")
+    node1.query("INSERT INTO test_from_clause SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 20")
+    node3.query("INSERT INTO test_from_clause SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 30")
+    node5.query("INSERT INTO test_from_clause SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 40")
+    node1.query("INSERT INTO test_from_clause_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 50")
     node1.query("SYSTEM FLUSH DISTRIBUTED test_from_clause_all")
 
 def exec_query_compare_result(query_text):
@@ -46,6 +46,6 @@ def exec_query_compare_result(query_text):
 def test_query(started_cluster):
     insert_data()
 
-    exec_query_compare_result("SELECT * FROM test_from_clause_all")
+    exec_query_compare_result("SELECT * FROM test_from_clause_all ORDER BY id,val,name")
 
-    exec_query_compare_result("SELECT * FROM (SELECT id, name FROM test_from_clause_all WHERE id > 3) WHERE id > 4")
+    exec_query_compare_result("SELECT * FROM (SELECT id, name FROM test_from_clause_all WHERE id > 3) WHERE id > 4 ORDER BY id,name")

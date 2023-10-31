@@ -51,6 +51,27 @@ public:
         return TopN;
     }
 
+    SortingStep::Type sortType() const
+    {
+        auto * sorting = typeid_cast<SortingStep *>(sorting_step.get());
+        assert(sorting != nullptr);
+        return sorting->getType();
+    }
+
+    const SortDescription & getPrefixDescription() const
+    {
+        auto * sorting = typeid_cast<SortingStep *>(sorting_step.get());
+        assert(sorting != nullptr);
+        return sorting->getPrefixDescription();
+    }
+
+    const SortDescription & getSortDescription() const
+    {
+        auto * sorting = typeid_cast<SortingStep *>(sorting_step.get());
+        assert(sorting != nullptr);
+        return sorting->getSortDescription();
+    }
+
 private:
     QueryPlanStepPtr sorting_step;
     QueryPlanStepPtr limit_step;

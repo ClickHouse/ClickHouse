@@ -19,10 +19,23 @@ AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & s
     if (step.stepType() == StepType::Scan)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented", step.getName());
 
+    SortProp required_sort_prop;
+    auto * transforming_step = dynamic_cast<ITransformingStep *>(group_node->getStep().get());
+
+    /// If the transform preserves_sorting and the output is ordered, the child is required to be ordered.
+    if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
+    {
+        if (!transforming_step->getOutputStream().sort_description.empty())
+        {
+            required_sort_prop.sort_description = step.getOutputStream().sort_description;
+            required_sort_prop.sort_scope = step.getOutputStream().sort_scope;
+        }
+    }
+
     std::vector<PhysicalProperties> required_child_prop;
     for (size_t i = 0; i < group_node->childSize(); ++i)
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_sort_prop});
     }
     return {required_child_prop};
 }
@@ -90,16 +103,27 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(ExpressionStep & /*step*/
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(TopNStep & step)
 {
-    std::vector<PhysicalProperties> required_child_prop;
+    PhysicalProperties required_child_prop;
+    if (step.sortType() == SortingStep::Type::FinishSorting)
+    {
+        required_child_prop.sort_prop.sort_scope = DataStream::SortScope::Stream;
+        required_child_prop.sort_prop.sort_description = step.getPrefixDescription();
+    }
+    else if (step.sortType() == SortingStep::Type::MergingSorted)
+    {
+        required_child_prop.sort_prop.sort_scope = DataStream::SortScope::Stream;
+        required_child_prop.sort_prop.sort_description = step.getSortDescription();
+    }
+
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Any};
     }
     else
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}});
+        required_child_prop.distribution = {.type = PhysicalProperties::DistributionType::Singleton};
     }
-    return {required_child_prop};
+    return {{required_child_prop}};
 }
 
 AlternativeChildrenProp DeriveRequiredChildProp::visit(SortingStep & step)

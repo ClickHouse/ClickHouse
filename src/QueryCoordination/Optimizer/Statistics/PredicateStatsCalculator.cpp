@@ -17,26 +17,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-//namespace
-//{
-//    /// find action node by node result name
-//    ActionsDAG::NodeRawConstPtrs findNodesByColumns(const DB::Names & names, PredicateNodeVisitor::VisitContext context)
-//    {
-//        ActionsDAG::NodeRawConstPtrs nodes;
-//        for (const auto & name : names)
-//        {
-//            for (auto & entry : context)
-//            {
-//                if (entry.first->result_name == name)
-//                    nodes.push_back(entry.first);
-//            }
-//            chassert(nodes.size() > 0 && nodes.back()->result_name == name);
-//        }
-//        return nodes;
-//    }
-//
-//}
-
 ActionNodeStatistics PredicateNodeVisitor::visit(const ActionsDAG::Node * node, ContextType & context)
 {
     if (context.contains(node))
