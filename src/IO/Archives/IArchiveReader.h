@@ -50,8 +50,8 @@ public:
     /// Starts reading a file from the archive. The function returns a read buffer,
     /// you can read that buffer to extract uncompressed data from the archive.
     /// Several read buffers can be used at the same time in parallel.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename) = 0;
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(NameFilter filter) = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename, bool throw_on_not_found) = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(NameFilter filter, bool throw_on_not_found) = 0;
 
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) = 0;

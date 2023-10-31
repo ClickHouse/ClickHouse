@@ -49,7 +49,7 @@ struct AsyncLoaderTest
     }
 
     explicit AsyncLoaderTest(size_t max_threads = 1)
-        : AsyncLoaderTest({{.max_threads = max_threads}})
+        : AsyncLoaderTest({{.max_threads = max_threads, .priority = {}}})
     {}
 
     std::vector<AsyncLoader::PoolInitializer> getPoolInitializers(std::vector<Initializer> initializers)
@@ -74,7 +74,7 @@ struct AsyncLoaderTest
     T randomInt(T from, T to)
     {
         std::uniform_int_distribution<T> distribution(from, to);
-        std::scoped_lock lock(rng_mutex);
+        std::lock_guard lock(rng_mutex);
         return distribution(rng);
     }
 

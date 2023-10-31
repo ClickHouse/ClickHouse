@@ -41,6 +41,10 @@ def get_spark():
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
         .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
+        .config(
+            "spark.sql.extensions",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+        )
         .master("local")
     )
     return builder.master("local").getOrCreate()
@@ -129,12 +133,12 @@ def generate_data(spark, start, end):
     return df
 
 
-def create_iceberg_table(node, table_name):
+def create_iceberg_table(node, table_name, format="Parquet"):
     node.query(
         f"""
         DROP TABLE IF EXISTS {table_name};
         CREATE TABLE {table_name}
-        ENGINE=Iceberg(s3, filename = 'iceberg_data/default/{table_name}/')"""
+        ENGINE=Iceberg(s3, filename = 'iceberg_data/default/{table_name}/', format={format})"""
     )
 
 
@@ -165,7 +169,7 @@ def test_single_iceberg_file(started_cluster, format_version):
     bucket = started_cluster.minio_bucket
     TABLE_NAME = "test_single_iceberg_file_" + format_version
 
-    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
+    inserted_data = "SELECT number, toString(number) as string FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
         started_cluster, instance, inserted_data, TABLE_NAME
     )
@@ -308,8 +312,206 @@ def test_types(started_cluster, format_version):
         [
             ["a", "Nullable(Int32)"],
             ["b", "Nullable(String)"],
-            ["c", "Nullable(Date32)"],
+            ["c", "Nullable(Date)"],
             ["d", "Array(Nullable(String))"],
             ["e", "Nullable(Bool)"],
         ]
     )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_delete_files(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = "test_delete_files_" + format_version
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    create_iceberg_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 0")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+    assert instance.contains_in_log("Processing delete file for path")
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="upsert",
+        format_version=format_version,
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_evolved_schema(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = "test_evolved_schema_" + format_version
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
+        TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    create_iceberg_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    spark.sql(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (x bigint)")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
+    assert "UNSUPPORTED_METHOD" in error
+
+
+def test_row_based_deletes(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = "test_row_based_deletes"
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)"
+    )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    create_iceberg_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
+    assert "UNSUPPORTED_METHOD" in error
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_schema_inference(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    for format in ["Parquet", "ORC", "Avro"]:
+        TABLE_NAME = "test_schema_inference_" + format + "_" + format_version
+
+        # Types time, timestamptz, fixed are not supported in Spark.
+        spark.sql(
+            f"CREATE TABLE {TABLE_NAME} (intC int, longC long, floatC float, doubleC double, decimalC1 decimal(10, 3), decimalC2 decimal(20, 10), decimalC3 decimal(38, 30), dateC date,  timestampC timestamp, stringC string, binaryC binary, arrayC1 array<int>, mapC1 map<string, string>, structC1 struct<field1: int, field2: string>, complexC array<struct<field1: map<string, array<map<string, int>>>, field2: struct<field3: int, field4: string>>>) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}', 'write.format.default' = '{format}')"
+        )
+
+        spark.sql(
+            f"insert into {TABLE_NAME} select 42, 4242, 42.42, 4242.4242, decimal(42.42), decimal(42.42), decimal(42.42), date('2020-01-01'), timestamp('2020-01-01 20:00:00'), 'hello', binary('hello'), array(1,2,3), map('key', 'value'), struct(42, 'hello'), array(struct(map('key', array(map('key', 42))), struct(42, 'hello')))"
+        )
+
+        files = upload_directory(
+            minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+        )
+
+        create_iceberg_table(instance, TABLE_NAME, format)
+
+        res = instance.query(f"DESC {TABLE_NAME} FORMAT TSVRaw")
+        expected = TSV(
+            [
+                ["intC", "Nullable(Int32)"],
+                ["longC", "Nullable(Int64)"],
+                ["floatC", "Nullable(Float32)"],
+                ["doubleC", "Nullable(Float64)"],
+                ["decimalC1", "Nullable(Decimal(10, 3))"],
+                ["decimalC2", "Nullable(Decimal(20, 10))"],
+                ["decimalC3", "Nullable(Decimal(38, 30))"],
+                ["dateC", "Nullable(Date)"],
+                ["timestampC", "Nullable(DateTime64(6, 'UTC'))"],
+                ["stringC", "Nullable(String)"],
+                ["binaryC", "Nullable(String)"],
+                ["arrayC1", "Array(Nullable(Int32))"],
+                ["mapC1", "Map(String, Nullable(String))"],
+                ["structC1", "Tuple(field1 Nullable(Int32), field2 Nullable(String))"],
+                [
+                    "complexC",
+                    "Array(Tuple(field1 Map(String, Array(Map(String, Nullable(Int32)))), field2 Tuple(field3 Nullable(Int32), field4 Nullable(String))))",
+                ],
+            ]
+        )
+
+        assert res == expected
+
+        # Check that we can parse data
+        instance.query(f"SELECT * FROM {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+def test_metadata_file_selection(started_cluster, format_version):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = "test_metadata_selection_" + format_version
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+    )
+
+    for i in range(50):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
+        )
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
+    )
+
+    create_iceberg_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500

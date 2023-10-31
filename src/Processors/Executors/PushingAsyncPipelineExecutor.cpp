@@ -98,7 +98,8 @@ struct PushingAsyncPipelineExecutor::Data
     }
 };
 
-static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads)
+static void threadFunction(
+    PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -111,7 +112,7 @@ static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGrou
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        data.executor->execute(num_threads);
+        data.executor->execute(num_threads, concurrency_control);
     }
     catch (...)
     {
@@ -172,7 +173,7 @@ void PushingAsyncPipelineExecutor::start()
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
     {
-        threadFunction(*data, thread_group, pipeline.getNumThreads());
+        threadFunction(*data, thread_group, pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     };
 
     data->thread = ThreadFromGlobalPool(std::move(func));

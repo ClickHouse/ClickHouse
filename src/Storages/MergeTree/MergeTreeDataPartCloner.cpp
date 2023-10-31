@@ -17,11 +17,13 @@ MergeTreeDataPartCloner::MergeTreeDataPartCloner(
     const MergeTreePartInfo & dst_part_info_,
     const String & tmp_part_prefix_,
     bool require_part_metadata_,
-    const IDataPartStorage::ClonePartParams & params_
+    const IDataPartStorage::ClonePartParams & params_,
+    const ReadSettings & read_settings_,
+    const WriteSettings & write_settings_
 )
 : merge_tree_data(merge_tree_data_), src_part(src_part_), metadata_snapshot(metadata_snapshot_),
     dst_part_info(dst_part_info_), tmp_part_prefix(tmp_part_prefix_), require_part_metadata(require_part_metadata_),
-    params(params_), log(&Poco::Logger::get("MergeTreeDataPartCloner"))
+    params(params_), read_settings(read_settings_), write_settings(write_settings_), log(&Poco::Logger::get("MergeTreeDataPartCloner"))
 {}
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeDataPartCloner::clone()
@@ -97,6 +99,8 @@ std::shared_ptr<IDataPartStorage> MergeTreeDataPartCloner::hardlinkAllFiles(
     return storage->freeze(
             merge_tree_data->getRelativeDataPath(),
             path,
+            read_settings,
+            write_settings,
             /*save_metadata_callback=*/ {},
             params
     );

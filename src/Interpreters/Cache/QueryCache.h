@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -144,6 +145,7 @@ public:
         Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<Entry>();
         std::atomic<bool> skip_insert = false;
         bool was_finalized = false;
+        Poco::Logger * logger = &Poco::Logger::get("QueryCache");
 
         Writer(Cache & cache_, const Key & key_,
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
@@ -170,6 +172,7 @@ public:
         std::unique_ptr<SourceFromChunks> source_from_chunks;
         std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
         std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+        Poco::Logger * logger = &Poco::Logger::get("QueryCache");
         friend class QueryCache; /// for createReader()
     };
 
@@ -180,9 +183,9 @@ public:
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
-    void reset();
+    void clear();
 
-    size_t weight() const;
+    size_t sizeInBytes() const;
     size_t count() const;
 
     /// Record new execution of query represented by key. Returns number of executions so far.

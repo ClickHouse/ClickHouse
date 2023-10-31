@@ -302,7 +302,6 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
         if (auto session_log = getSessionLog())
         {
-            /// TODO: We have to ensure that the same info is added to the session log on a LoginSuccess event and on the corresponding Logout event.
             session_log->addLogOut(auth_id, user, getClientInfo());
         }
     }
@@ -351,7 +350,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
+        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
+        user_id = auth_result.user_id;
+        settings_from_auth_server = auth_result.settings;
+
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -522,6 +524,10 @@ ContextMutablePtr Session::makeSessionContext()
         {},
         session_context->getSettingsRef().max_sessions_for_user);
 
+    // Use QUERY source as for SET query for a session
+    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+    session_context->applySettingsChanges(settings_from_auth_server);
+
     recordLoginSucess(session_context);
 
     return session_context;
@@ -622,7 +628,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (auto query_context_user = query_context->getAccess()->tryGetUser())
     {
-        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+        LOG_TRACE(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
                   toString(auth_id),
                   from_session_context ? "session" : "global",
                   toString(*user_id),

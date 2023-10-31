@@ -4,14 +4,24 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <re2/re2.h>
 #include <Storages/IStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/SelectQueryInfo.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -97,7 +107,9 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
@@ -111,18 +123,6 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         bool distributed_processing = false);
-
-private:
-    std::string name;
-    Configuration configuration;
-    std::unique_ptr<AzureObjectStorage> object_storage;
-    NamesAndTypesList virtual_columns;
-    Block virtual_block;
-
-    const bool distributed_processing;
-    std::optional<FormatSettings> format_settings;
-    ASTPtr partition_by;
-
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const RelativePathsWithMetadata::const_iterator & begin,
@@ -139,6 +139,15 @@ private:
         const String & format_name,
         const ContextPtr & ctx);
 
+private:
+    std::string name;
+    Configuration configuration;
+    std::unique_ptr<AzureObjectStorage> object_storage;
+    NamesAndTypesList virtual_columns;
+
+    const bool distributed_processing;
+    std::optional<FormatSettings> format_settings;
+    ASTPtr partition_by;
 };
 
 class StorageAzureBlobSource : public ISource, WithContext
@@ -162,7 +171,7 @@ public:
             const std::string & container_,
             String blob_path_with_globs_,
             ASTPtr query_,
-            const Block & virtual_header_,
+            const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs_,
             std::function<void(FileProgress)> file_progress_callback_ = {});
@@ -176,7 +185,7 @@ public:
         String blob_path_with_globs;
         ASTPtr query;
         ASTPtr filter_ast;
-        Block virtual_header;
+        NamesAndTypesList virtual_columns;
 
         size_t index = 0;
 
@@ -218,7 +227,7 @@ public:
             const std::string & container_,
             const Strings & keys_,
             ASTPtr query_,
-            const Block & virtual_header_,
+            const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs,
             std::function<void(FileProgress)> file_progress_callback = {});
@@ -232,8 +241,7 @@ public:
         RelativePathsWithMetadata keys;
 
         ASTPtr query;
-        ASTPtr filter_ast;
-        Block virtual_header;
+        NamesAndTypesList virtual_columns;
 
         std::atomic<size_t> index = 0;
     };
@@ -248,8 +256,10 @@ public:
         String compression_hint_,
         AzureObjectStorage * object_storage_,
         const String & container_,
-        std::shared_ptr<IIterator> file_iterator_);
-
+        const String & connection_url_,
+        std::shared_ptr<IIterator> file_iterator_,
+        bool need_only_count_,
+        const SelectQueryInfo & query_info_);
     ~StorageAzureBlobSource() override;
 
     Chunk generate() override;
@@ -257,6 +267,9 @@ public:
     String getName() const override;
 
 private:
+    void addNumRowsToCache(const String & path, size_t num_rows);
+    std::optional<size_t> tryGetNumRowsFromCache(const RelativePathWithMetadata & path_with_metadata);
+
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     String format;
@@ -268,20 +281,24 @@ private:
     String compression_hint;
     AzureObjectStorage * object_storage;
     String container;
+    String connection_url;
     std::shared_ptr<IIterator> file_iterator;
+    bool need_only_count;
+    size_t total_rows_in_file = 0;
+    SelectQueryInfo query_info;
 
     struct ReaderHolder
     {
     public:
         ReaderHolder(
-            String path_,
+            RelativePathWithMetadata relative_path_with_metadata_,
             std::unique_ptr<ReadBuffer> read_buf_,
-            std::shared_ptr<IInputFormat> input_format_,
+            std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_)
-            : path(std::move(path_))
+            : relative_path_with_metadata(std::move(relative_path_with_metadata_))
             , read_buf(std::move(read_buf_))
-            , input_format(std::move(input_format_))
+            , source(std::move(source_))
             , pipeline(std::move(pipeline_))
             , reader(std::move(reader_))
         {
@@ -302,22 +319,23 @@ private:
             /// reader uses pipeline, pipeline uses read_buf.
             reader = std::move(other.reader);
             pipeline = std::move(other.pipeline);
-            input_format = std::move(other.input_format);
+            source = std::move(other.source);
             read_buf = std::move(other.read_buf);
-            path = std::move(other.path);
+            relative_path_with_metadata = std::move(other.relative_path_with_metadata);
             return *this;
         }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
-        const String & getPath() const { return path; }
-        const IInputFormat * getInputFormat() const { return input_format.get(); }
+        const String & getRelativePath() const { return relative_path_with_metadata.relative_path; }
+        const RelativePathWithMetadata & getRelativePathWithMetadata() const { return relative_path_with_metadata; }
+        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
     private:
-        String path;
+        RelativePathWithMetadata relative_path_with_metadata;
         std::unique_ptr<ReadBuffer> read_buf;
-        std::shared_ptr<IInputFormat> input_format;
+        std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
     };

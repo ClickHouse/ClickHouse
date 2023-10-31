@@ -122,6 +122,7 @@ public:
         String compression_method_,
         Block sample_block_,
         ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         const StorageHive & storage_,
         const Names & text_input_field_names_ = {})
@@ -138,6 +139,7 @@ public:
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
         , read_settings(getContext()->getReadSettings())
+        , query_info(query_info_)
     {
         to_read_block = sample_block;
 
@@ -392,6 +394,7 @@ private:
     const Names & text_input_field_names;
     FormatSettings format_settings;
     ReadSettings read_settings;
+    SelectQueryInfo query_info;
 
     HiveFilePtr current_file;
     String current_path;
@@ -831,6 +834,7 @@ Pipe StorageHive::read(
             compression_method,
             sample_block,
             context_,
+            query_info,
             max_block_size,
             *this,
             text_input_field_names));

@@ -1,9 +1,11 @@
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
-#include <Parsers/Access/ASTCreateRoleQuery.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
 
 
 namespace DB
@@ -39,7 +41,9 @@ namespace
 
 BlockIO InterpreterCreateRoleQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateRoleQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    const auto & query = updated_query_ptr->as<const ASTCreateRoleQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_ROLE);
@@ -56,7 +60,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;

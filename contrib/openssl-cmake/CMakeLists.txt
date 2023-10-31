@@ -126,7 +126,7 @@ if(ENABLE_OPENSSL_DYNAMIC OR ENABLE_OPENSSL)
     elseif(ARCH_PPC64LE)
         macro(perl_generate_asm FILE_IN FILE_OUT)
             add_custom_command(OUTPUT ${FILE_OUT}
-                COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
+                COMMAND /usr/bin/env perl ${FILE_IN} "linux64v2" ${FILE_OUT})
         endmacro()
 
         perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-ppc.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-ppc.s)

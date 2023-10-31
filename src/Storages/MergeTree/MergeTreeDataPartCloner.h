@@ -23,7 +23,9 @@ namespace DB
             const MergeTreePartInfo & dst_part_info,
             const String & tmp_part_prefix,
             bool require_part_metadata,
-            const IDataPartStorage::ClonePartParams & params
+            const IDataPartStorage::ClonePartParams & params,
+            const ReadSettings & read_settings,
+            const WriteSettings & write_settings
         );
 
         virtual ~MergeTreeDataPartCloner() = default;
@@ -42,6 +44,8 @@ namespace DB
         const String & tmp_part_prefix;
         bool require_part_metadata;
         const IDataPartStorage::ClonePartParams & params;
+        const ReadSettings & read_settings;
+        const WriteSettings & write_settings;
         std::atomic<Poco::Logger *> log;
 
         /// Check that the storage policy contains the disk where the src_part is located.

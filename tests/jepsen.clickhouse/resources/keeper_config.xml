@@ -47,6 +47,7 @@
             <snapshot_distance>{snapshot_distance}</snapshot_distance>
             <stale_log_gap>{stale_log_gap}</stale_log_gap>
             <reserved_log_items>{reserved_log_items}</reserved_log_items>
+            <async_replication>1</async_replication>
         </coordination_settings>
 
         <raft_configuration>

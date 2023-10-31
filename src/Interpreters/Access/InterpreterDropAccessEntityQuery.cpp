@@ -1,11 +1,12 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
 
 namespace DB
 {
@@ -17,12 +18,14 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
-    auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 

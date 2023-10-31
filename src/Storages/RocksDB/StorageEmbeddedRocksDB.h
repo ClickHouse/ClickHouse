@@ -53,6 +53,7 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
+    void drop() override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -81,6 +82,10 @@ public:
         PaddedPODArray<UInt8> * out_null_map) const;
 
     bool supportsDelete() const override { return true; }
+
+    bool supportsTrivialCountOptimization() const override { return true; }
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
 
 private:
     const String primary_key;

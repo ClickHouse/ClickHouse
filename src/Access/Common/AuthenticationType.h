@@ -33,6 +33,13 @@ enum class AuthenticationType
     /// Password is encrypted in bcrypt hash.
     BCRYPT_PASSWORD,
 
+    /// Server sends a random string named `challenge` which client needs to encrypt with private key.
+    /// The check is performed on server side by decrypting the data and comparing with the original string.
+    SSH_KEY,
+
+    /// Authentication through HTTP protocol
+    HTTP,
+
     MAX,
 };
 

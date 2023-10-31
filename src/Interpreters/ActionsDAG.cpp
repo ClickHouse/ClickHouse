@@ -578,7 +578,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
 
 Block ActionsDAG::updateHeader(Block header) const
 {
-    std::unordered_map<const Node *, ColumnWithTypeAndName> node_to_column;
+    IntermediateExecutionResult node_to_column;
     std::set<size_t> pos_to_remove;
 
     {
@@ -602,8 +602,40 @@ Block ActionsDAG::updateHeader(Block header) const
     }
 
     ColumnsWithTypeAndName result_columns;
+    try
+    {
+        result_columns = evaluatePartialResult(node_to_column, outputs, true);
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK)
+            e.addMessage(" in block {}", header.dumpStructure());
 
+        throw;
+    }
 
+    if (isInputProjected())
+        header.clear();
+    else
+        header.erase(pos_to_remove);
+
+    Block res;
+
+    for (auto & col : result_columns)
+        res.insert(std::move(col));
+
+    for (auto && item : header)
+        res.insert(std::move(item));
+
+    return res;
+}
+
+ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
+    IntermediateExecutionResult & node_to_column,
+    const NodeRawConstPtrs & outputs,
+    bool throw_on_error)
+{
+    ColumnsWithTypeAndName result_columns;
     result_columns.reserve(outputs.size());
 
     struct Frame
@@ -628,58 +660,50 @@ Block ActionsDAG::updateHeader(Block header) const
                     while (frame.next_child < node->children.size())
                     {
                         const auto * child = node->children[frame.next_child];
+                        ++frame.next_child;
                         if (!node_to_column.contains(child))
                         {
                             stack.push({.node = child});
                             break;
                         }
-
-                        ++frame.next_child;
                     }
 
-                    if (frame.next_child < node->children.size())
+                    if (stack.top().node != node)
                         continue;
 
                     stack.pop();
 
                     ColumnsWithTypeAndName arguments(node->children.size());
+                    bool has_all_arguments = true;
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
                         arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
+                            has_all_arguments = false;
+                        if (!has_all_arguments && throw_on_error)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {} in block {}", node->children[i]->result_name,
-                                            header.dumpStructure());
+                                            "Not found column {}", node->children[i]->result_name);
                     }
 
-                    if (node->type == ActionsDAG::ActionType::INPUT)
+                    if (node->type == ActionsDAG::ActionType::INPUT && throw_on_error)
                         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                        "Not found column {} in block {}",
-                                        node->result_name, header.dumpStructure());
+                                        "Not found column {}",
+                                        node->result_name);
 
-                    node_to_column[node] = executeActionForHeader(node, std::move(arguments));
+                    if (node->type != ActionsDAG::ActionType::INPUT && has_all_arguments)
+                        node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
             }
 
-            if (node_to_column[output_node].column)
+            auto it = node_to_column.find(output_node);
+            if (it != node_to_column.end())
                 result_columns.push_back(node_to_column[output_node]);
+            else
+                result_columns.emplace_back(nullptr, output_node->result_type, output_node->result_name);
         }
     }
 
-    if (isInputProjected())
-        header.clear();
-    else
-        header.erase(pos_to_remove);
-
-    Block res;
-
-    for (auto & col : result_columns)
-        res.insert(std::move(col));
-
-    for (auto && item : header)
-        res.insert(std::move(item));
-
-    return res;
+    return result_columns;
 }
 
 NameSet ActionsDAG::foldActionsByProjection(
@@ -861,20 +885,6 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
     }
 
     return dag;
-}
-
-void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
-{
-    ::sort(outputs.begin(), outputs.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
-    {
-        return key_names_pos_map.find(lhs->result_name)->second < key_names_pos_map.find(rhs->result_name)->second;
-    });
-}
-
-void ActionsDAG::addAggregatesViaProjection(const Block & aggregates)
-{
-    for (const auto & aggregate : aggregates)
-        outputs.push_back(&addInput(aggregate));
 }
 
 void ActionsDAG::addAliases(const NamesWithAliases & aliases)
@@ -2191,8 +2201,8 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             /// Replace predicate result to constant 1.
             Node node;
             node.type = ActionType::COLUMN;
-            node.result_name = std::move(predicate->result_name);
-            node.result_type = std::move(predicate->result_type);
+            node.result_name = predicate->result_name;
+            node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
 
             if (predicate->type != ActionType::INPUT)
@@ -2504,6 +2514,96 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     }
 
     return result_dag;
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * predicate)
+{
+    NodeRawConstPtrs atoms;
+
+    std::stack<const ActionsDAG::Node *> stack;
+    stack.push(predicate);
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "and")
+            {
+                for (const auto * arg : node->children)
+                    stack.push(arg);
+
+                continue;
+            }
+        }
+
+        atoms.push_back(node);
+    }
+
+    return atoms;
+}
+
+ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
+    NodeRawConstPtrs nodes,
+    const std::unordered_set<const Node *> & allowed_inputs)
+{
+    size_t result_size = 0;
+
+    std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child_to_visit = 0;
+        bool can_compute_all_childern = true;
+    };
+
+    std::stack<Frame> stack;
+
+    for (const auto * node : nodes)
+    {
+        if (!can_compute.contains(node))
+            stack.push({node});
+
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            bool need_visit_child = false;
+            while (frame.next_child_to_visit < frame.node->children.size())
+            {
+                auto it = can_compute.find(frame.node->children[frame.next_child_to_visit]);
+                if (it == can_compute.end())
+                {
+                    stack.push({frame.node->children[frame.next_child_to_visit]});
+                    need_visit_child = true;
+                    break;
+                }
+
+                frame.can_compute_all_childern &= it->second;
+                ++frame.next_child_to_visit;
+            }
+
+            if (need_visit_child)
+                continue;
+
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+                can_compute[frame.node] = allowed_inputs.contains(frame.node);
+            else
+                can_compute[frame.node] = frame.can_compute_all_childern;
+
+            stack.pop();
+        }
+
+        if (can_compute.at(node))
+        {
+            nodes[result_size] = node;
+            ++result_size;
+        }
+    }
+
+    nodes.resize(result_size);
+    return nodes;
 }
 
 FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)

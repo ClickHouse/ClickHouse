@@ -51,6 +51,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -101,6 +102,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+
+#include <Storages/BlockNumberColumn.h>
 
 #include <memory>
 #include <filesystem>
@@ -298,6 +301,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
+        NameAndTypePair(BlockNumberColumn::name, BlockNumberColumn::type),
         NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
@@ -331,6 +335,9 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
+    if (!distributed_settings.flush_on_detach && distributed_settings.monitor_batch_inserts)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and monitor_batch_inserts=1 are incompatible");
+
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
@@ -416,7 +423,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
-
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
@@ -434,7 +440,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
+            auto syntax_analyzer_result = query_info.syntax_analyzer_result;
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info, syntax_analyzer_result);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -496,7 +503,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return QueryProcessingStage::FetchColumns;
     }
 
-    auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
+    std::optional<QueryProcessingStage::Enum> optimized_stage;
+    if (settings.allow_experimental_analyzer)
+        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
+    else
+        optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
     {
         if (*optimized_stage == QueryProcessingStage::Complete)
@@ -505,6 +516,96 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
+{
+    bool optimize_sharding_key_aggregation =
+        settings.optimize_skip_unused_shards &&
+        settings.optimize_distributed_group_by_sharding_key &&
+        has_sharding_key &&
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic);
+
+    QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+    if (settings.distributed_push_down_limit)
+        default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+    const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+
+    // std::cerr << query_node.dumpTree() << std::endl;
+    // std::cerr << query_info.table_expression->dumpTree() << std::endl;
+
+    auto expr_contains_sharding_key = [&](const ListNode & exprs) -> bool
+    {
+        std::unordered_set<std::string> expr_columns;
+        for (const auto & expr : exprs)
+        {
+            const auto * id = expr->as<const ColumnNode>();
+            if (!id)
+                continue;
+            auto source = id->getColumnSourceOrNull();
+            if (!source)
+                continue;
+
+            if (source.get() != query_info.table_expression.get())
+                continue;
+
+            expr_columns.emplace(id->getColumnName());
+        }
+        for (const auto & column : sharding_key_expr->getRequiredColumns())
+        {
+            if (!expr_columns.contains(column))
+                return false;
+        }
+
+        return true;
+    };
+
+    // GROUP BY qualifiers
+    // - TODO: WITH TOTALS can be implemented
+    // - TODO: WITH ROLLUP can be implemented (I guess)
+    if (query_node.isGroupByWithTotals() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
+        return {};
+
+    // Window functions are not supported.
+    if (hasWindowFunctionNodes(query_info.query_tree))
+        return {};
+    // TODO: extremes support can be implemented
+    if (settings.extremes)
+        return {};
+
+    // DISTINCT
+    if (query_node.isDistinct())
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getProjection()))
+            return {};
+    }
+
+    // GROUP BY
+    if (query_info.has_aggregates || query_node.hasGroupBy())
+    {
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
+            return {};
+    }
+
+    // LIMIT BY
+    if (query_node.hasLimitBy())
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(query_node.getLimitBy()))
+            return {};
+    }
+
+    // ORDER BY
+    if (query_node.hasOrderBy())
+        return default_stage;
+
+    // LIMIT
+    // OFFSET
+    if (query_node.hasLimit() || query_node.hasOffset())
+        return default_stage;
+
+    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
+    return QueryProcessingStage::Complete;
 }
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
@@ -737,12 +838,16 @@ void StorageDistributed::read(
             remote_storage_id,
             remote_table_function_ptr);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+        /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
+          * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
+          */
+        for (auto & column : header)
+            column.column = column.column->convertToFullColumnIfConst();
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
     }
     else
     {
-        header =
-            InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        header = InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         query_ast = query_info.query;
     }
 
@@ -753,6 +858,9 @@ void StorageDistributed::read(
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
     {
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+            return;
+
         Pipe pipe(std::make_shared<NullSource>(header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
@@ -988,7 +1096,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         {
             auto connection = std::make_shared<Connection>(
                 node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
-                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                 "ParallelInsertSelectInititiator",
                 node.compression,
                 node.secure
@@ -1301,7 +1409,10 @@ ClusterPtr StorageDistributed::getCluster() const
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
-    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
+    ContextPtr local_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    const TreeRewriterResultPtr & syntax_analyzer_result) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1310,7 +1421,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_info, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_info, syntax_analyzer_result, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1333,13 +1444,17 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
 
+    const IColumn * column = result.column.get();
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(column))
+        column = &col_const->getDataColumn();
+
 // If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE)                                                                                       \
     if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
-        return createBlockSelector<TYPE>(*result.column, slot_to_shard);                                            \
+        return createBlockSelector<TYPE>(*column, slot_to_shard);                                            \
     else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
         if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
-            return createBlockSelector<TYPE>(*result.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+            return createBlockSelector<TYPE>(*column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -1355,20 +1470,87 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Sharding key expression does not evaluate to an integer type");
 }
 
+ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
+    ClusterPtr cluster,
+    const SelectQueryInfo & query_info,
+    [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr local_context) const
+{
+
+    ActionsDAG::NodeRawConstPtrs nodes;
+
+    const auto & prewhere_info = query_info.prewhere_info;
+    if (prewhere_info)
+    {
+        {
+            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+            nodes.push_back(&node);
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+            nodes.push_back(&node);
+        }
+    }
+
+    if (query_info.filter_actions_dag)
+        nodes.push_back(query_info.filter_actions_dag->getOutputs().at(0));
+
+    if (nodes.empty())
+        return nullptr;
+
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, {}, local_context);
+
+    size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
+    if (!limit || limit > SSIZE_MAX)
+    {
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
+    }
+
+    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    const auto * expr_node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name);
+    if (!expr_node)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
+            sharding_key_column_name, sharding_key_dag.dumpDAG());
+
+    const auto * predicate = filter_actions_dag->getOutputs().at(0);
+    const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
+
+    // Can't get a definite answer if we can skip any shards
+    if (!variants)
+        return nullptr;
+
+    std::set<int> shards;
+
+    for (const auto & variant : *variants)
+    {
+        const auto selector = createSelector(cluster, variant.at(0));
+        shards.insert(selector.begin(), selector.end());
+    }
+
+    return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
+}
+
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
     const SelectQueryInfo & query_info,
+    const TreeRewriterResultPtr & syntax_analyzer_result,
     const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
+        return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
+
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
         return nullptr;
 
     /// FIXME: support analyzer
-    if (!query_info.syntax_analyzer_result)
+    if (!syntax_analyzer_result)
         return nullptr;
 
     ASTPtr condition_ast;
@@ -1377,7 +1559,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     {
         ASTPtr select_without_join_ptr = select.clone();
         ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *query_info.syntax_analyzer_result;
+        TreeRewriterResult analyzer_result_without_join = *syntax_analyzer_result;
 
         removeJoin(select_without_join, analyzer_result_without_join, local_context);
         if (!select_without_join.prewhere() && !select_without_join.where())
@@ -1463,9 +1645,18 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
             directory_monitors.push_back(node.second.directory_monitor);
     }
 
+    bool need_flush = getDistributedSettingsRef().flush_on_detach;
+    if (!need_flush)
+        LOG_INFO(log, "Skip flushing data (due to flush_on_detach=0)");
+
     /// TODO: Maybe it should be executed in parallel
     for (auto & node : directory_monitors)
-        node->flushAllData();
+    {
+        if (need_flush)
+            node->flushAllData();
+        else
+            node->shutdownWithoutFlush();
+    }
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)

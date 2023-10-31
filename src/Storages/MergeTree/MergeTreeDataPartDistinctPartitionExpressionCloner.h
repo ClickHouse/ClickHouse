@@ -23,6 +23,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreePartInfo & dst_part_info,
         const String & tmp_part_prefix,
+        const ReadSettings & read_settings_,
+        const WriteSettings & write_settings_,
         const MergeTreePartition & new_partition,
         const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
         bool sync_new_files,

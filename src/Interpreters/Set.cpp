@@ -324,11 +324,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (!transform_null_in && data_types[i]->canBeInsideNullable())
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i]);
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
         else
         {
-            result = castColumnAccurate(column_to_cast, data_types[i]);
+            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
         materialized_columns.emplace_back() = result;
@@ -346,6 +346,24 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     return res;
 }
 
+bool Set::hasNull() const
+{
+    checkIsCreated();
+
+    if (!transform_null_in)
+        return false;
+
+    if (data_types.size() != 1)
+        return false;
+
+    if (!data_types[0]->isNullable())
+        return false;
+
+    auto col = data_types[0]->createColumn();
+    col->insert(Field());
+    auto res = execute({ColumnWithTypeAndName(std::move(col), data_types[0], std::string())}, false);
+    return res->getBool(0);
+}
 
 bool Set::empty() const
 {
