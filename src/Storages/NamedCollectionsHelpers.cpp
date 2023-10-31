@@ -104,7 +104,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             continue;
         else if (!value_override)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed");
-        else if (!collection_copy->getOverridable(value_override->first, allow_override_by_default))
+        else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
@@ -137,7 +137,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const auto allow_override_by_default = context->getSettings().allow_named_collection_override_by_default;
     for (const auto & key : keys)
     {
-        if (collection_copy->getOverridable(key, allow_override_by_default))
+        if (collection_copy->isOverridable(key, allow_override_by_default))
             collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);

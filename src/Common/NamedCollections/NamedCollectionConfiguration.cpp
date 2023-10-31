@@ -123,7 +123,7 @@ template <typename T> void copyConfigValue(
             ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported type in copyConfigValue(). "
             "Supported types are String, UInt64, Int64, Float64");
-    const auto overridable = getOverridable(from_config, from_path);
+    const auto overridable = isOverridable(from_config, from_path);
     if (overridable)
         setOverridable(to_config, to_path, *overridable);
 }
@@ -210,7 +210,7 @@ void listKeys(
     listKeys(config, enumerate_paths, result, depth);
 }
 
-std::optional<bool> getOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+std::optional<bool> isOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
     std::string overridable_path = path + "[@overridable]";
     if (config.has(overridable_path))

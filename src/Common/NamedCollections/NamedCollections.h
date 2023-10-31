@@ -51,7 +51,7 @@ public:
 
     template <typename T, bool locked = false> void setOrUpdate(const Key & key, const T & value);
 
-    bool getOverridable(const Key & key, bool default_value) const;
+    bool isOverridable(const Key & key, bool default_value) const;
 
     template <bool locked = false>
     void setOverridable(const Key & key, bool value);

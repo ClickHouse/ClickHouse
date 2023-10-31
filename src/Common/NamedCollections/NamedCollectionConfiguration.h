@@ -69,7 +69,7 @@ void listKeys(
     std::set<std::string, std::less<>> & result,
     ssize_t depth);
 
-std::optional<bool> getOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path);
+std::optional<bool> isOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path);
 
 void setOverridable(Poco::Util::AbstractConfiguration & config, const std::string & path, bool value);
 }
