@@ -148,7 +148,7 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int exception_code_)
     if (headers_started_sending)
         exception_code = exception_code_;
     else
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code_));
 }
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
