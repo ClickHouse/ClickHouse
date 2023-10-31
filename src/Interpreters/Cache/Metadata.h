@@ -96,7 +96,7 @@ private:
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 
-struct CacheMetadata : private std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
+struct CacheMetadata
 {
 public:
     using Key = FileCacheKey;
@@ -155,16 +155,30 @@ public:
     void cancelDownload();
 
 private:
-    CacheMetadataGuard::Lock lockMetadata() const;
     const std::string path; /// Cache base path
-    mutable CacheMetadataGuard guard;
-    CleanupQueuePtr cleanup_queue;
-    DownloadQueuePtr download_queue;
+    const CleanupQueuePtr cleanup_queue;
+    const DownloadQueuePtr download_queue;
+
     std::shared_mutex key_prefix_directory_mutex;
     Poco::Logger * log;
 
+    struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
+    {
+        CacheMetadataGuard::Lock lock() const;
+    private:
+        mutable CacheMetadataGuard guard;
+    };
+
+    static constexpr size_t buckets_num = 1024;
+    std::vector<MetadataBucket> metadata_buckets{buckets_num};
+
+    MetadataBucket & getMetadataBucket(const Key & key);
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
-    iterator removeEmptyKey(iterator it, LockedKey &, const CacheMetadataGuard::Lock &);
+    MetadataBucket::iterator removeEmptyKey(
+        MetadataBucket & bucket,
+        MetadataBucket::iterator it,
+        LockedKey &,
+        const CacheMetadataGuard::Lock &);
 };
 
 
