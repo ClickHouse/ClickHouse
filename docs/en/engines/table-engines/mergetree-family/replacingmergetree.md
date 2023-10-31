@@ -101,8 +101,6 @@ The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is 
 
 No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
 
-Always execute `OPTIMIZE ... FINAL CLEANUP` and `OPTIMIZE ... FINAL` to delete rows with `is_deleted=1` defined, especially when you wish to insert a new row with an older version. Otherwise, the new row with an older version will be replaced and not be persisted.
-
 :::
 
 Example:

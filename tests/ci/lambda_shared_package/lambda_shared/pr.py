@@ -9,60 +9,40 @@ from typing import Tuple
 TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
-        "achimbab",
-        "adevyatova ",  # DOCSUP
-        "Algunenano",  # Raúl Marín, Tinybird
+        "achimbab",  # Kakao corp
+        "Algunenano",  # Raúl Marín, ClickHouse, Inc
         "amosbird",
-        "AnaUvarova",  # DOCSUP
-        "anauvarova",  # technical writer, Yandex
-        "annvsh",  # technical writer, Yandex
-        "atereh",  # DOCSUP
-        "azat",
-        "bharatnc",  # Newbie, but already with many contributions.
+        "azat",  # SEMRush
+        "bharatnc",  # Many contributions.
         "bobrik",  # Seasoned contributor, CloudFlare
-        "BohuTANG",
-        "codyrobert",  # Flickerbox engineer
-        "cwurm",  # Employee
-        "damozhaeva",  # DOCSUP
-        "den-crane",
-        "flickerbox-tom",  # Flickerbox
-        "gyuton",  # DOCSUP
+        "cwurm",  # ClickHouse, Inc
+        "den-crane",  # Documentation contributor
         "hagen1778",  # Roman Khavronenko, seasoned contributor
         "hczhcz",
         "hexiaoting",  # Seasoned contributor
         "ildus",  # adjust, ex-pgpro
         "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
-        "ka1bi4",  # DOCSUP
-        "kirillikoff",  # DOCSUP
         "kreuzerkrieg",
-        "lehasm",  # DOCSUP
-        "michon470",  # DOCSUP
         "nikvas0",
-        "nvartolomei",
-        "olgarev",  # DOCSUP
-        "otrazhenia",  # Yandex docs contractor
-        "pdv-ru",  # DOCSUP
-        "podshumok",  # cmake expert from QRator Labs
-        "s-mx",  # Maxim Sabyanin, former employee, present contributor
-        "sevirov",  # technical writer, Yandex
+        "nvartolomei",  # Seasoned contributor, CloudFlare
         "spongedu",  # Seasoned contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "vdimir",  # Employee
-        "vzakaznikov",
+        "vdimir",  # ClickHouse, Inc
         "YiuRULE",
         "zlobober",  # Developer of YT
         "ilejn",  # Arenadata, responsible for Kerberized Kafka
-        "thomoco",  # ClickHouse
+        "thomoco",  # ClickHouse, Inc
         "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse Employee
+        "tylerhannan",  # ClickHouse, Inc
         "myrrc",  # Mike Kot, DoubleCloud
-        "thevar1able",  # ClickHouse Employee
+        "thevar1able",  # ClickHouse, Inc
         "aalexfvk",
         "MikhailBurdukov",
-        "tsolodov",  # ClickHouse Employee
+        "tsolodov",  # ClickHouse, Inc
         "kitaisreal",
+        "k-morozov",  # Konstantin Morozov, Yandex Cloud
     ]
 }
 

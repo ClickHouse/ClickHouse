@@ -188,15 +188,18 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const ASTSelectQuery & select,
+        const SelectQueryInfo & query_info,
         const TreeRewriterResultPtr & syntax_analyzer_result) const;
 
     ClusterPtr skipUnusedShards(
         ClusterPtr cluster,
-        const ASTSelectQuery & select,
+        const SelectQueryInfo & query_info,
         const TreeRewriterResultPtr & syntax_analyzer_result,
         const StorageSnapshotPtr & storage_snapshot,
         ContextPtr context) const;
+
+    ClusterPtr skipUnusedShardsWithAnalyzer(
+        ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///
@@ -215,6 +218,7 @@ private:
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
