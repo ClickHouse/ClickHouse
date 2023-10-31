@@ -1137,8 +1137,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             bool found = false;
             std::set<std::string> projections = context->getQueryAccessInfo().projections;
-            if (projections.empty())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "No projections found but setting force_optimize_projection_name is enabled");
 
             for (const auto &projection : projections)
             {
@@ -1147,12 +1145,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 size_t last_dot_pos = projection.find_last_of('.');
                 std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
                 if (settings.force_optimize_projection_name.value == projection_name)
+                {
                     found = true;
+                    break;
+                }
             }
 
             if (!found)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} used in settings, "
-                                "should be used in query at least once", settings.force_optimize_projection_name.value);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
+                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
