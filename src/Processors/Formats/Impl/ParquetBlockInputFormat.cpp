@@ -773,6 +773,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                     min_bytes_for_seek);
             });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
+    factory.markFormatSupportsSubsetOfSubcolumns("Parquet");
 }
 
 void registerParquetSchemaReader(FormatFactory & factory)

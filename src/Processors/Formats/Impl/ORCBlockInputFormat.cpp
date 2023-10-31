@@ -189,7 +189,7 @@ void registerInputFormatORC(FormatFactory & factory)
             return res;
         });
     factory.markFormatSupportsSubsetOfColumns("ORC");
-    factory.registerSubsetOfSubcolumnsSupportChecker("ORC", [](const FormatSettings & settings) -> bool { return settings.orc.use_fast_decoder; });
+    factory.markFormatSupportsSubsetOfSubcolumns("ORC");
 }
 
 void registerORCSchemaReader(FormatFactory & factory)
