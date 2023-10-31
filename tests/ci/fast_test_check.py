@@ -106,16 +106,15 @@ def parse_args() -> argparse.Namespace:
         default=40,
         help="Timeout in minutes",
     )
-
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.timeout = args.timeout * 60
+    return args
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
-
     args = parse_args()
-    timeout = args.timeout * 60
 
     temp_path = Path(TEMP_PATH)
 
@@ -164,7 +163,7 @@ def main():
     run_log_path = logs_path / "run.log"
     timeout_expired = False
 
-    with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
+    with TeePopen(run_cmd, run_log_path, timeout=args.timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
             logging.info("Timeout expired for command: %s", run_cmd)
@@ -204,7 +203,7 @@ def main():
         state, description, test_results = process_results(output_path)
 
     if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(timeout))
+        test_results.append(TestResult.create_check_timeout_expired(args.timeout))
         state = "failure"
         description = format_description(test_results[-1].name)
 
