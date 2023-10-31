@@ -1180,7 +1180,7 @@ void Context::setUserID(const UUID & user_id_)
 
 void Context::resetUser()
 {
-    auto lock = getLocalLock();
+    std::lock_guard lock(mutex);
     user_id.reset();
     need_recalculate_access = true;
 }
