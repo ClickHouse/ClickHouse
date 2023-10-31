@@ -7,7 +7,7 @@ cluster = ClickHouseCluster(__file__)
 node_old = cluster.add_instance(
     "node1",
     image="clickhouse/clickhouse-server",
-    tag="22.6",
+    tag="22.8",
     stay_alive=True,
     with_installed_binary=True,
     with_zookeeper=True,

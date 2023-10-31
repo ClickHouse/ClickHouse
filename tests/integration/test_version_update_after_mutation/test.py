@@ -72,8 +72,8 @@ def test_mutate_and_upgrade(start_cluster):
     node1.query("DETACH TABLE mt")  # stop being leader
     node1.query("SYSTEM FLUSH LOGS")
     node2.query("SYSTEM FLUSH LOGS")
-    node1.restart_with_latest_version(signal=9, fix_metadata=True)
-    node2.restart_with_latest_version(signal=9, fix_metadata=True)
+    node1.restart_with_latest_version(signal=9, fix_metadata=False)
+    node2.restart_with_latest_version(signal=9, fix_metadata=False)
 
     # After hard restart table can be in readonly mode
     exec_query_with_retry(
@@ -129,7 +129,7 @@ def test_upgrade_while_mutation(start_cluster):
     # (We could be in process of creating some system table, which will leave empty directory on restart,
     # so when we start moving system tables from ordinary to atomic db, it will complain about some undeleted files)
     node3.query("SYSTEM FLUSH LOGS")
-    node3.restart_with_latest_version(signal=9, fix_metadata=True)
+    node3.restart_with_latest_version(signal=9, fix_metadata=False)
 
     # checks for readonly
     exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", sleep_time=5, retry_count=60)
