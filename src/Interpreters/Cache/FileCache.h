@@ -1,13 +1,9 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <list>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <boost/functional/hash.hpp>
 
 #include <IO/ReadSettings.h>
