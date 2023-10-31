@@ -120,17 +120,14 @@ StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_pr
 
     std::vector<StepTreePtr> child_plans;
     const auto & children_group = group_node.getChildren();
+
     for (size_t i = 0; i < child_prop.size(); ++i)
     {
         StepTreePtr plan_ptr;
         if (group_node.isEnforceNode())
-        {
             plan_ptr = std::make_unique<StepTree>(extractPlan(group, child_prop[i]));
-        }
         else
-        {
             plan_ptr = std::make_unique<StepTree>(extractPlan(*children_group[i], child_prop[i]));
-        }
         child_plans.emplace_back(std::move(plan_ptr));
     }
 
@@ -148,6 +145,11 @@ StepTree Memo::extractPlan(Group & group, const PhysicalProperties & required_pr
     {
         plan.addStep(group_node.getStep());
     }
+
+    auto * root = plan.getRoot();
+    root->cost = prop_group_node->second.cost;
+    root->statistics = group.getStatistics().clone();
+
     return plan;
 }
 

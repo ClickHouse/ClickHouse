@@ -39,7 +39,7 @@ public:
     bool operator<=(const Cost & other) const;
     bool operator>=(const Cost & other) const;
 
-    String toString();
+    String toString() const;
     void reset();
 
 private:

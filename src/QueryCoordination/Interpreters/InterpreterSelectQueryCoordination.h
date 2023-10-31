@@ -26,7 +26,8 @@ public:
     void explain(WriteBufferFromOwnString & buf, const QueryPlan::ExplainPlanOptions & options_, bool json, bool optimize_);
     void explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_);
 
-    bool checkCompatibleSettings() const;
+    /// Disable use_index_for_in_with_subqueries.
+    void setIncompatibleSettings();
 
     bool ignoreQuota() const override { return false; }
     bool ignoreLimits() const override { return false; }
@@ -45,16 +46,29 @@ public:
 private:
     void buildQueryPlanIfNeeded();
 
+    /// Optimize query plan, if query_coordination_enabled is true build step_tree.
     void optimize();
+
+    /// Build distributed query plan.
     void buildFragments();
 
     ASTPtr query_ptr;
     ContextMutablePtr context;
     SelectQueryOptions options;
+
+    /// Query coordination is enabled if
+    ///     1. there is no table function
+    ///     2. there is no local table
+    ///     3. allow_experimental_query_coordination = 1
     bool query_coordination_enabled;
 
+    /// Old query plan, enabled only if query_coordination_enabled is false.
     QueryPlan plan;
+
+    /// New query plan, enabled only if query_coordination_enabled is true.
     StepTree step_tree;
+
+    /// Distributed query plan, enabled only if query_coordination_enabled is true.
     FragmentPtrs fragments;
 };
 

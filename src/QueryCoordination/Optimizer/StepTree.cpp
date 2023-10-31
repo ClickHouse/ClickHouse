@@ -108,11 +108,13 @@ void StepTree::unitePlans(QueryPlanStepPtr step, std::vector<std::shared_ptr<Ste
         root->children.emplace_back(plan->root);
 }
 
-static void explainStep(
-    const IQueryPlanStep & step,
+static void explainNode(
+    const PlanNode & node,
     IQueryPlanStep::FormatSettings & settings,
     const StepTree::ExplainPlanOptions & options)
 {
+    const IQueryPlanStep & step = *node.step;
+
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
@@ -146,7 +148,22 @@ static void explainStep(
             }
         }
         settings.out.write('\n');
+    }
 
+    if (options.statistics)
+    {
+        settings.out << prefix;
+        settings.out << "Statistics: ";
+        settings.out << node.statistics.getOutputRowSize();
+        settings.out.write('\n');
+    }
+
+    if (options.cost)
+    {
+        settings.out << prefix;
+        settings.out << "Cost: ";
+        settings.out << node.cost.toString();
+        settings.out.write('\n');
     }
 
     if (options.sorting)
@@ -170,8 +187,9 @@ static void explainStep(
         step.describeIndexes(settings);
 }
 
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const StepTree::ExplainPlanOptions & options)
+static void explainNode(const PlanNode & node, JSONBuilder::JSONMap & map, const StepTree::ExplainPlanOptions & options)
 {
+    const IQueryPlanStep & step = *node.step;
     map.add("Node Type", step.getName());
 
     if (options.description)
@@ -197,6 +215,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
 
         map.add("Header", std::move(header_array));
     }
+
+    if (options.statistics)
+        map.add("Statistics", node.statistics.getOutputRowSize());
+
+    if (options.cost)
+        map.add("Cost", node.cost.toString());
 
     if (options.actions)
         step.describeActions(map);
@@ -231,7 +255,7 @@ JSONBuilder::ItemPtr StepTree::explainPlan(const StepTree::ExplainPlanOptions & 
                 frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
 
             frame.node_map = std::make_unique<JSONBuilder::JSONMap>();
-            explainStep(*frame.node->step, *frame.node_map, options);
+            explainNode(*frame.node, *frame.node_map, options);
         }
 
         if (frame.next_child < frame.node->children.size())
@@ -279,7 +303,7 @@ void StepTree::explainPlan(WriteBuffer & buffer, const StepTree::ExplainPlanOpti
         if (!frame.is_description_printed)
         {
             settings.offset = (stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options);
+            explainNode(*frame.node, settings, options);
             frame.is_description_printed = true;
         }
 

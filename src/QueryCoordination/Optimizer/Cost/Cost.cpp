@@ -118,9 +118,9 @@ void Cost::reset()
     net_cost = 0;
 }
 
-String Cost::toString()
+String Cost::toString() const
 {
-    return fmt::format("({}, {}, {})", cpu_cost, mem_cost, net_cost);
+    return fmt::format("(summary:{}, cup:{}, mem:{}, net:{})", get(), cpu_cost, mem_cost, net_cost);
 }
 
 }

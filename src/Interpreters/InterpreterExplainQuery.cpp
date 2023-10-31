@@ -206,6 +206,8 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+            {"statistics", query_plan_options.statistics},
+            {"cost", query_plan_options.cost},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;

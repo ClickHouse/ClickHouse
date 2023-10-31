@@ -79,6 +79,10 @@ public:
         bool indexes = false;
         /// Add information about sorting
         bool sorting = false;
+        /// Add information about statistics, only work with query coordination
+        bool statistics = false;
+        /// Add information about cost, only work with query coordination
+        bool cost = false;
     };
 
     struct ExplainPipelineOptions
