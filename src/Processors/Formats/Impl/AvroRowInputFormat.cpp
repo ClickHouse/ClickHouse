@@ -983,8 +983,8 @@ private:
         {
             try
             {
-                Poco::URI url(base_url, "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {}", id);
+                Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
 
                 /// One second for connect/send/receive. Just in case.
                 ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
