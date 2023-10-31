@@ -747,13 +747,13 @@ static void getFileReaderAndSchema(
     }
 }
 
-static void updateIncludeIndices(
-    DataTypePtr type, const orc::Type * orc_type, bool case_insensitive_column_matching, std::unordered_set<UInt64> & column_indices)
+static void updateIncludeTypeIds(
+    DataTypePtr type, const orc::Type * orc_type, bool case_insensitive_column_matching, std::unordered_set<UInt64> & include_typeids)
 {
     /// Primitive types
     if (orc_type->getSubtypeCount() == 0)
     {
-        column_indices.insert(orc_type->getColumnId());
+        include_typeids.insert(orc_type->getColumnId());
         return;
     }
 
@@ -764,8 +764,8 @@ static void updateIncludeIndices(
             const auto * array_type = typeid_cast<const DataTypeArray *>(non_nullable_type.get());
             if (array_type)
             {
-                updateIncludeIndices(
-                    array_type->getNestedType(), orc_type->getSubtype(0), case_insensitive_column_matching, column_indices);
+                updateIncludeTypeIds(
+                    array_type->getNestedType(), orc_type->getSubtype(0), case_insensitive_column_matching, include_typeids);
             }
             return;
         }
@@ -773,8 +773,8 @@ static void updateIncludeIndices(
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
             if (map_type)
             {
-                updateIncludeIndices(map_type->getKeyType(), orc_type->getSubtype(0), case_insensitive_column_matching, column_indices);
-                updateIncludeIndices(map_type->getValueType(), orc_type->getSubtype(1), case_insensitive_column_matching, column_indices);
+                updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), case_insensitive_column_matching, include_typeids);
+                updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), case_insensitive_column_matching, include_typeids);
             }
             return;
         }
@@ -793,11 +793,11 @@ static void updateIncludeIndices(
                             if (boost::equals(orc_type->getFieldName(struct_i), name)
                                 || (case_insensitive_column_matching && boost::iequals(orc_type->getFieldName(struct_i), name)))
                             {
-                                updateIncludeIndices(
+                                updateIncludeTypeIds(
                                     tuple_type->getElement(tuple_i),
                                     orc_type->getSubtype(struct_i),
                                     case_insensitive_column_matching,
-                                    column_indices);
+                                    include_typeids);
                                 break;
                             }
                         }
@@ -806,8 +806,8 @@ static void updateIncludeIndices(
                 else
                 {
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
-                        updateIncludeIndices(
-                            tuple_type->getElement(i), orc_type->getSubtype(i), case_insensitive_column_matching, column_indices);
+                        updateIncludeTypeIds(
+                            tuple_type->getElement(i), orc_type->getSubtype(i), case_insensitive_column_matching, include_typeids);
                 }
             }
             return;
@@ -866,7 +866,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
             auto id = name_id_map[name];
             if (id_type_map.contains(id))
             {
-                updateIncludeIndices(column.type, id_type_map[id], ignore_case, include_typeids);
+                updateIncludeTypeIds(column.type, id_type_map[id], ignore_case, include_typeids);
             }
         }
     }
