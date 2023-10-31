@@ -11,6 +11,7 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
+#    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/platform/FileSystem.h>
 
@@ -21,6 +22,12 @@
 
 #    include <fstream>
 #    include <base/EnumReflection.h>
+
+#include <Poco/URI.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/StreamCopier.h>
 
 
 namespace DB
@@ -151,28 +158,73 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
 }
 
-Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone() const
+Aws::String usePocoBetter()
 {
-    String user_agent_string = awsComputeUserAgentString();
-    auto [new_token, response_code] = getEC2MetadataToken(user_agent_string);
-    if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
-        throw DB::Exception(ErrorCodes::AWS_ERROR,
-            "Failed to make token request. HTTP response code: {}", response_code);
+    Poco::URI uri("http://169.254.169.254/latest/meta-data/placement/availability-zone");
+    
+    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
+    Poco::Net::HTTPResponse response;
 
-    token = std::move(new_token);
-    const String url = endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
-    std::shared_ptr<Aws::Http::HttpRequest> profile_request(
-        Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+    try {
+        session.sendRequest(request);
+        std::istream& rs = session.receiveResponse(response);
 
-    profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, token);
-    profile_request->SetUserAgent(user_agent_string);
+        if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK) {
+            std::string response_data;
+            Poco::StreamCopier::copyToString(rs, response_data);
+            std::cout << "Response Data: " << response_data << std::endl;
+            return response_data;
+        } else {
+            std::cerr << "HTTP Request failed with status code: " << response.getStatus() << std::endl;
+        }
+    } catch (Poco::Exception& ex) {
+        std::cerr << "Poco Exception: " << ex.displayText() << std::endl;
+    }
+    return "";
+}
 
-    const auto result = GetResourceWithAWSWebServiceResult(profile_request);
-    if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK)
-        throw DB::Exception(ErrorCodes::AWS_ERROR,
-            "Failed to get availability zone. HTTP response code: {}", result.GetResponseCode());
+Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone()
+{
+    return usePocoBetter();
 
-    return Aws::Utils::StringUtils::Trim(result.GetPayload().c_str());
+    // String user_agent_string = awsComputeUserAgentString();
+    // String endpoint = "http://169.254.169.254";
+    // const String url =  endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
+
+    // // profile_request->SetUserAgent(user_agent_string);
+
+    // // instance() singleton doing some registry work, need to use the same method.
+    // DB::RemoteHostFilter remote_host_filter;
+    // Aws::Client::ClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+    //     "some-region",
+    //         remote_host_filter,
+    //         /* s3_max_redirects = */ 100,
+    //         /* s3_retry_attempts = */ 0,
+    //         /* enable_s3_requests_logging = */ true,
+    //         /* for_disk_s3 = */ false,
+    //         /* get_request_throttler = */ {},
+    //         /* put_request_throttler = */ {}
+    // );
+
+    // NOTE: now need to figure out the same approach for factory class.
+    // auto factory = std::make_shared<PocoHTTPClientFactory>();
+    // Aws::Http::SetHttpClientFactory(factory);
+    // LOG_INFO(&Poco::Logger::get("Application"), "Trying to create");
+    // auto client = Aws::Http::CreateHttpClient(client_configuration);
+
+    /// NOTE: check here, even before it's okay! or could test whether it's okay or not. if not, reproduce the successful keeper snapshot case.
+    /// And see what's the delta.
+    // std::shared_ptr<Aws::Http::HttpRequest> profile_request(
+    //     Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+
+    // const auto result = client->MakeRequest(profile_request);
+    // if (result->GetResponseCode() != Aws::Http::HttpResponseCode::OK)
+    //     return "failed";
+    // result->GetResponseBody();
+    // Aws::IStreamBufIterator eos;
+    // return Aws::String(Aws::IStreamBufIterator(result->GetResponseBody()), eos);
+    // return "123";
 }
 
 std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2MetadataToken(const std::string & user_agent_string) const
@@ -722,12 +774,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
 
-std::string determineAvailabilityZone(const DB::S3::PocoHTTPClientConfiguration & configuration)
-{
-    auto aws_client_configuration = getAwsClientConfig(configuration);
-    auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
-    return ec2_metadata_client->getCurrentAvailabilityZone();
-}
+
 
 }
 }

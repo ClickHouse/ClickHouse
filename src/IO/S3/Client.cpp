@@ -1,4 +1,5 @@
 #include <IO/S3/Client.h>
+#include <aws/core/http/HttpClientFactory.h>
 
 #if USE_AWS_S3
 
@@ -797,6 +798,9 @@ ClientFactory::ClientFactory()
     Aws::InitAPI(aws_options);
     Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
     Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
+    LOG_INFO(&Poco::Logger::get("Application"), "Factory is set");
+    // Aws::Http::SetHttpClientFactory(const std::shared_ptr<HttpClientFactory> &factory);
+    // LOG_INFO(&Poco::Logger::get("JianfeiDebug"), "Factory is set {} ", Aws::Http::GetHttpClientFactory() == nullptr);
 }
 
 ClientFactory::~ClientFactory()

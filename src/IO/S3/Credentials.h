@@ -50,7 +50,7 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    virtual Aws::String getCurrentAvailabilityZone() const;
+    static Aws::String getCurrentAvailabilityZone();
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
