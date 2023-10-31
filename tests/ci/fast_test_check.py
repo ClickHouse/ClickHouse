@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import argparse
 import logging
 import subprocess
 import os
@@ -91,10 +91,30 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     return state, description, test_results
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="FastTest script",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        # Fast tests in most cases done within 10 min and 40 min timout should be sufficient,
+        # though due to cold cache build time can be much longer
+        # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
+        default=40,
+        help="Timeout in minutes",
+    )
+    args = parser.parse_args()
+    args.timeout = args.timeout * 60
+    return args
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
-
     stopwatch = Stopwatch()
+    args = parse_args()
 
     temp_path = Path(TEMP_PATH)
 
@@ -142,22 +162,8 @@ def main():
 
     run_log_path = logs_path / "run.log"
     timeout_expired = False
-    # Do not increase this timeout
-    # https://pastila.nl/?146195b6/9bb99293535e3817a9ea82c3f0f7538d.link#5xtClOjkaPLEjSuZ92L2/g==
-    #
-    # SELECT toStartOfWeek(started_at) AS hour,
-    #   avg(completed_at - started_at) AS avg_runtime from default.workflow_jobs
-    # WHERE
-    #   conclusion = 'success' AND
-    #   name = 'FastTest'
-    # GROUP BY hour
-    # ORDER BY hour
-    #
-    # Our fast tests finish in less than 10 minutes average, and very rarely it builds
-    # longer, but the next run will reuse the sccache
-    # SO DO NOT INCREASE IT
-    timeout = 40 * 60
-    with TeePopen(run_cmd, run_log_path, timeout=timeout) as process:
+
+    with TeePopen(run_cmd, run_log_path, timeout=args.timeout) as process:
         retcode = process.wait()
         if process.timeout_exceeded:
             logging.info("Timeout expired for command: %s", run_cmd)
@@ -197,7 +203,7 @@ def main():
         state, description, test_results = process_results(output_path)
 
     if timeout_expired:
-        test_results.append(TestResult.create_check_timeout_expired(timeout))
+        test_results.append(TestResult.create_check_timeout_expired(args.timeout))
         state = "failure"
         description = format_description(test_results[-1].name)
 
