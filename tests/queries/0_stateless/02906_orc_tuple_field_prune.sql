@@ -1,3 +1,5 @@
+-- Tags: no-fasttest, no-parallel
+
 set engine_file_truncate_on_insert = 1;
 set flatten_nested = 0;
 
