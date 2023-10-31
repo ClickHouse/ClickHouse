@@ -816,7 +816,7 @@ void FileCache::loadMetadata()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLoadMetadataMicroseconds);
 
-    if (!metadata.isEmpty())
+    if (!metadata.empty())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1023,8 +1023,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                                                                       key_metadata,
                                                                       cache_it);
 
-                    /// TODO: get rid of lock(), it is redundant because it is loadMetadata().
-                    inserted = key_metadata->lock()->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                    inserted = key_metadata->emplaceUnlocked(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
                 }
                 catch (...)
                 {
@@ -1055,8 +1054,10 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             }
         }
 
-        if (key_metadata->lock()->empty())
+        if (key_metadata->sizeUnlocked() == 0)
+        {
             metadata.removeKey(key, false, false);
+        }
     }
 }
 

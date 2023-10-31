@@ -76,6 +76,13 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
+    /// This method is used for loadMetadata() on server startup,
+    /// where we know there is no concurrency on Key and we do not want therefore taking a KeyGuard::Lock,
+    /// therefore we use this Unlocked version. This method should not be used anywhere else.
+    template< class... Args >
+    auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
+    size_t sizeUnlocked() const { return size(); }
+
 private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
@@ -108,7 +115,7 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
-    bool isEmpty() const;
+    bool empty() const;
 
     enum class KeyNotFoundPolicy
     {
