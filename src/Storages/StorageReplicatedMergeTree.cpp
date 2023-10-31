@@ -389,6 +389,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
+
+    std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
     /// It does not make sense for CREATE query
     if (attach)
@@ -417,6 +419,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                 skip_sanity_checks = true;
 
                 LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
+            } /// In case of force_restore it doesn't make sense to check anything
+            else if (current_zookeeper && current_zookeeper->exists(replica_path))
+            {
+                std::vector<std::string> parts_on_replica;
+                if (current_zookeeper->tryGetChildren(fs::path(replica_path) / "parts", parts_on_replica) == Coordination::Error::ZOK)
+                {
+                    expected_parts_on_this_replica.emplace();
+                    for (const auto & part : parts_on_replica)
+                        expected_parts_on_this_replica->insert(part);
+                }
             }
         }
         catch (const Coordination::Exception & e)
@@ -427,22 +439,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
-    ActiveDataPartSet data_parts_on_other_replicas(format_version);
-    if (current_zookeeper)
-    {
-        auto replicas = current_zookeeper->getChildren(zookeeper_path);
-        for (const auto & child : replicas)
-        {
-            auto one_of_replicas_path = fs::path(zookeeper_path) / "replicas" / child;
-            if (one_of_replicas_path == replica_path)
-                continue;
-
-            for (const auto & part : one_of_replicas_path)
-                data_parts_on_other_replicas.add(part);
-        }
-    }
-
-    loadDataParts(skip_sanity_checks, data_parts_on_other_replicas);
+    loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
 
     if (attach)
     {
@@ -1387,6 +1384,14 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         /// Probably we just did not remove this part from disk before restart (but removed from ZooKeeper)
         String covering_local_part = local_expected_parts_set.getContainingPart(part->name);
         if (!covering_local_part.empty())
+        {
+            covered_unexpected_parts.push_back(part->name);
+            continue;
+        }
+
+        auto covered_parts = local_expected_parts_set.getPartInfosCoveredBy(part->info);
+
+        if (MergeTreePartInfo::areAllBlockNumbersCovered(part->info, covered_parts))
         {
             covered_unexpected_parts.push_back(part->name);
             continue;
