@@ -194,6 +194,7 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
+DELETEs
 DESC
 DIEs
 DOGEFI
@@ -1584,6 +1585,7 @@ hadoop
 halfMD
 halfday
 hardlink
+hardlinked
 hardlinks
 hasAll
 hasAny
