@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/JSONRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -134,6 +135,11 @@ void registerJSONSchemaReader(FormatFactory & factory)
     {
         factory.registerSchemaReader(
             format, [](ReadBuffer & buf, const FormatSettings & format_settings) { return std::make_unique<JSONRowSchemaReader>(buf, format_settings); });
+
+        factory.registerAdditionalInfoForSchemaCacheGetter(format, [](const FormatSettings & settings)
+        {
+            return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        });
     };
     register_schema_reader("JSON");
     /// JSONCompact has the same suffix with metadata.
