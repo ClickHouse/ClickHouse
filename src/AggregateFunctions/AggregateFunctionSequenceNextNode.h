@@ -19,7 +19,6 @@
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionNull.h>
 
 #include <type_traits>
 #include <bitset>

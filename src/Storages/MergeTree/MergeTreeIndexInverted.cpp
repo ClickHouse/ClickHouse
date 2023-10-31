@@ -73,11 +73,11 @@ void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTr
     {
         size_serialization->deserializeBinary(field_rows, istr, {});
         size_t filter_size = field_rows.get<size_t>();
+        gin_filter.getFilter().resize(filter_size);
 
         if (filter_size == 0)
             continue;
 
-        gin_filter.getFilter().assign(filter_size, {});
         istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
     has_elems = true;
