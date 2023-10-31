@@ -1058,15 +1058,13 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
-    bool case_insensitive_matching_,
-    bool is_stream_)
+    bool case_insensitive_matching_)
     : header(header_)
     , format_name(format_name_)
     , allow_missing_columns(allow_missing_columns_)
     , null_as_default(null_as_default_)
-    , date_time_overflow_behavior(date_time_overflow_behavior_)
     , case_insensitive_matching(case_insensitive_matching_)
-    , is_stream(is_stream_)
+    , date_time_overflow_behavior(date_time_overflow_behavior_)
 {
 }
 
@@ -1165,10 +1163,6 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 
         if (null_as_default)
             insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
-
-        /// In ArrowStream batches can have different dictionaries.
-        if (is_stream)
-            dictionary_infos.clear();
 
         try
         {
