@@ -58,7 +58,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     /// Override important settings
     settings_pull.readonly = 1;
     settings_pull.prefer_localhost_replica = false;
-    settings_push.insert_distributed_sync = true;
+    settings_push.distributed_foreground_insert = true;
     settings_push.prefer_localhost_replica = false;
 
     set_default_value(settings_pull.load_balancing, LoadBalancing::NEAREST_HOSTNAME);
@@ -66,7 +66,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     set_default_value(settings_pull.max_block_size, 8192UL);
     set_default_value(settings_pull.preferred_block_size_bytes, 0);
 
-    set_default_value(settings_push.insert_distributed_timeout, 0);
+    set_default_value(settings_push.distributed_background_insert_timeout, 0);
     set_default_value(settings_push.alter_sync, 2);
 }
 

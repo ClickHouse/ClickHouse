@@ -78,7 +78,7 @@ class TaskTrivial:
 
         source.query(
             "INSERT INTO trivial SELECT * FROM system.numbers LIMIT 1002",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):
@@ -123,7 +123,7 @@ class TaskReplicatedWithoutArguments:
 
         source.query(
             "INSERT INTO trivial_without_arguments SELECT * FROM system.numbers LIMIT 1002",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):

@@ -763,7 +763,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         return guard;
     };
 
-    auto sleep_ms = context->getSettingsRef().distributed_async_insert_sleep_time_ms.totalMilliseconds();
+    auto sleep_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms.totalMilliseconds();
     size_t file_size;
 
     auto it = dir_names.begin();

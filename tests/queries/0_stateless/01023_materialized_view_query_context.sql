@@ -3,7 +3,7 @@
 -- Create dictionary, since dictGet*() uses DB::Context in executeImpl()
 -- (To cover scope of the Context in PushingToViews chain)
 
-set insert_distributed_sync=1;
+set distributed_foreground_insert=1;
 
 DROP TABLE IF EXISTS mv;
 DROP DATABASE IF EXISTS dict_in_01023;

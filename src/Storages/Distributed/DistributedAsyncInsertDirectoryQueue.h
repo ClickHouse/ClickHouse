@@ -27,7 +27,7 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 
 class ISource;
 
-/** Queue for async INSERT Into Distributed engine (insert_distributed_sync=0).
+/** Queue for async INSERT Into Distributed engine (distributed_foreground_insert=0).
  *
  * Files are added from two places:
  * - from filesystem at startup (StorageDistributed::startup())
@@ -36,10 +36,10 @@ class ISource;
  * Later, in background, those files will be send to the remote nodes.
  *
  * The behaviour of this queue can be configured via the following settings:
- * - distributed_async_insert_batch
- * - distributed_async_insert_split_batch_on_failure
- * - distributed_async_insert_sleep_time_ms
- * - distributed_async_insert_max_sleep_time_ms
+ * - distributed_background_insert_batch
+ * - distributed_background_insert_split_batch_on_failure
+ * - distributed_background_insert_sleep_time_ms
+ * - distributed_background_insert_max_sleep_time_ms
  */
 class DistributedAsyncInsertDirectoryQueue
 {

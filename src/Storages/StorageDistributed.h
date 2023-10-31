@@ -171,7 +171,7 @@ private:
 
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
-    /// Used for the INSERT into Distributed in case of insert_distributed_sync==1, from DistributedSink.
+    /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
     DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
 

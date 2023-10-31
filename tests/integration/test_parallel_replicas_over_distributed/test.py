@@ -79,23 +79,23 @@ def create_tables(cluster, table_name):
     # populate data
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(1000)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(2000)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(1000)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT -number, -number FROM numbers(2000)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
     nodes[0].query(
         f"INSERT INTO {table_name}_d SELECT number, number FROM numbers(3)",
-        settings={"insert_distributed_sync": 1},
+        settings={"distributed_foreground_insert": 1},
     )
 
 

@@ -91,7 +91,7 @@ def test_prefer_localhost_replica_0_load_balancing_in_order_sync(cluster, q):
         cluster,
         load_balancing="in_order",
         prefer_localhost_replica=0,
-        insert_distributed_sync=1,
+        distributed_foreground_insert=1,
     )
     assert int(n1.query("SELECT count() FROM data")) == 10 * q
     assert int(n2.query("SELECT count() FROM data")) == 10

@@ -335,8 +335,8 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(distributed_settings_)
     , rng(randomSeed())
 {
-    if (!distributed_settings.flush_on_detach && distributed_settings.async_insert_batch)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and async_insert_batch=1 are incompatible");
+    if (!distributed_settings.flush_on_detach && distributed_settings.background_insert_batch)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
@@ -938,8 +938,8 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
-    auto timeout = settings.insert_distributed_timeout;
+    bool insert_sync = settings.distributed_foreground_insert || settings.insert_shard_id || owned_cluster;
+    auto timeout = settings.distributed_background_insert_timeout;
 
     Names columns_to_send;
     if (settings.insert_allow_materialized_columns)
@@ -1842,15 +1842,15 @@ void registerStorageDistributed(StorageFactory & factory)
                 "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
         }
 
-        /// Set default values from the distributed_async_insert_* global context settings.
-        if (!distributed_settings.async_insert_batch.changed)
-            distributed_settings.async_insert_batch = context->getSettingsRef().distributed_async_insert_batch;
-        if (!distributed_settings.async_insert_split_batch_on_failure.changed)
-            distributed_settings.async_insert_split_batch_on_failure = context->getSettingsRef().distributed_async_insert_split_batch_on_failure;
-        if (!distributed_settings.async_insert_sleep_time_ms.changed)
-            distributed_settings.async_insert_sleep_time_ms = context->getSettingsRef().distributed_async_insert_sleep_time_ms;
-        if (!distributed_settings.async_insert_max_sleep_time_ms.changed)
-            distributed_settings.async_insert_max_sleep_time_ms = context->getSettingsRef().distributed_async_insert_max_sleep_time_ms;
+        /// Set default values from the distributed_background_insert_* global context settings.
+        if (!distributed_settings.background_insert_batch.changed)
+            distributed_settings.background_insert_batch = context->getSettingsRef().distributed_background_insert_batch;
+        if (!distributed_settings.background_insert_split_batch_on_failure.changed)
+            distributed_settings.background_insert_split_batch_on_failure = context->getSettingsRef().distributed_background_insert_split_batch_on_failure;
+        if (!distributed_settings.background_insert_sleep_time_ms.changed)
+            distributed_settings.background_insert_sleep_time_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms;
+        if (!distributed_settings.background_insert_max_sleep_time_ms.changed)
+            distributed_settings.background_insert_max_sleep_time_ms = context->getSettingsRef().distributed_background_insert_max_sleep_time_ms;
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
