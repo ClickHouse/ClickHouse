@@ -1592,7 +1592,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
 }
 
 
-void MergeTreeData::loadDataParts(bool skip_sanity_checks, const ActiveDataPartSet & parts_can_be_restored)
+void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts)
 {
     LOG_DEBUG(log, "Loading data parts");
 
@@ -1716,8 +1716,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const ActiveDataPartS
 
     size_t suspicious_broken_parts = 0;
     size_t suspicious_broken_parts_bytes = 0;
-    size_t suspicious_broken_restorable_parts = 0;
-    size_t suspicious_broken_restorable_parts_bytes = 0;
+    size_t suspicious_broken_unexpected_parts = 0;
+    size_t suspicious_broken_unexpected_parts_bytes = 0;
     bool have_adaptive_parts = false;
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
@@ -1734,16 +1734,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const ActiveDataPartS
             if (res.is_broken)
             {
                 broken_parts_to_detach.push_back(res.part);
-                bool can_be_restored = !parts_can_be_restored.getContainingPart(res.part->info).empty();
-                if (can_be_restored)
-                    ++suspicious_broken_restorable_parts;
+                bool unexpected = expected_parts != std::nullopt && !expected_parts->contains(res.part->name);
+                if (unexpected)
+                    ++suspicious_broken_unexpected_parts;
                 else
                     ++suspicious_broken_parts;
 
                 if (res.size_of_part)
                 {
-                    if (can_be_restored)
-                        ++suspicious_broken_restorable_parts_bytes;
+                    if (unexpected)
+                        ++suspicious_broken_unexpected_parts_bytes;
                     else
                         ++suspicious_broken_parts_bytes;
                 }
@@ -1784,8 +1784,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const ActiveDataPartS
     {
         if (settings->strict_suspicious_broken_parts_check_on_start)
         {
-            suspicious_broken_parts += suspicious_broken_restorable_parts;
-            suspicious_broken_restorable_parts_bytes += suspicious_broken_restorable_parts_bytes;
+            suspicious_broken_parts += suspicious_broken_unexpected_parts;
+            suspicious_broken_parts_bytes += suspicious_broken_unexpected_parts_bytes;
         }
 
         if (suspicious_broken_parts > settings->max_suspicious_broken_parts)
