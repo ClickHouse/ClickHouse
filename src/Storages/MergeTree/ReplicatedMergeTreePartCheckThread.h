@@ -37,7 +37,7 @@ struct ReplicatedCheckResult
 
     bool exists_in_zookeeper;
     MergeTreeDataPartPtr part;
-    time_t recheck_after = 0;
+    time_t recheck_after_seconds = 0;
 };
 
 /** Checks the integrity of the parts requested for validation.
@@ -92,8 +92,9 @@ private:
     using StringSet = std::set<String>;
     struct PartToCheck
     {
+        using TimePoint = std::chrono::steady_clock::time_point;
         String name;
-        time_t time;
+        TimePoint time;
     };
     using PartsToCheckQueue = std::list<PartToCheck>;
 
