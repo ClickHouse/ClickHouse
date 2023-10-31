@@ -370,7 +370,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
     keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
-    keeper_context->initialize(config, this, DB::S3::AWSEC2MetadataClient::getCurrentAvailabilityZone());
+    String availability_zone;
+    try{
+        availability_zone = DB::S3::getRunningAvailabilityZone();
+    } catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    keeper_context->initialize(config, this, availability_zone);
 
     server = std::make_unique<KeeperServer>(
         configuration_and_settings,

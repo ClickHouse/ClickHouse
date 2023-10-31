@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/types.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -17,6 +18,9 @@ namespace DB::S3
 {
 
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
+
+/// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
+String getRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -50,10 +54,11 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    static Aws::String getCurrentAvailabilityZone();
+    friend String getRunningAvailabilityZone();
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
+    static std::variant<String, std::exception_ptr> getAvailabilityZoneOrException();
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
@@ -166,8 +171,6 @@ struct CredentialsConfiguration
     bool no_sign_request = false;
 };
 
-
-std::string determineAvailabilityZone(const DB::S3::PocoHTTPClientConfiguration & configuration);
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {

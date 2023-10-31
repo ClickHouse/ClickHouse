@@ -1081,7 +1081,8 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
         if (request.path == Coordination::keeper_api_feature_flags_path
-            || request.path == Coordination::keeper_config_path)
+            || request.path == Coordination::keeper_config_path
+            || request.path == Coordination::keeper_availability_zone_path)
             return {};
 
         if (!storage.uncommitted_state.getNode(request.path))
@@ -1098,7 +1099,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
         /// AZ node information is a special case not persisted in the storage, so we handle it first.
-        if (request.path == "/keeper/availbility-zone")
+        if (request.path == Coordination::keeper_availability_zone_path)
         {
             response.data = storage.keeper_context->getRunningAvailabilityZone();
             response.error = Coordination::Error::ZOK;

@@ -1,4 +1,8 @@
+#include <variant>
 #include <IO/S3/Credentials.h>
+#include <boost/algorithm/string/classification.hpp>
+#include <Poco/Exception.h>
+
 
 #if USE_AWS_S3
 
@@ -23,6 +27,11 @@
 #    include <fstream>
 #    include <base/EnumReflection.h>
 
+/// TODO: these changes do not need to be under AWS_S3. consider to remove or make it separate file libraries.
+#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/split.hpp>
+
+
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -36,6 +45,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AWS_ERROR;
+    extern const int GCP_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace S3
@@ -158,75 +169,6 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
 }
 
-Aws::String usePocoBetter()
-{
-    Poco::URI uri("http://169.254.169.254/latest/meta-data/placement/availability-zone");
-    
-    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-    Poco::Net::HTTPResponse response;
-
-    try {
-        session.sendRequest(request);
-        std::istream& rs = session.receiveResponse(response);
-
-        if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK) {
-            std::string response_data;
-            Poco::StreamCopier::copyToString(rs, response_data);
-            std::cout << "Response Data: " << response_data << std::endl;
-            return response_data;
-        } else {
-            std::cerr << "HTTP Request failed with status code: " << response.getStatus() << std::endl;
-        }
-    } catch (Poco::Exception& ex) {
-        std::cerr << "Poco Exception: " << ex.displayText() << std::endl;
-    }
-    return "";
-}
-
-Aws::String AWSEC2MetadataClient::getCurrentAvailabilityZone()
-{
-    return usePocoBetter();
-
-    // String user_agent_string = awsComputeUserAgentString();
-    // String endpoint = "http://169.254.169.254";
-    // const String url =  endpoint + EC2_AVAILABILITY_ZONE_RESOURCE;
-
-    // // profile_request->SetUserAgent(user_agent_string);
-
-    // // instance() singleton doing some registry work, need to use the same method.
-    // DB::RemoteHostFilter remote_host_filter;
-    // Aws::Client::ClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-    //     "some-region",
-    //         remote_host_filter,
-    //         /* s3_max_redirects = */ 100,
-    //         /* s3_retry_attempts = */ 0,
-    //         /* enable_s3_requests_logging = */ true,
-    //         /* for_disk_s3 = */ false,
-    //         /* get_request_throttler = */ {},
-    //         /* put_request_throttler = */ {}
-    // );
-
-    // NOTE: now need to figure out the same approach for factory class.
-    // auto factory = std::make_shared<PocoHTTPClientFactory>();
-    // Aws::Http::SetHttpClientFactory(factory);
-    // LOG_INFO(&Poco::Logger::get("Application"), "Trying to create");
-    // auto client = Aws::Http::CreateHttpClient(client_configuration);
-
-    /// NOTE: check here, even before it's okay! or could test whether it's okay or not. if not, reproduce the successful keeper snapshot case.
-    /// And see what's the delta.
-    // std::shared_ptr<Aws::Http::HttpRequest> profile_request(
-    //     Aws::Http::CreateHttpRequest(url, Aws::Http::HttpMethod::HTTP_GET, Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-
-    // const auto result = client->MakeRequest(profile_request);
-    // if (result->GetResponseCode() != Aws::Http::HttpResponseCode::OK)
-    //     return "failed";
-    // result->GetResponseBody();
-    // Aws::IStreamBufIterator eos;
-    // return Aws::String(Aws::IStreamBufIterator(result->GetResponseBody()), eos);
-    // return "123";
-}
-
 std::pair<Aws::String, Aws::Http::HttpResponseCode> AWSEC2MetadataClient::getEC2MetadataToken(const std::string & user_agent_string) const
 {
     std::lock_guard locker(token_mutex);
@@ -251,10 +193,10 @@ Aws::String AWSEC2MetadataClient::getCurrentRegion() const
     return Aws::Region::AWS_GLOBAL;
 }
 
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+Aws::String awsMetadataEndpoint()
 {
-    Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
     auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
+    Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
     if (ec2_metadata_service_endpoint.empty())
     {
         Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
@@ -285,8 +227,73 @@ std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::C
             }
         }
     }
-    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
-    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
+    return ec2_metadata_service_endpoint;
+}
+
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+{
+    auto endpoint = awsMetadataEndpoint();
+    return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
+}
+
+std::variant<String, std::exception_ptr> AWSEC2MetadataClient::getAvailabilityZoneOrException()
+{
+    Poco::URI uri(awsMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
+    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+
+    Poco::Net::HTTPResponse response;
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
+    session.sendRequest(request);
+
+    std::istream& rs = session.receiveResponse(response);
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK) {
+        throw DB::Exception(ErrorCodes::AWS_ERROR,
+            "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
+    }
+    String response_data;
+    Poco::StreamCopier::copyToString(rs, response_data);
+    return response_data;
+}
+
+std::variant<String, std::exception_ptr> getGCPAvailabilityZoneOrException()
+{
+    Poco::URI uri("http://169.254.169.254/computeMetadata/v1/instance/zone");
+    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
+    Poco::Net::HTTPResponse response;
+    request.set("Metadata-Flavor",  "Google");
+    session.sendRequest(request);
+    std::istream& rs = session.receiveResponse(response);
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK) {
+        throw DB::Exception(ErrorCodes::GCP_ERROR,
+            "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
+    }
+    String response_data;
+    Poco::StreamCopier::copyToString(rs, response_data);
+    Strings zone_info;
+    boost::split(zone_info, response_data, boost::is_any_of("/"));
+    if (zone_info.size() != 4) {
+        throw DB::Exception(ErrorCodes::GCP_ERROR,
+            "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>, got {}", response_data);
+    }
+    return zone_info[3];
+}
+
+String getRunningAvailabilityZone()
+{
+    LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
+
+    auto aws_az_or_exception = AWSEC2MetadataClient::getAvailabilityZoneOrException();
+    if (const auto * aws_az = std::get_if<std::string>(&aws_az_or_exception))
+        return *aws_az;
+
+    auto gcp_zone = getGCPAvailabilityZoneOrException();
+    if (const auto * gcp_az = std::get_if<std::string>(&gcp_zone))
+        return *gcp_az;
+
+    /// TODO(incfly): Add Azure support.
+
+    throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Failed to find the availability zone, tried both AWS and GCP");
 }
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
