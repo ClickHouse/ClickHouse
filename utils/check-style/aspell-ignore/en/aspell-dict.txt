@@ -193,6 +193,7 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
+DELETEs
 DESC
 DOGEFI
 DataGrip
@@ -1575,6 +1576,7 @@ hadoop
 halfMD
 halfday
 hardlink
+hardlinked
 hardlinks
 hasAll
 hasAny
