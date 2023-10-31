@@ -1,39 +1,20 @@
-#include <IO/ReadHelpers.h>
-#include <cstddef>
-#include <iterator>
-#include <memory>
 #include <string>
-#include <tuple>
 #include <vector>
-#include <type_traits>
-#include <unordered_map>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include "Formats/NumpyDataTypes.h"
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/NumpyDataTypes.h>
 #include <Columns/ColumnFixedString.h>
-#include <Core/TypeId.h>
-#include <Core/Types_fwd.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include <Storages/IStorage.h>
-#include <Columns/IColumn.h>
-#include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <base/types.h>
 #include <boost/algorithm/string/split.hpp>
 #include <IO/ReadBufferFromString.h>
 
@@ -99,15 +80,11 @@ DataTypePtr createNestedArrayType(const DataTypePtr & nested_type, size_t depth)
 
 size_t parseTypeSize(const std::string & size_str)
 {
-    try
-    {
-        size_t size = std::stoi(size_str);
-        return size;
-    }
-    catch (...)
-    {
+    ReadBufferFromString buf(size_str);
+    size_t size;
+    if (!tryReadIntText(size, buf))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid data type size: {}", size_str);
-    }
+    return size;
 }
 
 std::shared_ptr<NumpyDataType> parseType(String type)
@@ -155,17 +132,14 @@ std::vector<int> parseShape(String shape_string)
     if (result_str[result_str.size()-1].empty())
         result_str.pop_back();
     shape.reserve(result_str.size());
-    bool is_first_elem = true;
     for (const String & item : result_str)
     {
         int value;
         ReadBufferFromString buf(item);
-        if (!is_first_elem)
-            assertString(" ", buf);
+        skipWhitespaceIfAny(buf);
         if (!tryReadIntText(value, buf))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid shape format: {}", shape_string);
         shape.push_back(value);
-        is_first_elem = false;
     }
     return shape;
 }
@@ -316,8 +290,8 @@ void NpyRowInputFormat::readAndInsertInteger(IColumn * column, const DataTypePtr
         case NumpyDataTypeIndex::UInt32: readBinaryValueAndInsert<T, UInt32>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::UInt64: readBinaryValueAndInsert<T, UInt64>(column->getPtr(), npy_type.getEndianness()); break;
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert data type into column with type {}",
-                        data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert Numpy value with type {} into column with type {}",
+                        magic_enum::enum_name(npy_type.getTypeIndex()), data_type->getName());
     }
 }
 
@@ -329,8 +303,8 @@ void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr &
         case NumpyDataTypeIndex::Float32: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness()); break;
         case NumpyDataTypeIndex::Float64: readBinaryValueAndInsert<T, Float64>(column->getPtr(), npy_type.getEndianness()); break;
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert data type into column with type {}",
-                        data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert Numpy value with type {} into column with type {}",
+                        magic_enum::enum_name(npy_type.getTypeIndex()), data_type->getName());
     }
 }
 
@@ -343,8 +317,8 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
     else if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
         size = assert_cast<const NumpyDataTypeUnicode &>(npy_type).getSize();
     else
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert data type into column with type {}",
-                        data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert Numpy value with type {} into column with type {}",
+                        magic_enum::enum_name(npy_type.getTypeIndex()), data_type->getName());
 
     if (is_fixed)
     {
@@ -352,14 +326,10 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
         size_t n = fixed_string_column.getN();
         if (size > n)
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
-        fixed_string_column.getChars().resize_fill(fixed_string_column.getChars().size() + n);
-
-        String tmp;
-        tmp.resize(size);
-
-        in->readStrict(tmp.data(), size);
-        tmp.erase(std::remove(tmp.begin(), tmp.end(), '\0'), tmp.end());
-        fixed_string_column.insertData(tmp.c_str(), tmp.size());
+        auto & chars = fixed_string_column.getChars();
+        size_t prev_size = chars.size();
+        chars.resize_fill(prev_size + n);
+        in->readStrict(reinterpret_cast<char *>(chars.data() + prev_size), size);
     }
     else
     {
@@ -418,11 +388,6 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
         readValue(current_column);
 
     return true;
-}
-
-void NpyRowInputFormat::resetParser()
-{
-    IRowInputFormat::resetParser();
 }
 
 NpySchemaReader::NpySchemaReader(ReadBuffer & in_)

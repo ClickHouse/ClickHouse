@@ -82,7 +82,7 @@ public:
             case 4: type_index = NumpyDataTypeIndex::Float32; break;
             case 8: type_index = NumpyDataTypeIndex::Float64; break;
             default:
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Incorrect float type with size {}", size);
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Numpy float type with size {} is not supported", size);
         }
     }
 
