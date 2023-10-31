@@ -212,6 +212,8 @@ void listKeys(
 
 std::optional<bool> isOverridable(const Poco::Util::AbstractConfiguration & config, const std::string & path)
 {
+    // XPath syntax to access path's attribute 'overridable'
+    // e.g. <url overridable=1>...</url>
     std::string overridable_path = path + "[@overridable]";
     if (config.has(overridable_path))
         return config.getBool(overridable_path);
