@@ -90,6 +90,7 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
 
     return state, description, test_results
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -107,6 +108,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
 
 def main():
     logging.basicConfig(level=logging.INFO)
