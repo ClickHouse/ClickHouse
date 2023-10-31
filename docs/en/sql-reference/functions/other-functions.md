@@ -2867,7 +2867,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## minSampleSizeContinous
+## minSampleSizeContinuous
 
 Calculates minimum required sample size for an A/B test comparing means of a continuous metric in two samples.
 
@@ -2876,6 +2876,8 @@ Calculates minimum required sample size for an A/B test comparing means of a con
 ``` sql
 minSampleSizeContinous(baseline, sigma, mde, power, alpha)
 ```
+
+Alias: `minSampleSizeContinous`
 
 Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). Assumes equal sizes of treatment and control groups. Returns the required sample size for one group (i.e. the sample size required for the whole experiment is twice the returned value). Also assumes equal variance of the test metric in treatment and control groups.
 
