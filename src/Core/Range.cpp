@@ -89,17 +89,14 @@ void Range::shrinkToIncludedIfPossible()
     }
 }
 
-namespace
+bool Range::equals(const Field & lhs, const Field & rhs)
 {
-    inline bool equals(const Field & lhs, const Field & rhs)
-    {
-        return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
-    }
+    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
+}
 
-    inline bool less(const Field & lhs, const Field & rhs)
-    {
-        return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
-    }
+bool Range::less(const Field & lhs, const Field & rhs)
+{
+    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
 }
 
 bool Range::empty() const
