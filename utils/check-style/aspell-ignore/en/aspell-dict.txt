@@ -1479,6 +1479,8 @@ fmtlib
 formatDateTime
 formatDateTimeInJoda
 formatDateTimeInJodaSyntax
+formatQuery
+formatQuerySingleLine
 formatReadableDecimalSize
 formatReadableQuantity
 formatReadableSize
@@ -1519,7 +1521,6 @@ geohashesInBox
 geoip
 geospatial
 getMacro
-getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting

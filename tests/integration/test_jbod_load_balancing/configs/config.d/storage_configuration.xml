@@ -31,6 +31,7 @@
                         <disk>jbod3</disk>
 
                         <load_balancing>least_used</load_balancing>
+                        <least_used_ttl_ms>0</least_used_ttl_ms>
                     </disks>
                 </volumes>
             </jbod_least_used>
