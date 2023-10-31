@@ -23,8 +23,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 

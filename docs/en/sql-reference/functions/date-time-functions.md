@@ -1584,6 +1584,41 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
+## fromDaysSinceYearZero / fromDaysSinceYearZero32
+
+Given the number of days passed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero) in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar) return a corresponding date (as Date type) . The calculation is the same as in MySQL's [`FROM_DAYS()`](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_from-days) function.
+
+Overflow behaviour is configured by setting `date_time_overflow_behavior` to `ignore` (default), `saturate` (clamps) or `throw`.
+
+**Syntax**
+
+``` sql
+fromDaysSinceYearZero(days)
+```
+
+
+**Arguments**
+- `days` — The number of days passed since year zero. 
+
+**Returned value**
+
+Date corresponding to the numbe of days passed since year zero.
+
+**Example**
+
+``` sql
+SET date_time_overflow_behavior = 'ignore';
+SELECT fromDaysSinceYearZero(739136), fromDaysSinceYearZero32(693961), fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')));
+```
+
+Result:
+
+``` text
+┌─fromDaysSinceYearZero(739136)─┬─fromDaysSinceYearZero32(693961)─┬─fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08')))─┐
+│                    2023-09-08 │                      1900-01-01 │                                                       2023-09-08 │
+└───────────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────────────────────────────┘
+```
+
 ## age
 
 Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 microsecond.
