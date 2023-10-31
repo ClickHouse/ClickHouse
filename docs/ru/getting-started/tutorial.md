@@ -477,7 +477,7 @@ clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse оснащён множеством [изменяемых настроек](../operations/settings/index.md) и один из способов их указать — передать при запуске консольного клиенте их в качестве аргументов, как вы видели в этом примере с `--max_insert_block_size`. Простейший способ узнать какие настройки доступны, что они означают и какие у них значения по умолчанию — запросить содержимое таблицы `system.settings`:
+ClickHouse оснащён множеством [изменяемых настроек](../operations/settings/index.md) и один из способов их указать — передать при запуске консольного клиенте их в качестве аргументов, как вы видели в этом примере с `--max_insert_block_size`. Простейший способ узнать, какие настройки доступны, что они означают и какие у них значения по умолчанию — запросить содержимое таблицы `system.settings`:
 
 ``` sql
 SELECT name, value, changed, description
