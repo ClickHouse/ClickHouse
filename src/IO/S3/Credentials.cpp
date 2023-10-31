@@ -1,3 +1,4 @@
+#include <exception>
 #include <variant>
 #include <IO/S3/Credentials.h>
 #include <boost/algorithm/string/classification.hpp>
@@ -278,12 +279,11 @@ String getGCPAvailabilityZoneOrException()
     return zone_info[3];
 }
 
-String getRunningAvailabilityZone()
+std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
 {
     LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
-
     try{
-        auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();  
+        auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();
         return aws_az;
     }
     catch (const DB::Exception & aws_ex)
@@ -298,6 +298,15 @@ String getRunningAvailabilityZone()
             "Failed to find the availability zone, tried AWS, GCP. AWS Error {}\n GCP Error {}", aws_ex.displayText(), gcp_ex.displayText());
         }
     }
+}
+
+String getRunningAvailabilityZone()
+{
+    static auto az_or_exception = getRunningAvailabilityZoneImpl();
+    if (const auto * az = std::get_if<std::string>(&az_or_exception))
+        return *az;
+    else
+        std::rethrow_exception(std::get<std::exception_ptr>(az_or_exception));
 }
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <exception>
+#include <variant>
 #include "base/types.h"
 #include "config.h"
 
@@ -54,7 +56,7 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZone();
+    friend std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl();
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
