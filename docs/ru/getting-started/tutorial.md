@@ -52,7 +52,7 @@ sudo /etc/init.d/clickhouse-server start
 
 Журналы сервера по умолчанию ведутся в `/var/log/clickhouse-server/`. Как только в журнале появится сообщение `Ready for connections` — сервер готов принимать клиентские соединения.
 
-Как только `clickhouse-server` запущен, можно подключиться к нему с использованием `clickhouse-client` и выполнить тестовый запрос, например, `SELECT "Hello, world!";`.
+Теперь, когда `clickhouse-server` запущен, можно подключиться к нему с использованием `clickhouse-client` и выполнить тестовый запрос, например, `SELECT 'Hello, world!';`.
 
 <details markdown="1">
 
