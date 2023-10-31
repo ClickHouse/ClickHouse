@@ -552,11 +552,6 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 continue;
             }
 
-            ++number_of_rows;
-            if ((number_of_rows >= min_rows)
-                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-                need_more_data = false;
-
             if (*pos == '\n')
             {
                 ++pos;
@@ -568,7 +563,15 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 ++pos;
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
+                else
+                    continue;
             }
+
+            ++number_of_rows;
+            if ((number_of_rows >= min_rows)
+                && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
+                need_more_data = false;
+
         }
     }
 
