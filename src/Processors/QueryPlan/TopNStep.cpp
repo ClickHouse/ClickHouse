@@ -8,8 +8,8 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
         {
             {
-                .returns_single_stream = false,
-                .preserves_number_of_streams = true,
+                .returns_single_stream = true,
+                .preserves_number_of_streams = false,
                 .preserves_sorting = false,
             },
             {
@@ -24,6 +24,8 @@ TopNStep::TopNStep(QueryPlanStepPtr sorting_step_, QueryPlanStepPtr limit_step_)
     , limit_step(limit_step_)
 {
     output_stream = limit_step->getOutputStream();
+    output_stream->sort_description = sorting_step->getOutputStream().sort_description;
+    output_stream->sort_scope = sorting_step->getOutputStream().sort_scope;
 }
 
 void TopNStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -40,6 +42,8 @@ void TopNStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
 void TopNStep::updateOutputStream()
 {
     output_stream = limit_step->getOutputStream();
+    output_stream->sort_description = sorting_step->getOutputStream().sort_description;
+    output_stream->sort_scope = sorting_step->getOutputStream().sort_scope;
 }
 
 

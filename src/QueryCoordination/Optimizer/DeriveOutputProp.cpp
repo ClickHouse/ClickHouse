@@ -101,6 +101,15 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
     return res;
 }
 
+PhysicalProperties DeriveOutputProp::visit(TopNStep & step)
+{
+    PhysicalProperties res;
+    res.distribution = children_prop[0].distribution;
+    res.sort_prop.sort_description = step.getOutputStream().sort_description;
+    res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
+    return res;
+}
+
 PhysicalProperties DeriveOutputProp::visit(SortingStep & step)
 {
     PhysicalProperties res;
