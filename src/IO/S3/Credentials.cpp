@@ -27,7 +27,6 @@
 #    include <fstream>
 #    include <base/EnumReflection.h>
 
-/// TODO: these changes do not need to be under AWS_S3. consider to remove or make it separate file libraries.
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
 
@@ -236,7 +235,7 @@ std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::C
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
 }
 
-std::variant<String, std::exception_ptr> AWSEC2MetadataClient::getAvailabilityZoneOrException()
+String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 {
     Poco::URI uri(awsMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
@@ -255,7 +254,7 @@ std::variant<String, std::exception_ptr> AWSEC2MetadataClient::getAvailabilityZo
     return response_data;
 }
 
-std::variant<String, std::exception_ptr> getGCPAvailabilityZoneOrException()
+String getGCPAvailabilityZoneOrException()
 {
     Poco::URI uri("http://169.254.169.254/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
@@ -283,17 +282,22 @@ String getRunningAvailabilityZone()
 {
     LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
 
-    auto aws_az_or_exception = AWSEC2MetadataClient::getAvailabilityZoneOrException();
-    if (const auto * aws_az = std::get_if<std::string>(&aws_az_or_exception))
-        return *aws_az;
-
-    auto gcp_zone = getGCPAvailabilityZoneOrException();
-    if (const auto * gcp_az = std::get_if<std::string>(&gcp_zone))
-        return *gcp_az;
-
-    /// TODO(incfly): Add Azure support.
-
-    throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Failed to find the availability zone, tried both AWS and GCP");
+    try{
+        auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();  
+        return aws_az;
+    }
+    catch (const DB::Exception & aws_ex)
+    {
+        try{
+            auto gcp_zone = getGCPAvailabilityZoneOrException();
+            return gcp_zone;
+        }
+        catch(const DB::Exception & gcp_ex)
+        {
+            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Failed to find the availability zone, tried AWS, GCP. AWS Error {}\n GCP Error {}", aws_ex.displayText(), gcp_ex.displayText());
+        }
+    }
 }
 
 AWSEC2InstanceProfileConfigLoader::AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)

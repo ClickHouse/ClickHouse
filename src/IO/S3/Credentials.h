@@ -58,7 +58,7 @@ public:
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
-    static std::variant<String, std::exception_ptr> getAvailabilityZoneOrException();
+    static String getAvailabilityZoneOrException();
 
     const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
