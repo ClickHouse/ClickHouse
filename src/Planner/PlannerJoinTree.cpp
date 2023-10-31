@@ -783,6 +783,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
                 add_filter(row_policy_filter_info, "Row-level security filter");
+                if (row_policy_filter_info.actions)
+                    table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions);
 
                 if (query_context->getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY)
                 {
