@@ -10005,7 +10005,7 @@ void StorageReplicatedMergeTree::backupData(
     /// Send a list of mutations to the coordination too (we need to find the mutations which are not finished for added part names).
     {
         std::vector<IBackupCoordination::MutationInfo> mutation_infos;
-        ZooKeeperRetriesControl retries_ctl("getMutations", zookeeper_retries_info, local_context->getProcessListElement());
+        ZooKeeperRetriesControl retries_ctl("getMutations", zookeeper_retries_info, nullptr);
         retries_ctl.retryLoop([&]()
         {
             /// FIXME: should we retry tryGetChildrent and tryGet separately?
