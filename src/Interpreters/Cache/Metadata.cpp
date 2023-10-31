@@ -240,6 +240,12 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     return it->second;
 }
 
+bool CacheMetadata::isEmpty() const
+{
+    auto lock = lockMetadata();
+    return empty();
+}
+
 void CacheMetadata::iterate(IterateFunc && func)
 {
     auto lock = lockMetadata();
@@ -312,7 +318,7 @@ CacheMetadata::iterator CacheMetadata::removeEmptyKey(iterator it, LockedKey & l
 {
     const auto & key = locked_key.getKey();
 
-    if (!it->second->empty())
+    if (!locked_key.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-empty key: {}", key);
 
     locked_key.markAsRemoved();
