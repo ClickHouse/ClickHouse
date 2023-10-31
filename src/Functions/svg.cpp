@@ -80,6 +80,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                str.exceptions(std::ios::failbit);
                 boost::geometry::correct(figures[i]);
                 str << boost::geometry::svg(figures[i], has_style ? style->getDataAt(i).toString() : "");
                 std::string serialized = str.str();

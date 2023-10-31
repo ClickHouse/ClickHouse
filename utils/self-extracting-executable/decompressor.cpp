@@ -390,6 +390,7 @@ uint64_t getInode(const char * self)
     for (std::string line; std::getline(maps, line);)
     {
         std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss.exceptions(std::ios::failbit);
         std::string addr, mode, offset, id, path;
         uint64_t inode = 0;
         if (ss >> addr >> mode >> offset >> id >> inode >> path && path == self)
@@ -441,6 +442,7 @@ int main(int/* argc*/, char* argv[])
     }
 
     std::stringstream lock_path; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    lock_path.exceptions(std::ios::failbit);
     lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";
     int lock = open(lock_path.str().c_str(), O_CREAT | O_RDWR, 0666);
     if (lock < 0)

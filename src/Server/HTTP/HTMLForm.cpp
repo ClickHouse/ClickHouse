@@ -75,7 +75,7 @@ HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & req
 
 HTMLForm::HTMLForm(const Settings & settings, const Poco::URI & uri) : HTMLForm(settings)
 {
-    ReadBufferFromString istr(uri.getRawQuery());  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ReadBufferFromString istr(uri.getRawQuery());
     readQuery(istr);
 }
 

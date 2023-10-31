@@ -189,6 +189,7 @@ void RemoteCacheController::flush(bool need_flush_status)
         jobj.set("file_status", static_cast<Int32>(file_status));
         jobj.set("metadata_class", metadata_class);
         std::stringstream buf; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        buf.exceptions(std::ios::failbit);
         jobj.stringify(buf);
         file_writer->write(buf.str().c_str(), buf.str().size());
         file_writer->close();

@@ -19,6 +19,7 @@ String StorageHiveMetadata::toString() const
     jobj.set("last_modification_timestamp", last_modification_timestamp);
     jobj.set("file_size", file_size);
     std::stringstream buf; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    buf.exceptions(std::ios::failbit);
     jobj.stringify(buf);
     return buf.str();
 
@@ -27,6 +28,7 @@ String StorageHiveMetadata::toString() const
 bool StorageHiveMetadata::fromString(const String &buf)
 {
     std::stringstream istream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    istream.exceptions(std::ios::failbit);
     istream << buf;
     Poco::JSON::Parser parser;
     auto jobj = parser.parse(istream).extract<Poco::JSON::Object::Ptr>();
@@ -34,7 +36,7 @@ bool StorageHiveMetadata::fromString(const String &buf)
     schema = jobj->get("schema").convert<String>();
     cluster = jobj->get("cluster").convert<String>();
     last_modification_timestamp = jobj->get("last_modification_timestamp").convert<UInt64>();
-    file_size =jobj->get("file_size").convert<UInt64>();
+    file_size = jobj->get("file_size").convert<UInt64>();
     return true;
 }
 

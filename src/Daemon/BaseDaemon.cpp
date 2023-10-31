@@ -772,6 +772,7 @@ void BaseDaemon::initialize(Application & self)
     {
         std::string umask_str = config().getString("umask");
         std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        stream.exceptions(std::ios::failbit);
         stream << umask_str;
         stream >> std::oct >> umask_num;
     }

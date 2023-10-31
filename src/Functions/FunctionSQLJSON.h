@@ -41,7 +41,7 @@ template <typename Element>
 class DefaultJSONStringSerializer
 {
 public:
-    explicit DefaultJSONStringSerializer(ColumnString & col_str_) : col_str(col_str_) { }
+    explicit DefaultJSONStringSerializer(ColumnString & col_str_) : col_str(col_str_) { out.exceptions(std::ios::failbit); }
 
     inline void addRawData(const char * ptr, size_t len)
     {

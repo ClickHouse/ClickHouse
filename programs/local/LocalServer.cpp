@@ -360,6 +360,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    // Can't set exceptions because Poco::XML parser generates errors on valid input
     Poco::XML::InputSource input_source{ss};
     return {new Poco::Util::XMLConfiguration{&input_source}};
 }
