@@ -70,6 +70,8 @@ void ZooKeeper::init(ZooKeeperArgs args_)
         Coordination::ZooKeeper::Nodes nodes;
         nodes.reserve(args.hosts.size());
 
+        /// NOTE: make this a callback and let the KeeperImpl to invoke shuffle maybe?
+        /// NO Reason: callback complicated; shuffle host structure here.
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
         std::vector<ShuffleHost> shuffled_hosts = shuffleHosts();
 
@@ -113,6 +115,8 @@ void ZooKeeper::init(ZooKeeperArgs args_)
                 throw KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Cannot use any of provided ZooKeeper nodes");
         }
 
+        /// NOTE: basically the nodes arg order does matter?
+        /// TODO: check how the failover work.
         impl = std::make_unique<Coordination::ZooKeeper>(nodes, args, zk_log);
 
         if (args.chroot.empty())
@@ -166,6 +170,7 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
     init(ZooKeeperArgs(config, config_name));
 }
 
+/// NOTE: where the get priority func is invoked.
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
     std::function<Priority(size_t index)> get_priority = args.get_priority_load_balancing.getPriorityFunc(args.get_priority_load_balancing.load_balancing, 0, args.hosts.size());
@@ -181,6 +186,9 @@ std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
         shuffle_hosts.emplace_back(shuffle_host);
     }
 
+    // sort based on the priority. so seems easy just plugin another get priority func.
+    /// tricky part, this needs to dial with host first; the rest is statically determined. need to do some preprocessing.
+    /// add another func to get az information.
     ::sort(shuffle_hosts.begin(), shuffle_hosts.end(), ShuffleHost::compare);
 
     return shuffle_hosts;

@@ -392,9 +392,12 @@ ZooKeeper::ZooKeeper(
 
     try
     {
+        /// NOTE: maybe send_thread is started somewhere, maybe not, do not matter.
+        /// important thing is that separate thread and async, and we need to join in finalize, already done.
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
+        /// NOTE: send is after connect.
         initFeatureFlags();
         keeper_feature_flags.logFlags(log);
 
@@ -433,6 +436,8 @@ void ZooKeeper::connect(
     bool connected = false;
 
     WriteBufferFromOwnString fail_reasons;
+
+    /// NOTE: seems like keeper client just try from beginning and return if first one succeeds?
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
         for (size_t i = 0; i < nodes.size(); ++i)
@@ -462,6 +467,7 @@ void ZooKeeper::connect(
                 socket.setSendTimeout(args.operation_timeout_ms * 1000);
                 socket.setNoDelay(true);
 
+                // NOTE: socket emplace for the keeper read and write.
                 in.emplace(socket);
                 out.emplace(socket);
                 compressed_in.reset();
@@ -496,8 +502,14 @@ void ZooKeeper::connect(
 
                 original_index = static_cast<Int8>(node.original_index);
 
+                // i != 0 means suboptimal.
+                // NOTE(incfly): decision on where it's need adjustment.
+                // maybe we can extend optimal or not logic and use method to encap.
+                // One way, connect fucntion go through them all and then get the priority information.
+                // Alterantive, extract out the send/receive on a single socket, but lots of refactoring, not great.
                 if (i != 0)
                 {
+                    // argument where the max age of the connection could be.
                     std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
                     {
                         args.fallback_session_lifetime.min_sec,
@@ -511,7 +523,19 @@ void ZooKeeper::connect(
                     node.address.toString(), i, session_lifetime_seconds);
                 }
 
-                break;
+                // break;
+                LOG_DEBUG(log, "Jianfei debug, connection index {}, address{}", i, node.address.toString());
+                /// NOTE: TODO, understand promise and future.
+                auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+                auto future = promise->get_future();
+
+                // NOTE: more todo: we probably need a sync version for availability zone zk response.
+                auto callback = [promise, logger = this->log ](const Coordination::GetResponse & response) mutable
+                {
+                    LOG_DEBUG(logger, "Jianfei debug, checking availability value {}", response.data);
+                };
+
+                get("/keeper/availability_zone", std::move(callback), {});
             }
             catch (...)
             {
@@ -1197,6 +1221,7 @@ void ZooKeeper::initFeatureFlags()
 {
     const auto try_get = [&](const std::string & path, const std::string & description) -> std::optional<std::string>
     {
+        /// NOTE: TODO, understand promise and future.
         auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
         auto future = promise->get_future();
 
@@ -1318,7 +1343,7 @@ void ZooKeeper::exists(
     ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
 }
 
-
+/// NOTE(incfly): where we need to invoke & provide callback.
 void ZooKeeper::get(
     const String & path,
     GetCallback callback,
