@@ -71,7 +71,8 @@ const DataStream & StepTree::getCurrentDataStream() const
 
 void StepTree::unitePlans(QueryPlanStepPtr step, std::vector<std::shared_ptr<StepTree>> & plans)
 {
-    checkInitialized();
+    if (isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite step tree because current QueryPlan is already initialized");
 
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
