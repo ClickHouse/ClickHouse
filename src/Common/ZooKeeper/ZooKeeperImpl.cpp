@@ -277,13 +277,34 @@ using namespace DB;
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
-    Coordination::write(x, *maybe_compressed_out);
+    Coordination::write(x, getWriteBuffer());
 }
 
 template <typename T>
 void ZooKeeper::read(T & x)
 {
-    Coordination::read(x, *maybe_compressed_in);
+    Coordination::read(x, getReadBuffer());
+}
+
+WriteBuffer & ZooKeeper::getWriteBuffer()
+{
+    if (compressed_out)
+        return *compressed_out;
+    return *out;
+}
+
+void ZooKeeper::flushWriteBuffer()
+{
+    if (compressed_out)
+         compressed_out->next();
+    out->next();
+}
+
+ReadBuffer & ZooKeeper::getReadBuffer()
+{
+    if (compressed_in)
+        return *compressed_in;
+    return *in;
 }
 
 static void removeRootPath(String & path, const String & chroot)
@@ -374,8 +395,8 @@ ZooKeeper::ZooKeeper(
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-        initFeatureFlags();
-        keeper_feature_flags.logFlags(log);
+//        initFeatureFlags();
+//        keeper_feature_flags.logFlags(log);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -441,10 +462,10 @@ void ZooKeeper::connect(
                 socket.setSendTimeout(args.operation_timeout_ms * 1000);
                 socket.setNoDelay(true);
 
-                in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-                out = std::make_shared<WriteBufferFromPocoSocket>(socket);
-                maybe_compressed_in = in;
-                maybe_compressed_out = out;
+                in.emplace(socket);
+                out.emplace(socket);
+                compressed_in.reset();
+                compressed_out.reset();
 
                 try
                 {
@@ -469,10 +490,8 @@ void ZooKeeper::connect(
                 connected = true;
                 if (use_compression)
                 {
-                    maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-                    maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out,
-                                                                                   CompressionCodecFactory::instance().get(
-                                                                                           "ZSTD", {}));
+                    compressed_in.emplace(*in);
+                    compressed_out.emplace(*out,CompressionCodecFactory::instance().get("None", {}));
                 }
 
                 original_index = static_cast<Int8>(node.original_index);
@@ -549,8 +568,7 @@ void ZooKeeper::sendHandshake()
     write(timeout);
     write(previous_session_id);
     write(passwd);
-
-    maybe_compressed_out->next();
+    flushWriteBuffer();
 }
 
 void ZooKeeper::receiveHandshake()
@@ -598,8 +616,8 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(*maybe_compressed_out);
-    maybe_compressed_out->next();
+    request.write(getWriteBuffer());
+    flushWriteBuffer();
 
     int32_t length;
     XID read_xid;
@@ -678,9 +696,8 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(*maybe_compressed_out);
-
-                    maybe_compressed_out->next();
+                    info.request->write(getWriteBuffer());
+                    flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
 
@@ -696,8 +713,8 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(*maybe_compressed_out);
-                maybe_compressed_out->next();
+                request.write(getWriteBuffer());
+                flushWriteBuffer();
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesSent, out->count() - prev_bytes_sent);
@@ -869,7 +886,7 @@ void ZooKeeper::receiveEvent()
         }
         else
         {
-            response->readImpl(*maybe_compressed_in);
+            response->readImpl(getReadBuffer());
             response->removeRootPath(args.chroot);
         }
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.

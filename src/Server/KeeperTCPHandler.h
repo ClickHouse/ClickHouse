@@ -82,12 +82,16 @@ private:
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
-    std::shared_ptr<ReadBuffer> maybe_compressed_in;
-    std::shared_ptr<WriteBuffer> maybe_compressed_out;
+    std::optional<CompressedReadBuffer> compressed_in;
+    std::optional<CompressedWriteBuffer> compressed_out;
 
     std::atomic<bool> connected{false};
 
     void runImpl();
+
+    WriteBuffer & getWriteBuffer();
+    void flushWriteBuffer();
+    ReadBuffer & getReadBuffer();
 
     void sendHandshake(bool has_leader, bool & use_compression);
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);

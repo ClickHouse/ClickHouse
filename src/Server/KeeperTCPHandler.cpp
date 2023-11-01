@@ -317,6 +317,8 @@ void KeeperTCPHandler::runImpl()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    compressed_in.reset();
+    compressed_out.reset();
 
     bool use_compression = false;
 
@@ -391,15 +393,8 @@ void KeeperTCPHandler::runImpl()
 
     if (use_compression)
     {
-        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-        maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out,
-                                                                       CompressionCodecFactory::instance().get("ZSTD",
-                                                                                                               {}));
-    }
-    else
-    {
-        maybe_compressed_in = in;
-        maybe_compressed_out = out;
+        compressed_in.emplace(*in);
+        compressed_out.emplace(*out,CompressionCodecFactory::instance().get("None",{}));
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
@@ -488,8 +483,8 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response);
                 packageSent();
 
-                response->write(*maybe_compressed_out);
-                maybe_compressed_out->next();
+                response->write(getWriteBuffer());
+                flushWriteBuffer();
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -559,19 +554,40 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
     }
 }
 
+WriteBuffer & KeeperTCPHandler::getWriteBuffer()
+{
+    if (compressed_out)
+        return *compressed_out;
+    return *out;
+}
+
+void KeeperTCPHandler::flushWriteBuffer()
+{
+    if (compressed_out)
+        compressed_out->next();
+    out->next();
+}
+
+ReadBuffer & KeeperTCPHandler::getReadBuffer()
+{
+    if (compressed_in)
+        return *compressed_in;
+    return *in;
+}
+
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
     int32_t length;
-    Coordination::read(length, *maybe_compressed_in);
+    Coordination::read(length, getReadBuffer());
     int32_t xid;
-    Coordination::read(xid, *maybe_compressed_in);
+    Coordination::read(xid, getReadBuffer());
 
     Coordination::OpNum opnum;
-    Coordination::read(opnum, *maybe_compressed_in);
+    Coordination::read(opnum, getReadBuffer());
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->readImpl(*maybe_compressed_in);
+    request->readImpl(getReadBuffer());
 
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
