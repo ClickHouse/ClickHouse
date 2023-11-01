@@ -168,7 +168,9 @@ INSTANTIATE_TEST_SUITE_P(FDBKeeperChroots, FDBKeeperChrootSuite, testing::Values
 #define KEEPER_GET_WATCH(VAR, ...) CALL_KEEPER_WATCH(get, Get, VAR, __VA_ARGS__)
 #define KEEPER_LIST_WATCH(VAR, ...) CALL_KEEPER_WATCH(list, List, VAR, __VA_ARGS__)
 
-#define EXTRACT_RESPONSE(TYPE, RESP, MULTI_RESP, I) auto RESP = std::dynamic_pointer_cast<TYPE##Response>((MULTI_RESP).responses[I])
+#define CONCATENATE_DETAIL(x, y) x##y
+#define CONCATENATE(x, y) CONCATENATE_DETAIL(x, y)
+#define EXTRACT_RESPONSE(TYPE, RESP, MULTI_RESP, I) auto RESP = std::dynamic_pointer_cast<CONCATENATE(TYPE, Response)>((MULTI_RESP).responses[(I)])
 
 #define USE_KEEPER(KEEPER) keeper = std::move(KEEPER)
 

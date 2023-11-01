@@ -54,9 +54,9 @@ public:
         {
             (*f)();
         }
-        catch (...)
+        catch (const std::exception& e)
         {
-            // Ignored
+            std::cerr << "Error: " << e.what() << std::endl;
         }
         delete f;
     }
