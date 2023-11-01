@@ -1743,9 +1743,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (res.size_of_part)
                 {
                     if (unexpected)
-                        ++suspicious_broken_unexpected_parts_bytes;
+                        suspicious_broken_unexpected_parts_bytes += *res.size_of_part;
                     else
-                        ++suspicious_broken_parts_bytes;
+                        suspicious_broken_parts_bytes += *res.size_of_part;
                 }
             }
             else if (res.part->is_duplicate)
@@ -1792,11 +1792,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             throw Exception(
                 ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
                 "Suspiciously many ({} parts, {} in total) broken parts "
-                "to remove while maximum allowed broken parts count is {}. You can "
-                "change the maximum value "
-                "with merge tree setting 'max_suspicious_broken_parts' "
-                "in <merge_tree> configuration section or in table settings in "
-                ".sql file "
+                "to remove while maximum allowed broken parts count is {}. You can change the maximum value "
+                "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file "
                 "(don't forget to return setting back to default value)",
                 suspicious_broken_parts,
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
@@ -1807,11 +1804,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
                 "Suspiciously big size ({} parts, {} in total) of all broken "
                 "parts to remove while maximum allowed broken parts size is {}. "
-                "You can change the maximum value with merge tree setting "
-                "'max_suspicious_broken_parts_bytes' in <merge_tree> "
-                "configuration "
-                "section or in table settings in .sql file (don't forget to "
-                "return setting back to default value)",
+                "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
+                "section or in table settings in .sql file (don't forget to return setting back to default value)",
                 suspicious_broken_parts,
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
                 formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
