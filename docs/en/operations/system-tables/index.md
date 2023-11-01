@@ -79,8 +79,8 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 - `OSWriteBytes`
 
 :::note
-OSIOWaitMicroseconds is disabled by default in Linux Kernels starting from 5.14.x.
-You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a .conf file in /etc/sysctl.d/ with `kernel.task_delayacct = 1`
+`OSIOWaitMicroseconds` is disabled by default in Linux kernels starting from 5.14.x.
+You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `.conf` file in `/etc/sysctl.d/` with `kernel.task_delayacct = 1`
 :::
 
 ## Related content
