@@ -195,6 +195,65 @@ namespace ErrorCodes
     extern const int TOO_MANY_MUTATIONS;
 }
 
+static size_t getPartitionAstFieldsCount(const ASTPartition & partition_ast, ASTPtr partition_value_ast)
+{
+    if (partition_ast.fields_count.has_value())
+    {
+        return *partition_ast.fields_count;
+    }
+
+    if (partition_value_ast->as<ASTLiteral>())
+    {
+        return 1;
+    }
+
+    const auto * tuple_ast = partition_value_ast->as<ASTFunction>();
+
+    if (!tuple_ast)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
+    }
+
+    if (tuple_ast->name != "tuple")
+    {
+        if (isFunctionCast(tuple_ast))
+        {
+            if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+            }
+            auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+            if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
+            {
+                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                return arguments_ast ? arguments_ast->children.size() : 0;
+            }
+            else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
+            {
+                return inner_literal_tuple->value.getType() == Field::Types::Tuple
+                        ? inner_literal_tuple->value.safeGet<Tuple>().size()
+                        : 1;
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+        }
+    }
+    else
+    {
+        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+        return arguments_ast ? arguments_ast->children.size() : 0;
+    }
+}
+
 static void checkSuspiciousIndices(const ASTFunction * index_function)
 {
     std::unordered_set<UInt64> unique_index_expression_hashes;
@@ -4670,7 +4729,6 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
 
     if (!partition_ast.value)
     {
-        // todo arthur fix
         MergeTreePartInfo::validatePartitionID(partition_ast.id->clone(), format_version);
         return;
     }
@@ -4680,70 +4738,8 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
     size_t fields_count = key_sample_block.columns();
 
-
-    size_t partition_ast_fields_count = 0;
-    ASTPtr partition_value_ast = partition_ast.value->clone();
-    if (!partition_ast.fields_count.has_value())
-    {
-        if (partition_value_ast->as<ASTLiteral>())
-        {
-            partition_ast_fields_count = 1;
-        }
-        else if (const auto * tuple_ast = partition_value_ast->as<ASTFunction>())
-        {
-            if (tuple_ast->name != "tuple")
-            {
-                if (isFunctionCast(tuple_ast))
-                {
-                    if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-                    }
-                    auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
-                    if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
-                    {
-                        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                        if (arguments_ast)
-                            partition_ast_fields_count = arguments_ast->children.size();
-                        else
-                            partition_ast_fields_count = 0;
-                    }
-                    else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
-                    {
-                        if (inner_literal_tuple->value.getType() == Field::Types::Tuple)
-                            partition_ast_fields_count = inner_literal_tuple->value.safeGet<Tuple>().size();
-                        else
-                            partition_ast_fields_count = 1;
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-                    }
-                }
-                else
-                    throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-            }
-            else
-            {
-                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                if (arguments_ast)
-                    partition_ast_fields_count = arguments_ast->children.size();
-                else
-                    partition_ast_fields_count = 0;
-            }
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
-        }
-    }
-    else
-    {
-        partition_ast_fields_count = *partition_ast.fields_count;
-    }
+    auto partition_value_ast = partition_ast.value->clone();
+    auto partition_ast_fields_count = getPartitionAstFieldsCount(partition_ast, partition_value_ast);
 
     if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
@@ -4755,15 +4751,14 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
     if (fields_count == 0)
     {
         /// Function tuple(...) requires at least one argument, so empty key is a special case
-        assert(!partition_ast.fields_count);
-        // todo arthur fix
-        assert(typeid_cast<ASTFunction *>(partition_ast.value));
-        assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
-        assert(partition_ast.value->as<ASTFunction>()->arguments);
-        auto args = partition_ast.value->as<ASTFunction>()->arguments;
+        assert(!partition_ast_fields_count);
+        assert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
+        assert(partition_value_ast->as<ASTFunction>()->name == "tuple");
+        assert(partition_value_ast->as<ASTFunction>()->arguments);
+        auto args = partition_value_ast->as<ASTFunction>()->arguments;
         if (!args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
-        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+        bool empty_tuple = partition_value_ast->as<ASTFunction>()->arguments->children.empty();
         if (!empty_tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
     }
@@ -5500,69 +5495,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         MergeTreePartInfo::validatePartitionID(partition_ast.id->clone(), format_version);
         return partition_ast.id->as<ASTLiteral>()->value.safeGet<String>();
     }
-    size_t partition_ast_fields_count = 0;
     ASTPtr partition_value_ast = partition_ast.value->clone();
-    if (!partition_ast.fields_count.has_value())
-    {
-        if (partition_value_ast->as<ASTLiteral>())
-        {
-            partition_ast_fields_count = 1;
-        }
-        else if (const auto * tuple_ast = partition_value_ast->as<ASTFunction>())
-        {
-            if (tuple_ast->name != "tuple")
-            {
-                if (isFunctionCast(tuple_ast))
-                {
-                    if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-                    }
-                    auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
-                    if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
-                    {
-                        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                        if (arguments_ast)
-                            partition_ast_fields_count = arguments_ast->children.size();
-                        else
-                            partition_ast_fields_count = 0;
-                    }
-                    else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
-                    {
-                        if (inner_literal_tuple->value.getType() == Field::Types::Tuple)
-                            partition_ast_fields_count = inner_literal_tuple->value.safeGet<Tuple>().size();
-                        else
-                            partition_ast_fields_count = 1;
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-                    }
-                }
-                else
-                    throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
-            }
-            else
-            {
-                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
-                if (arguments_ast)
-                    partition_ast_fields_count = arguments_ast->children.size();
-                else
-                    partition_ast_fields_count = 0;
-            }
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
-        }
-    }
-    else
-    {
-        partition_ast_fields_count = *partition_ast.fields_count;
-    }
+    auto partition_ast_fields_count = getPartitionAstFieldsCount(partition_ast, partition_value_ast);
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
