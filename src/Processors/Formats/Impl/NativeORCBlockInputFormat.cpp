@@ -913,7 +913,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     // std::cout << "just for debug:" << std::endl;
     // std::cout << "subtypes:" << file_reader->getType().getSubtypeCount() << std::endl;
     // std::cout << "ch output type:" << getPort().getHeader().dumpStructure() << std::endl;
-    // std::cout << "orc ouput type:" << file_reader->getType().toString() << std::endl;
+    // std::cout << "orc output type:" << file_reader->getType().toString() << std::endl;
     // std::cout << "id type map" << std::endl;
     // for (const auto & [k, v] : id_type_map)
     //     std::cout << "id:" << k << ", type:" << v->toString() << std::endl;
