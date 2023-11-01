@@ -81,8 +81,8 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
     {
         std::lock_guard lock(parts_mutex);
         for (const auto & elem : parts_queue)
-            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(elem.first, storage.format_version)))
-                parts_to_remove.push_back(elem.first);
+            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(elem.name, storage.format_version)))
+                parts_to_remove.push_back(elem.name);
     }
 
     /// We have to remove parts that were not removed by removePartAndEnqueueFetch
@@ -102,11 +102,11 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
     std::lock_guard lock(parts_mutex);
     for (const auto & elem : parts_queue)
     {
-        bool is_removed = removed_parts.contains(elem.first);
-        bool should_have_been_removed = drop_range_info.contains(MergeTreePartInfo::fromPartName(elem.first, storage.format_version));
+        bool is_removed = removed_parts.contains(elem.name);
+        bool should_have_been_removed = drop_range_info.contains(MergeTreePartInfo::fromPartName(elem.name, storage.format_version));
         if (is_removed != should_have_been_removed)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent parts_queue: name={}, is_removed={}, should_have_been_removed={}",
-                            elem.first, is_removed, should_have_been_removed);
+                            elem.name, is_removed, should_have_been_removed);
         count += is_removed;
     }
 
@@ -116,7 +116,7 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
 
     auto new_end = std::remove_if(parts_queue.begin(), parts_queue.end(), [&removed_parts] (const auto & elem)
     {
-        return removed_parts.contains(elem.first);
+        return removed_parts.contains(elem.name);
     });
 
     parts_queue.erase(new_end, parts_queue.end());
@@ -555,17 +555,29 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             selected = std::find_if(parts_queue.begin(), parts_queue.end(), [current_time](const auto & elem)
             {
-                return elem.second <= current_time;
+                return elem.time <= current_time;
             });
             if (selected == parts_queue.end())
+            {
+                // Find next part to check in the queue and schedule the check
+                // Otherwise, scheduled for later checks won't be executed until
+                // a new check is enqueued (i.e. task is scheduled again)
+                auto next_it = std::min_element(
+                    begin(parts_queue), end(parts_queue), [](const auto & l, const auto & r) { return l.time < r.time; });
+                if (next_it != parts_queue.end())
+                {
+                    auto delay = next_it->time - current_time;
+                    task->scheduleAfter(delay * 1000);
+                }
                 return;
+            }
 
             /// Move selected part to the end of the queue
             parts_queue.splice(parts_queue.end(), parts_queue, selected);
         }
 
         std::optional<time_t> recheck_after;
-        checkPartAndFix(selected->first, &recheck_after);
+        checkPartAndFix(selected->name, &recheck_after);
 
         if (need_stop)
             return;
@@ -580,12 +592,12 @@ void ReplicatedMergeTreePartCheckThread::run()
             }
             else if (recheck_after.has_value())
             {
-                LOG_TRACE(log, "Will recheck part {} after after {}s", selected->first, *recheck_after);
-                selected->second = time(nullptr) + *recheck_after;
+                LOG_TRACE(log, "Will recheck part {} after after {}s", selected->name, *recheck_after);
+                selected->time = time(nullptr) + *recheck_after;
             }
             else
             {
-                parts_set.erase(selected->first);
+                parts_set.erase(selected->name);
                 parts_queue.erase(selected);
             }
         }

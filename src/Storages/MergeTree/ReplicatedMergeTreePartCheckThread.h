@@ -90,7 +90,11 @@ private:
     Poco::Logger * log;
 
     using StringSet = std::set<String>;
-    using PartToCheck = std::pair<String, time_t>;    /// The name of the part and the minimum time to check (or zero, if not important).
+    struct PartToCheck
+    {
+        String name;
+        time_t time;
+    };
     using PartsToCheckQueue = std::list<PartToCheck>;
 
     /** Parts for which you want to check one of two:
