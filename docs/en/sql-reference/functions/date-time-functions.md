@@ -2016,7 +2016,7 @@ Result:
 
 ## addDate
 
-Adds the time interval or date interval to the provided date or date with time.
+Adds the time interval to the provided date, date with time or String-encoded date / date with time.
 
 If the addition results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2028,7 +2028,7 @@ addDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time to which `interval` is added. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to add. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
@@ -2059,7 +2059,7 @@ Alias: `ADDDATE`
 
 ## subDate
 
-Subtracts the time interval or date interval from the provided date or date with time.
+Subtracts the time interval from the provided date, date with time or String-encoded date / date with time.
 
 If the subtraction results in a value outside the bounds of the data type, the result is undefined.
 
@@ -2071,7 +2071,7 @@ subDate(date, interval)
 
 **Arguments**
 
-- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+- `date` — The date or date with time from which `interval` is subtracted. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), or [String](../../sql-reference/data-types/string.md)
 - `interval` — Interval to subtract. [Interval](../../sql-reference/data-types/special-data-types/interval.md).
 
 **Returned value**
