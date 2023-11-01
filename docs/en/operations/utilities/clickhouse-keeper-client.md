@@ -55,6 +55,7 @@ keeper foo bar
 -   `rmr <path>` -- Recursively deletes path. Confirmation required
 -   `flwc <command>` -- Executes four-letter-word command
 -   `help` -- Prints this message
+-   `get_direct_children_number [path]` -- Get numbers of direct children nodes under a specific path
 -   `get_all_children_number [path]` -- Get all numbers of children nodes under a specific path
 -   `get_stat [path]` -- Returns the node's stat (default `.`)
 -   `find_super_nodes <threshold> [path]` -- Finds nodes with number of children larger than some threshold for the given path (default `.`)

@@ -158,9 +158,10 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+
     bool matchesExactContinuousRange() const;
 
-private:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
@@ -207,10 +208,11 @@ private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
 
-
-public:
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
     static const AtomMap atom_map;
+
+    const RPN & getRPN() const { return rpn; }
+    const ColumnIndices & getKeyColumns() const { return key_columns; }
 
 private:
     BoolMask checkInRange(

@@ -670,14 +670,14 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     return *res;
 }
 
-static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
+ActionsDAGPtr KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
     auto res = std::make_shared<ActionsDAG>();
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-        node = &cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
+        node = &DB::cloneASTWithInversionPushDown(*node, *res, to_inverted, context, false);
 
     if (nodes.size() > 1)
     {
@@ -689,7 +689,6 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
 
     return res;
 }
-
 
 /** Calculate expressions, that depend only on constants.
   * For index to work when something like "WHERE Date = toDate(now())" is written.
@@ -769,7 +768,7 @@ KeyCondition::KeyCondition(
       * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
       * are pushed down and applied (when possible) to leaf nodes.
       */
-    auto inverted_filter_node = cloneASTWithInversionPushDown(filter_node);
+    auto inverted_filter_node = DB::cloneASTWithInversionPushDown(filter_node);
 
     RPNBuilder<RPNElement> builder(
         inverted_filter_node,
