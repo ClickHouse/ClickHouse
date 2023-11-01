@@ -129,7 +129,7 @@ void SelectStreamFactory::createForShard(
     if (settings.max_execution_time_leaf.value != 0)
     {
         query = query_ast->clone();
-        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_oferflow_mode'
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'
         if (auto * select = query->as<ASTSelectQuery>())
         {
