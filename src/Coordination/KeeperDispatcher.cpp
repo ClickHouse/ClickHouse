@@ -11,7 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include "IO/S3/Credentials.h"
+#include <IO/S3/Credentials.h>
 
 #include <atomic>
 #include <future>

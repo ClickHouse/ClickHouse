@@ -192,7 +192,7 @@ Aws::String AWSEC2MetadataClient::getCurrentRegion() const
     return Aws::Region::AWS_GLOBAL;
 }
 
-Aws::String awsMetadataEndpoint()
+static Aws::String getAWSMetadataEndpoint()
 {
     auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
     Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
@@ -260,7 +260,7 @@ String getGCPAvailabilityZoneOrException()
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
     session.sendRequest(request);
-    std::istream& rs = session.receiveResponse(response);
+    std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
@@ -275,7 +275,8 @@ String getGCPAvailabilityZoneOrException()
 std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
 {
     LOG_INFO(&Poco::Logger::get("Application"), "Trying to detect the availability zone.");
-    try{
+    try
+    {
         auto aws_az = AWSEC2MetadataClient::getAvailabilityZoneOrException();
         return aws_az;
     }
@@ -288,7 +289,7 @@ std::variant<String, std::exception_ptr> getRunningAvailabilityZoneImpl()
         }
         catch (const DB::Exception & gcp_ex)
         {
-            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Failed to find the availability zone, tried AWS, GCP. AWS Error {}\n GCP Error {}", aws_ex.displayText(), gcp_ex.displayText());
+            throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Failed to find the availability zone, tried AWS, GCP. AWS Error: {}\nGCP Error: {}", aws_ex.displayText(), gcp_ex.displayText());
         }
     }
 }
