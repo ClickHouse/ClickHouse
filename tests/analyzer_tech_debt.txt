@@ -26,7 +26,6 @@
 01747_join_view_filter_dictionary
 01761_cast_to_enum_nullable
 01786_explain_merge_tree
-01890_materialized_distributed_join
 01925_join_materialized_columns
 01925_test_storage_merge_aliases
 01947_mv_subquery
