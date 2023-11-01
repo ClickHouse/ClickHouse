@@ -1,3 +1,6 @@
+#include <future>
+#include <memory>
+#include <mutex>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,6 +16,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include "Storages/MergeTree/ReplicatedTableStatus.h"
 
 
 namespace CurrentMetrics
@@ -24,9 +28,128 @@ namespace CurrentMetrics
 namespace DB
 {
 
+/// Allows to "deduplicate" getStatus() requests for the same table: if a request for a table is already in progress
+/// then the new request will return the same future as the previous one.
+class StatusRequestsPool
+{
+    ThreadPool & thread_pool;
+
+    std::mutex mutex;
+    std::unordered_map<StoragePtr, std::shared_future<ReplicatedTableStatus>> current_requests TSA_GUARDED_BY(mutex);
+    std::deque<std::tuple<UInt64, StoragePtr, std::shared_ptr<std::promise<ReplicatedTableStatus>>, bool>> requests_to_schedule TSA_GUARDED_BY(mutex);
+    UInt64 request_id TSA_GUARDED_BY(mutex) = 0;
+
+    Poco::Logger * log;
+
+public:
+    explicit StatusRequestsPool(ThreadPool & thread_pool_)
+        : thread_pool(thread_pool_)
+        , log(&Poco::Logger::get("StatusRequestsPool"))
+    {}
+
+    ~StatusRequestsPool()
+    {
+        thread_pool.wait();
+    }
+
+    /// Make a new request or "attach" to an existing one.
+    std::pair<UInt64, std::shared_future<ReplicatedTableStatus>> addRequest(StoragePtr storage, bool with_zk_fields)
+    {
+        std::shared_ptr<std::promise<ReplicatedTableStatus>> promise;
+        std::shared_future<ReplicatedTableStatus> future;
+        UInt64 this_request_id = 0;
+
+        {
+            std::lock_guard lock(mutex);
+            auto existing_request = current_requests.find(storage);
+            if (existing_request != current_requests.end())
+            {
+                LOG_TEST(log, "Attaching to existing request for table {}", storage->getStorageID().getNameForLogs());
+                return {0, existing_request->second};
+            }
+
+            promise = std::make_shared<std::promise<ReplicatedTableStatus>>();
+            future = promise->get_future().share();
+
+            current_requests.emplace(storage, future);
+
+            LOG_TEST(log, "Making new request for table {}", storage->getStorageID().getNameForLogs());
+
+            requests_to_schedule.emplace_back(request_id, storage, promise, with_zk_fields);
+            this_request_id = request_id;
+            ++request_id;
+        }
+
+        return {this_request_id, future};
+    }
+
+    /// Schedule requests (if any) that are needed for the current query. This is determined by the maximum request id
+    /// returned by addRequest.
+    void scheduleRequests(UInt64 max_request_id)
+    {
+        while (true)
+        {
+            std::tuple<UInt64, StoragePtr, std::shared_ptr<std::promise<ReplicatedTableStatus>>, bool> req;
+            {
+                std::lock_guard lock(mutex);
+                if (requests_to_schedule.empty())
+                    break;
+
+                req = requests_to_schedule.front();
+                if (std::get<0>(req) > max_request_id)
+                    break;
+
+                requests_to_schedule.pop_front();
+            }
+
+            auto & [_, storage, promise, with_zk_fields] = req;
+
+            /// TODO: handle failure when trying to schedule a request: need to either retry or set an error in the promise.
+            thread_pool.scheduleOrThrowOnError([this, storage, with_zk_fields, promise] () mutable
+            {
+                ReplicatedTableStatus status;
+                if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+                {
+                    replicated_table->getStatus(status, with_zk_fields);
+                }
+                promise->set_value(std::move(status));
+
+                /// Remove the completed request
+                {
+                    std::lock_guard l(mutex);
+                    current_requests.erase(storage);
+                }
+            });
+        }
+    }
+};
+
+
+class StorageSystemReplicasImpl
+{
+public:
+    explicit StorageSystemReplicasImpl(size_t max_threads)
+        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, max_threads)
+        , requests_without_zk_fields(thread_pool)
+        , requests_with_zk_fields(thread_pool)
+    {}
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context);
+
+private:
+    ThreadPool thread_pool;
+    StatusRequestsPool requests_without_zk_fields;
+    StatusRequestsPool requests_with_zk_fields;
+};
+
 
 StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     : IStorage(table_id_)
+    , impl(std::make_unique<StorageSystemReplicasImpl>(128))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({
@@ -69,6 +192,8 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageSystemReplicas::~StorageSystemReplicas() = default;
+
 
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
@@ -78,6 +203,15 @@ Pipe StorageSystemReplicas::read(
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
+{
+    return impl->read(column_names, storage_snapshot, query_info, context);
+}
+
+Pipe StorageSystemReplicasImpl::read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context)
 {
     storage_snapshot->check(column_names);
 
@@ -164,30 +298,29 @@ Pipe StorageSystemReplicas::read(
     MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
     size_t tables_size = col_database->size();
-    std::vector<ReplicatedTableStatus> statuses(tables_size);
 
-    size_t thread_pool_size = std::min(tables_size, static_cast<size_t>(getNumberOfPhysicalCPUCores()));
-    auto settings = context->getSettingsRef();
-    if (settings.max_threads != 0)
-        thread_pool_size = std::min(thread_pool_size, static_cast<size_t>(settings.max_threads));
+    /// Use separate queues for requests with and without ZooKeeper fields.
+    StatusRequestsPool & get_status_requests = with_zk_fields ? requests_with_zk_fields : requests_without_zk_fields;
 
-    ThreadPool thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, thread_pool_size);
+    std::vector<std::shared_future<ReplicatedTableStatus>> futures;
+    futures.reserve(tables_size);
+    UInt64 max_request_id = 0;
+    for (size_t i = 0; i < tables_size; ++i)
+    {
+        auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
+            [(*col_table)[i].safeGet<const String &>()];
+
+        auto [request_id, future] = get_status_requests.addRequest(storage, with_zk_fields);
+        futures.emplace_back(future);
+        max_request_id = std::max(max_request_id, request_id);
+    }
+    /// Schedule requests up to the maximum request needed for the current query.
+    /// If there are more requests, they will be scheduled by the query that needs them.
+    get_status_requests.scheduleRequests(max_request_id);
 
     for (size_t i = 0; i < tables_size; ++i)
     {
-        thread_pool.scheduleOrThrowOnError([&, my_i = i]
-        {
-            dynamic_cast<StorageReplicatedMergeTree &>(
-            *replicated_tables
-                [(*col_database)[my_i].safeGet<const String &>()]
-                [(*col_table)[my_i].safeGet<const String &>()]).getStatus(statuses[my_i], with_zk_fields);
-        });
-    }
-
-    thread_pool.wait();
-
-    for (const auto & status: statuses)
-    {
+        const auto & status = futures[i].get();
         size_t col_num = 3;
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);
