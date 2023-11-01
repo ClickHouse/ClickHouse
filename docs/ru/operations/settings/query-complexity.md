@@ -110,7 +110,7 @@ sidebar_label: "Ограничения на сложность запроса"
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
-Включает или отключает выполнение предложений `ORDER BY` во внешней памяти. См. [ORDER BY Подробности реализации](../../sql-reference/statements/select/order-by.md#implementation-details)
+Включает или отключает выполнение `ORDER BY` во внешней памяти. См. [Детали реализации ORDER BY](../../sql-reference/statements/select/order-by.md#implementation-details)
 
 - Максимальный объем оперативной памяти (в байтах), который может использоваться одной операцией [ORDER BY](../../sql-reference/statements/select/order-by.md). Рекомендуемое значение — половина доступной системной памяти.
 - 0 — `ORDER BY` во внешней памяти отключен.
