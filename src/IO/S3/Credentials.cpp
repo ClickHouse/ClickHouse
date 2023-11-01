@@ -231,20 +231,20 @@ static Aws::String getAWSMetadataEndpoint()
 
 std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
 {
-    auto endpoint = awsMetadataEndpoint();
+    auto endpoint = getAWSMetadataEndpoint();
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
 }
 
 String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 {
-    Poco::URI uri(awsMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
+    Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
 
     Poco::Net::HTTPResponse response;
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
     session.sendRequest(request);
 
-    std::istream& rs = session.receiveResponse(response);
+    std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
@@ -254,7 +254,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 
 String getGCPAvailabilityZoneOrException()
 {
-    Poco::URI uri("http://169.254.169.254/computeMetadata/v1/instance/zone");
+    Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
     Poco::Net::HTTPResponse response;
@@ -267,6 +267,7 @@ String getGCPAvailabilityZoneOrException()
     Poco::StreamCopier::copyToString(rs, response_data);
     Strings zone_info;
     boost::split(zone_info, response_data, boost::is_any_of("/"));
+    /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
     if (zone_info.size() != 4)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Invalid format of GCP zone information, expect projects/<project-number>/zones/<zone-value>, got {}", response_data);
     return zone_info[3];

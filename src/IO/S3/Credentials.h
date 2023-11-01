@@ -21,6 +21,9 @@ namespace DB::S3
 
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
 
+/// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
+static constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
+
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
 String getRunningAvailabilityZone();
 

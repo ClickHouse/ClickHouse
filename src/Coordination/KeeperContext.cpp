@@ -32,7 +32,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
-void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, std::string availability_zone)
+void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, const std::string & availability_zone)
 {
     dispatcher = dispatcher_;
 
