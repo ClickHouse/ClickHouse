@@ -184,4 +184,15 @@ public:
 
 }
 
+#else
+
+namespace DB
+{
+
+namespace S3
+{
+String getRunningAvailabilityZone();
+}
+
+}
 #endif

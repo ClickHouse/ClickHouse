@@ -4,7 +4,6 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <Poco/Exception.h>
 
-
 #if USE_AWS_S3
 
 #    include <aws/core/Version.h>
@@ -785,4 +784,22 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
 }
 
 }
+
+#else
+
+namespace DB
+{
+
+namespace S3
+{
+
+String getRunningAvailabilityZone()
+{
+    throw Poco::Exception("Does not support availability zone detection for non-cloud environment");
+}
+
+}
+
+}
+
 #endif

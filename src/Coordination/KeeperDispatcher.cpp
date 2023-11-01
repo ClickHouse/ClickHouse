@@ -371,7 +371,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     snapshot_s3.startup(config, macros);
     keeper_context = std::make_shared<KeeperContext>(standalone_keeper);
     String availability_zone;
-    try{
+    try
+    {
         availability_zone = DB::S3::getRunningAvailabilityZone();
     }
     catch (...)
