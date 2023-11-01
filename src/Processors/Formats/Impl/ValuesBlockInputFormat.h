@@ -41,6 +41,9 @@ public:
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
+    static bool skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance);
+
 private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
@@ -71,6 +74,8 @@ private:
     void readPrefix();
     void readSuffix();
 
+    size_t countRows(size_t max_block_size);
+
     std::unique_ptr<PeekableReadBuffer> buf;
     std::optional<IParser::Pos> token_iterator{};
     std::optional<Tokens> tokens{};
@@ -96,7 +101,7 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk;
+    size_t approx_bytes_read_for_chunk = 0;
 };
 
 class ValuesSchemaReader : public IRowSchemaReader
@@ -105,7 +110,7 @@ public:
     ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

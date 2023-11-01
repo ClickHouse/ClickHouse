@@ -400,6 +400,39 @@ def test_datetime(started_cluster):
     assert "DateTime64(6)" in node1.query("show create table pg.test")
 
 
+def test_postgresql_password_leak(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+    cursor.execute("CREATE SCHEMA test_schema")
+    cursor.execute("CREATE TABLE test_schema.table1 (a integer)")
+    cursor.execute("CREATE TABLE table2 (a integer)")
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword', 'test_schema')"
+    )
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database2")
+    node1.query(
+        "CREATE DATABASE postgres_database2 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+
+    assert "mysecretpassword" not in node1.query("SHOW CREATE postgres_database.table1")
+    assert "mysecretpassword" not in node1.query(
+        "SHOW CREATE postgres_database2.table2"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    node1.query("DROP DATABASE postgres_database2")
+
+    cursor.execute("DROP SCHEMA test_schema CASCADE")
+    cursor.execute("DROP TABLE table2")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

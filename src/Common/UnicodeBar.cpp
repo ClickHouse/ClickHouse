@@ -7,7 +7,6 @@
 #include <Common/UnicodeBar.h>
 #include <Common/NaNUtils.h>
 
-#include <iostream>
 
 namespace DB
 {

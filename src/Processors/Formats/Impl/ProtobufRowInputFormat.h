@@ -33,7 +33,7 @@ public:
         ReadBuffer & in_,
         const Block & header_,
         const Params & params_,
-        const FormatSchemaInfo & schema_info_,
+        const ProtobufSchemaInfo & schema_info_,
         bool with_length_delimiter_,
         bool flatten_google_wrappers_);
 
@@ -46,6 +46,9 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
+
+    bool supportsCountRows() const override { return true; }
+    size_t countRows(size_t max_block_size) override;
 
     void createReaderAndSerializer();
 

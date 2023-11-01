@@ -6,7 +6,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageSnapshot.h>
 
 namespace DB
@@ -50,6 +49,8 @@ public:
     {
         /// Query and header may be changed depending on shard.
         ASTPtr query;
+        /// Used to check the table existence on remote node
+        StorageID main_table;
         Block header;
 
         Cluster::ShardInfo shard_info;
@@ -58,9 +59,6 @@ public:
         /// (When there is a local replica with big delay).
         bool lazy = false;
         time_t local_delay = 0;
-
-        /// Set only if parallel reading from replicas is used.
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator;
     };
 
     using Shards = std::vector<Shard>;
@@ -79,7 +77,8 @@ public:
         ContextPtr context,
         std::vector<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
-        UInt32 shard_count);
+        UInt32 shard_count,
+        bool parallel_replicas_enabled);
 
     struct ShardPlans
     {

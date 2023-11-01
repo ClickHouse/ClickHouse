@@ -27,7 +27,7 @@ TEST(Common, SensitiveDataMasker)
 {
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_xml_config = new Poco::Util::XMLConfiguration();
-    DB::SensitiveDataMasker masker(*empty_xml_config , "");
+    DB::SensitiveDataMasker masker(*empty_xml_config, "");
     masker.addMaskingRule("all a letters", "a+", "--a--");
     masker.addMaskingRule("all b letters", "b+", "--b--");
     masker.addMaskingRule("all d letters", "d+", "--d--");
@@ -45,7 +45,7 @@ TEST(Common, SensitiveDataMasker)
     masker.printStats();
 #endif
 
-    DB::SensitiveDataMasker masker2(*empty_xml_config , "");
+    DB::SensitiveDataMasker masker2(*empty_xml_config, "");
     masker2.addMaskingRule("hide root password", "qwerty123", "******");
     masker2.addMaskingRule("hide SSN", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "000-00-0000");
     masker2.addMaskingRule("hide email", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}", "hidden@hidden.test");
@@ -58,7 +58,7 @@ TEST(Common, SensitiveDataMasker)
         "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', '******') WHERE "
         "ssn='000-00-0000' or email='hidden@hidden.test'");
 
-    DB::SensitiveDataMasker maskerbad(*empty_xml_config , "");
+    DB::SensitiveDataMasker maskerbad(*empty_xml_config, "");
 
     // gtest has not good way to check exception content, so just do it manually (see https://github.com/google/googletest/issues/952 )
     try

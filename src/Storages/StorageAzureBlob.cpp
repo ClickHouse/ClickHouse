@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 
-#include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 
 #include <Parsers/ASTCreateQuery.h>
@@ -16,22 +15,19 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <re2/re2.h>
 
-#include <azure/identity/managed_identity_credential.hpp>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Sources/ConstChunkGenerator.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/getVirtualsForStorage.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Storages/ReadFromStorageProgress.h>
 #include <Common/parseGlobs.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -42,6 +38,14 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -49,6 +53,11 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
+}
+
+namespace ProfileEvents
+{
+    extern const Event EngineFileLikeReadFiles;
 }
 
 namespace DB
@@ -87,7 +96,7 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
 
 bool isConnectionString(const std::string & candidate)
 {
-    return candidate.starts_with("DefaultEndpointsProtocol");
+    return !candidate.starts_with("http");
 }
 
 }
@@ -258,7 +267,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
         auto configuration = StorageAzureBlob::getConfiguration(engine_args, args.getLocalContext());
-        auto client = StorageAzureBlob::createClient(configuration);
+        auto client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -300,6 +309,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
             args.constraints,
             args.comment,
             format_settings,
+            /* distributed_processing */ false,
             partition_by);
     },
     {
@@ -310,58 +320,113 @@ void registerStorageAzureBlob(StorageFactory & factory)
     });
 }
 
-AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration)
+static bool containerExists(std::unique_ptr<BlobServiceClient> &blob_service_client, std::string container_name)
+{
+    Azure::Storage::Blobs::ListBlobContainersOptions options;
+    options.Prefix = container_name;
+    options.PageSizeHint = 1;
+
+    auto containers_list_response = blob_service_client->ListBlobContainers(options);
+    auto containers_list = containers_list_response.BlobContainers;
+
+    for (const auto & container : containers_list)
+    {
+        if (container_name == container.Name)
+            return true;
+    }
+    return false;
+}
+
+AzureClientPtr StorageAzureBlob::createClient(StorageAzureBlob::Configuration configuration, bool is_read_only)
 {
     AzureClientPtr result;
 
     if (configuration.is_connection_string)
     {
+        std::unique_ptr<BlobServiceClient> blob_service_client = std::make_unique<BlobServiceClient>(BlobServiceClient::CreateFromConnectionString(configuration.connection_url));
         result = std::make_unique<BlobContainerClient>(BlobContainerClient::CreateFromConnectionString(configuration.connection_url, configuration.container));
-        result->CreateIfNotExists();
-    }
-    else
-    {
-        if (configuration.account_name.has_value() && configuration.account_key.has_value())
+        bool container_exists = containerExists(blob_service_client,configuration.container);
+
+        if (!container_exists)
         {
-            auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
-            auto blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
+            if (is_read_only)
+                throw Exception(
+                    ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "AzureBlobStorage container does not exist '{}'",
+                    configuration.container);
+
             try
             {
-                result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            }
-            catch (const Azure::Storage::StorageException & e)
+                result->CreateIfNotExists();
+            } catch (const Azure::Storage::StorageException & e)
             {
-                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
-                {
-                    auto final_url = configuration.connection_url
-                        + (configuration.connection_url.back() == '/' ? "" : "/")
-                        + configuration.container;
-
-                    result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
-                }
-                else
+                if (!(e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                    && e.ReasonPhrase == "The specified container already exists."))
                 {
                     throw;
                 }
             }
         }
+    }
+    else
+    {
+        std::shared_ptr<Azure::Storage::StorageSharedKeyCredential> storage_shared_key_credential;
+        if (configuration.account_name.has_value() && configuration.account_key.has_value())
+        {
+            storage_shared_key_credential
+                = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*configuration.account_name, *configuration.account_key);
+        }
+
+        std::unique_ptr<BlobServiceClient> blob_service_client;
+        if (storage_shared_key_credential)
+        {
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, storage_shared_key_credential);
+        }
         else
         {
-            auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-            auto blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url, managed_identity_credential);
+            blob_service_client = std::make_unique<BlobServiceClient>(configuration.connection_url);
+        }
+
+        bool container_exists = containerExists(blob_service_client,configuration.container);
+
+        std::string final_url;
+        size_t pos = configuration.connection_url.find('?');
+        if (pos != std::string::npos)
+        {
+            auto url_without_sas = configuration.connection_url.substr(0, pos);
+            final_url = url_without_sas + (url_without_sas.back() == '/' ? "" : "/") + configuration.container
+                + configuration.connection_url.substr(pos);
+        }
+        else
+            final_url
+                = configuration.connection_url + (configuration.connection_url.back() == '/' ? "" : "/") + configuration.container;
+
+        if (container_exists)
+        {
+            if (storage_shared_key_credential)
+                result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+            else
+                result = std::make_unique<BlobContainerClient>(final_url);
+        }
+        else
+        {
+            if (is_read_only)
+                throw Exception(
+                    ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "AzureBlobStorage container does not exist '{}'",
+                    configuration.container);
             try
             {
                 result = std::make_unique<BlobContainerClient>(blob_service_client->CreateBlobContainer(configuration.container).Value);
-            }
-            catch (const Azure::Storage::StorageException & e)
+            } catch (const Azure::Storage::StorageException & e)
             {
-                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict
+                      && e.ReasonPhrase == "The specified container already exists.")
                 {
-                    auto final_url = configuration.connection_url
-                        + (configuration.connection_url.back() == '/' ? "" : "/")
-                        + configuration.container;
-
-                    result = std::make_unique<BlobContainerClient>(final_url, managed_identity_credential);
+                    if (storage_shared_key_credential)
+                        result = std::make_unique<BlobContainerClient>(final_url, storage_shared_key_credential);
+                    else
+                        result = std::make_unique<BlobContainerClient>(final_url);
                 }
                 else
                 {
@@ -393,12 +458,13 @@ StorageAzureBlob::StorageAzureBlob(
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , name("AzureBlobStorage")
     , configuration(configuration_)
     , object_storage(std::move(object_storage_))
-    , distributed_processing(false)
+    , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
     , partition_by(partition_by_)
 {
@@ -408,11 +474,16 @@ StorageAzureBlob::StorageAzureBlob(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context);
+        auto columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context, distributed_processing);
         storage_metadata.setColumns(columns);
     }
     else
+    {
+        /// We don't allow special columns in File storage.
+        if (!columns_.hasOnlyOrdinary())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine AzureBlobStorage doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
+    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -422,15 +493,7 @@ StorageAzureBlob::StorageAzureBlob(
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
 
-    auto default_virtuals = NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
-
-    auto columns = storage_metadata.getSampleBlock().getNamesAndTypesList();
-
-    virtual_columns = getVirtualsForStorage(columns, default_virtuals);
-    for (const auto & column : virtual_columns)
-        virtual_block.insert({column.type->createColumn(), column.type, column.name});
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -439,7 +502,7 @@ void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
-            "S3 key '{}' contains globs, so the table is in readonly mode",
+            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode",
             configuration.blob_path);
     }
 
@@ -604,7 +667,7 @@ private:
 
 Pipe StorageAzureBlob::read(
     const Names & column_names,
-    const StorageSnapshotPtr &  storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -616,68 +679,46 @@ Pipe StorageAzureBlob::read(
 
     Pipes pipes;
 
-    std::unordered_set<String> column_names_set(column_names.begin(), column_names.end());
-    std::vector<NameAndTypePair> requested_virtual_columns;
-
-    for (const auto & virtual_column : getVirtuals())
-    {
-        if (column_names_set.contains(virtual_column.name))
-            requested_virtual_columns.push_back(virtual_column);
-    }
-
     std::shared_ptr<StorageAzureBlobSource::IIterator> iterator_wrapper;
-    if (configuration.withGlobs())
+    if (distributed_processing)
+    {
+        iterator_wrapper = std::make_shared<StorageAzureBlobSource::ReadIterator>(local_context,
+            local_context->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
             object_storage.get(), configuration.container, configuration.blob_path,
-            query_info.query, virtual_block, local_context, nullptr);
+            query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
             object_storage.get(), configuration.container, configuration.blobs_paths,
-            query_info.query, virtual_block, local_context, nullptr);
+            query_info.query, virtual_columns, local_context, nullptr, local_context->getFileProgressCallback());
     }
 
-    ColumnsDescription columns_description;
-    Block block_for_format;
-    if (supportsSubsetOfColumns())
-    {
-        auto fetch_columns = column_names;
-        const auto & virtuals = getVirtuals();
-        std::erase_if(
-            fetch_columns,
-            [&](const String & col)
-            { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
-
-        if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-        columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-    }
-    else
-    {
-        columns_description = storage_snapshot->metadata->getColumns();
-        block_for_format = storage_snapshot->metadata->getSampleBlock();
-    }
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageAzureBlobSource>(
-            requested_virtual_columns,
+            read_from_format_info,
             configuration.format,
             getName(),
-            block_for_format,
             local_context,
             format_settings,
-            columns_description,
             max_block_size,
             configuration.compression_method,
             object_storage.get(),
             configuration.container,
-            iterator_wrapper));
+            configuration.connection_url,
+            iterator_wrapper,
+            need_only_count,
+            query_info));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -763,14 +804,9 @@ bool StorageAzureBlob::supportsPartitionBy() const
     return true;
 }
 
-bool StorageAzureBlob::supportsSubcolumns() const
+bool StorageAzureBlob::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubcolumns(configuration.format);
-}
-
-bool StorageAzureBlob::supportsSubsetOfColumns() const
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
 }
 
 bool StorageAzureBlob::prefersLargeBlocks() const
@@ -783,38 +819,23 @@ bool StorageAzureBlob::parallelizeOutputAfterReading(ContextPtr context) const
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
 }
 
-static void addPathToVirtualColumns(Block & block, const String & path, size_t idx)
-{
-    if (block.has("_path"))
-        block.getByName("_path").column->assumeMutableRef().insert(path);
-
-    if (block.has("_file"))
-    {
-        auto pos = path.find_last_of('/');
-        assert(pos != std::string::npos);
-
-        auto file = path.substr(pos + 1);
-        block.getByName("_file").column->assumeMutableRef().insert(file);
-    }
-
-    block.getByName("_idx").column->assumeMutableRef().insert(idx);
-}
-
 StorageAzureBlobSource::GlobIterator::GlobIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
     String blob_path_with_globs_,
     ASTPtr query_,
-    const Block & virtual_header_,
+    const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
-    RelativePathsWithMetadata * outer_blobs_)
+    RelativePathsWithMetadata * outer_blobs_,
+    std::function<void(FileProgress)> file_progress_callback_)
     : IIterator(context_)
     , object_storage(object_storage_)
     , container(container_)
     , blob_path_with_globs(blob_path_with_globs_)
     , query(query_)
-    , virtual_header(virtual_header_)
+    , virtual_columns(virtual_columns_)
     , outer_blobs(outer_blobs_)
+    , file_progress_callback(file_progress_callback_)
 {
 
     const String key_prefix = blob_path_with_globs.substr(0, blob_path_with_globs.find_first_of("*?{"));
@@ -826,6 +847,9 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
         blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
+        if (file_progress_callback)
+            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
+        is_finished = true;
         return;
     }
 
@@ -844,8 +868,10 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
 {
     std::lock_guard lock(next_mutex);
 
-    if (is_finished)
+    if (is_finished && index >= blobs_with_metadata.size())
+    {
         return {};
+    }
 
     bool need_new_batch = blobs_with_metadata.empty() || index >= blobs_with_metadata.size();
 
@@ -877,36 +903,28 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         index = 0;
         if (!is_initialized)
         {
-            createFilterAST(new_batch.front().relative_path);
+            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(container) / new_batch.front().relative_path, getContext());
             is_initialized = true;
         }
 
         if (filter_ast)
         {
-            auto block = virtual_header.cloneEmpty();
-            for (size_t i = 0; i < new_batch.size(); ++i)
-                addPathToVirtualColumns(block, fs::path(container) / new_batch[i].relative_path, i);
+            std::vector<String> paths;
+            paths.reserve(new_batch.size());
+            for (auto & path_with_metadata : new_batch)
+                paths.push_back(fs::path(container) / path_with_metadata.relative_path);
 
-            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
-
-            blobs_with_metadata.clear();
-            for (UInt64 idx : idxs.getData())
-            {
-                total_size.fetch_add(new_batch[idx].metadata.size_bytes, std::memory_order_relaxed);
-                blobs_with_metadata.emplace_back(std::move(new_batch[idx]));
-                if (outer_blobs)
-                    outer_blobs->emplace_back(blobs_with_metadata.back());
-            }
+            VirtualColumnUtils::filterByPathOrFile(new_batch, paths, query, virtual_columns, getContext(), filter_ast);
         }
-        else
-        {
-            if (outer_blobs)
-                outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
 
-            blobs_with_metadata = std::move(new_batch);
+        if (outer_blobs)
+            outer_blobs->insert(outer_blobs->end(), new_batch.begin(), new_batch.end());
+
+        blobs_with_metadata = std::move(new_batch);
+        if (file_progress_callback)
+        {
             for (const auto & [_, info] : blobs_with_metadata)
-                total_size.fetch_add(info.size_bytes, std::memory_order_relaxed);
+                file_progress_callback(FileProgress(0, info.size_bytes));
         }
     }
 
@@ -916,77 +934,42 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
     return blobs_with_metadata[current_index];
 }
 
-size_t StorageAzureBlobSource::GlobIterator::getTotalSize() const
-{
-    return total_size.load(std::memory_order_relaxed);
-}
-
-
-void StorageAzureBlobSource::GlobIterator::createFilterAST(const String & any_key)
-{
-    if (!query || !virtual_header)
-        return;
-
-    /// Create a virtual block with one row to construct filter
-    /// Append "idx" column as the filter result
-    virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-    auto block = virtual_header.cloneEmpty();
-    addPathToVirtualColumns(block, fs::path(container) / any_key, 0);
-    VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-}
-
-
 StorageAzureBlobSource::KeysIterator::KeysIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
-    Strings keys_,
+    const Strings & keys_,
     ASTPtr query_,
-    const Block & virtual_header_,
+    const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
-    RelativePathsWithMetadata * outer_blobs_)
+    RelativePathsWithMetadata * outer_blobs,
+    std::function<void(FileProgress)> file_progress_callback)
     : IIterator(context_)
     , object_storage(object_storage_)
     , container(container_)
     , query(query_)
-    , virtual_header(virtual_header_)
-    , outer_blobs(outer_blobs_)
+    , virtual_columns(virtual_columns_)
 {
     Strings all_keys = keys_;
 
-    /// Create a virtual block with one row to construct filter
-    if (query && virtual_header && !all_keys.empty())
+    ASTPtr filter_ast;
+    if (!all_keys.empty())
+        filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(container) / all_keys[0], getContext());
+
+    if (filter_ast)
     {
-        /// Append "idx" column as the filter result
-        virtual_header.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+        Strings paths;
+        paths.reserve(all_keys.size());
+        for (const auto & key : all_keys)
+            paths.push_back(fs::path(container) / key);
 
-        auto block = virtual_header.cloneEmpty();
-        addPathToVirtualColumns(block, fs::path(container) / all_keys.front(), 0);
-
-        VirtualColumnUtils::prepareFilterBlockWithQuery(query, getContext(), block, filter_ast);
-
-        if (filter_ast)
-        {
-            block = virtual_header.cloneEmpty();
-            for (size_t i = 0; i < all_keys.size(); ++i)
-                addPathToVirtualColumns(block, fs::path(container) / all_keys[i], i);
-
-            VirtualColumnUtils::filterBlockWithQuery(query, block, getContext(), filter_ast);
-            const auto & idxs = typeid_cast<const ColumnUInt64 &>(*block.getByName("_idx").column);
-
-            Strings filtered_keys;
-            filtered_keys.reserve(block.rows());
-            for (UInt64 idx : idxs.getData())
-                filtered_keys.emplace_back(std::move(all_keys[idx]));
-
-            all_keys = std::move(filtered_keys);
-        }
+        VirtualColumnUtils::filterByPathOrFile(all_keys, paths, query, virtual_columns, getContext(), filter_ast);
     }
 
     for (auto && key : all_keys)
     {
         ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
-        total_size += object_metadata.size_bytes;
+        if (file_progress_callback)
+            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
         keys.emplace_back(RelativePathWithMetadata{key, object_metadata});
     }
 
@@ -1003,12 +986,6 @@ RelativePathWithMetadata StorageAzureBlobSource::KeysIterator::next()
     return keys[current_index];
 }
 
-size_t StorageAzureBlobSource::KeysIterator::getTotalSize() const
-{
-    return total_size.load(std::memory_order_relaxed);
-}
-
-
 Chunk StorageAzureBlobSource::generate()
 {
     while (true)
@@ -1024,47 +1001,25 @@ Chunk StorageAzureBlobSource::generate()
         if (reader->pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
-
-            const auto & file_path = reader.getPath();
-            if (num_rows && total_objects_size)
-            {
-                size_t chunk_size = reader.getFormat()->getApproxBytesReadForChunk();
-                if (!chunk_size)
-                    chunk_size = chunk.bytes();
-                updateRowsProgressApprox(
-                    *this, num_rows, chunk_size, total_objects_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
-            }
-
-            for (const auto & virtual_column : requested_virtual_columns)
-            {
-                if (virtual_column.name == "_path")
-                {
-                    chunk.addColumn(virtual_column.type->createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
-                }
-                else if (virtual_column.name == "_file")
-                {
-                    size_t last_slash_pos = file_path.find_last_of('/');
-                    auto column = virtual_column.type->createColumnConst(num_rows, file_path.substr(last_slash_pos + 1));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
-                }
-            }
-
+            total_rows_in_file += num_rows;
+            size_t chunk_size = 0;
+            if (const auto * input_format = reader.getInputFormat())
+                chunk_size = input_format->getApproxBytesReadForChunk();
+            progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, fs::path(container) / reader.getRelativePath());
             return chunk;
         }
 
+        if (reader.getInputFormat() && getContext()->getSettingsRef().use_cache_for_count_from_files)
+            addNumRowsToCache(reader.getRelativePath(), total_rows_in_file);
+
+        total_rows_in_file = 0;
 
         assert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)
             break;
-
-        size_t object_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
-        /// Adjust total_rows_approx_accumulated with new total size.
-        if (total_objects_size)
-            total_rows_approx_accumulated = static_cast<size_t>(
-                std::ceil(static_cast<double>(total_objects_size + object_size) / total_objects_size * total_rows_approx_accumulated));
-        total_objects_size += object_size;
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
@@ -1075,52 +1030,65 @@ Chunk StorageAzureBlobSource::generate()
     return {};
 }
 
-Block StorageAzureBlobSource::getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns)
+void StorageAzureBlobSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
 {
-    for (const auto & virtual_column : requested_virtual_columns)
-        sample_block.insert({virtual_column.type->createColumn(), virtual_column.type, virtual_column.name});
+    String source = fs::path(connection_url) / container / path;
+    auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());
+    StorageAzureBlob::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
+}
 
-    return sample_block;
+std::optional<size_t> StorageAzureBlobSource::tryGetNumRowsFromCache(const DB::RelativePathWithMetadata & path_with_metadata)
+{
+    String source = fs::path(connection_url) / container / path_with_metadata.relative_path;
+    auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());
+    auto get_last_mod_time = [&]() -> std::optional<time_t>
+    {
+        auto last_mod = path_with_metadata.metadata.last_modified;
+        if (last_mod)
+            return last_mod->epochTime();
+        return std::nullopt;
+    };
+
+    return StorageAzureBlob::getSchemaCache(getContext()).tryGetNumRows(cache_key, get_last_mod_time);
 }
 
 StorageAzureBlobSource::StorageAzureBlobSource(
-    const std::vector<NameAndTypePair> & requested_virtual_columns_,
+    const ReadFromFormatInfo & info,
     const String & format_,
     String name_,
-    const Block & sample_block_,
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
-    const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     String compression_hint_,
     AzureObjectStorage * object_storage_,
     const String & container_,
-    std::shared_ptr<IIterator> file_iterator_)
-    :ISource(getHeader(sample_block_, requested_virtual_columns_))
+    const String & connection_url_,
+    std::shared_ptr<IIterator> file_iterator_,
+    bool need_only_count_,
+    const SelectQueryInfo & query_info_)
+    :ISource(info.source_header, false)
     , WithContext(context_)
-    , requested_virtual_columns(requested_virtual_columns_)
+    , requested_columns(info.requested_columns)
+    , requested_virtual_columns(info.requested_virtual_columns)
     , format(format_)
     , name(std::move(name_))
-    , sample_block(sample_block_)
+    , sample_block(info.format_header)
     , format_settings(format_settings_)
-    , columns_desc(columns_)
+    , columns_desc(info.columns_description)
     , max_block_size(max_block_size_)
     , compression_hint(compression_hint_)
     , object_storage(std::move(object_storage_))
     , container(container_)
+    , connection_url(connection_url_)
     , file_iterator(file_iterator_)
+    , need_only_count(need_only_count_)
+    , query_info(query_info_)
     , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
     if (reader)
-    {
-        const auto & read_buf = reader.getReadBuffer();
-        if (read_buf)
-            total_objects_size = tryGetFileSizeFromReadBuffer(*reader.getReadBuffer()).value_or(0);
-
         reader_future = createReaderAsync();
-    }
 }
 
 
@@ -1136,33 +1104,68 @@ String StorageAzureBlobSource::getName() const
 
 StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
 {
-    auto [current_key, info] = file_iterator->next();
-    if (current_key.empty())
+    auto path_with_metadata = file_iterator->next();
+    if (path_with_metadata.relative_path.empty())
         return {};
 
-    size_t object_size = info.size_bytes != 0 ? info.size_bytes : object_storage->getObjectMetadata(current_key).size_bytes;
-    auto compression_method = chooseCompressionMethod(current_key, compression_hint);
-
-    auto read_buf = createAzureReadBuffer(current_key, object_size);
-    auto input_format = FormatFactory::instance().getInput(
-            format, *read_buf, sample_block, getContext(), max_block_size,
-            format_settings, std::nullopt, std::nullopt,
-            /* is_remote_fs */ true, compression_method);
+    if (path_with_metadata.metadata.size_bytes == 0)
+        path_with_metadata.metadata = object_storage->getObjectMetadata(path_with_metadata.relative_path);
 
     QueryPipelineBuilder builder;
-    builder.init(Pipe(input_format));
-
-    if (columns_desc.hasDefaults())
+    std::shared_ptr<ISource> source;
+    std::unique_ptr<ReadBuffer> read_buf;
+    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
+    if (num_rows_from_cache)
     {
-        builder.addSimpleTransform(
-            [&](const Block & header)
-            { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
+        /// We should not return single chunk with all number of rows,
+        /// because there is a chance that this chunk will be materialized later
+        /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
+        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// with max_block_size rows until total number of rows is reached.
+        source = std::make_shared<ConstChunkGenerator>(sample_block, *num_rows_from_cache, max_block_size);
+        builder.init(Pipe(source));
     }
+    else
+    {
+        std::optional<size_t> max_parsing_threads;
+        if (need_only_count)
+            max_parsing_threads = 1;
+
+        auto compression_method = chooseCompressionMethod(path_with_metadata.relative_path, compression_hint);
+        read_buf = createAzureReadBuffer(path_with_metadata.relative_path, path_with_metadata.metadata.size_bytes);
+        auto input_format = FormatFactory::instance().getInput(
+                format, *read_buf, sample_block, getContext(), max_block_size,
+                format_settings, max_parsing_threads, std::nullopt,
+                /* is_remote_fs */ true, compression_method);
+
+        if (need_only_count)
+            input_format->needOnlyCount();
+
+        builder.init(Pipe(input_format));
+
+        if (columns_desc.hasDefaults())
+        {
+            builder.addSimpleTransform(
+                [&](const Block & header)
+                { return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext()); });
+        }
+
+        source = input_format;
+    }
+
+    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+    /// from chunk read by IInputFormat.
+    builder.addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+    });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    return ReaderHolder{fs::path(container) / current_key, std::move(read_buf), input_format, std::move(pipeline), std::move(current_reader)};
+    ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
+
+    return ReaderHolder{path_with_metadata, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader)};
 }
 
 std::future<StorageAzureBlobSource::ReaderHolder> StorageAzureBlobSource::createReaderAsync()
@@ -1189,70 +1192,126 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAzureReadBuffer(const 
     return object_storage->readObject(StoredObject(key), read_settings, {}, object_size);
 }
 
+namespace
+{
+    class ReadBufferIterator : public IReadBufferIterator, WithContext
+    {
+    public:
+        ReadBufferIterator(
+            const std::shared_ptr<StorageAzureBlobSource::IIterator> & file_iterator_,
+            AzureObjectStorage * object_storage_,
+            const StorageAzureBlob::Configuration & configuration_,
+            const std::optional<FormatSettings> & format_settings_,
+            const RelativePathsWithMetadata & read_keys_,
+            const ContextPtr & context_)
+            : WithContext(context_)
+            , file_iterator(file_iterator_)
+            , object_storage(object_storage_)
+            , configuration(configuration_)
+            , format_settings(format_settings_)
+            , read_keys(read_keys_)
+            , prev_read_keys_size(read_keys_.size())
+        {
+        }
+
+        std::unique_ptr<ReadBuffer> next() override
+        {
+            auto [key, metadata] = file_iterator->next();
+
+            if (key.empty())
+            {
+                if (first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        "Cannot extract table structure from {} format file, because there are no files with provided path "
+                        "in AzureBlobStorage. You must specify table structure manually", configuration.format);
+
+                return nullptr;
+            }
+
+            current_path = key;
+
+            ///AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache.
+            if (getContext()->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
+            {
+                columns_from_cache = StorageAzureBlob::tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, getContext());
+                prev_read_keys_size = read_keys.size();
+                if (columns_from_cache)
+                    return nullptr;
+            }
+
+            first = false;
+            int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
+            return wrapReadBufferWithCompressionMethod(
+                object_storage->readObject(StoredObject(key), getContext()->getReadSettings(), {}, metadata.size_bytes),
+                chooseCompressionMethod(key, configuration.compression_method),
+                zstd_window_log_max);
+        }
+
+        std::optional<ColumnsDescription> getCachedColumns() override { return columns_from_cache; }
+
+        void setNumRowsToLastFile(size_t num_rows) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
+                return;
+
+            String source = fs::path(configuration.connection_url) / configuration.container / current_path;
+            auto key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+            StorageAzureBlob::getSchemaCache(getContext()).addNumRows(key, num_rows);
+        }
+
+    private:
+        std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
+        AzureObjectStorage * object_storage;
+        const StorageAzureBlob::Configuration & configuration;
+        const std::optional<FormatSettings> & format_settings;
+        const RelativePathsWithMetadata & read_keys;
+        std::optional<ColumnsDescription> columns_from_cache;
+        size_t prev_read_keys_size;
+        String current_path;
+        bool first = true;
+    };
+}
+
 ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     AzureObjectStorage * object_storage,
     const Configuration & configuration,
     const std::optional<FormatSettings> & format_settings,
-    ContextPtr ctx)
+    ContextPtr ctx,
+    bool distributed_processing)
 {
     RelativePathsWithMetadata read_keys;
     std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
-    if (configuration.withGlobs())
+    if (distributed_processing)
+    {
+        file_iterator = std::make_shared<StorageAzureBlobSource::ReadIterator>(ctx,
+            ctx->getReadTaskCallback());
+    }
+    else if (configuration.withGlobs())
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-            object_storage, configuration.container, configuration.blob_path, nullptr, Block{}, ctx, &read_keys);
+            object_storage, configuration.container, configuration.blob_path, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
     else
     {
         file_iterator = std::make_shared<StorageAzureBlobSource::KeysIterator>(
-            object_storage, configuration.container, configuration.blobs_paths, nullptr, Block{}, ctx, &read_keys);
+            object_storage, configuration.container, configuration.blobs_paths, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
 
     std::optional<ColumnsDescription> columns_from_cache;
-    size_t prev_read_keys_size = read_keys.size();
     if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
         columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), configuration, format_settings, ctx);
 
-    ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
-    {
-        auto [key, metadata] = file_iterator->next();
-
-        if (key.empty())
-        {
-            if (first)
-                throw Exception(
-                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path "
-                    "in AzureBlobStorage. You must specify table structure manually", configuration.format);
-
-            return nullptr;
-        }
-
-        /// S3 file iterator could get new keys after new iteration, check them in schema cache.
-        if (ctx->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
-        {
-            columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, ctx);
-            prev_read_keys_size = read_keys.size();
-            if (columns_from_cache)
-            {
-                cached_columns = *columns_from_cache;
-                return nullptr;
-            }
-        }
-
-        first = false;
-        int zstd_window_log_max = static_cast<int>(ctx->getSettingsRef().zstd_window_log_max);
-        return wrapReadBufferWithCompressionMethod(
-            object_storage->readObject(StoredObject(key), ctx->getReadSettings(), {}, metadata.size_bytes),
-            chooseCompressionMethod(key, configuration.compression_method),
-            zstd_window_log_max);
-    };
-
     ColumnsDescription columns;
     if (columns_from_cache)
+    {
         columns = *columns_from_cache;
+    }
     else
+    {
+        ReadBufferIterator read_buffer_iterator(file_iterator, object_storage, configuration, format_settings, read_keys, ctx);
         columns = readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
+    }
 
     if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
         addColumnsToCache(read_keys, columns, configuration, format_settings, configuration.format, ctx);
@@ -1271,15 +1330,17 @@ std::optional<ColumnsDescription> StorageAzureBlob::tryGetColumnsFromCache(
     auto & schema_cache = getSchemaCache(ctx);
     for (auto it = begin; it < end; ++it)
     {
-        auto get_last_mod_time = [&] -> time_t
+        auto get_last_mod_time = [&] -> std::optional<time_t>
         {
-            return it->metadata.last_modified->epochTime();
+            if (it->metadata.last_modified)
+                return it->metadata.last_modified->epochTime();
+            return std::nullopt;
         };
 
         auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
         String source = host_and_bucket + '/' + it->relative_path;
         auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, ctx);
-        auto columns = schema_cache.tryGet(cache_key, get_last_mod_time);
+        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
         if (columns)
             return columns;
     }
@@ -1302,7 +1363,7 @@ void StorageAzureBlob::addColumnsToCache(
     std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
     auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
     auto & schema_cache = getSchemaCache(ctx);
-    schema_cache.addMany(cache_keys, columns);
+    schema_cache.addManyColumns(cache_keys, columns);
 }
 
 SchemaCache & StorageAzureBlob::getSchemaCache(const ContextPtr & ctx)

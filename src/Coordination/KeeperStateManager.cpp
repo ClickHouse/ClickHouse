@@ -10,6 +10,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
+#include "Coordination/CoordinationSettings.h"
 
 namespace DB
 {
@@ -74,7 +75,7 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 4. No duplicate IDs
 /// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper
-KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
+KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us, bool enable_async_replication) const
 {
     const bool hostname_checks_enabled = config.getBool(config_prefix + ".hostname_checks_enabled", true);
 
@@ -184,6 +185,8 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         total_servers++;
     }
 
+    result.cluster_config->set_async_replication(enable_async_replication);
+
     if (!result.config && !allow_without_us)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);
 
@@ -220,6 +223,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     , secure(false)
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
+          FlushSettings{},
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
@@ -242,15 +246,18 @@ KeeperStateManager::KeeperStateManager(
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
-    , configuration_wrapper(parseServersConfiguration(config, false))
+    , configuration_wrapper(parseServersConfiguration(config, false, coordination_settings->async_replication))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings
           {
-            .force_sync = coordination_settings->force_sync,
-            .compress_logs = coordination_settings->compress_logs,
-            .rotate_interval = coordination_settings->rotate_log_storage_interval,
-            .max_size = coordination_settings->max_log_file_size,
-            .overallocate_size = coordination_settings->log_file_overallocate_size
+              .force_sync = coordination_settings->force_sync,
+              .compress_logs = coordination_settings->compress_logs,
+              .rotate_interval = coordination_settings->rotate_log_storage_interval,
+              .max_size = coordination_settings->max_log_file_size,
+              .overallocate_size = coordination_settings->log_file_overallocate_size},
+          FlushSettings
+          {
+              .max_flush_batch_size = coordination_settings->max_flush_batch_size,
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
@@ -451,9 +458,10 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     return nullptr;
 }
 
-ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
+ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
+    const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const
 {
-    auto new_configuration_wrapper = parseServersConfiguration(config, true);
+    auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings->async_replication);
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
@@ -465,14 +473,14 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
             old_ids[old_server->get_id()] = old_server;
     }
 
-    ConfigUpdateActions result;
+    ClusterUpdateActions result;
 
     /// First of all add new servers
     for (const auto & [new_id, server_config] : new_ids)
     {
         auto old_server_it = old_ids.find(new_id);
         if (old_server_it == old_ids.end())
-            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::AddServer, server_config});
+            result.emplace_back(AddRaftServer{RaftServerConfig{*server_config}});
         else
         {
             const auto & old_endpoint = old_server_it->second->get_endpoint();
@@ -491,10 +499,8 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
 
     /// After that remove old ones
     for (auto [old_id, server_config] : old_ids)
-    {
         if (!new_ids.contains(old_id))
-            result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::RemoveServer, server_config});
-    }
+            result.emplace_back(RemoveRaftServer{old_id});
 
     {
         std::lock_guard lock(configuration_wrapper_mutex);
@@ -507,7 +513,10 @@ ConfigUpdateActions KeeperStateManager::getConfigurationDiff(const Poco::Util::A
                 {
                     if (old_server->get_priority() != new_server->get_priority())
                     {
-                        result.emplace_back(ConfigUpdateAction{ConfigUpdateActionType::UpdatePriority, new_server});
+                        result.emplace_back(UpdateRaftServerPriority{
+                            .id = new_server->get_id(),
+                            .priority = new_server->get_priority()
+                        });
                     }
                     break;
                 }

@@ -13,7 +13,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class BackupReaderDisk : public BackupReaderDefault
 {
 public:
-    BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ContextPtr & context_);
+    BackupReaderDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
     ~BackupReaderDisk() override;
 
     bool fileExists(const String & file_name) override;
@@ -33,7 +33,7 @@ private:
 class BackupWriterDisk : public BackupWriterDefault
 {
 public:
-    BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ContextPtr & context_);
+    BackupWriterDisk(const DiskPtr & disk_, const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
     ~BackupWriterDisk() override;
 
     bool fileExists(const String & file_name) override;

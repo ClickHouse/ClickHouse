@@ -76,8 +76,8 @@ DROP COLUMN [IF EXISTS] name
 
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
-:::warning "Предупреждение"
-    Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
+:::warning Предупреждение
+Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
 :::
 
 Пример:
@@ -182,7 +182,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 Синтаксис:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property;
+ALTER TABLE table_name MODIFY COLUMN column_name REMOVE property;
 ```
 
 **Пример**

@@ -466,7 +466,7 @@ String EnviCommand::run()
 
     StringBuffer buf;
     buf << "Environment:\n";
-    buf << "clickhouse.keeper.version=" << (String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH) << '\n';
+    buf << "clickhouse.keeper.version=" << VERSION_DESCRIBE << '-' << VERSION_GITHASH << '\n';
 
     buf << "host.name=" << Environment::nodeName() << '\n';
     buf << "os.name=" << Environment::osDisplayName() << '\n';
@@ -577,7 +577,6 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
-
 }
 
 }

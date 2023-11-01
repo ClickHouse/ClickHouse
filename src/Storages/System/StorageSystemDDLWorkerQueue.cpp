@@ -290,7 +290,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
         else
         {
-            throw Coordination::Exception(maybe_finished_hosts.error, fs::path(task.entry_path) / "finished");
+            throw Coordination::Exception::fromPath(maybe_finished_hosts.error, fs::path(task.entry_path) / "finished");
         }
 
         /// Process active nodes
@@ -322,7 +322,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
         else
         {
-            throw Coordination::Exception(maybe_active_hosts.error, fs::path(task.entry_path) / "active");
+            throw Coordination::Exception::fromPath(maybe_active_hosts.error, fs::path(task.entry_path) / "active");
         }
 
         /// Process the rest hosts

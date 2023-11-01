@@ -22,6 +22,7 @@ public:
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
+    bool isRemote() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
 
@@ -64,7 +65,7 @@ public:
 
     Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr context) override;
 
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings, ContextPtr local_context) const override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 

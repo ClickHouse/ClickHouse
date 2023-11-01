@@ -91,7 +91,7 @@ using IndexSize = ColumnSize;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<>
 {
 public:
     IStorage() = delete;
@@ -254,6 +254,10 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
+    /// Return true if the trivial count query could be optimized without reading the data at all
+    /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
+    virtual bool supportsTrivialCountOptimization() const { return false; }
+
 private:
 
     StorageID storage_id;
@@ -283,6 +287,7 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
+    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -490,7 +495,11 @@ public:
         ContextPtr /* context */);
 
     /// Checks that partition commands can be applied to storage.
-    virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
+    virtual void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr context) const;
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
@@ -549,15 +558,15 @@ public:
     /**
       * If the storage requires some complicated work on destroying,
       * then you have two virtual methods:
-      * - flush()
+      * - flushAndPrepareForShutdown()
       * - shutdown()
       *
       * @see shutdown()
-      * @see flush()
+      * @see flushAndPrepareForShutdown()
       */
     void flushAndShutdown()
     {
-        flush();
+        flushAndPrepareForShutdown();
         shutdown();
     }
 
@@ -570,7 +579,7 @@ public:
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
-    virtual void flush() {}
+    virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
@@ -591,13 +600,49 @@ public:
     /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
-    /// Checks validity of the data
-    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
+
+    /** A list of tasks to check a validity of data.
+      * Each IStorage implementation may interpret this task in its own way.
+      * E.g. for some storages it to check data it need to check a list of files in filesystem, for others it can be a list of parts.
+      * Also it may hold resources (e.g. locks) required during check.
+      */
+    struct DataValidationTasksBase
+    {
+        /// Number of entries left to check.
+        /// It decreases after each call to checkDataNext().
+        virtual size_t size() const = 0;
+        virtual ~DataValidationTasksBase() = default;
+    };
+
+    using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;
+
+    virtual DataValidationTasksPtr getCheckTaskList(const ASTPtr & /* query */, ContextPtr /* context */);
+
+    /** Executes one task from the list.
+      * If no tasks left - returns nullopt.
+      * Note: Function `checkDataNext` is accessing `check_task_list` thread-safely,
+      *   and can be called simultaneously for the same `getCheckTaskList` result
+      *   to process different tasks in parallel.
+      * Usage:
+      *
+      * auto check_task_list = storage.getCheckTaskList(query, context);
+      * size_t total_tasks = check_task_list->size();
+      * while (true)
+      * {
+      *     size_t tasks_left = check_task_list->size();
+      *     std::cout << "Checking data: " << (total_tasks - tasks_left) << " / " << total_tasks << " tasks done." << std::endl;
+      *     auto result = storage.checkDataNext(check_task_list);
+      *     if (!result)
+      *         break;
+      *     doSomething(*result);
+      * }
+      */
+    virtual std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list);
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
     /// We do not use mutex because it is not very important that the size could change during the operation.
-    virtual void checkTableCanBeDropped() const {}
+    virtual void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const {}
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
@@ -614,8 +659,6 @@ public:
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
     virtual bool isStaticStorage() const;
-
-    virtual bool supportsSubsetOfColumns() const { return false; }
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

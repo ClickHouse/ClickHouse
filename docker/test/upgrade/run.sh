@@ -16,7 +16,8 @@ ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_pre
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /usr/share/clickhouse-test/ci/stress_tests.lib
+source /attach_gdb.lib
+source /stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
@@ -59,8 +60,23 @@ install_packages previous_release_package_folder
 # available for dump via clickhouse-local
 configure
 
+function remove_keeper_config()
+{
+  sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+    | sed "/<$1>$2<\/$1>/d" \
+    > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+  sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+}
+
+# async_replication setting doesn't exist on some older versions
+remove_keeper_config "async_replication" "1"
+
+# create_if_not_exists feature flag doesn't exist on some older versions
+remove_keeper_config "create_if_not_exists" "[01]"
+
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -80,6 +96,12 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
+# async_replication setting doesn't exist on some older versions
+remove_keeper_config "async_replication" "1"
+
+# create_if_not_exists feature flag doesn't exist on some older versions
+remove_keeper_config "create_if_not_exists" "[01]"
+
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
   | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
@@ -90,6 +112,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 # it contains some new settings, but we can safely remove it
 rm /etc/clickhouse-server/config.d/merge_tree.xml
+rm /etc/clickhouse-server/config.d/enable_wait_for_shutdown_replicated_tables.xml
 rm /etc/clickhouse-server/users.d/nonconst_timezone.xml
 
 start
@@ -126,6 +149,7 @@ sudo cat /etc/clickhouse-server/config.d/lost_forever_check.xml \
   | sed "s|>1<|>0<|g" \
   > /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/lost_forever_check.xml.tmp /etc/clickhouse-server/config.d/lost_forever_check.xml
+rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 start 500
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
@@ -165,6 +189,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "ZooKeeperClient" \
            -e "KEEPER_EXCEPTION" \
            -e "DirectoryMonitor" \
+           -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
            -e "UNFINISHED" \
@@ -227,5 +252,11 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

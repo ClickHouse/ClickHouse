@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -30,6 +32,8 @@ class IStorageSystemOneBlock : public IStorage
 protected:
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const = 0;
 
+    virtual bool supportsColumnsMask() const { return false; }
+
 public:
     explicit IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
@@ -48,8 +52,15 @@ public:
         size_t /*num_streams*/) override
     {
         storage_snapshot->check(column_names);
-
         Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtuals());
+
+        if (supportsColumnsMask())
+        {
+            auto [columns_mask, header] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+            query_info.columns_mask = std::move(columns_mask);
+            sample_block = std::move(header);
+        }
+
         MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns, context, query_info);
 

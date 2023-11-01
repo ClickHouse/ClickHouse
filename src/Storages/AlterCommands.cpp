@@ -11,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/GinFilter.h>
@@ -27,6 +28,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
@@ -782,7 +784,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
         return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == LightweightDeleteDescription::FILTER_COLUMN.name;
+            column_name == LightweightDeleteDescription::FILTER_COLUMN.name || column_name == BlockNumberColumn::name;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -841,6 +843,12 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
 bool AlterCommand::isRemovingProperty() const
 {
     return to_remove != RemoveProperty::NO_PROPERTY;
+}
+
+bool AlterCommand::isDropSomething() const
+{
+    return type == Type::DROP_COLUMN || type == Type::DROP_INDEX
+        || type == Type::DROP_CONSTRAINT || type == Type::DROP_PROJECTION;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
@@ -936,7 +944,20 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
+    {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+
+        /// If partition key expression is changed, we also need to rebuild minmax_count_projection
+        if (!blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+        {
+            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
+            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer().visit(partition_key.get());
+            auto primary_key_asts = metadata_copy.primary_key.expression_list_ast->children;
+            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                metadata_copy.columns, partition_key, minmax_columns, primary_key_asts, context));
+        }
+    }
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
@@ -1066,6 +1087,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(column_name));
 
+            if (column_name == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add column {}: "
+                                                            "this column name is reserved for _block_number persisting feature", backQuote(column_name));
+
             if (command.codec)
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
 
@@ -1077,9 +1102,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
-                    all_columns.appendHintsMessage(exception_message, column_name);
-                    throw Exception::createDeprecated(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Wrong column. Cannot find column {} to modify{}",
+                                    backQuote(column_name), all_columns.getHintsMessage(column_name));
                 }
                 else
                     continue;
@@ -1155,7 +1179,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         "Column {} doesn't have MATERIALIZED, cannot remove it",
                         backQuote(column_name));
 
-                auto column_from_table = all_columns.get(column_name);
+                const auto & column_from_table = all_columns.get(column_name);
                 if (command.to_remove == AlterCommand::RemoveProperty::TTL && column_from_table.ttl == nullptr)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -1271,6 +1295,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
                                 "this column name is reserved for lightweight delete feature", backQuote(command.rename_to));
 
+            if (command.rename_to == BlockNumberColumn::name && std::dynamic_pointer_cast<MergeTreeData>(table))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot rename to {}: "
+                                                            "this column name is reserved for _block_number persisting feature", backQuote(command.rename_to));
+
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
                                                              "in a single ALTER query", backQuote(column_name));
@@ -1351,9 +1379,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::hasSettingsAlterCommand() const
+bool AlterCommands::hasNonReplicatedAlterCommand() const
 {
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
+}
+
+bool AlterCommands::areNonReplicatedAlterCommands() const
+{
+    return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter() || c.isCommentAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const

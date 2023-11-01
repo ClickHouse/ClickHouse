@@ -2,7 +2,6 @@
 
 #include <IO/SeekableReadBuffer.h>
 
-#include <iostream>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <IO/ReadSettings.h>
@@ -75,7 +74,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
     auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     if (with_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
@@ -109,29 +108,12 @@ void ReadBufferFromRemoteFSGather::appendUncachedReadInfo()
         .source_file_path = current_object.remote_path,
         .file_segment_range = { 0, current_object.bytes_size },
         .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
+        .file_segment_key = {},
+        .file_segment_offset = {},
         .file_segment_size = current_object.bytes_size,
         .read_from_cache_attempted = false,
     };
-    cache_log->add(elem);
-}
-
-IAsynchronousReader::Result ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
-{
-    /**
-     * Set `data` to current working and internal buffers.
-     * Internal buffer with size `size`. Working buffer with size 0.
-     */
-    set(data, size);
-
-    file_offset_of_buffer_end = offset;
-    bytes_to_ignore = ignore;
-
-    const auto result = nextImpl();
-
-    if (result)
-        return { working_buffer.size(), BufferBase::offset(), nullptr };
-
-    return {0, 0, nullptr};
+    cache_log->add(std::move(elem));
 }
 
 void ReadBufferFromRemoteFSGather::initialize()
@@ -203,39 +185,14 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 {
     SwapHelper swap(*this, *current_buf);
 
-    bool result = false;
-
-    /**
-     * Lazy seek is performed here.
-     * In asynchronous buffer when seeking to offset in range [pos, pos + min_bytes_for_seek]
-     * we save how many bytes need to be ignored (new_offset - position() bytes).
-     */
-    if (bytes_to_ignore)
-    {
-        current_buf->ignore(bytes_to_ignore);
-        result = current_buf->hasPendingData();
-        file_offset_of_buffer_end += bytes_to_ignore;
-        bytes_to_ignore = 0;
-    }
-
-    if (!result)
-        result = current_buf->next();
-
-    if (blobs_to_read.size() == 1)
-    {
-        file_offset_of_buffer_end = current_buf->getFileOffsetOfBufferEnd();
-    }
-    else
-    {
-        /// For log family engines there are multiple s3 files for the same clickhouse file
-        file_offset_of_buffer_end += current_buf->available();
-    }
-
-    /// Required for non-async reads.
+    bool result = current_buf->next();
     if (result)
     {
-        assert(current_buf->available());
+        file_offset_of_buffer_end += current_buf->available();
         nextimpl_working_buffer_offset = current_buf->offset();
+
+        chassert(current_buf->available());
+        chassert(blobs_to_read.size() != 1 || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd());
     }
 
     return result;
@@ -255,7 +212,6 @@ void ReadBufferFromRemoteFSGather::reset()
     current_object = {};
     current_buf_idx = {};
     current_buf.reset();
-    bytes_to_ignore = 0;
 }
 
 off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)

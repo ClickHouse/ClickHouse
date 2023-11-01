@@ -84,15 +84,7 @@ namespace
         }
         void operator() (const UUID & x) const
         {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-            auto tmp_x = x.toUnderType();
-            char * start = reinterpret_cast<char *>(&tmp_x);
-            char * end = start + sizeof(tmp_x);
-            std::reverse(start, end);
-            operator()(tmp_x);
-#else
             operator()(x.toUnderType());
-#endif
         }
         void operator() (const IPv4 & x) const
         {
@@ -265,12 +257,12 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     for (const Field & field : value)
         applyVisitor(hashing_visitor, field);
 
-    char hash_data[16];
-    hash.get128(hash_data);
-    result.resize(32);
-    for (size_t i = 0; i < 16; ++i)
+    const auto hash_data = getSipHash128AsArray(hash);
+    const auto hash_size = hash_data.size();
+    result.resize(hash_size * 2);
+    for (size_t i = 0; i < hash_size; ++i)
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        writeHexByteLowercase(hash_data[16 - 1 - i], &result[2 * i]);
+        writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
 #else
         writeHexByteLowercase(hash_data[i], &result[2 * i]);
 #endif
@@ -371,6 +363,12 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
+    // In some cases we create empty parts and then value is empty.
+    if (value.empty())
+    {
+        writeCString("tuple()", out);
+        return;
+    }
     if (key_size == 0)
     {
         writeCString("tuple()", out);

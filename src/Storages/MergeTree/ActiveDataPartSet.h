@@ -22,6 +22,13 @@ using Strings = std::vector<String>;
 class ActiveDataPartSet
 {
 public:
+    enum class AddPartOutcome
+    {
+        Added,
+        HasCovering,
+        HasIntersectingPart,
+    };
+
     explicit ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
@@ -42,6 +49,8 @@ public:
     bool add(const String & name, Strings * out_replaced_parts = nullptr);
     bool add(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts = nullptr);
     bool add(const MergeTreePartInfo & part_info, Strings * out_replaced_parts = nullptr);
+
+    AddPartOutcome tryAddPart(const MergeTreePartInfo & part_info, String * out_reason = nullptr);
 
     bool remove(const MergeTreePartInfo & part_info)
     {
@@ -97,6 +106,8 @@ public:
     MergeTreeDataFormatVersion getFormatVersion() const { return format_version; }
 
 private:
+
+    AddPartOutcome addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts = nullptr, String * out_reason = nullptr);
     MergeTreeDataFormatVersion format_version;
     std::map<MergeTreePartInfo, String> part_info_to_name;
 

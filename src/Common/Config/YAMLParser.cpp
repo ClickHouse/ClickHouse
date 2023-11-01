@@ -110,9 +110,23 @@ namespace
                     }
                     else
                     {
-                        Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
-                        parent_xml_node.appendChild(xml_key);
-                        processNode(value_node, *xml_key);
+                        if (key == "#text" && value_node.IsScalar())
+                        {
+                            for (Node * child_node = parent_xml_node.firstChild(); child_node; child_node = child_node->nextSibling())
+                                if (child_node->nodeType() == Node::TEXT_NODE)
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                                                    "YAMLParser has encountered node with several text nodes "
+                                                    "and cannot continue parsing of the file");
+                            std::string value = value_node.as<std::string>();
+                            Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
+                            parent_xml_node.appendChild(xml_value);
+                        }
+                        else
+                        {
+                            Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
+                            parent_xml_node.appendChild(xml_key);
+                            processNode(value_node, *xml_key);
+                        }
                     }
                 }
                 break;

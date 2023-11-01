@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -78,7 +79,7 @@ def test_check_normal_table_corruption(started_cluster):
     assert (
         node1.query(
             "CHECK TABLE non_replicated_mt PARTITION 201902",
-            settings={"check_query_single_value_result": 0},
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201902_1_1_0\t1\t\n"
     )
@@ -88,7 +89,7 @@ def test_check_normal_table_corruption(started_cluster):
     assert (
         node1.query(
             "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0},
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         ).strip()
         == "201902_1_1_0\t1\tChecksums recounted and written to disk."
     )
@@ -100,7 +101,7 @@ def test_check_normal_table_corruption(started_cluster):
     assert (
         node1.query(
             "CHECK TABLE non_replicated_mt PARTITION 201902",
-            settings={"check_query_single_value_result": 0},
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         ).strip()
         == "201902_1_1_0\t1\tChecksums recounted and written to disk."
     )
@@ -109,21 +110,15 @@ def test_check_normal_table_corruption(started_cluster):
 
     corrupt_data_part_on_disk(node1, "non_replicated_mt", "201902_1_1_0")
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0},
-        ).strip()
-        == "201902_1_1_0\t0\tCannot read all data. Bytes read: 2. Bytes expected: 25."
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ).strip().split("\t")[0:2] == ["201902_1_1_0", "0"]
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0},
-        ).strip()
-        == "201902_1_1_0\t0\tCannot read all data. Bytes read: 2. Bytes expected: 25."
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ).strip().split("\t")[0:2] == ["201902_1_1_0", "0"]
 
     node1.query(
         "INSERT INTO non_replicated_mt VALUES (toDate('2019-01-01'), 1, 10), (toDate('2019-01-01'), 2, 12)"
@@ -132,7 +127,7 @@ def test_check_normal_table_corruption(started_cluster):
     assert (
         node1.query(
             "CHECK TABLE non_replicated_mt PARTITION 201901",
-            settings={"check_query_single_value_result": 0},
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201901_2_2_0\t1\t\n"
     )
@@ -141,13 +136,10 @@ def test_check_normal_table_corruption(started_cluster):
 
     remove_checksums_on_disk(node1, "non_replicated_mt", "201901_2_2_0")
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt PARTITION 201901",
-            settings={"check_query_single_value_result": 0},
-        )
-        == "201901_2_2_0\t0\tCheck of part finished with error: \\'Cannot read all data. Bytes read: 2. Bytes expected: 25.\\'\n"
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt PARTITION 201901",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ).strip().split("\t")[0:2] == ["201901_2_2_0", "0"]
 
 
 def test_check_replicated_table_simple(started_cluster):
@@ -173,13 +165,15 @@ def test_check_replicated_table_simple(started_cluster):
 
     assert (
         node1.query(
-            "CHECK TABLE replicated_mt", settings={"check_query_single_value_result": 0}
+            "CHECK TABLE replicated_mt",
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201902_0_0_0\t1\t\n"
     )
     assert (
         node2.query(
-            "CHECK TABLE replicated_mt", settings={"check_query_single_value_result": 0}
+            "CHECK TABLE replicated_mt",
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201902_0_0_0\t1\t\n"
     )
@@ -194,16 +188,38 @@ def test_check_replicated_table_simple(started_cluster):
     assert (
         node1.query(
             "CHECK TABLE replicated_mt PARTITION 201901",
-            settings={"check_query_single_value_result": 0},
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201901_0_0_0\t1\t\n"
     )
     assert (
         node2.query(
             "CHECK TABLE replicated_mt PARTITION 201901",
-            settings={"check_query_single_value_result": 0},
+            settings={"check_query_single_value_result": 0, "max_threads": 1},
         )
         == "201901_0_0_0\t1\t\n"
+    )
+
+    assert sorted(
+        node2.query(
+            "CHECK TABLE replicated_mt",
+            settings={"check_query_single_value_result": 0},
+        ).split("\n")
+    ) == ["", "201901_0_0_0\t1\t", "201902_0_0_0\t1\t"]
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node2.query(
+            "CHECK TABLE replicated_mt PART '201801_0_0_0'",
+            settings={"check_query_single_value_result": 0},
+        )
+    assert "NO_SUCH_DATA_PART" in str(exc.value)
+
+    assert (
+        node2.query(
+            "CHECK TABLE replicated_mt PART '201902_0_0_0'",
+            settings={"check_query_single_value_result": 0},
+        )
+        == "201902_0_0_0\t1\t\n"
     )
 
 
@@ -238,7 +254,7 @@ def test_check_replicated_table_corruption(started_cluster):
     corrupt_data_part_on_disk(node1, "replicated_mt_1", part_name)
     assert node1.query(
         "CHECK TABLE replicated_mt_1 PARTITION 201901",
-        settings={"check_query_single_value_result": 0},
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
     ) == "{p}\t0\tPart {p} looks broken. Removing it and will try to fetch.\n".format(
         p=part_name
     )
@@ -246,14 +262,14 @@ def test_check_replicated_table_corruption(started_cluster):
     node1.query_with_retry("SYSTEM SYNC REPLICA replicated_mt_1")
     assert node1.query(
         "CHECK TABLE replicated_mt_1 PARTITION 201901",
-        settings={"check_query_single_value_result": 0},
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
     ) == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
 
     remove_part_from_disk(node2, "replicated_mt_1", part_name)
     assert node2.query(
         "CHECK TABLE replicated_mt_1 PARTITION 201901",
-        settings={"check_query_single_value_result": 0},
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
     ) == "{p}\t0\tPart {p} looks broken. Removing it and will try to fetch.\n".format(
         p=part_name
     )
@@ -261,6 +277,6 @@ def test_check_replicated_table_corruption(started_cluster):
     node1.query("SYSTEM SYNC REPLICA replicated_mt_1")
     assert node1.query(
         "CHECK TABLE replicated_mt_1 PARTITION 201901",
-        settings={"check_query_single_value_result": 0},
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
     ) == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"

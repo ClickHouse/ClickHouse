@@ -2,7 +2,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "Core/ProtocolDefines.h"
+#include <Core/ProtocolDefines.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -23,8 +24,15 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
-void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, MergeTreeDataFormatVersion format_version)
 {
+    std::string partition_id;
+    if (auto * literal = partition_id_ast->as<ASTLiteral>(); literal != nullptr && literal->value.getType() == Field::Types::String)
+        partition_id = literal->value.safeGet<String>();
+
+    else
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id must be string literal");
+
     if (partition_id.empty())
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 

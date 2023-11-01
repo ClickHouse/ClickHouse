@@ -12,7 +12,7 @@ namespace DB
 void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
     out << "format version: 1\n"
-        << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
+        << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << "\n"
         << "block numbers count: " << block_numbers.size() << "\n";
 

@@ -208,7 +208,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 }
 
-MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part) const
+MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
     if (moves_blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
@@ -229,10 +229,16 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         String relative_path = part->getDataPartStorage().getPartDirectory();
         if (disk->exists(path_to_clone + relative_path))
         {
-            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
-                "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
-                part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
+            // If setting is on, we should've already cleaned moving/ dir on startup
+            if (data->allowRemoveStaleMovingParts())
+                throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                    "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
+                    part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
+                    fullPath(disk, path_to_clone + relative_path));
+
+            LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
                 fullPath(disk, path_to_clone + relative_path));
+            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
 
         disk->createDirectories(path_to_clone);
@@ -248,12 +254,13 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
         else
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-            cloned_part_storage = part->getDataPartStorage().clonePart(path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, log);
+            cloned_part_storage = part->getDataPartStorage().clonePart(
+                path_to_clone, part->getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, log);
         }
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME);
+        cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings);
     }
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage);

@@ -12,9 +12,7 @@ static std::array<char, 16> getSipHash(const String & str)
 {
     SipHash hash;
     hash.update(str.data(), str.size());
-    std::array<char, 16> result;
-    hash.get128(result.data());
-    return result;
+    return getSipHash128AsArray(hash);
 }
 
 ReplicatedMergeTreePartHeader ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(

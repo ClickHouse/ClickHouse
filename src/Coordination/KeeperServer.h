@@ -10,6 +10,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/RaftServerConfig.h>
 
 namespace DB
 {
@@ -28,9 +29,10 @@ private:
     nuraft::ptr<KeeperStateManager> state_manager;
 
     struct KeeperRaftServer;
-    nuraft::ptr<KeeperRaftServer> raft_instance;
+    nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
     std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
+
     // because some actions can be applied
     // when we are sure that there are no requests currently being
     // processed (e.g. recovery) we do all write actions
@@ -65,6 +67,7 @@ private:
     std::shared_ptr<KeeperContext> keeper_context;
 
     const bool create_snapshot_on_exit;
+    const bool enable_reconfiguration;
 
 public:
     KeeperServer(
@@ -84,6 +87,7 @@ public:
     void putLocalReadRequest(const KeeperStorage::RequestForSession & request);
 
     bool isRecovering() const { return is_recovering; }
+    bool reconfigEnabled() const { return enable_reconfiguration; }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
@@ -122,17 +126,12 @@ public:
 
     int getServerID() const { return server_id; }
 
-    /// Get configuration diff between current configuration in RAFT and in XML file
-    ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
+    bool applyConfigUpdate(const ClusterUpdateAction& action);
 
-    /// Apply action for configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
-    /// Synchronously check for update results with retries.
-    void applyConfigurationUpdate(const ConfigUpdateAction & task);
-
-
-    /// Wait configuration update for action. Used by followers.
-    /// Return true if update was successfully received.
-    bool waitConfigurationUpdate(const ConfigUpdateAction & task);
+    // TODO (myrrc) these functions should be removed once "reconfig" is stabilized
+    void applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action);
+    bool waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action);
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
 
     uint64_t createSnapshot();
 

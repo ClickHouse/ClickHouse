@@ -86,12 +86,12 @@ public:
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override
     {
         IPv x = field.get<IPv>();
-        writeBinary(x, ostr);
+        writeBinaryLittleEndian(x, ostr);
     }
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override
     {
         IPv x;
-        readBinary(x.toUnderType(), istr);
+        readBinaryLittleEndian(x.toUnderType(), istr);
         field = NearestFieldType<IPv>(x);
     }
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override

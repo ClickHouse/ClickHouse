@@ -136,7 +136,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     const AllowedMergingPredicate & can_merge_callback,
     bool merge_with_ttl_allowed,
     const MergeTreeTransactionPtr & txn,
-    String * out_disable_reason,
+    String & out_disable_reason,
     const PartitionIdsHint * partitions_hint)
 {
     MergeTreeData::DataPartsVector data_parts = getDataPartsToSelectMergeFrom(txn, partitions_hint);
@@ -145,8 +145,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (data_parts.empty())
     {
-        if (out_disable_reason)
-            *out_disable_reason = "There are no parts in the table";
+        out_disable_reason = "There are no parts in the table";
         return SelectPartsDecision::CANNOT_SELECT;
     }
 
@@ -154,8 +153,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (info.parts_selected_precondition == 0)
     {
-        if (out_disable_reason)
-            *out_disable_reason = "No parts satisfy preconditions for merge";
+        out_disable_reason = "No parts satisfy preconditions for merge";
         return SelectPartsDecision::CANNOT_SELECT;
     }
 
@@ -168,19 +166,20 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
     if (!best_partition_id_to_optimize.empty())
     {
-            return selectAllPartsToMergeWithinPartition(
-                future_part,
-                can_merge_callback,
-                best_partition_id_to_optimize,
-                /*final=*/true,
-                metadata_snapshot,
-                txn,
-                out_disable_reason,
-                /*optimize_skip_merged_partitions=*/true);
+        return selectAllPartsToMergeWithinPartition(
+            future_part,
+            can_merge_callback,
+            best_partition_id_to_optimize,
+            /*final=*/true,
+            metadata_snapshot,
+            txn,
+            out_disable_reason,
+            /*optimize_skip_merged_partitions=*/true);
     }
 
-    if (out_disable_reason)
-        *out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
+    if (!out_disable_reason.empty())
+        out_disable_reason += ". ";
+    out_disable_reason += "There is no need to merge parts according to merge selector algorithm";
     return SelectPartsDecision::CANNOT_SELECT;
 }
 
@@ -197,7 +196,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
 
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
-    MergeSelectingInfo info = getPossibleMergeRanges(data_parts, can_merge_callback, txn);
+    String out_reason;
+    MergeSelectingInfo info = getPossibleMergeRanges(data_parts, can_merge_callback, txn, out_reason);
 
     if (info.parts_selected_precondition == 0)
         return res;
@@ -227,7 +227,7 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
         /// This method should have been const, but something went wrong... it's const with dry_run = true
         auto status = const_cast<MergeTreeDataMergerMutator *>(this)->selectPartsToMergeFromRanges(
                 future_part, /*aggressive*/ false, max_total_size_to_merge, merge_with_ttl_allowed,
-                metadata_snapshot, ranges_per_partition[i], info.current_time, &out_disable_reason,
+                metadata_snapshot, ranges_per_partition[i], info.current_time, out_disable_reason,
                 /* dry_run */ true);
         if (status == SelectPartsDecision::SELECTED)
             res.insert(all_partition_ids[i]);
@@ -331,7 +331,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
     const MergeTreeData::DataPartsVector & data_parts,
     const AllowedMergingPredicate & can_merge_callback,
     const MergeTreeTransactionPtr & txn,
-    String * out_disable_reason) const
+    String & out_disable_reason) const
 {
     MergeSelectingInfo res;
 
@@ -444,7 +444,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
     const StorageMetadataPtr & metadata_snapshot,
     const IMergeSelector::PartsRanges & parts_ranges,
     const time_t & current_time,
-    String * out_disable_reason,
+    String & out_disable_reason,
     bool dry_run)
 {
     const auto data_settings = data.getSettings();
@@ -515,8 +515,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         if (parts_to_merge.empty())
         {
-            if (out_disable_reason)
-                *out_disable_reason = "Did not find any parts to merge (with usual merge selectors)";
+            out_disable_reason = "Did not find any parts to merge (with usual merge selectors)";
             return SelectPartsDecision::CANNOT_SELECT;
         }
     }
@@ -537,11 +536,22 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     const PartitionsInfo & partitions_info) const
 {
-    const auto data_settings = data.getSettings();
+    const auto & data_settings = data.getSettings();
     if (!data_settings->min_age_to_force_merge_on_partition_only)
         return {};
     if (!data_settings->min_age_to_force_merge_seconds)
         return {};
+    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    size_t max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+    if (occupied > 1 && max_tasks_count - occupied < data_settings->number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
+    {
+        LOG_INFO(
+            log,
+            "Not enough idle threads to execute optimizing entire partition. See settings "
+            "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' "
+            "and 'background_pool_size'");
+        return {};
+    }
 
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
@@ -563,22 +573,20 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     bool final,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
-    String * out_disable_reason,
+    String & out_disable_reason,
     bool optimize_skip_merged_partitions)
 {
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
     {
-        if (out_disable_reason)
-            *out_disable_reason = "There are no parts inside partition";
+        out_disable_reason = "There are no parts inside partition";
         return SelectPartsDecision::CANNOT_SELECT;
     }
 
     if (!final && parts.size() == 1)
     {
-        if (out_disable_reason)
-            *out_disable_reason = "There is only one part inside partition";
+        out_disable_reason = "There is only one part inside partition";
         return SelectPartsDecision::CANNOT_SELECT;
     }
 
@@ -587,8 +595,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
         (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
     {
-        if (out_disable_reason)
-            *out_disable_reason = "Partition skipped due to optimize_skip_merged_partitions";
+        out_disable_reason = "Partition skipped due to optimize_skip_merged_partitions";
         return SelectPartsDecision::NOTHING_TO_MERGE;
     }
 
@@ -629,9 +636,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
                 static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100));
         }
 
-        if (out_disable_reason)
-            *out_disable_reason = fmt::format("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
-
+        out_disable_reason = fmt::format("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
         return SelectPartsDecision::CANNOT_SELECT;
     }
 

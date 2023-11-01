@@ -5,6 +5,8 @@
 
 # Avoid overlaps with previous runs
 dmesg --clear
+# shellcheck disable=SC1091
+source /setup_export_logs.sh
 
 set -x
 
@@ -14,7 +16,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # Stress tests and upgrade check uses similar code that was placed
 # in a separate bash library. See tests/ci/stress_tests.lib
-source /usr/share/clickhouse-test/ci/stress_tests.lib
+source /attach_gdb.lib
+source /stress_tests.lib
 
 install_packages package_folder
 
@@ -50,9 +53,13 @@ configure
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
+config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
+
 start
 
-shellcheck disable=SC2086 # No quotes because I want to split it into words.
+setup_logs_replication
+
+# shellcheck disable=SC2086 # No quotes because I want to split it into words.
 /s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
@@ -179,6 +186,11 @@ mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/cli
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
+   | sed "s|<level>trace</level>|<level>test</level>|" \
+   > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
+mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
+
 start
 
 stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit 1200 \
@@ -231,5 +243,11 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# But OOMs in stress test are allowed
+if rg 'OOM in dmesg|Signal 9' /test_output/check_status.tsv
+then
+    sed -i 's/failure/success/' /test_output/check_status.tsv
+fi
 
 collect_core_dumps

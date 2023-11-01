@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+import fnmatch
 
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
@@ -68,7 +69,9 @@ def test_cache_evicted_by_temporary_data(start_cluster):
                 "max_bytes_before_external_sort": "4M",
             },
         )
-    assert "Failed to reserve space for the file cache" in str(exc.value)
+    assert fnmatch.fnmatch(
+        str(exc.value), "*Failed to reserve * for temporary file*"
+    ), exc.value
 
     # Some data evicted from cache by temporary data
     cache_size_after_eviction = get_cache_size()
@@ -104,6 +107,8 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             "SELECT randomPrintableASCII(1024) FROM numbers(32 * 1024) FORMAT TSV",
             params={"buffer_size": 0, "wait_end_of_query": 1},
         )
-    assert "Failed to reserve space for the file cache" in str(exc.value)
+    assert fnmatch.fnmatch(
+        str(exc.value), "*Failed to reserve * for temporary file*"
+    ), exc.value
 
     q("DROP TABLE IF EXISTS t1")

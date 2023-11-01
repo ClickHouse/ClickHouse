@@ -55,6 +55,7 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
+        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs) const override;
@@ -62,6 +63,8 @@ public:
     MutableDataPartStoragePtr freeze(
         const std::string & to,
         const std::string & dir_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const override;
 
@@ -69,6 +72,8 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & dst_disk,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         Poco::Logger * log) const override;
 
     void rename(

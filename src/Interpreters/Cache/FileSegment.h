@@ -26,6 +26,7 @@ namespace DB
 {
 
 class ReadBufferFromFileBase;
+struct FileCacheReserveStat;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -109,6 +110,7 @@ public:
         size_t size_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings = {},
+        bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
         Priority::Iterator queue_iterator_ = Priority::Iterator{});
@@ -177,11 +179,9 @@ public:
 
     size_t getRefCount() const { return ref_count; }
 
-    size_t getCurrentWriteOffset(bool sync) const;
+    size_t getCurrentWriteOffset() const;
 
-    size_t getFirstNonDownloadedOffset(bool sync) const;
-
-    size_t getDownloadedSize(bool sync) const;
+    size_t getDownloadedSize() const;
 
     size_t getReservedSize() const;
 
@@ -243,12 +243,7 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    bool reserve(size_t size_to_reserve);
-
-    /// Try to reserve at max `size_to_reserve` bytes.
-    /// Returns actual size reserved. It can be less than size_to_reserve in non strict mode.
-    /// In strict mode throws an error on attempt to reserve space too much space.
-    size_t tryReserve(size_t size_to_reserve, bool strict = false);
+    bool reserve(size_t size_to_reserve, FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(const char * from, size_t size, size_t offset);
@@ -267,6 +262,8 @@ public:
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     void setDownloadedSize(size_t delta);
+
+    void setDownloadFailed();
 
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
@@ -296,6 +293,7 @@ private:
     /// Size of the segment is not known until it is downloaded and
     /// can be bigger than max_file_segment_size.
     const bool is_unbound = false;
+    const bool background_download_enabled;
 
     std::atomic<State> download_state;
     DownloaderId downloader_id; /// The one who prepares the download
@@ -306,7 +304,6 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
-    mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;
@@ -327,8 +324,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 {
     FileSegmentsHolder() = default;
 
-    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true)
-        : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_) {}
+    explicit FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_ = true);
 
     ~FileSegmentsHolder();
 
@@ -344,11 +340,7 @@ struct FileSegmentsHolder : private boost::noncopyable
 
     FileSegment & back() { return *file_segments.back(); }
 
-    FileSegment & add(FileSegmentPtr && file_segment)
-    {
-        file_segments.push_back(file_segment);
-        return *file_segments.back();
-    }
+    FileSegment & add(FileSegmentPtr && file_segment);
 
     FileSegments::iterator begin() { return file_segments.begin(); }
     FileSegments::iterator end() { return file_segments.end(); }

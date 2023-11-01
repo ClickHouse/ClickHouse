@@ -75,7 +75,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    void checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
     void drop() override;
 

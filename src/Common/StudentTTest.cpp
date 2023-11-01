@@ -1,7 +1,6 @@
 #include "StudentTTest.h"
 
 #include <cmath>
-#include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>

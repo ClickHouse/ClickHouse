@@ -20,8 +20,8 @@ using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
 using FunctionFactoryData = std::pair<FunctionCreator, FunctionDocumentation>;
 
 /** Creates function by name.
-  * Function could use for initialization (take ownership of shared_ptr, for example)
-  *  some dictionaries from Context.
+  * The provided Context is guaranteed to outlive the created function. Functions may use it for
+  * things like settings, current database, permission checks, etc.
   */
 class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<FunctionFactoryData>
 {

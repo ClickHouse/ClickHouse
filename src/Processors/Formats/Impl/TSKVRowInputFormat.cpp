@@ -216,6 +216,18 @@ void TSKVRowInputFormat::resetParser()
     name_buf.clear();
 }
 
+size_t TSKVRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        skipToUnescapedNextLineOrEOF(*in);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowWithNamesSchemaReader(in_, format_settings_, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
 {

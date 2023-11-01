@@ -165,26 +165,6 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
-
-bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
-{
-    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
-    if (argv.size() >= 2)
-    {
-        auto first_arg = argv.begin() + 1;
-
-        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
-        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
-        {
-            argv.erase(first_arg);
-            return true;
-        }
-    }
-
-    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
-    std::string app_name = "clickhouse-" + app_suffix;
-    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
-}
 #endif
 
 
@@ -351,7 +331,7 @@ struct Checker
 ;
 
 
-#if !defined(USE_MUSL)
+#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -407,6 +387,25 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 
 }
 
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+{
+    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
+    if (argv.size() >= 2)
+    {
+        auto first_arg = argv.begin() + 1;
+
+        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
+        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
+        {
+            argv.erase(first_arg);
+            return true;
+        }
+    }
+
+    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
+    std::string app_name = "clickhouse-" + app_suffix;
+    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
+}
 
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
 /// We don't use it. But it can be used by some libraries for implementation of "plugins".
@@ -465,6 +464,11 @@ int main(int argc_, char ** argv_)
 #if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
+
+    /// This is used for testing. For example,
+    /// clickhouse-local should be able to run a simple query without throw/catch.
+    if (getenv("CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION")) // NOLINT(concurrency-mt-unsafe)
+        DB::terminate_on_any_exception = true;
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
