@@ -38,6 +38,7 @@ def remove_part(table, part_name):
         ["bash", "-c", f"rm -r /var/lib/clickhouse/data/default/{table}/{part_name}"]
     )
 
+
 def get_count(table):
     return int(node.query(f"SELECT count() FROM {table}").strip())
 
@@ -45,17 +46,22 @@ def get_count(table):
 def detach_table(table):
     node.query(f"DETACH TABLE {table}")
 
+
 def attach_table(table):
     node.query(f"ATTACH TABLE {table}")
+
 
 def remove_part_from_zookeeper(replica_path, part_name):
     zk = cluster.get_kazoo_client("zoo1")
     zk.delete(os.path.join(replica_path, f"parts/{part_name}"))
 
+
 def test_unexpected_uncommitted_merge():
-    node.query("""
+    node.query(
+        """
     CREATE TABLE broken_table (key Int) ENGINE = ReplicatedMergeTree('/tables/broken', '1') ORDER BY tuple()
-    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0""")
+    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0"""
+    )
 
     node.query("INSERT INTO broken_table SELECT number from numbers(10)")
     node.query("INSERT INTO broken_table SELECT number from numbers(10, 10)")
@@ -63,29 +69,46 @@ def test_unexpected_uncommitted_merge():
     node.query("OPTIMIZE TABLE broken_table FINAL")
 
     assert node.query("SELECT sum(key) FROM broken_table") == "190\n"
-    assert node.query("SELECT name FROM system.parts where table = 'broken_table' and active") == "all_0_1_1\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table' and active"
+        )
+        == "all_0_1_1\n"
+    )
 
-    remove_part_from_zookeeper('/tables/broken/replicas/1', "all_0_1_1")
+    remove_part_from_zookeeper("/tables/broken/replicas/1", "all_0_1_1")
 
     detach_table("broken_table")
     attach_table("broken_table")
 
     assert node.query("SELECT sum(key) FROM broken_table") == "190\n"
-    assert node.query("SELECT name FROM system.parts where table = 'broken_table' and active order by name") == "all_0_0_0\nall_1_1_0\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table' and active order by name"
+        )
+        == "all_0_0_0\nall_1_1_0\n"
+    )
 
 
 def test_corrupted_random_part():
-    node.query("""
+    node.query(
+        """
     CREATE TABLE broken_table_1 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken_1', '1') ORDER BY tuple()
-    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0""")
+    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0"""
+    )
 
     node.query("INSERT INTO broken_table_1 SELECT number from numbers(10)")
     node.query("INSERT INTO broken_table_1 SELECT number from numbers(10, 10)")
 
     assert node.query("SELECT sum(key) FROM broken_table_1") == "190\n"
-    assert node.query("SELECT name FROM system.parts where table = 'broken_table_1' and active order by name") == "all_0_0_0\nall_1_1_0\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table_1' and active order by name"
+        )
+        == "all_0_0_0\nall_1_1_0\n"
+    )
 
-    break_part('broken_table_1', 'all_0_0_0')
+    break_part("broken_table_1", "all_0_0_0")
 
     detach_table("broken_table_1")
     with pytest.raises(QueryRuntimeException):
@@ -93,9 +116,11 @@ def test_corrupted_random_part():
 
 
 def test_corrupted_unexpected_part():
-    node.query("""
+    node.query(
+        """
     CREATE TABLE broken_table_2 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken_2', '1') ORDER BY tuple()
-    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0""")
+    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0"""
+    )
 
     node.query("INSERT INTO broken_table_2 SELECT number from numbers(10)")
     node.query("INSERT INTO broken_table_2 SELECT number from numbers(10, 10)")
@@ -103,21 +128,34 @@ def test_corrupted_unexpected_part():
     node.query("OPTIMIZE TABLE broken_table_2 FINAL")
 
     assert node.query("SELECT sum(key) FROM broken_table_2") == "190\n"
-    assert node.query("SELECT name FROM system.parts where table = 'broken_table_2' and active") == "all_0_1_1\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table_2' and active"
+        )
+        == "all_0_1_1\n"
+    )
 
-    remove_part_from_zookeeper('/tables/broken_2/replicas/1', "all_0_0_0")
-    break_part('broken_table_2', 'all_0_0_0')
+    remove_part_from_zookeeper("/tables/broken_2/replicas/1", "all_0_0_0")
+    break_part("broken_table_2", "all_0_0_0")
 
     detach_table("broken_table_2")
     attach_table("broken_table_2")
 
     assert node.query("SELECT sum(key) FROM broken_table_2") == "190\n"
-    assert node.query("SELECT name FROM system.parts where table = 'broken_table_2' and active") == "all_0_1_1\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table_2' and active"
+        )
+        == "all_0_1_1\n"
+    )
+
 
 def test_corrupted_unexpected_part_ultimate():
-    node.query("""
+    node.query(
+        """
     CREATE TABLE broken_table_3 (key Int) ENGINE = ReplicatedMergeTree('/tables/broken_3', '1') ORDER BY tuple()
-    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0""")
+    SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts=0"""
+    )
 
     node.query("INSERT INTO broken_table_3 SELECT number from numbers(10)")
     node.query("INSERT INTO broken_table_3 SELECT number from numbers(10, 10)")
@@ -125,15 +163,25 @@ def test_corrupted_unexpected_part_ultimate():
     node.query("OPTIMIZE TABLE broken_table_3 FINAL")
 
     assert node.query("SELECT sum(key) FROM broken_table_3") == "190\n"
-    assert node.query("SELECT name FROM system.parts where table = 'broken_table_3' and active") == "all_0_1_1\n"
+    assert (
+        node.query(
+            "SELECT name FROM system.parts where table = 'broken_table_3' and active"
+        )
+        == "all_0_1_1\n"
+    )
 
-    remove_part_from_zookeeper('/tables/broken_3/replicas/1', "all_0_0_0")
-    break_part('broken_table_2', 'all_0_0_0')
-    remove_part_from_zookeeper('/tables/broken_3/replicas/1', "all_0_1_1")
+    remove_part_from_zookeeper("/tables/broken_3/replicas/1", "all_0_0_0")
+    break_part("broken_table_2", "all_0_0_0")
+    remove_part_from_zookeeper("/tables/broken_3/replicas/1", "all_0_1_1")
 
     detach_table("broken_table_3")
     attach_table("broken_table_3")
 
-    assert node.query("SELECT is_readonly FROM system.replicas WHERE table = 'broken_table_3'") == "1\n"
+    assert (
+        node.query(
+            "SELECT is_readonly FROM system.replicas WHERE table = 'broken_table_3'"
+        )
+        == "1\n"
+    )
 
     assert node.query("SELECT sum(key) FROM broken_table_3") == "145\n"
