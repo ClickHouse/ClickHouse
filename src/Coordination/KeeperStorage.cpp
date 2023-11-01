@@ -2496,25 +2496,15 @@ void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) co
 uint64_t KeeperStorage::getTotalWatchesCount() const
 {
     uint64_t ret = 0;
-    for (const auto & [path, subscribed_sessions] : watches)
-        ret += subscribed_sessions.size();
-
-    for (const auto & [path, subscribed_sessions] : list_watches)
-        ret += subscribed_sessions.size();
+    for (const auto & [session, paths] : sessions_and_watchers)
+        ret += paths.size();
 
     return ret;
 }
 
 uint64_t KeeperStorage::getSessionsWithWatchesCount() const
 {
-    std::unordered_set<int64_t> counter;
-    for (const auto & [path, subscribed_sessions] : watches)
-        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
-
-    for (const auto & [path, subscribed_sessions] : list_watches)
-        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
-
-    return counter.size();
+    return sessions_and_watchers.size();
 }
 
 uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
