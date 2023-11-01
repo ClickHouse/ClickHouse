@@ -21,6 +21,15 @@ sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-1
 sudo apt-get install clang-17
 ```
 
+---
+
+Choose your build architecture:
+- [x86_64 macOS](#x86_64-macos)
+- [ARM (aarch64) macOS](#arm-aarch64-macos)
+
+---
+
+# x86_64 macOS:
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
@@ -30,13 +39,13 @@ export CCTOOLS=$(cd ~/cctools && pwd)
 mkdir ${CCTOOLS}
 cd ${CCTOOLS}
 
-git clone https://github.com/tpoechtrager/apple-libtapi.git
+git clone --depth=1 https://github.com/tpoechtrager/apple-libtapi.git
 cd apple-libtapi
 INSTALLPREFIX=${CCTOOLS} ./build.sh
 ./install.sh
 cd ..
 
-git clone https://github.com/tpoechtrager/cctools-port.git
+git clone --depth=1 https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
 ./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
 make install
@@ -46,7 +55,7 @@ Also, we need to download macOS X SDK into the working tree.
 
 ``` bash
 cd ClickHouse/cmake/toolchain/darwin-x86_64
-curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz' | tar xJ --strip-components=1
+curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz' | tar xJ --strip-components=1
 ```
 
 ## Build ClickHouse {#build-clickhouse}
@@ -56,6 +65,50 @@ cd ClickHouse
 mkdir build-darwin
 cd build-darwin
 CC=clang-17 CXX=clang++-17 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+ninja
+```
+
+The resulting binary will have a Mach-O executable format and can’t be run on Linux.
+
+# ARM (aarch64) macOS:
+
+## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+
+Let’s remember the path where we install `cctools` as ${CCTOOLS}
+
+``` bash
+export CCTOOLS=$(cd ~/cctools && pwd)
+mkdir ${CCTOOLS}
+cd ${CCTOOLS}
+
+git clone --depth=1 https://github.com/tpoechtrager/apple-libtapi.git
+cd apple-libtapi
+INSTALLPREFIX=${CCTOOLS} ./build.sh
+./install.sh
+cd ..
+
+git clone --depth=1 https://github.com/tpoechtrager/cctools-port.git
+cd cctools-port/cctools
+./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=aarch64-apple-darwin
+make install
+
+```
+
+Also, we need to download macOS X SDK into the working tree.
+
+``` bash
+mkdir -p Clickhouse/cmake/toolchain/darwin-aarch64
+cd ClickHouse/cmake/toolchain/darwin-aarch64
+curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz' | tar xJ --strip-components=1
+```
+
+## Build ClickHouse {#build-clickhouse}
+
+``` bash
+cd ClickHouse
+mkdir build-darwin
+cd build-darwin
+CC=clang-17 CXX=clang++-17 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/aarch64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/aarch64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/aarch64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/aarch64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-aarch64.cmake ..
 ninja
 ```
 
