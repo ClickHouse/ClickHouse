@@ -21,6 +21,14 @@ namespace
 
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
+    using AggregateFunctionNullUnaryNullable = AggregateFunctionNullUnary<true, true>;
+    using AggregateFunctionNullUnaryWithSerialize = AggregateFunctionNullUnary<false, true>;
+    using AggregateFunctionNullUnaryNoSerialize = AggregateFunctionNullUnary<false, false>;
+
+    using AggregateFunctionNullVariadicNullable = AggregateFunctionNullVariadic<true, true>;
+    using AggregateFunctionNullVariadicWithSerialize = AggregateFunctionNullVariadic<false, true>;
+    using AggregateFunctionNullVariadicNoSerialize = AggregateFunctionNullVariadic<false, false>;
+
 public:
     String getName() const override { return "Null"; }
 
@@ -119,35 +127,35 @@ public:
             return new_function;
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
-        bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+        const bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
+        const bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)
         {
             if (return_type_is_nullable)
             {
-                return std::make_shared<AggregateFunctionNullUnary<true, true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionNullUnaryNullable>(nested_function, arguments, params);
             }
             else
             {
                 if (serialize_flag)
-                    return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullUnaryWithSerialize>(nested_function, arguments, params);
                 else
-                    return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullUnaryNoSerialize>(nested_function, arguments, params);
             }
         }
         else
         {
             if (return_type_is_nullable)
             {
-                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionNullVariadicNullable>(nested_function, arguments, params);
             }
             else
             {
                 if (serialize_flag)
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadicWithSerialize>(nested_function, arguments, params);
                 else
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadicNoSerialize>(nested_function, arguments, params);
             }
         }
     }
