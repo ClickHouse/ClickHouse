@@ -7,7 +7,6 @@
 namespace DB
 {
 
-
 Range::Range(const FieldRef & point) /// NOLINT
     : left(point), right(point), left_included(true), right_included(true) {}
 
@@ -164,12 +163,12 @@ Range intersect(const Range & a, const Range & b)
 {
     Range res = Range::createWholeUniverse();
 
-    if (less(a.left, b.left))
+    if (Range::less(a.left, b.left))
     {
         res.left = b.left;
         res.left_included = b.left_included;
     }
-    else if (equals(a.left, b.left))
+    else if (Range::equals(a.left, b.left))
     {
         res.left = a.left;
         res.left_included = a.left_included && b.left_included;
@@ -180,12 +179,12 @@ Range intersect(const Range & a, const Range & b)
         res.left_included = a.left_included;
     }
 
-    if (less(a.right, b.right))
+    if (Range::less(a.right, b.right))
     {
         res.right = a.right;
         res.right_included = a.right_included;
     }
-    else if (equals(a.right, b.right))
+    else if (Range::equals(a.right, b.right))
     {
         res.right = a.right;
         res.right_included = a.right_included && b.right_included;
