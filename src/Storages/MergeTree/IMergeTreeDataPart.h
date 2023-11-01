@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/PartMetadataJSON.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -223,6 +224,8 @@ public:
     size_t rows_count = 0;
 
     time_t modification_time = 0;
+    PartMetadataJSON metadata;
+
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
@@ -609,8 +612,13 @@ private:
     /// It is used while reading from wide parts.
     ColumnsDescription columns_description_with_collected_nested;
 
+    // Reads part metadata from metadata.json if it exists.
+    void loadMetadataJson();
+
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
+
+    static void appendFilesOfMetadataJSON(Strings & files);
 
     static void appendFilesOfUUID(Strings & files);
 

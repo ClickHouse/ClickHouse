@@ -57,6 +57,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"part_metadata_format_version", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())},
         {"comment", std::make_shared<DataTypeString>()},
         {"has_own_data", std::make_shared<DataTypeUInt8>()},
         {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -527,6 +528,14 @@ protected:
                     auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->partMetadataFormatVersion().toUnderType());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

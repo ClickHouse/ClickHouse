@@ -128,15 +128,17 @@ MergedBlockOutputStream::Finalizer::~Finalizer() = default;
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
+    time_t create_time,
     const NamesAndTypesList * total_columns_list,
     MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
+    finalizePartAsync(new_part, sync, create_time, total_columns_list, additional_column_checksums).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
+    time_t create_time,
     const NamesAndTypesList * total_columns_list,
     MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
@@ -173,6 +175,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
+    if (storage.partMetadataFormatVersion() >= PART_METADATA_FORMAT_VERSION_INITIAL)
+    {
+        Poco::JSON::Object::Ptr metajson = new Poco::JSON::Object();
+        metajson->set("version", storage.partMetadataFormatVersion().toUnderType());
+        metajson->set("creation_time", static_cast<UInt64>(create_time));
+        new_part->metadata = PartMetadataJSON(metajson);
+    }
+
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     if (new_part->isStoredOnDisk())
        finalizer->written_files = finalizePartOnDisk(new_part, checksums);
@@ -197,6 +207,21 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
+
+    // Should new metadata be written for projection parts?
+    // Yes -- currently it will be identical to the metadata of parent part
+    // However future metadata like maybe row counts, columns etc, could be different
+    if (new_part->metadata.metadataFormatVersion() >= PART_METADATA_FORMAT_VERSION_INITIAL)
+    {
+        auto metajsonfile = new_part->getDataPartStorage().writeFile("metadata.json", 4096, write_settings);
+        HashingWriteBuffer metajson_hashing(*metajsonfile);
+        new_part->metadata.writeJSON(metajson_hashing);
+        metajson_hashing.finalize();
+        checksums.files["metadata.json"].file_size = metajson_hashing.count();
+        checksums.files["metadata.json"].file_hash = metajson_hashing.getHash();
+        metajsonfile->preFinalize();
+        written_files.emplace_back(std::move(metajsonfile));
+    }
 
     if (new_part->isProjectionPart())
     {
@@ -304,7 +329,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for{}. "
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for {}."
                 "It is a bug.", new_part->name);
     }
 

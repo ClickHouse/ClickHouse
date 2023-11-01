@@ -211,5 +211,14 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
             merge_selecting_sleep_slowdown_factor);
     }
+
+    if (desired_part_metadata_format_version > PART_METADATA_MAX_FORMAT_VERSION)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "desired_part_metadata_format_version is set to an unknown value. The max is {}. Configured value is {}",
+            PART_METADATA_MAX_FORMAT_VERSION,
+            desired_part_metadata_format_version);
+    }
 }
 }

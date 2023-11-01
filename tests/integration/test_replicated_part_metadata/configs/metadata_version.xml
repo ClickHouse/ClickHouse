@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <desired_part_metadata_format_version>1</desired_part_metadata_format_version>
+    </merge_tree>
+</clickhouse>

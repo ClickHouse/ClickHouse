@@ -577,12 +577,14 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     out->writeWithPermutation(block, perm_ptr);
 
+    time_t creation_time = time(nullptr);
+
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         auto projection_block = projection.calculate(block, context);
         if (projection_block.rows())
         {
-            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get());
+            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), creation_time);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
@@ -591,7 +593,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        data_settings->fsync_after_insert,
+        data_settings->fsync_after_insert, creation_time,
         nullptr, nullptr);
 
     temp_part.part = new_data_part;
@@ -611,7 +613,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,
-    const ProjectionDescription & projection)
+    const ProjectionDescription & projection,
+    time_t creation_time)
 {
     TemporaryPart temp_part;
     const auto & metadata_snapshot = projection.metadata;
@@ -706,7 +709,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
-    auto finalizer = out->finalizePartAsync(new_data_part, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, false, creation_time);
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
@@ -722,7 +725,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     Poco::Logger * log,
     Block block,
     const ProjectionDescription & projection,
-    IMergeTreeDataPart * parent_part)
+    IMergeTreeDataPart * parent_part,
+    time_t creation_time)
 {
     return writeProjectionPartImpl(
         projection.name,
@@ -731,7 +735,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
         data,
         log,
         std::move(block),
-        projection);
+        projection,
+        creation_time);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -752,7 +757,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
         data,
         log,
         std::move(block),
-        projection);
+        projection,
+        time(nullptr));
 }
 
 }

@@ -16,6 +16,8 @@ void ReplicatedMergeTreeAddress::writeText(WriteBuffer & out) const
         << "database: " << escape << database << '\n'
         << "table: " << escape << table << '\n'
         << "scheme: " << escape << scheme << '\n';
+    if (desired_part_metadata_format_version > PART_METADATA_FORMAT_VERSION_OLD)
+        out << "desired_part_metadata_format_version: " << desired_part_metadata_format_version.toUnderType() << '\n';
 
 }
 
@@ -32,6 +34,10 @@ void ReplicatedMergeTreeAddress::readText(ReadBuffer & in)
         in >> "scheme: " >> escape >> scheme >> "\n";
     else
         scheme = "http";
+    if (!in.eof())
+        in >> "desired_part_metadata_format_version: " >> desired_part_metadata_format_version.toUnderType() >> "\n";
+    else
+        desired_part_metadata_format_version = PART_METADATA_FORMAT_VERSION_OLD;
 }
 
 String ReplicatedMergeTreeAddress::toString() const

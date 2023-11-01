@@ -2,6 +2,7 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/MergeTree/PartMetadataJSON.h>
 
 
 namespace DB
@@ -17,6 +18,8 @@ struct ReplicatedMergeTreeAddress
     String database;
     String table;
     String scheme;
+    // If the version wasn't explicitly set, it's probably coming from an old version of CH
+    PartMetadataFormatVersion desired_part_metadata_format_version = PART_METADATA_FORMAT_VERSION_OLD;
 
     ReplicatedMergeTreeAddress() = default;
     explicit ReplicatedMergeTreeAddress(const String & str)

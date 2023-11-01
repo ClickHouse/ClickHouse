@@ -1408,6 +1408,20 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return scheduled;
 }
 
+PartMetadataFormatVersion StorageMergeTree::partMetadataFormatVersion() const
+{
+    // It's not replicated, so no need to consult anything else
+    auto v = PartMetadataFormatVersion{getSettings()->desired_part_metadata_format_version};
+    if (v > PART_METADATA_MAX_FORMAT_VERSION)
+    {
+        // I considered throwing an exception, but this basically would mean it's impossible to do inserts/merges because of a bad setting
+        // So instead, we just fall back to the default value, and log a warning
+        LOG_WARNING(log, "Unknown value '{}' for desired_part_metadata_format_version is specified. Using default value instead: '{}'", v, PART_METADATA_DEFAULT_FORMAT_VERSION);
+        v = PART_METADATA_DEFAULT_FORMAT_VERSION;
+    }
+    return v;
+}
+
 UInt64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
