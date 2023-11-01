@@ -55,6 +55,7 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
     bool salt = false;
     bool parameter = false;
     bool parameters = false;
+    bool scheme = false;
 
     if (type)
     {
@@ -124,6 +125,14 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
                 parameters = true;
                 break;
             }
+            case AuthenticationType::HTTP:
+            {
+                prefix = "SERVER";
+                parameter = true;
+                if (children.size() == 2)
+                    scheme = true;
+                break;
+            }
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
             case AuthenticationType::MAX:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(*type));
@@ -186,6 +195,13 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
             child->format(settings);
         }
     }
+
+    if (scheme)
+    {
+        settings.ostr << " SCHEME ";
+        children[1]->format(settings);
+    }
+
 }
 
 bool ASTAuthenticationData::hasSecretParts() const

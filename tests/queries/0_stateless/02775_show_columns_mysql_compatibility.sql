@@ -78,4 +78,16 @@ SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0;
 SELECT '-- SHOW COLUMNS with use_mysql_types_in_show_columns = 1';
 SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1;
 
+SELECT '-- SHOW COLUMNS with mysql_map_string_to_text_in_show_columns = 1';
+SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1, mysql_map_string_to_text_in_show_columns=1;
+
+SELECT '-- SHOW COLUMNS with mysql_map_fixed_string_to_text_in_show_columns = 1';
+SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 1, mysql_map_fixed_string_to_text_in_show_columns=1;
+
+SELECT '-- SHOW COLUMNS with mysql_map_string_to_text_in_show_columns = 1 and without use_mysql_types_in_show_columns';
+SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0, mysql_map_string_to_text_in_show_columns=1;
+
+SELECT '-- SHOW COLUMNS with mysql_map_fixed_string_to_text_in_show_columns = 1 and without use_mysql_types_in_show_columns';
+SHOW COLUMNS FROM tab SETTINGS use_mysql_types_in_show_columns = 0, mysql_map_fixed_string_to_text_in_show_columns=1;
+
 DROP TABLE tab;

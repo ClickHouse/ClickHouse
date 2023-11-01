@@ -2403,6 +2403,17 @@ See also:
 
 - [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
+## optimize_trivial_approximate_count_query {#optimize_trivial_approximate_count_query}
+
+Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+Default value: `0`.
+
 ## optimize_count_from_files {#optimize_count_from_files}
 
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
@@ -3310,6 +3321,28 @@ Possible values:
 
 Default value: `0`.
 
+## mysql_map_string_to_text_in_show_columns {#mysql_map_string_to_text_in_show_columns}
+
+When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
+## mysql_map_fixed_string_to_text_in_show_columns {#mysql_map_fixed_string_to_text_in_show_columns}
+
+When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+
+Has effect only when [use_mysql_types_in_show_columns](#use_mysql_types_in_show_columns) is enabled.
+
+- 0 - Use `BLOB`.
+- 1 - Use `TEXT`.
+
+Default value: `0`.
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.
@@ -4122,6 +4155,18 @@ Possible values:
 
 Default value: `0`.
 
+## date_time_overflow_behavior {#date_time_overflow_behavior}
+
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+
+Possible values:
+
+- `ignore` — Silently ignore overflows. The result is random.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+Default value: `ignore`.
+
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
@@ -4686,18 +4731,6 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 └─────────────────────┴──────────────────────────┘
 ```
 
-## partial_result_update_duration_ms
-
-Interval (in milliseconds) for sending updates with partial data about the result table to the client (in interactive mode) during query execution. Setting to 0 disables partial results. Only supported for single-threaded GROUP BY without key, ORDER BY, LIMIT and OFFSET.
-
-:::note
-It's an experimental feature. Enable `allow_experimental_partial_result` setting first to use it.
-:::
-
-## max_rows_in_partial_result
-
-Maximum rows to show in the partial result after every real-time update while the query runs (use partial result limit + OFFSET as a value in case of OFFSET in the query).
-
 ## validate_tcp_client_information {#validate-tcp-client-information}
 
 Determines whether validation of client information enabled when query packet is received from a client using a TCP connection.
@@ -4745,4 +4778,19 @@ a	Tuple(
     ),
     l Nullable(String)
 )
+```
+
+## dictionary_use_async_executor {#dictionary_use_async_executor}
+
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+
+You may specify it in `SETTINGS` section of dictionary definition:
+
+```sql
+CREATE DICTIONARY t1_dict ( key String, attr UInt64 )
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY `SELECT key, attr FROM t1 GROUP BY key`))
+LIFETIME(MIN 0 MAX 3600)
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 ```

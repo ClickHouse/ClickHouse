@@ -197,6 +197,11 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
     ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
     ```
 
+### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
+
+Use a unique replication consumer identifier for replication. Default: `0`.
+If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+
 ## Notes {#notes}
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}

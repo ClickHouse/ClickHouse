@@ -478,6 +478,13 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
     return ActionLock{};
 }
 
+bool StorageMaterializedView::isRemote() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->isRemote();
+    return false;
+}
+
 void registerStorageMaterializedView(StorageFactory & factory)
 {
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)

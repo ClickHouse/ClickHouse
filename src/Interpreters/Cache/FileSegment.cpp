@@ -23,7 +23,13 @@ namespace ProfileEvents
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentUseMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
+    extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheHoldFileSegments;
 }
 
 namespace DB
@@ -918,10 +924,10 @@ void FileSegment::use()
     }
 }
 
-FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
-{
-    front().complete();
-    return file_segments.erase(file_segments.begin());
+FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
+    : file_segments(std::move(file_segments_))
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments, file_segments.size());
 }
 
 FileSegmentsHolder::~FileSegmentsHolder()
@@ -929,8 +935,24 @@ FileSegmentsHolder::~FileSegmentsHolder()
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
 
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
         file_segment_it = completeAndPopFrontImpl();
+}
+
+FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
+{
+    front().complete();
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
+    return file_segments.erase(file_segments.begin());
+}
+
+FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)
+{
+    file_segments.push_back(file_segment);
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments);
+    return *file_segments.back();
 }
 
 String FileSegmentsHolder::toString()

@@ -35,9 +35,10 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     ~MergeTreeIndexGranuleSet() override = default;
 
-    String index_name;
-    size_t max_rows;
-    Block index_sample_block;
+    const String index_name;
+    const size_t max_rows;
+    const Block index_sample_block;
+
     Block block;
 };
 

@@ -475,6 +475,27 @@ void FourLetterWordCommand::execute(const ASTKeeperQuery * query, KeeperClient *
     std::cout << client->executeFourLetterCommand(query->args[0].safeGet<String>()) << "\n";
 }
 
+bool GetDirectChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String path;
+    if (!parseKeeperPath(pos, expected, path))
+        path = ".";
+
+    node->args.push_back(std::move(path));
+
+    return true;
+}
+
+void GetDirectChildrenNumberCommand::execute(const ASTKeeperQuery * query, KeeperClient * client) const
+{
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+
+    Coordination::Stat stat;
+    client->zookeeper->get(path, &stat);
+
+    std::cout << stat.numChildren << "\n";
+}
+
 bool GetAllChildrenNumberCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;

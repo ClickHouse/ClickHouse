@@ -159,8 +159,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         return { file_segment };
     }
 
-    const auto & file_segments = *locked_key.getKeyMetadata();
-    if (file_segments.empty())
+    if (locked_key.empty())
         return {};
 
     FileSegments result;
@@ -187,6 +186,7 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
         return true;
     };
 
+    const auto & file_segments = locked_key;
     auto segment_it = file_segments.lower_bound(range.left);
     if (segment_it == file_segments.end())
     {
@@ -594,7 +594,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
     auto file_segment = std::make_shared<FileSegment>(key, offset, size, result_state, settings, background_download_threads > 0, this, locked_key.getKeyMetadata());
     auto file_segment_metadata = std::make_shared<FileSegmentMetadata>(std::move(file_segment));
 
-    auto [file_segment_metadata_it, inserted] = locked_key.getKeyMetadata()->emplace(offset, file_segment_metadata);
+    auto [file_segment_metadata_it, inserted] = locked_key.emplace(offset, file_segment_metadata);
     if (!inserted)
     {
         throw Exception(
@@ -886,7 +886,7 @@ void FileCache::loadMetadata()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLoadMetadataMicroseconds);
 
-    if (!metadata.empty())
+    if (!metadata.isEmpty())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1093,7 +1093,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                                                                       key_metadata,
                                                                       cache_it);
 
-                    inserted = key_metadata->emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                    inserted = key_metadata->emplaceUnlocked(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
                 }
                 catch (...)
                 {
@@ -1124,8 +1124,10 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
             }
         }
 
-        if (key_metadata->empty())
+        if (key_metadata->sizeUnlocked() == 0)
+        {
             metadata.removeKey(key, false, false);
+        }
     }
 }
 
@@ -1170,7 +1172,7 @@ FileSegments FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
-    for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
+    for (const auto & [_, file_segment_metadata] : *locked_key)
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
     return file_segments;
 }
@@ -1199,7 +1201,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
     std::vector<String> cache_paths;
 
-    for (const auto & [offset, file_segment_metadata] : *locked_key->getKeyMetadata())
+    for (const auto & [offset, file_segment_metadata] : *locked_key)
     {
         if (file_segment_metadata->file_segment->state() == FileSegment::State::DOWNLOADED)
             cache_paths.push_back(metadata.getPathForFileSegment(key, offset, file_segment_metadata->file_segment->getKind()));

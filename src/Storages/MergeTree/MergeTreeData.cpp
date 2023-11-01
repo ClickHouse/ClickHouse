@@ -1,56 +1,57 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Utils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Common/escapeForFileName.h>
+#include <Common/Config/ConfigHelper.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>
-#include <Common/noexcept_scope.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/Config/ConfigHelper.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/typeid_cast.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/hasNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/ObjectUtils.h>
-#include <Disks/createVolume.h>
+#include <DataTypes/hasNullable.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/createVolume.h>
 #include <Functions/IFunction.h>
+#include <IO/Operators.h>
+#include <IO/S3Common.h>
+#include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/Context_fwd.h>
-#include <IO/S3Common.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/SharedThreadPools.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -64,24 +65,24 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTQueryParameter.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/Freeze.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -96,6 +97,7 @@
 #include <iomanip>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <thread>
 #include <typeinfo>
@@ -1382,6 +1384,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     if (to_state == DataPartState::Active)
         addPartContributionToDataVolume(res.part);
+
+    if (res.part->hasLightweightDelete())
+        has_lightweight_delete_parts.store(true);
 
     LOG_TRACE(log, "Finished loading {} part {} on disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
     return res;
@@ -2964,9 +2969,11 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     NamesAndTypesList columns_to_check_conversion;
 
+    auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
+        checkDropCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
         {
@@ -3915,23 +3922,17 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         return;
     }
 
+    /// Let's restore some parts covered by unexpected to avoid partial data
     if (restore_covered)
     {
         Strings restored;
-        bool error = false;
-        String error_parts;
-
-        Int64 pos = part->info.min_block;
+        Strings error_parts;
 
         auto is_appropriate_state = [] (DataPartState state)
         {
-            return state == DataPartState::Active || state == DataPartState::Outdated;
-        };
-
-        auto update_error = [&] (DataPartIteratorByInfo it)
-        {
-            error = true;
-            error_parts += (*it)->getNameWithState() + " ";
+            if (state != DataPartState::Outdated)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part from unexpected state: {}", state);
+            return true;
         };
 
         auto activate_part = [this, &restored_active_part](auto it)
@@ -3951,68 +3952,90 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
             restored_active_part = true;
         };
 
-        auto it_middle = data_parts_by_info.lower_bound(part->info);
+        /// ActiveDataPartSet allows to restore most top-level parts instead of unexpected.
+        /// It can be important in case of assigned merges. If unexpected part is result of some
+        /// finished, but not committed merge then we should restore (at least try to restore)
+        /// closest ancestors for the unexpected part to be able to execute it.
+        /// However it's not guaranteed because outdated parts can intersect
+        ActiveDataPartSet parts_for_replacement(format_version);
+        auto range = getDataPartsPartitionRange(part->info.partition_id);
+        DataPartsVector parts_candidates(range.begin(), range.end());
 
-        /// Restore the leftmost part covered by the part
-        if (it_middle != data_parts_by_info.begin())
+        /// In case of intersecting outdated parts we want to add bigger parts (with higher level) first
+        auto comparator = [] (const DataPartPtr left, const DataPartPtr right) -> bool
         {
-            auto it = std::prev(it_middle);
-
-            if (part->contains(**it) && is_appropriate_state((*it)->getState()))
-            {
-                /// Maybe, we must consider part level somehow
-                if ((*it)->info.min_block != part->info.min_block)
-                    update_error(it);
-
-                if ((*it)->getState() != DataPartState::Active)
-                    activate_part(it);
-
-                pos = (*it)->info.max_block + 1;
-                restored.push_back((*it)->name);
-            }
-            else if ((*it)->info.partition_id == part->info.partition_id)
-                update_error(it);
+            if (left->info.level < right->info.level)
+                return true;
+            else if (left->info.level > right->info.level)
+                return false;
             else
-                error = true;
+                return left->info.mutation < right->info.mutation;
+        };
+        std::sort(parts_candidates.begin(), parts_candidates.end(), comparator);
+        /// From larger to smaller parts
+        for (const auto & part_candidate_in_partition : parts_candidates | std::views::reverse)
+        {
+            if (part->info.contains(part_candidate_in_partition->info)
+                && is_appropriate_state(part_candidate_in_partition->getState()))
+            {
+                String out_reason;
+                /// Outdated parts can itersect legally (because of DROP_PART) here it's okay, we
+                /// are trying to do out best to restore covered parts.
+                auto outcome = parts_for_replacement.tryAddPart(part_candidate_in_partition->info, &out_reason);
+                if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
+                {
+                    error_parts.push_back(part->name);
+                    LOG_ERROR(log, "Failed to restore part {}, because of intersection reason '{}'", part->name, out_reason);
+                }
+            }
+        }
+
+        if (parts_for_replacement.size() > 0)
+        {
+            std::vector<std::pair<uint64_t, uint64_t>> holes_list;
+            /// Most part of the code below is just to write pretty message
+            auto part_infos = parts_for_replacement.getPartInfos();
+            int64_t current_right_block = part_infos[0].min_block;
+            for (const auto & top_level_part_to_replace : part_infos)
+            {
+                auto data_part_it = data_parts_by_info.find(top_level_part_to_replace);
+                if (data_part_it == data_parts_by_info.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find part {} in own set", top_level_part_to_replace.getPartNameForLogs());
+                activate_part(data_part_it);
+                restored.push_back((*data_part_it)->name);
+                if (top_level_part_to_replace.min_block - current_right_block > 1)
+                    holes_list.emplace_back(current_right_block, top_level_part_to_replace.min_block);
+                current_right_block = top_level_part_to_replace.max_block;
+            }
+            if (part->info.max_block != current_right_block)
+                holes_list.emplace_back(current_right_block, part->info.max_block);
+
+            for (const String & name : restored)
+                LOG_INFO(log, "Activated part {} in place of unexpected {}", name, part->name);
+
+            if (!error_parts.empty() || !holes_list.empty())
+            {
+                std::string error_parts_message, holes_list_message;
+                if (!error_parts.empty())
+                    error_parts_message = fmt::format(" Parts failed to restore because of intersection: [{}]", fmt::join(error_parts, ", "));
+                if (!holes_list.empty())
+                {
+                    if (!error_parts.empty())
+                        holes_list_message = ".";
+
+                    Strings holes_list_pairs;
+                    for (const auto & [left_side, right_side] : holes_list)
+                        holes_list_pairs.push_back(fmt::format("({}, {})", left_side + 1, right_side - 1));
+                    holes_list_message += fmt::format(" Block ranges failed to restore: [{}]", fmt::join(holes_list_pairs, ", "));
+                }
+                LOG_WARNING(log, "The set of parts restored in place of {} looks incomplete. "
+                                 "SELECT queries may observe gaps in data until this replica is synchronized with other replicas.{}{}",
+                            part->name, error_parts_message, holes_list_message);
+            }
         }
         else
-            error = true;
-
-        /// Restore "right" parts
-        for (auto it = it_middle; it != data_parts_by_info.end() && part->contains(**it); ++it)
         {
-            if ((*it)->info.min_block < pos)
-                continue;
-
-            if (!is_appropriate_state((*it)->getState()))
-            {
-                update_error(it);
-                continue;
-            }
-
-            if ((*it)->info.min_block > pos)
-                update_error(it);
-
-            if ((*it)->getState() != DataPartState::Active)
-                activate_part(it);
-
-            pos = (*it)->info.max_block + 1;
-            restored.push_back((*it)->name);
-        }
-
-        if (pos != part->info.max_block + 1)
-            error = true;
-
-        for (const String & name : restored)
-        {
-            LOG_INFO(log, "Activated part {}", name);
-        }
-
-        if (error)
-        {
-            LOG_WARNING(log, "The set of parts restored in place of {} looks incomplete. "
-                             "SELECT queries may observe gaps in data until this replica is synchronized with other replicas.{}",
-                        part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
+            LOG_INFO(log, "Don't find any parts for replacement instead of unexpected {}", part->name);
         }
     }
 
@@ -4306,7 +4329,7 @@ void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const Cont
     if (!num_mutations_to_delay && !num_mutations_to_throw)
         return;
 
-    size_t num_unfinished_mutations = getNumberOfUnfinishedMutations();
+    size_t num_unfinished_mutations = getUnfinishedMutationCommands().size();
     if (num_mutations_to_throw && num_unfinished_mutations >= num_mutations_to_throw)
     {
         ProfileEvents::increment(ProfileEvents::RejectedMutations);
@@ -6647,10 +6670,26 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     return res;
 }
 
+ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select)
+{
+    const auto & analysis_result = select.getAnalysisResult();
+    const auto & before_where = analysis_result.before_where;
+    const auto & where_column_name = analysis_result.where_column_name;
+
+    ActionDAGNodes filter_nodes;
+    if (auto additional_filter_info = select.getAdditionalQueryInfo())
+        filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+
+    if (before_where)
+        filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+
+    return filter_nodes;
+}
+
 QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
     if (query_context->getClientInfo().collaborate_with_initiator)
@@ -6659,12 +6698,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     /// Parallel replicas
     if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
     {
-        if (!canUseParallelReplicasBasedOnPKAnalysis(query_context, storage_snapshot, query_info))
-        {
-            query_info.parallel_replicas_disabled = true;
-            return QueryProcessingStage::Enum::FetchColumns;
-        }
-
         /// ReplicatedMergeTree
         if (supportsReplication())
             return QueryProcessingStage::Enum::WithMergeableState;
@@ -6683,10 +6716,11 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 }
 
 
-bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
+UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info) const
+    const SelectQueryInfo & query_info,
+    const ActionDAGNodes & added_filter_nodes) const
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
@@ -6699,23 +6733,14 @@ bool MergeTreeData::canUseParallelReplicasBasedOnPKAnalysis(
         storage_snapshot->metadata,
         storage_snapshot->metadata,
         query_info,
-        /*added_filter_nodes*/ActionDAGNodes{},
+        added_filter_nodes,
         query_context,
         query_context->getSettingsRef().max_threads);
 
-    if (result_ptr->error())
-        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
-
-    LOG_TRACE(log, "Estimated number of granules to read is {}", result_ptr->marks());
-
-    bool decision = result_ptr->marks() >= query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable;
-
-    if (!decision)
-        LOG_DEBUG(log, "Parallel replicas will be disabled, because the estimated number of granules to read {} is less than the threshold which is {}",
-            result_ptr->marks(),
-            query_context->getSettingsRef().parallel_replicas_min_number_of_granules_to_enable);
-
-    return decision;
+    UInt64 total_rows = result_ptr->rows();
+    if (query_info.limit > 0 && query_info.limit < total_rows)
+        total_rows = query_info.limit;
+    return total_rows;
 }
 
 void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
@@ -7582,6 +7607,70 @@ bool MergeTreeData::canUsePolymorphicParts() const
 {
     String unused;
     return canUsePolymorphicParts(*getSettings(), unused);
+}
+
+
+void MergeTreeData::checkDropCommandDoesntAffectInProgressMutations(const AlterCommand & command, const std::map<std::string, MutationCommands> & unfinished_mutations, ContextPtr local_context) const
+{
+    if (!command.isDropSomething() || unfinished_mutations.empty())
+        return;
+
+    auto throw_exception = [] (
+        const std::string & mutation_name,
+        const std::string & entity_name,
+        const std::string & identifier_name)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot drop {} {} because it's affected by mutation with ID '{}' which is not finished yet. "
+            "Wait this mutation, or KILL it with command "
+            "\"KILL MUTATION WHERE mutation_id = '{}'\"",
+            entity_name,
+            backQuoteIfNeed(identifier_name),
+            mutation_name,
+            mutation_name);
+    };
+
+    for (const auto & [mutation_name, commands] : unfinished_mutations)
+    {
+        for (const MutationCommand & mutation_command : commands)
+        {
+            if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
+            {
+                throw_exception(mutation_name, "index", command.index_name);
+            }
+            else if (command.type == AlterCommand::DROP_PROJECTION
+                     && mutation_command.projection_name == command.projection_name)
+            {
+                throw_exception(mutation_name, "projection", command.projection_name);
+            }
+            else if (command.type == AlterCommand::DROP_COLUMN)
+            {
+                if (mutation_command.column_name == command.column_name)
+                    throw_exception(mutation_name, "column", command.column_name);
+
+                if (mutation_command.predicate)
+                {
+                    auto query_tree = buildQueryTree(mutation_command.predicate, local_context);
+                    auto identifiers = collectIdentifiersFullNames(query_tree);
+
+                    if (identifiers.contains(command.column_name))
+                        throw_exception(mutation_name, "column", command.column_name);
+                }
+
+                for (const auto & [name, expr] : mutation_command.column_to_update_expression)
+                {
+                    if (name == command.column_name)
+                        throw_exception(mutation_name, "column", command.column_name);
+
+                    auto query_tree = buildQueryTree(expr, local_context);
+                    auto identifiers = collectIdentifiersFullNames(query_tree);
+                    if (identifiers.contains(command.column_name))
+                        throw_exception(mutation_name, "column", command.column_name);
+                }
+            }
+        }
+    }
 }
 
 bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String & out_reason) const

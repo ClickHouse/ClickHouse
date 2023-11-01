@@ -83,4 +83,8 @@ void replaceColumns(QueryTreeNodePtr & node,
     const QueryTreeNodePtr & table_expression_node,
     const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node);
 
+
+/// Just collect all identifiers from query tree
+NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
+
 }
