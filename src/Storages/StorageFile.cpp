@@ -1277,7 +1277,7 @@ public:
                 /// If input format do not support subcolumns by itself.
                 /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
                 /// from chunk read by IInputFormat.
-                if (!storage->supportsSubcolumns())
+                if (!storage->supportsSubsetOfSubcolumns(context))
                 {
                     builder.addSimpleTransform([&](const Block & header)
                                                { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });

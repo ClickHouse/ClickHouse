@@ -381,7 +381,7 @@ StorageURLSource::StorageURLSource(
         /// If input format do not support subcolumns by itself.
         /// ExtractColumnsTransform is needed to extract requested columns/subcolumns
         /// from chunk read by IInputFormat.
-        if (storage->supportsSubsetOfSubcolumns(getContext()))
+        if (!storage->supportsSubsetOfSubcolumns(getContext()))
         {
             builder.addSimpleTransform([&](const Block & header)
                                        { return std::make_shared<ExtractColumnsTransform>(header, requested_columns); });
