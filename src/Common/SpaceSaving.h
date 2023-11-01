@@ -96,7 +96,7 @@ public:
 
         void write(WriteBuffer & wb) const
         {
-            if constexpr(std::is_same_v<TKey, StringRef>)
+            if constexpr (std::is_same_v<TKey, StringRef>)
                 writeBinary(key, wb);
             else
                 writeBinaryLittleEndian(key, wb);
@@ -106,7 +106,7 @@ public:
 
         void read(ReadBuffer & rb)
         {
-            if constexpr(std::is_same_v<TKey, StringRef>)
+            if constexpr (std::is_same_v<TKey, StringRef>)
                 readBinary(key, rb);
             else
                 readBinaryLittleEndian(key, rb);
