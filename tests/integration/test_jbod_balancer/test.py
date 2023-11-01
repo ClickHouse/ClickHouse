@@ -8,7 +8,7 @@ from multiprocessing.dummy import Pool
 
 import pytest
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -67,13 +67,30 @@ def check_balance(node, table):
                 partition, disk_name
         )
         GROUP BY partition
-        HAVING gini < 0.2
+        HAVING gini < 0.1
         """.format(
             table
         )
     ).splitlines()
 
     assert set(partitions) == set(["0", "1"])
+
+
+def wait_until_fully_merged(node, table):
+    for i in range(20):
+        # Wait in-flight merges to finish
+        merges_count_query = (
+            f"select count() from system.merges where table = '{table}'"
+        )
+        assert_eq_with_retry(node, merges_count_query, "0\n", retry_count=20)
+
+        # Check if we can assign new merges
+        try:
+            node.query(f"optimize table {table} settings optimize_throw_if_noop = 1")
+        except:
+            return
+
+    raise Exception(f"There are still merges on-going after {retry} assignments")
 
 
 def test_jbod_balanced_merge(start_cluster):
@@ -110,7 +127,7 @@ def test_jbod_balanced_merge(start_cluster):
 
         p.map(task, range(200))
 
-        time.sleep(1)
+        wait_until_fully_merged(node1, "tbl")
 
         check_balance(node1, "tbl")
 
@@ -182,6 +199,8 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             )
 
         p.map(task, range(200))
+
+        wait_until_fully_merged(node1, "tbl")
 
         node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
