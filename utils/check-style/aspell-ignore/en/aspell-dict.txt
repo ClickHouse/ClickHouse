@@ -590,6 +590,7 @@ OSGuestTimeNormalized
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
+OSIOWaitMicroseconds
 OSIdleTime
 OSIdleTimeCPU
 OSIdleTimeNormalized
@@ -2360,6 +2361,7 @@ symlinks
 syntaxes
 syscall
 syscalls
+sysctl
 syslog
 syslogd
 systemd
