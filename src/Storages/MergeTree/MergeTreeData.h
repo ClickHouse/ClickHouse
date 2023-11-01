@@ -465,7 +465,7 @@ public:
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
-    void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> parts_can_be_restored);
+    void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
     String getLogName() const { return *std::atomic_load(&log_name); }
 
