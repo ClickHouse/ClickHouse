@@ -83,9 +83,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/MergeTreeDataPartDistinctPartitionExpressionCloner.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/MergeTreeDataPartCloner.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -6944,7 +6942,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
-    MergeTreeDataPartCloner part_cloner {
+    return MergeTreeDataPartCloner::clone(
         this,
         src_part,
         metadata_snapshot,
@@ -6954,19 +6952,18 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         params,
         read_settings,
         write_settings
-    };
-
-    return part_cloner.clone();
+    );
 }
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-        const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
-        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-        const IDataPartStorage::ClonePartParams & params, const ReadSettings & read_settings,
-        const WriteSettings & write_settings)
+    const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
+    const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
+    const IDataPartStorage::ClonePartParams & params, const ReadSettings & read_settings,
+    const WriteSettings & write_settings
+)
 {
-    MergeTreeDataPartDistinctPartitionExpressionCloner part_cloner {
+    return MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
         this,
         src_part,
         metadata_snapshot,
@@ -6978,9 +6975,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         new_min_max_index,
         false,
         params
-    };
-
-    return part_cloner.clone();
+    );
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const

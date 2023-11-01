@@ -4,69 +4,98 @@
 
 namespace DB
 {
-    /*
-     * Clones a source partition into a destination partition. This class was extracted from MergeTreeData::cloneAndLoadDataPartOnSameDisk
-     * as an attempt to make it a bit more readable and allow part of the code to be re-used. Reference method can be found in:
-     * https://github.com/ClickHouse/ClickHouse/blob/ee515b8862a9be0c940ffdef0a56e590b5facdb2/src/Storages/MergeTree/MergeTreeData.cpp#L5948.
-     * */
-    class MergeTreeDataPartCloner
-    {
-    public:
-        using DataPart = IMergeTreeDataPart;
-        using MutableDataPartPtr = std::shared_ptr<DataPart>;
-        using DataPartPtr = std::shared_ptr<const DataPart>;
 
-        MergeTreeDataPartCloner(
-            MergeTreeData * merge_tree_data,
-            const DataPartPtr & src_part,
-            const StorageMetadataPtr & metadata_snapshot,
-            const MergeTreePartInfo & dst_part_info,
-            const String & tmp_part_prefix,
-            bool require_part_metadata,
-            const IDataPartStorage::ClonePartParams & params,
-            const ReadSettings & read_settings,
-            const WriteSettings & write_settings
-        );
+class MergeTreeDataPartCloner
+{
+public:
 
-        virtual ~MergeTreeDataPartCloner() = default;
+    using DataPart = IMergeTreeDataPart;
+    using MutableDataPartPtr = std::shared_ptr<DataPart>;
+    using DataPartPtr = std::shared_ptr<const DataPart>;
 
-        std::pair<MutableDataPartPtr, scope_guard> clone();
+    static std::pair<MutableDataPartPtr, scope_guard> clone(
+        MergeTreeData * merge_tree_data,
+        const DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & dst_part_info,
+        const String & tmp_part_prefix,
+        bool require_part_metadata,
+        const IDataPartStorage::ClonePartParams & params,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings
+    );
 
-    protected:
-        MergeTreeData * merge_tree_data;
-        const DataPartPtr & src_part;
-        const StorageMetadataPtr & metadata_snapshot;
+    static std::pair<MutableDataPartPtr, scope_guard> cloneWithDistinctPartitionExpression(
+        MergeTreeData * merge_tree_data,
+        const DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & dst_part_info,
+        const String & tmp_part_prefix,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const MergeTreePartition & new_partition,
+        const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
+        bool sync_new_files,
+        const IDataPartStorage::ClonePartParams & params
+    );
 
-        virtual MergeTreeData::MutableDataPartPtr finalizePart(const MutableDataPartPtr & dst_part) const;
+private:
+    /// Check that the storage policy contains the disk where the src_part is located.
+    static bool doesStoragePolicyAllowSameDisk(
+        MergeTreeData * merge_tree_data,
+        const MergeTreeData::DataPartPtr & src_part
+    );
 
-    private:
-        const MergeTreePartInfo & dst_part_info;
-        const String & tmp_part_prefix;
-        bool require_part_metadata;
-        const IDataPartStorage::ClonePartParams & params;
-        const ReadSettings & read_settings;
-        const WriteSettings & write_settings;
-        std::atomic<Poco::Logger *> log;
+    static std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
+        MergeTreeData * merge_tree_data,
+        const MergeTreeData::DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & dst_part_info,
+        const String & tmp_part_prefix,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const DB::IDataPartStorage::ClonePartParams & params
+    );
 
-        /// Check that the storage policy contains the disk where the src_part is located.
-        bool doesStoragePolicyAllowSameDisk() const;
+    static void reserveSpaceOnDisk(const MergeTreeData::DataPartPtr & src_part);
 
-        void reserveSpaceOnDisk() const;
+    /// If source part is in memory, flush it to disk and clone it already in on-disk format
+    static DataPartStoragePtr flushPartStorageToDiskIfInMemory(
+        MergeTreeData * merge_tree_data,
+        const MergeTreeData::DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & tmp_part_prefix,
+        const String & tmp_dst_part_name,
+        scope_guard & src_flushed_tmp_dir_lock,
+        MergeTreeData::MutableDataPartPtr src_flushed_tmp_part
+    );
 
-        std::shared_ptr<IDataPartStorage> hardlinkAllFiles(const DataPartStoragePtr & storage, const String & path) const;
+    static std::shared_ptr<IDataPartStorage> hardlinkAllFiles(
+        MergeTreeData * merge_tree_data,
+        const DB::ReadSettings & read_settings,
+        const DB::WriteSettings & write_settings,
+        const DataPartStoragePtr & storage,
+        const String & path,
+        const DB::IDataPartStorage::ClonePartParams & params
+    );
 
-        /// If source part is in memory, flush it to disk and clone it already in on-disk format
-        DataPartStoragePtr flushPartStorageToDiskIfInMemory(
-            const String & tmp_dst_part_name,
-            scope_guard & src_flushed_tmp_dir_lock,
-            MergeTreeData::MutableDataPartPtr src_flushed_tmp_part
-        ) const;
+    static void handleHardLinkedParameterFiles(
+        const MergeTreeData::DataPartPtr & src_part,
+        const DB::IDataPartStorage::ClonePartParams & params
+    );
 
-        std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart() const;
+    static void handleProjections(
+        const MergeTreeData::DataPartPtr & src_part,
+        const DB::IDataPartStorage::ClonePartParams & params
+    );
 
-        void handleHardLinkedParameterFiles() const;
+    static MergeTreeData::MutableDataPartPtr finalizePart(
+        const MutableDataPartPtr & dst_part,
+        const DB::IDataPartStorage::ClonePartParams & params,
+        bool require_part_metadata
+    );
 
-        void handleProjections() const;
+    static Poco::Logger * log;
+};
 
-    };
 }
