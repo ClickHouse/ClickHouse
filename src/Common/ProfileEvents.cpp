@@ -415,7 +415,6 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time") \
     M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time") \
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time") \
-    M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state") \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache") \
     M(FileSegmentLockMicroseconds, "Lock file segment time") \
