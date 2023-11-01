@@ -775,7 +775,7 @@ static const orc::Type * traverseDownORCTypeByName(
             const auto * orc_field_type = getORCTypeByName(*orc_nested_type, split.first, ignore_case);
             if (orc_field_type)
             {
-                /// Avoid inconsistency between CH and ORC type brought by flattened Nested type.
+                /// Adjust CH type to avoid inconsistency between CH and ORC type brought by flattened Nested type.
                 type = array_type->getNestedType();
                 return traverseDownORCTypeByName(split.second, orc_field_type, type, ignore_case);
             }
@@ -883,25 +883,15 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.orc.case_insensitive_column_matching);
 
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
-
     const auto & header = getPort().getHeader();
     const auto & file_schema = file_reader->getType();
     std::unordered_set<UInt64> include_typeids;
     for (const auto & column : header)
     {
-        auto split = Nested::splitName(column.name);
-        if (split.second.empty())
-        {
-            const auto * orc_type = getORCTypeByName(file_schema, column.name, ignore_case);
-            updateIncludeTypeIds(column.type, orc_type, ignore_case, include_typeids);
-        }
-        else
-        {
-            auto type = column.type;
-            const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, type, ignore_case);
-            if (orc_type)
-                updateIncludeTypeIds(type, orc_type, ignore_case, include_typeids);
-        }
+        auto adjusted_type = column.type;
+        const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, adjusted_type, ignore_case);
+        if (orc_type)
+            updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids);
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
