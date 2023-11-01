@@ -100,11 +100,11 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool case_insensitive_column_matching)
+static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
 {
     for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
         if (boost::equals(schema.getFieldName(i), name)
-            || (case_insensitive_column_matching && boost::iequals(schema.getFieldName(i), name)))
+            || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
             return schema.getSubtype(i);
     return nullptr;
 }
@@ -690,10 +690,10 @@ static std::string toDotColumnPath(const std::vector<std::string> & columns)
     return column_path.substr(0, column_path.length() - 1);
 }
 
-static void buildORCTypeNameIdMap(
+[[maybe_unused]] static void buildORCTypeNameIdMap(
     const orc::Type * orc_type,
     std::vector<std::string> & columns,
-    bool case_insensitive_column_matching,
+    bool ignore_case,
     std::map<UInt64, const orc::Type *> & id_type_map,
     std::map<std::string, UInt64> & name_id_map)
 {
@@ -705,10 +705,10 @@ static void buildORCTypeNameIdMap(
             const std::string & field_name = orc_type->getFieldName(i);
             columns.push_back(field_name);
             auto column_path = toDotColumnPath(columns);
-            if (case_insensitive_column_matching)
+            if (ignore_case)
                 boost::to_lower(column_path);
             name_id_map[column_path] = orc_type->getSubtype(i)->getColumnId();
-            buildORCTypeNameIdMap(orc_type->getSubtype(i), columns, case_insensitive_column_matching, id_type_map, name_id_map);
+            buildORCTypeNameIdMap(orc_type->getSubtype(i), columns, ignore_case, id_type_map, name_id_map);
             columns.pop_back();
         }
     }
@@ -716,7 +716,7 @@ static void buildORCTypeNameIdMap(
     {
         // other non-primitive type
         for (size_t j = 0; j < orc_type->getSubtypeCount(); ++j)
-            buildORCTypeNameIdMap(orc_type->getSubtype(j), columns, case_insensitive_column_matching, id_type_map, name_id_map);
+            buildORCTypeNameIdMap(orc_type->getSubtype(j), columns, ignore_case, id_type_map, name_id_map);
     }
 }
 
@@ -747,10 +747,54 @@ static void getFileReaderAndSchema(
     }
 }
 
-static void updateIncludeTypeIds(
-    DataTypePtr type, const orc::Type * orc_type, bool case_insensitive_column_matching, std::unordered_set<UInt64> & include_typeids)
+static const orc::Type * traverseDownORCTypeByName(
+    const std::string & target,
+    const orc::Type * orc_type,
+    DataTypePtr & type,
+    bool ignore_case)
 {
-    /// Primitive types
+    // std::cout << "target:" << target << ", orc_type:" << orc_type->toString() << ", type:" << type->getName() << std::endl;
+    if (target.empty())
+        return orc_type;
+
+    auto split = Nested::splitName(target);
+    if (orc::STRUCT == orc_type->getKind())
+    {
+        const auto * orc_field_type = getORCTypeByName(*orc_type, split.first, ignore_case);
+        return orc_field_type ? traverseDownORCTypeByName(split.second, orc_field_type, type, ignore_case) : nullptr;
+    }
+    else if (orc::LIST == orc_type->getKind())
+    {
+        /// For cases in which header contains subcolumns flattened from nested columns.
+        /// For example, "a Nested(x String, y Int64)" is flattened to "a.x Array(String), a.y Array(Int64)", and orc file schema is still "a array<struct<x string, y long>>".
+        /// In this case, we should skip possible array type and traverse down to its nested struct type.
+        const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(type).get());
+        const auto * orc_nested_type = orc_type->getSubtype(0);
+        if (array_type && orc::STRUCT == orc_nested_type->getKind())
+        {
+            const auto * orc_field_type = getORCTypeByName(*orc_nested_type, split.first, ignore_case);
+            if (orc_field_type)
+            {
+                /// Avoid inconsistency between CH and ORC type brought by flattened Nested type.
+                type = array_type->getNestedType();
+                return traverseDownORCTypeByName(split.second, orc_field_type, type, ignore_case);
+            }
+            else
+                return nullptr;
+        }
+        else
+            return nullptr;
+    }
+    else
+        return nullptr;
+}
+
+static void updateIncludeTypeIds(
+    DataTypePtr type, const orc::Type * orc_type, bool ignore_case, std::unordered_set<UInt64> & include_typeids)
+{
+    // std::cout << "ch type:" << type->getName() << ", orc_type:" << orc_type->toString() << std::endl;
+
+    /// For primitive types, directly append column id into result
     if (orc_type->getSubtypeCount() == 0)
     {
         include_typeids.insert(orc_type->getColumnId());
@@ -765,7 +809,7 @@ static void updateIncludeTypeIds(
             if (array_type)
             {
                 updateIncludeTypeIds(
-                    array_type->getNestedType(), orc_type->getSubtype(0), case_insensitive_column_matching, include_typeids);
+                    array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
             }
             return;
         }
@@ -773,8 +817,8 @@ static void updateIncludeTypeIds(
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
             if (map_type)
             {
-                updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), case_insensitive_column_matching, include_typeids);
-                updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), case_insensitive_column_matching, include_typeids);
+                updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids);
+                updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids);
             }
             return;
         }
@@ -791,12 +835,12 @@ static void updateIncludeTypeIds(
                         for (size_t struct_i = 0; struct_i < orc_type->getSubtypeCount(); ++struct_i)
                         {
                             if (boost::equals(orc_type->getFieldName(struct_i), name)
-                                || (case_insensitive_column_matching && boost::iequals(orc_type->getFieldName(struct_i), name)))
+                                || (ignore_case && boost::iequals(orc_type->getFieldName(struct_i), name)))
                             {
                                 updateIncludeTypeIds(
                                     tuple_type->getElement(tuple_i),
                                     orc_type->getSubtype(struct_i),
-                                    case_insensitive_column_matching,
+                                    ignore_case,
                                     include_typeids);
                                 break;
                             }
@@ -807,7 +851,7 @@ static void updateIncludeTypeIds(
                 {
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
                         updateIncludeTypeIds(
-                            tuple_type->getElement(i), orc_type->getSubtype(i), case_insensitive_column_matching, include_typeids);
+                            tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
                 }
             }
             return;
@@ -838,39 +882,46 @@ void NativeORCBlockInputFormat::prepareFileReader()
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching);
 
-
     const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
-    std::vector<std::string> columns;
-    std::map<UInt64, const orc::Type *> id_type_map;
-    std::map<std::string, UInt64> name_id_map;
-    buildORCTypeNameIdMap(&file_reader->getType(), columns, ignore_case, id_type_map, name_id_map);
-
-    // std::cout << "subtypes:" << file_reader->getType().getSubtypeCount() << std::endl;
-    // std::cout << "id type map" << std::endl;
-    // for (const auto & [k, v]: id_type_map)
-        // std::cout << "id:" << k << ", type:" << v->toString() << std::endl;
-    // std::cout << "name id map" << std::endl;
-    // for (const auto & [k, v]: name_id_map)
-        // std::cout << "name:" << k << ", id:" << v << std::endl;
 
     const auto & header = getPort().getHeader();
+    const auto & file_schema = file_reader->getType();
     std::unordered_set<UInt64> include_typeids;
     for (const auto & column : header)
     {
-        auto name = column.name;
-        if (ignore_case)
-            boost::to_lower(name);
-
-        if (name_id_map.contains(name))
+        auto split = Nested::splitName(column.name);
+        if (split.second.empty())
         {
-            auto id = name_id_map[name];
-            if (id_type_map.contains(id))
-            {
-                updateIncludeTypeIds(column.type, id_type_map[id], ignore_case, include_typeids);
-            }
+            const auto * orc_type = getORCTypeByName(file_schema, column.name, ignore_case);
+            updateIncludeTypeIds(column.type, orc_type, ignore_case, include_typeids);
+        }
+        else
+        {
+            auto type = column.type;
+            const auto * orc_type = traverseDownORCTypeByName(column.name, &file_schema, type, ignore_case);
+            if (orc_type)
+                updateIncludeTypeIds(type, orc_type, ignore_case, include_typeids);
         }
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
+
+    /// Just for Debug
+    // std::vector<std::string> tmp;
+    // std::map<UInt64, const orc::Type *> id_type_map;
+    // std::map<std::string, UInt64> name_id_map;
+    // buildORCTypeNameIdMap(&file_schema, tmp, ignore_case, id_type_map, name_id_map);
+    // std::cout << "just for debug:" << std::endl;
+    // std::cout << "subtypes:" << file_reader->getType().getSubtypeCount() << std::endl;
+    // std::cout << "ch output type:" << getPort().getHeader().dumpStructure() << std::endl;
+    // std::cout << "orc ouput type:" << file_reader->getType().toString() << std::endl;
+    // std::cout << "id type map" << std::endl;
+    // for (const auto & [k, v] : id_type_map)
+    //     std::cout << "id:" << k << ", type:" << v->toString() << std::endl;
+    // std::cout << "name id map" << std::endl;
+    // for (const auto & [k, v] : name_id_map)
+    //     std::cout << "name:" << k << ", id:" << v << std::endl;
+    // for (const auto & x : include_indices)
+    //     std::cout << "choose " << x << std::endl;
 
     if (format_settings.orc.filter_push_down && key_condition && !sarg)
     {
@@ -951,7 +1002,6 @@ Chunk NativeORCBlockInputFormat::generate()
     Chunk res;
     size_t num_rows = batch->numElements;
     const auto & schema = stripe_reader->getSelectedType();
-    // std::cout << "output schema:" << schema.toString() << std::endl;
     orc_column_to_ch_column->orcTableToCHChunk(res, &schema, batch.get(), num_rows, &block_missing_values);
 
     approx_bytes_read_for_chunk = num_rows * current_stripe_info->getLength() / current_stripe_info->getNumberOfRows();
