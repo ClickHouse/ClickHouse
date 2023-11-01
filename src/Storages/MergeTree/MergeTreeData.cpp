@@ -4679,10 +4679,76 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
     size_t fields_count = key_sample_block.columns();
-    if (partition_ast.fields_count != fields_count)
+
+
+    size_t partition_ast_fields_count = 0;
+    ASTPtr partition_value_ast = partition_ast.value->clone();
+    if (!partition_ast.fields_count.has_value())
+    {
+        if (partition_value_ast->as<ASTLiteral>())
+        {
+            partition_ast_fields_count = 1;
+        }
+        else if (const auto * tuple_ast = partition_value_ast->as<ASTFunction>())
+        {
+            if (tuple_ast->name != "tuple")
+            {
+                if (isFunctionCast(tuple_ast))
+                {
+                    if (tuple_ast->arguments->as<ASTExpressionList>()->children.empty())
+                    {
+                        throw Exception(
+                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+                    }
+                    auto first_arg = tuple_ast->arguments->as<ASTExpressionList>()->children.at(0);
+                    if (const auto * inner_tuple = first_arg->as<ASTFunction>(); inner_tuple && inner_tuple->name == "tuple")
+                    {
+                        const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                        if (arguments_ast)
+                            partition_ast_fields_count = arguments_ast->children.size();
+                        else
+                            partition_ast_fields_count = 0;
+                    }
+                    else if (const auto * inner_literal_tuple = first_arg->as<ASTLiteral>(); inner_literal_tuple)
+                    {
+                        if (inner_literal_tuple->value.getType() == Field::Types::Tuple)
+                            partition_ast_fields_count = inner_literal_tuple->value.safeGet<Tuple>().size();
+                        else
+                            partition_ast_fields_count = 1;
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+                    }
+                }
+                else
+                    throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Expected tuple for complex partition key, got {}", tuple_ast->name);
+            }
+            else
+            {
+                const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
+                if (arguments_ast)
+                    partition_ast_fields_count = arguments_ast->children.size();
+                else
+                    partition_ast_fields_count = 0;
+            }
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::INVALID_PARTITION_VALUE, "Expected literal or tuple for partition key, got {}", partition_value_ast->getID());
+        }
+    }
+    else
+    {
+        partition_ast_fields_count = *partition_ast.fields_count;
+    }
+
+    if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
-                        partition_ast.fields_count.value_or(0), fields_count);
+                        partition_ast_fields_count, fields_count);
 
 
     // this one does not seem necessary, but well... not sure it's going to be harmful, because it would fail later if there are no arguments
