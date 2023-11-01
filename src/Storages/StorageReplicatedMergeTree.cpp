@@ -10009,7 +10009,7 @@ void StorageReplicatedMergeTree::backupData(
         bool exists;
         Strings mutation_ids;
         zkutil::ZooKeeperPtr zookeeper;
-        retries_ctl.retryLoop([&]() 
+        retries_ctl.retryLoop([&]()
         {
             if (!zookeeper || zookeeper->expired())
                 zookeeper = local_context->getZooKeeper();
@@ -10024,7 +10024,7 @@ void StorageReplicatedMergeTree::backupData(
             {
                 bool mutation_id_exists = false;
                 String mutation;
-                retries_ctl.retryLoop([&]() 
+                retries_ctl.retryLoop([&]()
                 {
                     if (!zookeeper || zookeeper->expired())
                         zookeeper = local_context->getZooKeeper();
