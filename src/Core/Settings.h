@@ -836,7 +836,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_geo_types, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
-    MAKE_OBSOLETE(M, HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT) \
+    MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
     MAKE_OBSOLETE(M, Bool, database_replicated_ddl_output, true) \
     MAKE_OBSOLETE(M, UInt64, replication_alter_columns_timeout, 60) \
     MAKE_OBSOLETE(M, UInt64, odbc_max_field_size, 0) \

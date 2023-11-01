@@ -9,10 +9,10 @@
 
 namespace DB
 {
-class ReadBufferFromFileLog : public ReadBuffer
+class FileLogConsumer
 {
 public:
-    ReadBufferFromFileLog(
+    FileLogConsumer(
         StorageFileLog & storage_,
         size_t max_batch_size,
         size_t poll_timeout_,
@@ -20,18 +20,17 @@ public:
         size_t stream_number_,
         size_t max_streams_number_);
 
-    ~ReadBufferFromFileLog() override = default;
-
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledRecords() const { return current != records.end(); }
 
-    bool poll();
+    ReadBufferPtr consume();
 
     bool noRecords() { return buffer_status == BufferStatus::NO_RECORD_RETURNED; }
 
-    auto getFileName() const { return current_file; }
-    auto getOffset() const { return current_offset; }
+    auto getFileName() const { return current[-1].file_name; }
+    auto getOffset() const { return current[-1].offset; }
+    const String & getCurrentRecord() const { return current[-1].data; }
 
 private:
     enum class BufferStatus
@@ -57,8 +56,6 @@ private:
     size_t stream_number;
     size_t max_streams_number;
 
-    bool allowed = true;
-
     using RecordData = std::string;
     struct Record
     {
@@ -72,15 +69,12 @@ private:
     Records records;
     Records::const_iterator current;
 
-    String current_file;
-    UInt64 current_offset = 0;
-
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
     Records pollBatch(size_t batch_size_);
 
     void readNewRecords(Records & new_records, size_t batch_size_);
 
-    bool nextImpl() override;
+    ReadBufferPtr getNextRecord();
 };
 }

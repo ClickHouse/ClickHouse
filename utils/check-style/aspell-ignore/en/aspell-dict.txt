@@ -278,6 +278,7 @@ FilesystemMainPathTotalBytes
 FilesystemMainPathTotalINodes
 FilesystemMainPathUsedBytes
 FilesystemMainPathUsedINodes
+FileLog
 FixedString
 Flink
 ForEach
@@ -1471,6 +1472,7 @@ filesystemAvailable
 filesystemCapacity
 filesystemFree
 filesystems
+filelog
 finalizeAggregation
 fips
 firstLine
