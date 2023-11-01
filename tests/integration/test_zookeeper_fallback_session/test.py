@@ -98,3 +98,5 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
             )
             == "2\n"
         )
+    resp = node1.query_with_retry("SELECT value FROM system.zookeeper where path = '/keeper' and name='availability_zone'")
+    assert resp == 'never-down-42'

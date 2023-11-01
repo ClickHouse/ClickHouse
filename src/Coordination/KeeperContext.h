@@ -23,7 +23,7 @@ public:
         SHUTDOWN
     };
 
-    void initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, const std::string & availability_zone);
+    void initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_, const std::string & environment_az);
 
     Phase getServerState() const;
     void setServerState(Phase server_state_);
@@ -52,8 +52,6 @@ public:
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
-
-    std::string getRunningAvailabilityZone() const;
 
 private:
     /// local disk defined using path or disk name
@@ -90,8 +88,6 @@ private:
 
     KeeperFeatureFlags feature_flags;
     KeeperDispatcher * dispatcher{nullptr};
-
-    std::string running_availability_zone;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
