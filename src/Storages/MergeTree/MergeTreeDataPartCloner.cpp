@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 Poco::Logger * MergeTreeDataPartCloner::log = &Poco::Logger::get("MergeTreeDataPartCloner1");
 
 namespace DistinctPartitionExpression
