@@ -422,6 +422,8 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentUseMicroseconds, "File segment use() time") \
     M(FileSegmentRemoveMicroseconds, "File segment remove() time") \
     M(FileSegmentHolderCompleteMicroseconds, "File segments holder complete() time") \
+    M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold") \
+    M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)") \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer") \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
