@@ -143,8 +143,8 @@ Cost OptimizeInputs::enforceGroupNode(
     std::shared_ptr<ExchangeDataStep> exchange_step;
 
     size_t max_block_size = task_context->getQueryContext()->getSettings().max_block_size;
-        /// Because the ordering of data may be changed after adding Exchange in a distributed manner, we need to retain the order of data during exchange if there is a requirement for data sorting.
-    if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream && output_prop.sort_prop.sort_scope == DataStream::SortScope::Stream)
+    /// Because the ordering of data may be changed after adding Exchange in a distributed manner, we need to retain the order of data during exchange if there is a requirement for data sorting.
+    if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream && output_prop.sort_prop.sort_scope >= DataStream::SortScope::Stream)
     {
         exchange_step = std::make_shared<ExchangeDataStep>(
             required_prop.distribution,

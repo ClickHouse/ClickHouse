@@ -33,9 +33,10 @@ AlternativeChildrenProp DeriveRequiredChildProp::visitDefault(IQueryPlanStep & s
     }
 
     std::vector<PhysicalProperties> required_child_prop;
-    for (size_t i = 0; i < group_node->childSize(); ++i)
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_sort_prop});
+    for (size_t i = 1; i < group_node->childSize(); ++i)
     {
-        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Singleton}, .sort_prop = required_sort_prop});
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
     }
     return {required_child_prop};
 }
@@ -234,6 +235,25 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetStep & /*step*
 {
     std::vector<PhysicalProperties> required_child_prop;
     required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Replicated}});
+    return {required_child_prop};
+}
+
+AlternativeChildrenProp DeriveRequiredChildProp::visit(CreatingSetsStep & step)
+{
+    SortProp required_sort_prop;
+
+    /// If the transform preserves_sorting and the output is ordered, the child is required to be ordered.
+    required_sort_prop.sort_description = step.getOutputStream().sort_description;
+    required_sort_prop.sort_scope = step.getOutputStream().sort_scope;
+
+    std::vector<PhysicalProperties> required_child_prop;
+
+    /// Ensure that CreatingSetsStep and the left table scan are assigned to the same fragment.
+    required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}, .sort_prop = required_sort_prop});
+    for (size_t i = 1; i < group_node->childSize(); ++i)
+    {
+        required_child_prop.push_back({.distribution = {.type = PhysicalProperties::DistributionType::Any}});
+    }
     return {required_child_prop};
 }
 
