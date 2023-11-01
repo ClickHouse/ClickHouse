@@ -38,12 +38,13 @@ struct FileSegmentMetadata : private boost::noncopyable
 using FileSegmentMetadataPtr = std::shared_ptr<FileSegmentMetadata>;
 
 
-struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
+struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
                      private boost::noncopyable,
                      public std::enable_shared_from_this<KeyMetadata>
 {
     friend struct LockedKey;
     using Key = FileCacheKey;
+    using iterator = iterator;
 
     KeyMetadata(
         const Key & key_,
@@ -75,6 +76,13 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadataPtr>,
 
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
 
+    /// This method is used for loadMetadata() on server startup,
+    /// where we know there is no concurrency on Key and we do not want therefore taking a KeyGuard::Lock,
+    /// therefore we use this Unlocked version. This method should not be used anywhere else.
+    template< class... Args >
+    auto emplaceUnlocked(Args &&... args) { return emplace(std::forward<Args>(args)...); }
+    size_t sizeUnlocked() const { return size(); }
+
 private:
     KeyState key_state = KeyState::ACTIVE;
     KeyGuard guard;
@@ -88,7 +96,7 @@ private:
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 
-struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
+struct CacheMetadata : private std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
@@ -107,6 +115,7 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
+    bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
     {
@@ -182,7 +191,15 @@ struct LockedKey : private boost::noncopyable
     const Key & getKey() const { return key_metadata->key; }
 
     auto begin() const { return key_metadata->begin(); }
+    auto rbegin() const { return key_metadata->rbegin(); }
+
     auto end() const { return key_metadata->end(); }
+    auto rend() const { return key_metadata->rend(); }
+
+    bool empty() const { return key_metadata->empty(); }
+    auto lower_bound(size_t size) const { return key_metadata->lower_bound(size); } /// NOLINT
+    template< class... Args >
+    auto emplace(Args &&... args) { return key_metadata->emplace(std::forward<Args>(args)...); }
 
     std::shared_ptr<const FileSegmentMetadata> getByOffset(size_t offset) const;
     std::shared_ptr<FileSegmentMetadata> getByOffset(size_t offset);
