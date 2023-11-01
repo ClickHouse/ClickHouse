@@ -1736,7 +1736,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 broken_parts_to_detach.push_back(res.part);
                 bool unexpected = expected_parts != std::nullopt && !expected_parts->contains(res.part->name);
                 if (unexpected)
+                {
+                    LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
+                              " will not count it as suspicious broken part", res.part->name);
                     ++suspicious_broken_unexpected_parts;
+                }
                 else
                     ++suspicious_broken_parts;
 
@@ -1782,12 +1786,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     if (!skip_sanity_checks)
     {
-        if (settings->strict_suspicious_broken_parts_check_on_start)
-        {
-            suspicious_broken_parts += suspicious_broken_unexpected_parts;
-            suspicious_broken_parts_bytes += suspicious_broken_unexpected_parts_bytes;
-        }
-
         if (suspicious_broken_parts > settings->max_suspicious_broken_parts)
             throw Exception(
                 ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
@@ -1810,6 +1808,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
                 formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
     }
+
+    if (suspicious_broken_unexpected_parts != 0)
+        LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
 
     if (!is_static_storage)

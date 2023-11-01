@@ -1374,6 +1374,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     Strings covered_unexpected_parts;
     std::unordered_set<String> uncovered_unexpected_parts;
+    std::unordered_set<String> restorable_unexpected_parts;
     UInt64 uncovered_unexpected_parts_rows = 0;
 
     for (const auto & part : unexpected_parts)
@@ -1393,7 +1394,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
         if (MergeTreePartInfo::areAllBlockNumbersCovered(part->info, covered_parts))
         {
-            covered_unexpected_parts.push_back(part->name);
+            restorable_unexpected_parts.insert(part->name);
             continue;
         }
 
@@ -1439,11 +1440,11 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
                                                "There are {} uncovered unexpected parts with {} rows ({} of them is not just-written with {} rows), "
                                                "{} missing parts (with {} blocks), {} covered unexpected parts (with {} rows).";
 
-    constexpr auto sanity_report_debug_fmt = "Uncovered unexpected parts: {}. Missing parts: {}. Covered unexpected parts: {}. Expected parts: {}.";
+    constexpr auto sanity_report_debug_fmt = "Uncovered unexpected parts: {}. Restorable unexpected parts: {}. Missing parts: {}. Covered unexpected parts: {}. Expected parts: {}.";
 
     if (insane && !skip_sanity_checks)
     {
-        LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
+        LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(restorable_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
                   fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS, sanity_report_fmt, getStorageID().getNameForLogs(),
                         formatReadableQuantity(uncovered_unexpected_parts_rows),
@@ -1455,7 +1456,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     if (unexpected_parts_nonnew_rows > 0 || uncovered_unexpected_parts_rows > 0)
     {
-        LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
+        LOG_DEBUG(log, sanity_report_debug_fmt, fmt::join(uncovered_unexpected_parts, ", "), fmt::join(restorable_unexpected_parts, ", "), fmt::join(parts_to_fetch, ", "),
                   fmt::join(covered_unexpected_parts, ", "), fmt::join(expected_parts, ", "));
         LOG_WARNING(log, sanity_report_fmt, getStorageID().getNameForLogs(),
                     formatReadableQuantity(uncovered_unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
@@ -1474,7 +1475,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Remove extra local parts.
     for (const DataPartPtr & part : unexpected_parts)
     {
-        bool restore_covered = uncovered_unexpected_parts.contains(part->name);
+        bool restore_covered = restorable_unexpected_parts.contains(part->name) || uncovered_unexpected_parts.contains(part->name);
         LOG_ERROR(log, "Renaming unexpected part {} to ignored_{}{}", part->name, part->name, restore_covered ? ", restoring covered parts" : "");
         forcefullyMovePartToDetachedAndRemoveFromMemory(part, "ignored", restore_covered);
     }
