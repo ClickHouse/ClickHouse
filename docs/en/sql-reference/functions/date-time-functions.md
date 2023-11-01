@@ -1602,7 +1602,7 @@ fromDaysSinceYearZero(days)
 
 **Returned value**
 
-Date corresponding to the numbe of days passed since year zero.
+Date corresponding to the number of days passed since year zero.
 
 **Example**
 
