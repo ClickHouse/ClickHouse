@@ -171,7 +171,7 @@ def test_corrupted_unexpected_part_ultimate():
     )
 
     remove_part_from_zookeeper("/tables/broken_3/replicas/1", "all_0_0_0")
-    break_part("broken_table_2", "all_0_0_0")
+    break_part("broken_table_3", "all_0_0_0")
     remove_part_from_zookeeper("/tables/broken_3/replicas/1", "all_0_1_1")
 
     detach_table("broken_table_3")
@@ -184,4 +184,4 @@ def test_corrupted_unexpected_part_ultimate():
         == "1\n"
     )
 
-    assert node.query("SELECT sum(key) FROM broken_table_3") == "145\n"
+    assert node.query("SELECT sum(key) FROM broken_table_3") == "190\n"
