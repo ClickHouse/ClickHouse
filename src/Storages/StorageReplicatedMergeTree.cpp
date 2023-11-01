@@ -10009,7 +10009,8 @@ void StorageReplicatedMergeTree::backupData(
         bool exists;
         Strings mutation_ids;
         zkutil::ZooKeeperPtr zookeeper;
-        retries_ctl.retryLoop([&]() {
+        retries_ctl.retryLoop([&]() 
+        {
             if (!zookeeper || zookeeper->expired())
                 zookeeper = local_context->getZooKeeper();
             exists = zookeeper->tryGetChildren(fs::path(zookeeper_path) / "mutations", mutation_ids) == Coordination::Error::ZOK;
@@ -10023,7 +10024,8 @@ void StorageReplicatedMergeTree::backupData(
             {
                 bool mutation_id_exists = false;
                 String mutation;
-                retries_ctl.retryLoop([&]() {
+                retries_ctl.retryLoop([&]() 
+                {
                     if (!zookeeper || zookeeper->expired())
                         zookeeper = local_context->getZooKeeper();
                     mutation_id_exists = exists = zookeeper->tryGet(fs::path(zookeeper_path) / "mutations" / mutation_id, mutation);
