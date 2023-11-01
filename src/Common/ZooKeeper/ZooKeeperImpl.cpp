@@ -395,8 +395,8 @@ ZooKeeper::ZooKeeper(
         send_thread = ThreadFromGlobalPool([this] { sendThread(); });
         receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-//        initFeatureFlags();
-//        keeper_feature_flags.logFlags(log);
+        initFeatureFlags();
+        keeper_feature_flags.logFlags(log);
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
